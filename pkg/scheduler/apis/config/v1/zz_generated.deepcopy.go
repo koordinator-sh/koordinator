@@ -57,6 +57,11 @@ func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.DefaultMatchPolicy != nil {
+		in, out := &in.DefaultMatchPolicy, &out.DefaultMatchPolicy
+		*out = new(string)
+		**out = **in
+	}
 	return
 }
 

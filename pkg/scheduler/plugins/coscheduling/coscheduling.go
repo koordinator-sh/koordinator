@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -58,6 +59,8 @@ var _ frameworkext.FindOneNodePluginProvider = &Coscheduling{}
 var _ frameworkext.FindOneNodePlugin = &Coscheduling{}
 var _ frameworkext.PostFilterTransformer = &Coscheduling{}
 var _ framework.PostFilterPlugin = &Coscheduling{}
+var _ framework.PreScorePlugin = &Coscheduling{}
+var _ framework.ScorePlugin = &Coscheduling{}
 var _ framework.PermitPlugin = &Coscheduling{}
 var _ framework.ReservePlugin = &Coscheduling{}
 var _ framework.PreBindPlugin = &Coscheduling{}
@@ -173,6 +176,22 @@ func (cs *Coscheduling) PostFilter(ctx context.Context, state *framework.CycleSt
 // PreFilterExtensions returns a PreFilterExtensions interface if the plugin implements one.
 func (cs *Coscheduling) PreFilterExtensions() framework.PreFilterExtensions {
 	return nil
+}
+
+func (cs *Coscheduling) PreScore(ctx context.Context, state *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+	return cs.pgMgr.PreScore(ctx, state, pod, nodes)
+}
+
+func (cs *Coscheduling) Score(ctx context.Context, state *framework.CycleState, p *v1.Pod, nodeName string) (int64, *framework.Status) {
+	return cs.pgMgr.Score(ctx, state, p, nodeName)
+}
+
+func (cs *Coscheduling) ScoreExtensions() framework.ScoreExtensions {
+	return cs
+}
+
+func (cs *Coscheduling) NormalizeScore(ctx context.Context, state *framework.CycleState, p *v1.Pod, scores framework.NodeScoreList) *framework.Status {
+	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, true, scores)
 }
 
 // Permit

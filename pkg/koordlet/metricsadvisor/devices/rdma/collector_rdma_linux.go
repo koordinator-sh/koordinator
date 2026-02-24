@@ -60,8 +60,8 @@ func GetNetDevice() (metriccache.Devices, error) {
 		rdmaResource := rdmaResources[0]
 		minor, err := system.GetRDMAMinor(rdmaResource)
 		if err != nil {
-			klog.Errorf("getNetDevice(): get rdma minorID for rdma device %s error, %v", rdmaResource, err)
-			return nil, err
+			klog.Warningf("getNetDevice(): get rdma minorID for rdma device %s error, %v", rdmaResource, err)
+			continue
 		}
 
 		netDevice := util.RDMADeviceInfo{
@@ -79,24 +79,25 @@ func GetNetDevice() (metriccache.Devices, error) {
 
 		nodeID, pcie, _, err := helper.ParsePCIInfo(device.Address)
 		if err != nil {
-			klog.Errorf("getNetDevice(): parse pci device %s error, %v", device.Address, err)
-			return nil, err
+			klog.Warningf("getNetDevice(): parse pci device %s error, %v", device.Address, err)
+			continue
 		}
 		netDevice.NodeID = nodeID
 		netDevice.PCIE = pcie
 		if netDevice.VFEnabled {
 			vfList, err := system.GetVFList(netDevice.ID)
 			if err != nil {
-				return nil, err
-			}
-			for _, vfBDF := range vfList {
-				vf := util.VirtualFunction{
-					ID: vfBDF,
+				klog.Warningf("getNetDevice(): get vf list error, %v", err)
+			} else {
+				for _, vfBDF := range vfList {
+					vf := util.VirtualFunction{
+						ID: vfBDF,
+					}
+					if netDevice.VFMap == nil {
+						netDevice.VFMap = map[string]*util.VirtualFunction{}
+					}
+					netDevice.VFMap[vf.ID] = &vf
 				}
-				if netDevice.VFMap == nil {
-					netDevice.VFMap = map[string]*util.VirtualFunction{}
-				}
-				netDevice.VFMap[vf.ID] = &vf
 			}
 		}
 		netDevices = append(netDevices, netDevice)

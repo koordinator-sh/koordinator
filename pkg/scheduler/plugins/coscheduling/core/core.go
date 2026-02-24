@@ -66,6 +66,8 @@ type Manager interface {
 	PreEnqueue(context.Context, *corev1.Pod) (err error)
 	BeforePreFilter(context.Context, *framework.CycleState, *corev1.Pod) (err error)
 	PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status)
+	PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status
+	Score(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) (int64, *framework.Status)
 	Permit(context.Context, *corev1.Pod) (time.Duration, Status)
 	PostBind(context.Context, *corev1.Pod, string)
 	PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status)
@@ -400,6 +402,7 @@ func (pgMgr *PodGroupManager) summaryAndRecordFailedMessage(state *framework.Cyc
 	diagnosis := frameworkext.GetDiagnosis(state)
 	if diagnosis != nil && diagnosis.ScheduleDiagnosis != nil && diagnosis.ScheduleDiagnosis.SchedulingMode == frameworkext.PodSchedulingMode {
 		diagnosis.ScheduleDiagnosis.AlreadyWaitForBound = waitingPodsNum
+		diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods = pgMgr.cache.getWaitingPods(gangSchedulingContext.gangGroup.UnsortedList())
 	}
 	message := fmt.Sprintf("GangGroup %q gets rejected due to member Pod %q is unschedulable with reason %q, alreadyWaitForBound: %d", gangSchedulingContext.gangGroupID, framework.GetNamespacedName(triggerPod.Namespace, triggerPod.Name), fitErr, waitingPodsNum)
 	gangSchedulingContext.failedMessage = message

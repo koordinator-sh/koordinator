@@ -68,6 +68,10 @@ type MigrationControllerArgs struct {
 	// NodeSelector for a set of nodes to operate over
 	NodeSelector string `json:"nodeSelector,omitempty"`
 
+	// SkipEvictionGates allows bypassing specific gates/filters/throttlers during the eviction phase.
+	// Default is an empty list (no gates are bypassed).
+	SkipEvictionGates []config.EvictionGate `json:"skipEvictionGates,omitempty"`
+
 	// MaxMigratingGlobally represents the maximum number of pods that can be migrating during migrate globally.
 	MaxMigratingGlobally *int32 `json:"maxMigratingGlobally,omitempty"`
 

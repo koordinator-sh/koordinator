@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
@@ -369,6 +370,7 @@ func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResou
 		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
 	}
 	state.designatedAllocation = recordedDeviceAllocations
+	state.designatedVF = constructDesignatedVF(state.designatedAllocation)
 
 	state.podRequests = requests
 	state.skip = len(requests) == 0
@@ -393,6 +395,30 @@ func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResou
 	}
 
 	return
+}
+
+func constructDesignatedVF(designatedAllocation apiext.DeviceAllocations) map[schedulingv1alpha1.DeviceType]map[int32]sets.Set[string] {
+	if designatedAllocation == nil {
+		return nil
+	}
+	designatedVF := make(map[schedulingv1alpha1.DeviceType]map[int32]sets.Set[string])
+	for deviceType, allocations := range designatedAllocation {
+		vfOfType := make(map[int32]sets.Set[string])
+		for _, allocation := range allocations {
+			if allocation.Extension != nil && len(allocation.Extension.VirtualFunctions) != 0 {
+				minor := allocation.Minor
+				vfOfMinor := sets.New[string]()
+				for _, function := range allocation.Extension.VirtualFunctions {
+					vfOfMinor.Insert(function.BusID)
+				}
+				vfOfType[minor] = vfOfMinor
+			}
+		}
+		if len(vfOfType) != 0 {
+			designatedVF[deviceType] = vfOfType
+		}
+	}
+	return designatedVF
 }
 
 func GetPodDeviceRequests(pod *corev1.Pod) (map[schedulingv1alpha1.DeviceType]corev1.ResourceList, error) {

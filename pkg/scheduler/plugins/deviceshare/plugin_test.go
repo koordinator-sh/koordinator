@@ -34,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
@@ -2937,6 +2938,151 @@ func Test_Plugin_Filter(t *testing.T) {
 			nodeInfo: testNodeInfo,
 			want:     nil,
 		},
+		{
+			name: "allocate by designated rdma, succeed",
+			state: &preFilterState{
+				skip: false,
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.RDMA: {
+						apiext.ResourceRDMA: resource.MustParse("1"),
+					},
+				},
+				hints: apiext.DeviceAllocateHints{
+					schedulingv1alpha1.RDMA: &apiext.DeviceHint{
+						VFSelector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      "type",
+									Operator: metav1.LabelSelectorOpIn,
+									Values: []string{
+										"vf_cpu",
+									},
+								},
+								{
+									Key:      "isGDR",
+									Operator: metav1.LabelSelectorOpNotIn,
+									Values: []string{
+										"false",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			designatedAllocation: apiext.DeviceAllocations{
+				schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
+					{
+						Minor: 1,
+						Resources: corev1.ResourceList{
+							apiext.ResourceRDMA: resource.MustParse("1"),
+						},
+						Extension: &apiext.DeviceAllocationExtension{
+							VirtualFunctions: []apiext.VirtualFunction{
+								{
+									BusID: "0000:c800:000e:270a",
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeDeviceCache: &nodeDeviceCache{
+				nodeDeviceInfos: map[string]*nodeDevice{
+					"test-node": {
+						deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.RDMA: {
+								1: corev1.ResourceList{
+									apiext.ResourceRDMA: resource.MustParse("89"),
+								},
+							},
+						},
+						deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.RDMA: {
+								1: corev1.ResourceList{
+									apiext.ResourceRDMA: resource.MustParse("100"),
+								},
+							},
+						},
+						deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.RDMA: {
+								1: corev1.ResourceList{
+									apiext.ResourceRDMA: resource.MustParse("11"),
+								},
+							},
+						},
+						vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{
+							schedulingv1alpha1.RDMA: {
+								allocatedVFs: map[int]sets.String{
+									1: sets.NewString(
+										"0000:c800:0004:270a", "0000:c800:0005:270a")},
+							},
+						},
+						numaTopology: &NUMATopology{},
+						deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+							schedulingv1alpha1.RDMA: {
+								{
+									Type:   schedulingv1alpha1.RDMA,
+									Health: true,
+									UUID:   "0000:c8:00.0",
+									Minor:  ptr.To[int32](1),
+									Resources: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("100"),
+									},
+									VFGroups: []schedulingv1alpha1.VirtualFunctionGroup{
+										{
+											Labels: map[string]string{
+												"type": "vf_cpu",
+											},
+											VFs: []schedulingv1alpha1.VirtualFunction{
+												{
+													BusID: "0000:c800:0004:270a",
+												},
+												{
+													BusID: "0000:c800:0005:270a",
+												},
+												{
+													BusID: "0000:c800:0006:270a",
+												},
+												{
+													BusID: "0000:c800:0007:270a",
+												},
+												{
+													BusID: "0000:c800:0008:270a",
+												},
+												{
+													BusID: "0000:c800:0009:270a",
+												},
+												{
+													BusID: "0000:c800:000a:270a",
+												},
+												{
+													BusID: "0000:c800:000b:270a",
+												},
+												{
+													BusID: "0000:c800:000c:270a",
+												},
+												{
+													BusID: "0000:c800:000d:270a",
+												},
+												{
+													BusID: "0000:c800:000e:270a",
+												},
+												{
+													BusID: "0000:c800:000f:270a",
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			nodeInfo: testNodeInfo,
+			want:     nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2974,6 +3120,7 @@ func Test_Plugin_Filter(t *testing.T) {
 				assert.True(t, status.IsSuccess())
 				state.preemptibleInRRs = tt.state.preemptibleInRRs
 				state.preemptibleDevices = tt.state.preemptibleDevices
+				state.hints = tt.state.hints
 				cycleState.Write(stateKey, state)
 			}
 			if tt.reserved != nil {
@@ -4454,6 +4601,480 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "allocate by designated rdma, succeed",
+			args: args{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									1: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("89"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									1: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("100"),
+									},
+								},
+							},
+							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									1: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("11"),
+									},
+								},
+							},
+							vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{
+								schedulingv1alpha1.RDMA: {
+									allocatedVFs: map[int]sets.String{
+										1: sets.NewString(
+											"0000:c800:0004:270a", "0000:c800:0005:270a")},
+								},
+							},
+							allocateSet:  map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+							numaTopology: &NUMATopology{},
+							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+								schedulingv1alpha1.RDMA: {
+									{
+										Type:   schedulingv1alpha1.RDMA,
+										Health: true,
+										UUID:   "0000:c8:00.0",
+										Minor:  ptr.To[int32](1),
+										Resources: corev1.ResourceList{
+											apiext.ResourceRDMA: resource.MustParse("100"),
+										},
+										VFGroups: []schedulingv1alpha1.VirtualFunctionGroup{
+											{
+												Labels: map[string]string{
+													"type": "vf_cpu",
+												},
+												VFs: []schedulingv1alpha1.VirtualFunction{
+													{
+														BusID: "0000:c800:0004:270a",
+													},
+													{
+														BusID: "0000:c800:0005:270a",
+													},
+													{
+														BusID: "0000:c800:0006:270a",
+													},
+													{
+														BusID: "0000:c800:0007:270a",
+													},
+													{
+														BusID: "0000:c800:0008:270a",
+													},
+													{
+														BusID: "0000:c800:0009:270a",
+													},
+													{
+														BusID: "0000:c800:000a:270a",
+													},
+													{
+														BusID: "0000:c800:000b:270a",
+													},
+													{
+														BusID: "0000:c800:000c:270a",
+													},
+													{
+														BusID: "0000:c800:000d:270a",
+													},
+													{
+														BusID: "0000:c800:000e:270a",
+													},
+													{
+														BusID: "0000:c800:000f:270a",
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				pod:  &corev1.Pod{},
+				node: testNode,
+				state: &preFilterState{
+					skip: false,
+					podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+						schedulingv1alpha1.RDMA: {
+							apiext.ResourceRDMA: resource.MustParse("1"),
+						},
+					},
+					hints: apiext.DeviceAllocateHints{
+						schedulingv1alpha1.RDMA: &apiext.DeviceHint{
+							VFSelector: &metav1.LabelSelector{
+								MatchExpressions: []metav1.LabelSelectorRequirement{
+									{
+										Key:      "type",
+										Operator: metav1.LabelSelectorOpIn,
+										Values: []string{
+											"vf_cpu",
+										},
+									},
+									{
+										Key:      "isGDR",
+										Operator: metav1.LabelSelectorOpNotIn,
+										Values: []string{
+											"false",
+										},
+									},
+								},
+							},
+						},
+					},
+					designatedAllocation: apiext.DeviceAllocations{
+						schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
+							{
+								Minor: 1,
+								Resources: corev1.ResourceList{
+									apiext.ResourceRDMA: resource.MustParse("1"),
+								},
+								Extension: &apiext.DeviceAllocationExtension{
+									VirtualFunctions: []apiext.VirtualFunction{
+										{
+											BusID: "0000:c800:000e:270a",
+											Minor: 0,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wants: wants{
+				status: nil,
+				allocationResult: map[schedulingv1alpha1.DeviceType][]*apiext.DeviceAllocation{
+					schedulingv1alpha1.RDMA: {
+						{
+							Minor: 1,
+							Resources: corev1.ResourceList{
+								apiext.ResourceRDMA: resource.MustParse("1"),
+							},
+							Extension: &apiext.DeviceAllocationExtension{
+								VirtualFunctions: []apiext.VirtualFunction{
+									{
+										BusID: "0000:c800:000e:270a",
+										Minor: 0,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "allocate by designated rdma, failed",
+			args: args{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									1: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("89"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									1: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("100"),
+									},
+								},
+							},
+							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									1: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("11"),
+									},
+								},
+							},
+							vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{
+								schedulingv1alpha1.RDMA: {
+									allocatedVFs: map[int]sets.String{
+										1: sets.NewString(
+											"0000:c800:000e:270a", "0000:c800:0005:270a")},
+								},
+							},
+							allocateSet:  map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+							numaTopology: &NUMATopology{},
+							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+								schedulingv1alpha1.RDMA: {
+									{
+										Type:   schedulingv1alpha1.RDMA,
+										Health: true,
+										UUID:   "0000:c8:00.0",
+										Minor:  ptr.To[int32](1),
+										Resources: corev1.ResourceList{
+											apiext.ResourceRDMA: resource.MustParse("100"),
+										},
+										VFGroups: []schedulingv1alpha1.VirtualFunctionGroup{
+											{
+												Labels: map[string]string{
+													"type": "vf_cpu",
+												},
+												VFs: []schedulingv1alpha1.VirtualFunction{
+													{
+														BusID: "0000:c800:0004:270a",
+													},
+													{
+														BusID: "0000:c800:0005:270a",
+													},
+													{
+														BusID: "0000:c800:0006:270a",
+													},
+													{
+														BusID: "0000:c800:0007:270a",
+													},
+													{
+														BusID: "0000:c800:0008:270a",
+													},
+													{
+														BusID: "0000:c800:0009:270a",
+													},
+													{
+														BusID: "0000:c800:000a:270a",
+													},
+													{
+														BusID: "0000:c800:000b:270a",
+													},
+													{
+														BusID: "0000:c800:000c:270a",
+													},
+													{
+														BusID: "0000:c800:000d:270a",
+													},
+													{
+														BusID: "0000:c800:000e:270a",
+													},
+													{
+														BusID: "0000:c800:000f:270a",
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				pod:  &corev1.Pod{},
+				node: testNode,
+				state: &preFilterState{
+					skip: false,
+					podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+						schedulingv1alpha1.RDMA: {
+							apiext.ResourceRDMA: resource.MustParse("1"),
+						},
+					},
+					hints: apiext.DeviceAllocateHints{
+						schedulingv1alpha1.RDMA: &apiext.DeviceHint{
+							VFSelector: &metav1.LabelSelector{
+								MatchExpressions: []metav1.LabelSelectorRequirement{
+									{
+										Key:      "type",
+										Operator: metav1.LabelSelectorOpIn,
+										Values: []string{
+											"vf_cpu",
+										},
+									},
+									{
+										Key:      "isGDR",
+										Operator: metav1.LabelSelectorOpNotIn,
+										Values: []string{
+											"false",
+										},
+									},
+								},
+							},
+						},
+					},
+					designatedAllocation: apiext.DeviceAllocations{
+						schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
+							{
+								Minor: 1,
+								Resources: corev1.ResourceList{
+									apiext.ResourceRDMA: resource.MustParse("1"),
+								},
+								Extension: &apiext.DeviceAllocationExtension{
+									VirtualFunctions: []apiext.VirtualFunction{
+										{
+											BusID: "0000:c800:000e:270a",
+											Minor: 0,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wants: wants{
+				status: framework.NewStatus(framework.Unschedulable, "Insufficient rdma devices"),
+			},
+		},
+		{
+			name: "allocate by designated rdma, failed",
+			args: args{
+				nodeDeviceCache: &nodeDeviceCache{
+					nodeDeviceInfos: map[string]*nodeDevice{
+						"test-node": {
+							deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									2: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("89"),
+									},
+								},
+							},
+							deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									2: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("100"),
+									},
+								},
+							},
+							deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.RDMA: {
+									2: corev1.ResourceList{
+										apiext.ResourceRDMA: resource.MustParse("11"),
+									},
+								},
+							},
+							vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{
+								schedulingv1alpha1.RDMA: {
+									allocatedVFs: map[int]sets.String{
+										2: sets.NewString(
+											"0000:c800:0004:270a", "0000:c800:0005:270a")},
+								},
+							},
+							allocateSet:  map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+							numaTopology: &NUMATopology{},
+							deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+								schedulingv1alpha1.RDMA: {
+									{
+										Type:   schedulingv1alpha1.RDMA,
+										Health: true,
+										UUID:   "0000:c8:00.0",
+										Minor:  ptr.To[int32](2),
+										Resources: corev1.ResourceList{
+											apiext.ResourceRDMA: resource.MustParse("100"),
+										},
+										VFGroups: []schedulingv1alpha1.VirtualFunctionGroup{
+											{
+												Labels: map[string]string{
+													"type": "vf_cpu",
+												},
+												VFs: []schedulingv1alpha1.VirtualFunction{
+													{
+														BusID: "0000:c800:0004:270a",
+													},
+													{
+														BusID: "0000:c800:0005:270a",
+													},
+													{
+														BusID: "0000:c800:0006:270a",
+													},
+													{
+														BusID: "0000:c800:0007:270a",
+													},
+													{
+														BusID: "0000:c800:0008:270a",
+													},
+													{
+														BusID: "0000:c800:0009:270a",
+													},
+													{
+														BusID: "0000:c800:000a:270a",
+													},
+													{
+														BusID: "0000:c800:000b:270a",
+													},
+													{
+														BusID: "0000:c800:000c:270a",
+													},
+													{
+														BusID: "0000:c800:000d:270a",
+													},
+													{
+														BusID: "0000:c800:000e:270a",
+													},
+													{
+														BusID: "0000:c800:000f:270a",
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				pod:  &corev1.Pod{},
+				node: testNode,
+				state: &preFilterState{
+					skip: false,
+					podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+						schedulingv1alpha1.RDMA: {
+							apiext.ResourceRDMA: resource.MustParse("1"),
+						},
+					},
+					hints: apiext.DeviceAllocateHints{
+						schedulingv1alpha1.RDMA: &apiext.DeviceHint{
+							VFSelector: &metav1.LabelSelector{
+								MatchExpressions: []metav1.LabelSelectorRequirement{
+									{
+										Key:      "type",
+										Operator: metav1.LabelSelectorOpIn,
+										Values: []string{
+											"vf_cpu",
+										},
+									},
+									{
+										Key:      "isGDR",
+										Operator: metav1.LabelSelectorOpNotIn,
+										Values: []string{
+											"false",
+										},
+									},
+								},
+							},
+						},
+					},
+					designatedAllocation: apiext.DeviceAllocations{
+						schedulingv1alpha1.RDMA: []*apiext.DeviceAllocation{
+							{
+								Minor: 1,
+								Resources: corev1.ResourceList{
+									apiext.ResourceRDMA: resource.MustParse("1"),
+								},
+								Extension: &apiext.DeviceAllocationExtension{
+									VirtualFunctions: []apiext.VirtualFunction{
+										{
+											BusID: "0000:c800:000e:270a",
+											Minor: 0,
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wants: wants{
+				status: framework.NewStatus(framework.Unschedulable, "Insufficient rdma devices"),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -4465,6 +5086,9 @@ func Test_Plugin_Reserve(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			if tt.args.state != nil {
 				tt.args.state.gpuRequirements, _ = parseGPURequirements(&corev1.Pod{}, tt.args.state.podRequests, nil, testGPUSharedResourceTemplatesCache, testGPUSharedResourceTemplatesMatchedResources)
+				if tt.args.state.designatedAllocation != nil {
+					tt.args.state.designatedVF = constructDesignatedVF(tt.args.state.designatedAllocation)
+				}
 				cycleState.Write(stateKey, tt.args.state)
 			}
 

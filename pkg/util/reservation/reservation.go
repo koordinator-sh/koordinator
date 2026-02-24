@@ -508,10 +508,11 @@ func MatchLabels(podLabels map[string]string, selector labels.Selector) bool {
 }
 
 type RequiredReservationAffinity struct {
-	labelSelector labels.Selector
-	nodeSelector  *nodeaffinity.NodeSelector
-	tolerations   []corev1.Toleration
-	name          string
+	labelSelector         labels.Selector
+	nodeSelector          *nodeaffinity.NodeSelector
+	tolerations           []corev1.Toleration
+	tolerateUnschedulable bool
+	name                  string
 }
 
 // GetRequiredReservationAffinity returns the parsing result of pod's nodeSelector and nodeAffinity.
@@ -537,11 +538,19 @@ func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffini
 			return nil, err
 		}
 	}
+	podToleratesUnschedulable := false
+	if len(reservationAffinity.Tolerations) > 0 {
+		podToleratesUnschedulable = corev1helper.TolerationsTolerateTaint(reservationAffinity.Tolerations, &corev1.Taint{
+			Key:    corev1.TaintNodeUnschedulable,
+			Effect: corev1.TaintEffectNoSchedule,
+		})
+	}
 	return &RequiredReservationAffinity{
-		labelSelector: selector,
-		nodeSelector:  affinity,
-		tolerations:   reservationAffinity.Tolerations,
-		name:          reservationAffinity.Name,
+		labelSelector:         selector,
+		nodeSelector:          affinity,
+		tolerations:           reservationAffinity.Tolerations,
+		tolerateUnschedulable: podToleratesUnschedulable,
+		name:                  reservationAffinity.Name,
 	}, nil
 }
 
@@ -589,6 +598,14 @@ func (s *RequiredReservationAffinity) FindMatchingUntoleratedTaint(taints []core
 		return corev1.Taint{}, false
 	}
 	return corev1helper.FindMatchingUntoleratedTaint(taints, s.tolerations, inclusionFilter)
+}
+
+// TolerateUnschedulable returns true if the pod tolerates the reservation unschedulable.
+func (s *RequiredReservationAffinity) TolerateUnschedulable() bool {
+	if s == nil {
+		return false
+	}
+	return s.tolerateUnschedulable
 }
 
 type ReservationResizeAllocatable struct {

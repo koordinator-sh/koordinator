@@ -83,6 +83,7 @@ data:
           preScore:
             enabled:
               - name: Reservation
+              - name: Coscheduling
           score:
             enabled:
               - name: LoadAwareScheduling
@@ -93,6 +94,8 @@ data:
                 weight: 1
               - name: Reservation
                 weight: 5000
+              - name: Coscheduling
+                weight: 1
           reserve:
             enabled:
               - name: LoadAwareScheduling

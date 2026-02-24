@@ -241,6 +241,7 @@ func TestPlugin_PreEnqueue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mgr := NewManagerForTest().pgMgr
+			mgr.args.DefaultMatchPolicy = extension.GangMatchPolicyOnceSatisfied
 			var gang *Gang
 			// first create the podGroup
 			if tt.pgs != nil {

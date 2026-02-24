@@ -1324,3 +1324,41 @@ func TestOnceValues(t *testing.T) {
 		t.Errorf("want 0 allocations per call, got %v", allocs)
 	}
 }
+
+func Test_isErrorConnectionClose(t *testing.T) {
+	type args struct {
+		err error
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "http2: client connection force closed via ClientConn.Close",
+			args: args{
+				err: fmt.Errorf("http2: client connection force closed via ClientConn.Close"),
+			},
+			want: true,
+		},
+		{
+			name: "http2: server sent GOAWAY and closed the connection; LastStreamID=1113, ErrCode=NO_ERROR, debug=\"\"",
+			args: args{
+				err: fmt.Errorf("http2: server sent GOAWAY and closed the connection; LastStreamID=1113, ErrCode=NO_ERROR, debug=\"\""),
+			},
+			want: true,
+		},
+		{
+			name: "other error",
+			args: args{
+				err: fmt.Errorf("other error"),
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, isErrorConnectionClosed(tt.args.err), "isErrorConnectionClosed(%v)", tt.args.err)
+		})
+	}
+}

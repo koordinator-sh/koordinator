@@ -95,8 +95,9 @@ type TreeNode struct {
 	Parent   *TreeNode
 	Children map[string]*TreeNode
 
-	OfferSlot int
-	Score     int
+	OfferSlot      int
+	Score          int
+	ExistingPodNum int
 }
 
 type TreeNodeMeta struct {

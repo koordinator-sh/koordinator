@@ -21,6 +21,30 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+// EvictionGate identifies a gate/filter/throttler that can be bypassed before evicting pods.
+// It is intentionally a string enum so it can be configured via YAML/JSON.
+type EvictionGate string
+
+const (
+	// Retryable throttlers (limits)
+	EvictionGateMaxUnavailablePerWorkload EvictionGate = "MaxUnavailablePerWorkload"
+	EvictionGateMaxMigratingPerWorkload   EvictionGate = "MaxMigratingPerWorkload"
+	EvictionGateMaxMigratingPerNode       EvictionGate = "MaxMigratingPerNode"
+	EvictionGateMaxMigratingPerNamespace  EvictionGate = "MaxMigratingPerNamespace"
+	EvictionGateMaxMigratingGlobally      EvictionGate = "MaxMigratingGlobally"
+
+	// Policy gates (evictability / scope / safety)
+	EvictionGateExpectedReplicas  EvictionGate = "ExpectedReplicas"
+	EvictionGatePVC               EvictionGate = "PVC"
+	EvictionGateBarePods          EvictionGate = "BarePods"
+	EvictionGateLocalStorage      EvictionGate = "LocalStorage"
+	EvictionGateSystemCritical    EvictionGate = "SystemCritical"
+	EvictionGatePriorityThreshold EvictionGate = "PriorityThreshold"
+	EvictionGateLabelSelector     EvictionGate = "LabelSelector"
+	EvictionGateNamespaces        EvictionGate = "Namespaces"
+	EvictionGateNodeFit           EvictionGate = "NodeFit"
+)
+
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // MigrationControllerArgs holds arguments used to configure the MigrationController
@@ -65,6 +89,25 @@ type MigrationControllerArgs struct {
 
 	// NodeSelector for a set of nodes to operate over
 	NodeSelector string
+
+	// SkipEvictionGates allows bypassing specific gates/filters/throttlers during the eviction phase.
+	// Valid values include (case-sensitive):
+	//   - MaxUnavailablePerWorkload
+	//   - MaxMigratingPerWorkload
+	//   - MaxMigratingPerNode
+	//   - MaxMigratingPerNamespace
+	//   - MaxMigratingGlobally
+	//   - ExpectedReplicas
+	//   - PVC
+	//   - BarePods
+	//   - LocalStorage
+	//   - SystemCritical
+	//   - PriorityThreshold
+	//   - LabelSelector
+	//   - Namespaces
+	//   - NodeFit
+	// Default is an empty list (no gates are bypassed).
+	SkipEvictionGates []EvictionGate
 
 	// MaxMigratingGlobally represents the maximum number of pods that can be migrating during migrate globally.
 	MaxMigratingGlobally *int32
