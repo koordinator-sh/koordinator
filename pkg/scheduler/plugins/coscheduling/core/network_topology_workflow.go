@@ -130,6 +130,7 @@ func (pgMgr *PodGroupManager) FindOneNode(ctx context.Context, cycleState *frame
 		JobTopologyRequirements: &JobTopologyRequirements{
 			TopologyLayerMustGather: GetMustGatherLayer(gangSchedulingContext.networkTopologySpec, gangSchedulingContext.networkTopologySnapshot.IsAncestor),
 			DesiredOfferSlot:        len(allPendingPods),
+			LayerPodCountMultiple:   GetLayerPodCountMultiple(gangSchedulingContext.networkTopologySpec),
 		},
 	}
 	defer func() {
@@ -199,6 +200,7 @@ func (ev *preemptionEvaluatorImpl) PlanNodes(
 		JobTopologyRequirements: &JobTopologyRequirements{
 			TopologyLayerMustGather: GetMustGatherLayer(networkTopologySpec, preemptionState.gangSchedulingContext.networkTopologySnapshot.IsAncestor),
 			DesiredOfferSlot:        len(allPendingPods),
+			LayerPodCountMultiple:   GetLayerPodCountMultiple(networkTopologySpec),
 		},
 	}
 	ctx = ContextWithTopologyState(ctx, topologyState)
