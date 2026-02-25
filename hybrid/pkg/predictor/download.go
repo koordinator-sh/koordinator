@@ -20,89 +20,49 @@ import (
 	"k8s.io/klog/v2"
 )
 
-type DownloadService struct {
-	serverURL        string
-	outputDir        string
-	outputFileName   string
-	downloadInterval time.Duration
-	stopCh           chan struct{}
-	httpClient       *http.Client
+type Service struct {
+	url       string
+	token     string
+	outputDir string
+	fileName  string
+	client    *http.Client
+	stopCh    chan struct{}
 }
 
-func NewDownloadService(url string, file string, interval time.Duration) *DownloadService {
-	if file == "" {
-		file = constants.DefaultPredictionFile
-	}
-	// 下载文件的周期大于控制器同步周期
-	if interval <= 0 {
-		interval = constants.DefaultSyncInterval / 2
-	} else {
-		interval = interval / 2
-	}
-
-	return &DownloadService{
-		serverURL:        url,
-		downloadInterval: interval,
-		outputDir:        constants.DefaultOutputDir,
-		outputFileName:   file,
-		stopCh:           make(chan struct{}),
-		httpClient: &http.Client{
+func NewService(url, token string) *Service {
+	return &Service{
+		url:       url,
+		token:     token,
+		outputDir: constants.DefaultOutputDir,
+		fileName:  constants.DefaultPredictionFile,
+		client: &http.Client{
 			Timeout: time.Second * 30,
 		},
+		stopCh: make(chan struct{}),
 	}
 }
 
-func (d *DownloadService) Start(ctx context.Context) error {
-	klog.Infof("Starting download service, server: %s, interval: %v, output: %s/%s",
-		d.serverURL, d.downloadInterval, d.outputDir, d.outputFileName)
-
+func (d *Service) DownloadNow(ctx context.Context) error {
 	if err := os.MkdirAll(d.outputDir, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
-
-	if err := d.download(ctx); err != nil {
-		klog.Errorf("Initial download failed: %v", err)
-	}
-
-	ticker := time.NewTicker(d.downloadInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			klog.Info("Context cancelled, stopping download service")
-			return nil
-		case <-d.stopCh:
-			klog.Info("Stop signal received, stopping download service")
-			return nil
-		case <-ticker.C:
-			klog.V(4).Info("Ticker triggered, starting download")
-			if err := d.download(ctx); err != nil {
-				klog.Errorf("Download failed: %v", err)
-			}
-		}
-	}
+	return d.download(ctx)
 }
 
-func (d *DownloadService) Stop() {
-	close(d.stopCh)
-}
-
-func (d *DownloadService) Clear() {
-	_ = os.RemoveAll(d.outputDir)
-}
-func (d *DownloadService) download(ctx context.Context) error {
+func (d *Service) download(ctx context.Context) error {
 	startTime := time.Now()
-	url := d.serverURL + constants.DownloadEndpoint
+	endpoint := d.url + constants.DownloadCSVEndpoint
 
-	klog.V(4).Infof("Downloading from: %s", url)
+	klog.V(4).Infof("Downloading from: %s", endpoint)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
+	req.Header.Set("accept", "application/json")
+	req.Header.Set("x-token", d.token)
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := d.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
@@ -112,7 +72,7 @@ func (d *DownloadService) download(ctx context.Context) error {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	outputPath := filepath.Join(d.outputDir, d.outputFileName)
+	outputPath := filepath.Join(d.outputDir, d.fileName)
 	tmpPath := outputPath + ".tmp"
 
 	tmpFile, err := os.Create(tmpPath)

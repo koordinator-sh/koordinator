@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 	"os/signal"
@@ -18,82 +19,115 @@ import (
 	config "hybrid/config/collector"
 	"hybrid/pkg/collector/exporter"
 	"hybrid/pkg/collector/prometheus"
+	"hybrid/pkg/collector/upload"
 )
 
 var (
-	configPath = flag.String("config", "", "Path to config file. If empty, uses default locations.")
+	configPath = flag.String("config", "", "Assign path for config file. If empty, uses default locations.")
 )
 
 func main() {
+
 	flag.Parse()
-	var cfg *config.Config
-	var err error
 
-	// load configuration
-	if *configPath != "" {
-		klog.Infof("Loading config from specified file: %s", *configPath)
-		cfg, err = config.LoadFromFile(*configPath)
-		if err != nil {
-			klog.Errorf("Failed to load config from file '%s': %v", *configPath, err)
-			return
-		}
-	} else {
-		klog.Infof("Loading config from default location (e.g. /etc/hybrid/config/collector.yaml)")
-		cfg, err = config.InitConfig()
-		if err != nil {
-			klog.Errorf("Failed to load config using default method: %v", err)
-			return
-		}
-	}
-
-	// validate configuration
-	if err := cfg.Validate(); err != nil {
-		klog.Errorf("Invalid configuration: %v", err)
+	server := os.Getenv("AI_SERVER")
+	token := os.Getenv("AI_TOKEN")
+	if server == "" || token == "" {
+		klog.Errorf("AI_SERVER or AI_TOKEN env variable not set")
 		return
 	}
 
-	klog.Infof("Loaded Config Successfully, prometheus URL: %s, export mode: %s, export interval: %s",
+	cfg, err := loadConfig()
+	if err != nil {
+		klog.Errorf("Failed to load configuration: %v", err)
+		return
+	}
+
+	cfg.Upload.URL = server
+	cfg.Upload.Token = token
+
+	// validate configuration
+	if err := cfg.Validate(); err != nil {
+		klog.Errorf("Failed to invalid configuration: %v", err)
+		return
+	}
+
+	klog.Infof("Successfully loaded configuration, prometheus: %s, mode: %s, interval: %s",
 		cfg.Prometheus.URL, cfg.Export.Mode, cfg.Export.Interval)
 
-	// create prometheus client
-	promClient := prometheus.NewClient(cfg.Prometheus)
+	// initialize prometheus client
+	promClient, err := prometheus.NewClient(cfg.Prometheus)
+	if err != nil {
+		klog.Errorf("Failed to create prometheus client: %v", err)
+		return
+	}
 
-	// export metrics to local file
+	// create export dir
 	if cfg.Export.Mode == config.ExportModeLocal {
-		klog.Infof("Output directory: %s", cfg.Export.LocalConfig.OutputDir)
 		if err := os.MkdirAll(cfg.Export.LocalConfig.OutputDir, 0755); err != nil {
 			klog.Errorf("Failed to create output directory: %v", err)
 			return
 		}
 	}
 
-	// create exporter
-	exp := exporter.NewExporter(promClient, cfg)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// setup signal handling
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	// notify channel (Export -> Upload)
+	uploadNotify := make(chan string, 10)
+	uploadService := upload.NewService(cfg.Upload.URL, cfg.Upload.Token)
+	uploadService.Start()
+	defer uploadService.Stop()
+
+	// start a goroutine notify upload service
+	go forwardNotifications(ctx, uploadNotify, uploadService)
+
+	// create exporter
+	exp := exporter.NewExporter(promClient, cfg, uploadNotify)
+
+	klog.Infof("Starting hybrid collector service...")
+	if err := exp.Export(); err != nil {
+		klog.Errorf("Failed to initial export: %v", err)
+	}
 
 	// setup periodic export
 	ticker := time.NewTicker(cfg.Export.Interval)
 	defer ticker.Stop()
 
-	klog.Infof("Starting initial export...")
-	if err := exp.Export(); err != nil {
-		klog.Errorf("Initial export failed: %v", err)
-	}
+	// setup signal handling
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	// export metrics periodically
 	for {
 		select {
 		case <-ticker.C:
-			klog.Infof("Starting scheduled export...")
+			klog.Infof("Starting hybrid collector service periodic export...")
 			if err := exp.Export(); err != nil {
-				klog.Errorf("Export failed: %v", err)
+				klog.Errorf("Failed to export metrics data: %v", err)
 			}
 		case <-sigChan:
 			klog.Infof("Received shutdown signal, exiting...")
 			return
 		}
 	}
+}
+
+// forwardNotifications forwards export notifications to upload service
+func forwardNotifications(ctx context.Context, exportNotify <-chan string, uploadService *upload.Service) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case path := <-exportNotify:
+			uploadService.NotifyDataReady(path)
+		}
+	}
+}
+
+func loadConfig() (*config.Config, error) {
+	if *configPath != "" {
+		return config.LoadFromFile(*configPath)
+	}
+	return config.InitConfig()
 }

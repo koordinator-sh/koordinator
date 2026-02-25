@@ -3,6 +3,10 @@
 prometheus:
   url: "http://localhost:9090"   # Prometheus/VM 服务器地址
   timeout: 30s                   # 请求超时时间
+  auth:
+    type: basic
+    username: "admin"
+    password: "password"
 
 # Local export config example
 # export:
@@ -22,7 +26,7 @@ prometheus:
 export:
   mode: "local" # 当前仅仅支持 local 模式
   localConfig:
-    outputDir: "./hybrid-collector-output"   # 输出目录
+    outputDir: "./hybrid-output"             # 输出目录
     format: "timestamp"                      # 文件名格式: "timestamp" or "daily"
   interval: 2h                               # 数据导出间隔(支持: s, m, h)
 
@@ -33,38 +37,17 @@ queries:
     query: 'container_cpu_usage_seconds_total{__name__!=""}'
     range: "24h"                  # 查询时间范围
     step: "3m"                    # 数据点间隔
-    labels: # 要保留的数据标签
-      - "namespace"
-      - "pod"
-      - "instance"
-      - "job"
-    sheetName: "cpu_usage"
-    valueColumn: "cpu_usage"
 
   # 内存指标
   - name: "memory_usage"
     query: 'container_memory_usage_bytes{__name__!=""}'
     range: "24h"
     step: "3m"
-    labels:
-      - "namespace"
-      - "pod"
-      - "instance"
-      - "job"
-    sheetName: "memory_usage"
-    valueColumn: "memory_usage"
 
   - name: "memory_limit"
     query: 'container_spec_memory_limit_bytes{__name__!=""}'
     range: "24h"
     step: "3m"
-    labels:
-      - "namespace"
-      - "pod"
-      - "instance"
-      - "job"
-    sheetName: "memory_limit"
-    valueColumn: "memory_limit"
 
 
   # IO 指标
@@ -72,47 +55,19 @@ queries:
     query: 'container_fs_reads_bytes_total{__name__!=""}'
     range: "24h"
     step: "3m"
-    labels:
-      - "namespace"
-      - "pod"
-      - "instance"
-      - "job"
-    sheetName: "fs_reads"
-    valueColumn: "fs_reads"
 
   - name: "fs_writes"
     query: 'container_fs_writes_bytes_total{__name__!=""}'
     range: "24h"
     step: "3m"
-    labels:
-      - "namespace"
-      - "pod"
-      - "instance"
-      - "job"
-    sheetName: "fs_writes"
-    valueColumn: "fs_writes"
 
   # 网络指标
   - name: "network_receive"
     query: 'container_network_receive_bytes_total{__name__!=""}'
     range: "24h"
     step: "3m"
-    labels:
-      - "namespace"
-      - "pod"
-      - "instance"
-      - "job"
-    sheetName: "network_receive"
-    valueColumn: "network_receive"
 
   - name: "network_transmit"
     query: 'container_network_transmit_bytes_total{__name__!=""}'
     range: "24h"
     step: "3m"
-    labels:
-      - "namespace"
-      - "pod"
-      - "instance"
-      - "job"
-    sheetName: "network_transmit"
-    valueColumn: "network_transmit"

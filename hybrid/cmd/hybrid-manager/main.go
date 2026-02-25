@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,9 +29,7 @@ import (
 
 var (
 	kubeconfig string
-	file       string
 	interval   time.Duration
-	server     string
 )
 
 func init() {
@@ -39,8 +38,6 @@ func init() {
 	} else {
 		flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
 	}
-	flag.StringVar(&file, "file", "prediction-result.csv", "name of the prediction result csv file")
-	flag.StringVar(&server, "server", "", "address of ai model service")
 	flag.DurationVar(&interval, "interval", 5*time.Minute, "interval for syncing predictions to workload annotations")
 
 	klog.InitFlags(nil)
@@ -49,6 +46,14 @@ func init() {
 func main() {
 
 	flag.Parse()
+
+	// read server and token from env variable
+	server := os.Getenv("AI_SERVER")
+	token := os.Getenv("AI_TOKEN")
+	if server == "" || token == "" {
+		klog.Errorf("AI_SERVER or AI_TOKEN env variable not set")
+		return
+	}
 
 	config, err := buildConfig()
 	if err != nil {
@@ -64,47 +69,30 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	// Start services
+	var wg sync.WaitGroup
+	downloadService := predictor.NewService(server, token)
 
-	var downloadService *predictor.DownloadService
-	if server != "" {
-		// start download service
-		downloadService = predictor.NewDownloadService(server, file, interval)
-		go func() {
-			if err := downloadService.Start(ctx); err != nil {
-				klog.Errorf("Start download service error: %v", err)
-				cancel()
-			}
-		}()
-	}
-
-	// start controller
-	classifyCtr := controller.NewClassifyController(clientset, file, interval)
+	wg.Add(1)
 	go func() {
-		if err := classifyCtr.Start(ctx); err != nil {
-			klog.Errorf("Start controller error: %v", err)
-			cancel()
+		defer wg.Done()
+		ctr := controller.NewClassifyController(clientset, interval, downloadService)
+		if err := ctr.Start(ctx); err != nil {
+			klog.Errorf("Failed to start classify controller, error: %v", err)
 		}
 	}()
 
-	klog.Info("Hybrid Predictor Manager started successfully")
+	klog.Info("Successfully start hybrid manager")
 
-	sig := <-sigCh
-	klog.Infof("Received signal: %v, shutting down...", sig)
+	// wait for signal
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
 
-	// stop controller
-	if clientset != nil {
-		classifyCtr.Stop()
-	}
-	// stop download service
-	if downloadService != nil {
-		downloadService.Stop()
-	}
+	klog.Info("Shutting down...")
 	cancel()
-
-	time.Sleep(2 * time.Second)
-	klog.Info("Hybrid Predictor Manager stopped")
+	wg.Wait()
+	klog.Info("Hybrid manager stopped")
 }
 
 func buildConfig() (*rest.Config, error) {

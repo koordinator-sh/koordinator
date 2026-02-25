@@ -28,15 +28,28 @@ const (
 
 // Config Collector config
 type Config struct {
+	Upload     UploadConfig     `yaml:"upload"`
 	Prometheus PrometheusConfig `yaml:"prometheus"`
 	Export     ExportConfig     `yaml:"export"`
 	Queries    []QueryConfig    `yaml:"queries"`
+}
+type UploadConfig struct {
+	URL   string `yaml:"url"`
+	Token string `yaml:"token"`
 }
 
 // PrometheusConfig Prometheus config
 type PrometheusConfig struct {
 	URL     string        `yaml:"url"`
+	Auth    AuthConfig    `yaml:"auth"`
 	Timeout time.Duration `yaml:"timeout"`
+}
+
+type AuthConfig struct {
+	Type     string `yaml:"type"`     // "basic", "bearer", "none"
+	Username string `yaml:"username"` // Basic Auth username
+	Password string `yaml:"password"` // Basic Auth password
+	Token    string `yaml:"token"`    // Bearer Token
 }
 
 // ExportConfig export config
@@ -52,7 +65,8 @@ type LocalConfig struct {
 	// OutputDir directory to store exported files
 	OutputDir string `yaml:"outputDir"`
 	// Format export format, supported: "timestamp" or "daily"
-	Format string `yaml:"format"`
+	Format         string `yaml:"format"`
+	RetentionHours int64  `yaml:"retentionHours"`
 }
 
 type WebSocketConfig struct {
@@ -152,7 +166,7 @@ func setDefaultConfig(cfg *Config) {
 			cfg.Queries[i].Range = "1h"
 		}
 		if cfg.Queries[i].Step == "" {
-			cfg.Queries[i].Step = "1m"
+			cfg.Queries[i].Step = "3m"
 		}
 		if cfg.Queries[i].SheetName == "" {
 			cfg.Queries[i].SheetName = cfg.Queries[i].Name
