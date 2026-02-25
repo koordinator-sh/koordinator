@@ -45,8 +45,9 @@ type NetworkTopologySpec struct {
 }
 
 type NetworkTopologyGatherRule struct {
-	Layer    schedulingv1alpha1.TopologyLayer `json:"layer"`
-	Strategy NetworkTopologyGatherStrategy    `json:"strategy"`
+	Layer            schedulingv1alpha1.TopologyLayer `json:"layer"`
+	Strategy         NetworkTopologyGatherStrategy    `json:"strategy"`
+	PodCountMultiple int                              `json:"podCountMultiple,omitempty"`
 }
 
 type NetworkTopologyGatherStrategy string
