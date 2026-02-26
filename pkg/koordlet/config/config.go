@@ -96,6 +96,8 @@ func (c *Configuration) InitKubeConfigForKoordlet(kubeAPIQPS float64, kubeAPIBur
 	cfg.UserAgent = "koordlet"
 	cfg.QPS = float32(kubeAPIQPS)
 	cfg.Burst = kubeAPIBurst
+	cfg.ContentType = "application/vnd.kubernetes.protobuf"
+	cfg.AcceptContentTypes = "application/vnd.kubernetes.protobuf,application/json"
 	c.KubeRestConf = cfg
 	return nil
 }
