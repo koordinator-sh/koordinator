@@ -2953,7 +2953,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 			cycleState.Write(stateKey, tt.stateData)
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node.DeepCopy())
-			got := pl.filterWithPreAllocatablePods(context.TODO(), cycleState, tt.stateData.rInfo, nodeInfo, tt.stateData.nodeReservationStates[node.Name].preAllocatablePods, tt.stateData.isPreAllocationRequired)
+			_, got := pl.filterWithPreAllocatablePods(context.TODO(), cycleState, tt.stateData.rInfo, nodeInfo, tt.stateData.nodeReservationStates[node.Name].preAllocatablePods, tt.stateData.isPreAllocationRequired)
 			assert.Equal(t, tt.wantStatus, got)
 		})
 	}
@@ -3835,6 +3835,13 @@ func TestReservationNominate(t *testing.T) {
 			},
 		},
 	}
+	cloneReservation := func(r *schedulingv1alpha1.Reservation, updateFn func(r *schedulingv1alpha1.Reservation)) *schedulingv1alpha1.Reservation {
+		clonedReservation := r.DeepCopy()
+		if updateFn != nil {
+			updateFn(clonedReservation)
+		}
+		return clonedReservation
+	}
 
 	tests := []struct {
 		name                    string
@@ -3845,6 +3852,10 @@ func TestReservationNominate(t *testing.T) {
 		hasAffinity             bool
 		nodeReservationStates   map[string]*nodeReservationState
 		wantStatus              *framework.Status
+		// setupPlugin setups plugin before calling ReservationNominate
+		setupPlugin func(pl *Plugin)
+		// checkNominatedCache validates nominated cache after calling ReservationNominate
+		checkNominatedCache func(t *testing.T, pl *Plugin, rInfo *frameworkext.ReservationInfo, nodeName string)
 	}{
 		{
 			name: "normal pod with reservation",
@@ -3897,6 +3908,106 @@ func TestReservationNominate(t *testing.T) {
 				reservation2C4G,
 			},
 			wantStatus: nil,
+		},
+		{
+			name: "reserve pod with pre-allocation single pod mode",
+			pod: func() *corev1.Pod {
+				testReservation := cloneReservation(reservation2C4G, func(r *schedulingv1alpha1.Reservation) {
+					r.Spec.PreAllocation = true
+				})
+				return reservationutil.NewReservePod(testReservation)
+			}(),
+			reservations: []*schedulingv1alpha1.Reservation{
+				func() *schedulingv1alpha1.Reservation {
+					return cloneReservation(reservation2C4G, func(r *schedulingv1alpha1.Reservation) {
+						r.Spec.PreAllocation = true
+					})
+				}(),
+			},
+			setupPlugin: func(pl *Plugin) {
+				pl.nominator.nominatedPreAllocatable = map[types.UID]map[string][]*corev1.Pod{
+					reservation2C4G.UID: {
+						"test-node": {
+							{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: "default",
+									Name:      "pre-allocatable-pod-1",
+									UID:       "pre-allocatable-pod-1-uid",
+								},
+							},
+						},
+					},
+				}
+			},
+			nodeReservationStates: map[string]*nodeReservationState{
+				"test-node": {
+					nodeName: "test-node",
+				},
+			},
+			wantStatus: nil,
+			checkNominatedCache: func(t *testing.T, pl *Plugin, rInfo *frameworkext.ReservationInfo, nodeName string) {
+				// Single pod mode: should use GetNominatedPreAllocation
+				assert.False(t, rInfo.IsMultiplePAPodsEnabled(), "IsMultiplePAPodsEnabled should be false")
+				nominatedPod := pl.GetNominatedPreAllocation(rInfo, nodeName)
+				assert.NotNil(t, nominatedPod, "GetNominatedPreAllocation should return a pod")
+			},
+		},
+		{
+			name: "reserve pod with pre-allocation multiple pods mode",
+			pod: func() *corev1.Pod {
+				testReservation := cloneReservation(reservation2C4G, func(r *schedulingv1alpha1.Reservation) {
+					r.Spec.PreAllocation = true
+					r.Spec.PreAllocationPolicy = &schedulingv1alpha1.PreAllocationPolicy{
+						EnableMultiple: true,
+					}
+				})
+				return reservationutil.NewReservePod(testReservation)
+			}(),
+			reservations: []*schedulingv1alpha1.Reservation{
+				func() *schedulingv1alpha1.Reservation {
+					return cloneReservation(reservation2C4G, func(r *schedulingv1alpha1.Reservation) {
+						r.Spec.PreAllocation = true
+						r.Spec.PreAllocationPolicy = &schedulingv1alpha1.PreAllocationPolicy{
+							EnableMultiple: true,
+						}
+					})
+				}(),
+			},
+			nodeReservationStates: map[string]*nodeReservationState{
+				"test-node": {
+					nodeName: "test-node",
+				},
+			},
+			setupPlugin: func(pl *Plugin) {
+				pl.nominator.nominatedPreAllocatable = map[types.UID]map[string][]*corev1.Pod{
+					reservation2C4G.UID: {
+						"test-node": {
+							{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: "default",
+									Name:      "pre-allocatable-pod-1",
+									UID:       "pre-allocatable-pod-1-uid",
+								},
+							},
+							{
+								ObjectMeta: metav1.ObjectMeta{
+									Namespace: "default",
+									Name:      "pre-allocatable-pod-2",
+									UID:       "pre-allocatable-pod-2-uid",
+								},
+							},
+						},
+					},
+				}
+			},
+			wantStatus: nil,
+			checkNominatedCache: func(t *testing.T, pl *Plugin, rInfo *frameworkext.ReservationInfo, nodeName string) {
+				// Multiple pods mode: should use GetNominatedPreAllocations
+				assert.True(t, rInfo.IsMultiplePAPodsEnabled(), "IsMultiplePAPodsEnabled should be true")
+				nominatedPods := pl.GetNominatedPreAllocations(rInfo, nodeName)
+				assert.NotNil(t, nominatedPods, "GetNominatedPreAllocations should return pods")
+				assert.Len(t, nominatedPods, 2, "GetNominatedPreAllocations should return 2 pods")
+			},
 		},
 	}
 
@@ -3956,8 +4067,17 @@ func TestReservationNominate(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
 
+			if tt.setupPlugin != nil {
+				tt.setupPlugin(pl)
+			}
+
 			status := pl.ReservationNominate(context.TODO(), cycleState, tt.pod, "test-node")
 			assert.Equal(t, tt.wantStatus, status)
+
+			// Additional checks for nominated cache
+			if tt.checkNominatedCache != nil && state.rInfo != nil {
+				tt.checkNominatedCache(t, pl, state.rInfo, "test-node")
+			}
 		})
 	}
 }
