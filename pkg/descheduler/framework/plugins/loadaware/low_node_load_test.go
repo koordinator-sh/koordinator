@@ -1430,6 +1430,7 @@ func TestLowNodeLoad(t *testing.T) {
 										UseDeviationThresholds: tt.useDeviationThresholds,
 										AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 											ConsecutiveAbnormalities: 1,
+											ConsecutiveNormalities:   1,
 										},
 									},
 								},
@@ -1595,6 +1596,7 @@ func TestMaxEvictionTotal(t *testing.T) {
 										UseDeviationThresholds: tt.useDeviationThresholds,
 										AnomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 											ConsecutiveAbnormalities: 1,
+											ConsecutiveNormalities:   1,
 										},
 									},
 								},
@@ -1933,6 +1935,7 @@ func Test_filterRealAbnormalNodes(t *testing.T) {
 			sourceNodes: []string{"test-node-1", "test-node-2"},
 			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 				ConsecutiveAbnormalities: 1,
+				ConsecutiveNormalities:   1,
 			},
 			want: []string{"test-node-1", "test-node-2"},
 		},
@@ -1941,6 +1944,7 @@ func Test_filterRealAbnormalNodes(t *testing.T) {
 			sourceNodes: []string{"test-node-1", "test-node-2"},
 			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 				ConsecutiveAbnormalities: 2,
+				ConsecutiveNormalities:   1,
 			},
 			want: nil,
 		},
@@ -1949,6 +1953,7 @@ func Test_filterRealAbnormalNodes(t *testing.T) {
 			sourceNodes: []string{"test-node-1", "test-node-2"},
 			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 				ConsecutiveAbnormalities: 2,
+				ConsecutiveNormalities:   1,
 			},
 			detectCounts: 2,
 			want:         []string{"test-node-1", "test-node-2"},
@@ -1959,6 +1964,7 @@ func Test_filterRealAbnormalNodes(t *testing.T) {
 			abnormalNodes: []string{"test-node-2"},
 			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 				ConsecutiveAbnormalities: 2,
+				ConsecutiveNormalities:   1,
 			},
 			want: []string{"test-node-2"},
 		},
