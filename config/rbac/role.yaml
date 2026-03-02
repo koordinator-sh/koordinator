@@ -5,45 +5,11 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - admissionregistration.k8s.io
-  resources:
-  - mutatingwebhookconfigurations
-  verbs:
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - admissionregistration.k8s.io
-  resources:
-  - validatingwebhookconfigurations
-  verbs:
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - config.koordinator.sh
-  resources:
-  - clustercolocationprofiles
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
   - ""
   resources:
   - configmaps
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - namespaces
+  - pods
   verbs:
   - get
   - list
@@ -68,14 +34,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - secrets
   verbs:
   - create
@@ -84,6 +42,25 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - config.koordinator.sh
+  resources:
+  - clustercolocationprofiles
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - quota.koordinator.sh
@@ -125,6 +102,7 @@ rules:
   - scheduling.koordinator.sh
   resources:
   - podmigrationjobs
+  - reservations
   verbs:
   - create
   - delete
@@ -142,18 +120,6 @@ rules:
   - patch
   - update
 - apiGroups:
-  - scheduling.koordinator.sh
-  resources:
-  - reservations
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - scheduling.sigs.k8s.io
   resources:
   - elasticquotas
@@ -169,25 +135,6 @@ rules:
   - slo.koordinator.sh
   resources:
   - nodemetrics
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - slo.koordinator.sh
-  resources:
-  - nodemetrics/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - slo.koordinator.sh
-  resources:
   - nodeslos
   verbs:
   - create
@@ -200,6 +147,7 @@ rules:
 - apiGroups:
   - slo.koordinator.sh
   resources:
+  - nodemetrics/status
   - nodeslos/status
   verbs:
   - get
