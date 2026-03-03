@@ -18,6 +18,7 @@ package cpuevict
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"testing"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/component-base/featuregate"
 	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 	critesting "k8s.io/cri-api/pkg/apis/testing"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -56,9 +58,10 @@ import (
 func Test_cpuEvict_Enabled(t *testing.T) {
 	c := cpuEvictor{}
 	type args struct {
-		BECPUEvictEnabled bool
-		CPUEvictEnabled   bool
-		evictInterval     time.Duration
+		BECPUEvictEnabled          bool
+		CPUEvictEnabled            bool
+		CPUAllocatableEvictEnabled bool
+		evictInterval              time.Duration
 	}
 	tests := []struct {
 		name   string
@@ -66,29 +69,42 @@ func Test_cpuEvict_Enabled(t *testing.T) {
 		expect bool
 	}{
 		{
-			name: "BECPUEvictEnabled/CPUEvictEnabled=false",
+			name: "BECPUEvictEnabled/CPUEvictEnabled/CPUAllocatableEvictEnabled=false",
 			args: args{
-				BECPUEvictEnabled: false,
-				CPUEvictEnabled:   false,
-				evictInterval:     10 * time.Second,
+				BECPUEvictEnabled:          false,
+				CPUEvictEnabled:            false,
+				CPUAllocatableEvictEnabled: false,
+				evictInterval:              10 * time.Second,
 			},
 			expect: false,
 		},
 		{
 			name: "CPUEvictEnabled=true",
 			args: args{
-				BECPUEvictEnabled: false,
-				CPUEvictEnabled:   true,
-				evictInterval:     10 * time.Second,
+				BECPUEvictEnabled:          false,
+				CPUEvictEnabled:            true,
+				CPUAllocatableEvictEnabled: false,
+				evictInterval:              10 * time.Second,
 			},
 			expect: true,
 		},
 		{
 			name: "BECPUEvictEnabled=true",
 			args: args{
-				BECPUEvictEnabled: true,
-				CPUEvictEnabled:   false,
-				evictInterval:     10 * time.Second,
+				BECPUEvictEnabled:          true,
+				CPUEvictEnabled:            false,
+				CPUAllocatableEvictEnabled: false,
+				evictInterval:              10 * time.Second,
+			},
+			expect: true,
+		},
+		{
+			name: "CPUAllocatableEvictEnabled=true",
+			args: args{
+				BECPUEvictEnabled:          false,
+				CPUEvictEnabled:            false,
+				CPUAllocatableEvictEnabled: true,
+				evictInterval:              10 * time.Second,
 			},
 			expect: true,
 		},
@@ -107,13 +123,14 @@ func Test_cpuEvict_Enabled(t *testing.T) {
 			c.evictInterval = tt.args.evictInterval
 			defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.BECPUEvict, tt.args.BECPUEvictEnabled)()
 			defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.CPUEvict, tt.args.CPUEvictEnabled)()
+			defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.CPUAllocatableEvict, tt.args.CPUAllocatableEvictEnabled)()
 			assert.Equal(t, tt.expect, c.Enabled())
 		})
 	}
 
 }
 
-func Test_CPUEvict_calculateMilliReleaseBySatisfaction(t *testing.T) {
+func Test_CPUEvict_calculateMilliReleaseByBESatisfaction(t *testing.T) {
 	testNode := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-node",
@@ -474,8 +491,13 @@ func Test_CPUEvict_calculateMilliReleaseBySatisfaction(t *testing.T) {
 				metricCache:           mockMetricCache,
 				metricCollectInterval: time.Duration(collectResUsedIntervalSeconds) * time.Second,
 			}
-			gotRelease := c.calculateMilliReleaseBySatisfaction(tt.thresholdConfig, 0)
-			assert.Equal(t, tt.expectRelease, gotRelease, "checkRelease")
+			gotRelease, _ := c.calculateMilliReleaseByBESatisfaction(tt.thresholdConfig, tt.currentNode, nil)
+			if len(gotRelease) == 0 {
+				assert.Equal(t, tt.expectRelease, int64(0), "checkRelease")
+			} else {
+				q, _ := gotRelease[apiext.BatchCPU]
+				assert.Equal(t, tt.expectRelease, q.MilliValue(), "checkRelease")
+			}
 		})
 	}
 }
@@ -511,9 +533,9 @@ func Test_getBEPodEvictInfoAndSort(t *testing.T) {
 			pods: []*corev1.Pod{
 				mockNonBEPodForCPUEvict("pod_lsr", apiext.QoSLSR, 16*1000),
 				mockNonBEPodForCPUEvict("pod_ls", apiext.QoSLS, 16*1000),
-				mockBEPodForCPUEvict("pod_be_1_priority100", 16*1000, 100),
-				mockBEPodForCPUEvict("pod_be_2_priority100", 16*1000, 100),
-				mockBEPodForCPUEvict("pod_be_3_priority10", 16*1000, 10),
+				mockBEPodForCPUEvict("pod_be_1_priority100", 16*1000, 100, corev1.PodRunning),
+				mockBEPodForCPUEvict("pod_be_2_priority100", 16*1000, 100, corev1.PodRunning),
+				mockBEPodForCPUEvict("pod_be_3_priority10", 16*1000, 10, corev1.PodRunning),
 			},
 			beMetric: BECPUResourceMetric{
 				CPUUsed:    *resource.NewMilliQuantity(11*1000, resource.DecimalSI),
@@ -521,19 +543,19 @@ func Test_getBEPodEvictInfoAndSort(t *testing.T) {
 			},
 			expect: []*podEvictCPUInfo{
 				{
-					pod:            mockBEPodForCPUEvict("pod_be_3_priority10", 16*1000, 10),
+					pod:            mockBEPodForCPUEvict("pod_be_3_priority10", 16*1000, 10, corev1.PodRunning),
 					milliRequest:   16 * 1000,
 					milliUsedCores: 4 * 1000,
 					cpuUsage:       float64(4*1000) / float64(16*1000),
 				},
 				{
-					pod:            mockBEPodForCPUEvict("pod_be_2_priority100", 16*1000, 100),
+					pod:            mockBEPodForCPUEvict("pod_be_2_priority100", 16*1000, 100, corev1.PodRunning),
 					milliRequest:   16 * 1000,
 					milliUsedCores: 4 * 1000,
 					cpuUsage:       float64(4*1000) / float64(16*1000),
 				},
 				{
-					pod:            mockBEPodForCPUEvict("pod_be_1_priority100", 16*1000, 100),
+					pod:            mockBEPodForCPUEvict("pod_be_1_priority100", 16*1000, 100, corev1.PodRunning),
 					milliRequest:   16 * 1000,
 					milliUsedCores: 3 * 1000,
 					cpuUsage:       float64(3*1000) / float64(16*1000),
@@ -569,7 +591,7 @@ func Test_getBEPodEvictInfoAndSort(t *testing.T) {
 			}
 			c := New(opt)
 			cpuEvictor := c.(*cpuEvictor)
-			got := cpuEvictor.getBEPodEvictInfoAndSort(nil)
+			got := cpuEvictor.getBEPodEvictInfoAndSort(string(features.BECPUEvict), nil, cpuEvictor.statesInformer.GetAllPods())
 			assert.Equal(t, len(tt.expect), len(got), "checkLen")
 			for i, expectPodInfo := range tt.expect {
 				gotPodInfo := got[i]
@@ -697,7 +719,118 @@ func Test_isUsedThresholdConfigValid(t *testing.T) {
 	}
 }
 
-func mockBEPodForCPUEvict(name string, request int64, priority int32) *corev1.Pod {
+func Test_isAllocatableThresholdConfigValid(t *testing.T) {
+	tests := []struct {
+		name            string
+		thresholdConfig *slov1alpha1.ResourceThresholdStrategy
+		expectErr       error
+	}{
+		{
+			name:            "ResourceThresholdStrategy nil",
+			thresholdConfig: nil,
+			expectErr:       fmt.Errorf("ResourceThresholdStrategy not config"),
+		},
+		{
+			name: "CPUAllocatableEvictThresholdPercent nil",
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				CPUAllocatableEvictThresholdPercent: nil,
+			},
+			expectErr: fmt.Errorf("CPUAllocatableEvictThresholdPercent not config"),
+		},
+		{
+			name: "CPUAllocatableEvictThresholdPercent < 0",
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](-1),
+			},
+			expectErr: fmt.Errorf("threshold percent(-1) should equal or greater than 0"),
+		},
+		{
+			name: "CPUAllocatableEvictLowerPercent == nil",
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     nil,
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectErr: nil,
+		},
+		{
+			name: "CPUAllocatableEvictLowerPercent > CPUAllocatableEvictThresholdPercent",
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](90),
+				AllocatableEvictPriorityThreshold:   nil,
+			},
+			expectErr: fmt.Errorf("lower percent(90) should less than threshold percent(80)"),
+		},
+		{
+			name: "CPUAllocatableEvictLowerPercent == CPUAllocatableEvictThresholdPercent",
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](80),
+				AllocatableEvictPriorityThreshold:   nil,
+			},
+			expectErr: fmt.Errorf("lower percent(80) should less than threshold percent(80)"),
+		},
+		{
+			name: "AllocatableEvictPriorityThreshold nil",
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   nil,
+			},
+			expectErr: fmt.Errorf("AllocatableEvictPriorityThreshold not config"),
+		},
+		{
+			name: "invalid config higher than PriorityMidValueMax",
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](90),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](0),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityProdValueMax),
+			},
+			expectErr: fmt.Errorf("priorityThresholdPercent(9999) should less than 7999, koor-prod pods should not be killed"),
+		},
+		{
+			name: "AllocatableEvictPriorityThreshold == PriorityMidValueDefault",
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityMidValueDefault),
+			},
+			expectErr: nil,
+		},
+		{
+			name: "valid config with batch priority",
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](85),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](75),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityMidValueMax),
+			},
+			expectErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := isAllocatableThresholdConfigValid(tt.thresholdConfig)
+			assert.Equal(t, tt.expectErr, err)
+		})
+	}
+}
+
+func mockBEPodForCPUEvictWithAnnotationsLabels(name string, request int64, priority int32, annotations, labels map[string]string, phase corev1.PodPhase) *corev1.Pod {
+	pod := mockBEPodForCPUEvict(name, request, priority, phase)
+	if pod.Labels != nil {
+		for k, v := range labels {
+			pod.Labels[k] = v
+		}
+	}
+	if pod.Annotations != nil {
+		for k, v := range annotations {
+			pod.Annotations[k] = v
+		}
+	}
+	return pod
+}
+func mockBEPodForCPUEvict(name string, request int64, priority int32, phase corev1.PodPhase) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "test-ns",
@@ -724,6 +857,7 @@ func mockBEPodForCPUEvict(name string, request int64, priority int32) *corev1.Po
 			Priority: &priority,
 		},
 		Status: corev1.PodStatus{
+			Phase: phase,
 			ContainerStatuses: []corev1.ContainerStatus{
 				{
 					Name:        fmt.Sprintf("%s_%s", name, "main"),
@@ -737,6 +871,47 @@ func mockBEPodForCPUEvict(name string, request int64, priority int32) *corev1.Po
 	}
 }
 
+func mockPodForCPUEvictWithPriorityAnnotationsLabels(name string, qosClass apiext.QoSClass, priority int32, request, limits corev1.ResourceList, annotations, labels map[string]string, phase corev1.PodPhase) *corev1.Pod {
+	pod := mockPodForCPUEvictWithPriority(name, qosClass, priority, request, limits, phase)
+	if pod.Labels != nil {
+		for k, v := range labels {
+			pod.Labels[k] = v
+		}
+	}
+	if pod.Annotations != nil {
+		for k, v := range annotations {
+			pod.Annotations[k] = v
+		}
+	}
+	return pod
+}
+func mockPodForCPUEvictWithPriority(name string, qosClass apiext.QoSClass, priority int32, request, limits corev1.ResourceList, phase corev1.PodPhase) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test-ns",
+			Name:      name,
+			UID:       types.UID(name),
+			Labels: map[string]string{
+				apiext.LabelPodQoS: string(qosClass),
+			},
+		},
+		Spec: corev1.PodSpec{
+			Priority: ptr.To[int32](priority),
+			Containers: []corev1.Container{
+				{
+					Name: fmt.Sprintf("%s_%s", name, "main"),
+					Resources: corev1.ResourceRequirements{
+						Limits:   limits,
+						Requests: request,
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: phase,
+		},
+	}
+}
 func mockNonBEPodForCPUEvict(name string, qosClass apiext.QoSClass, request int64) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -756,7 +931,7 @@ func mockNonBEPodForCPUEvict(name string, qosClass apiext.QoSClass, request int6
 							corev1.ResourceCPU: *resource.NewMilliQuantity(request, resource.DecimalSI),
 						},
 						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewQuantity(request, resource.DecimalSI),
+							corev1.ResourceCPU: *resource.NewMilliQuantity(request, resource.DecimalSI),
 						},
 					},
 				},
@@ -868,9 +1043,269 @@ func Test_calculateReleaseByUsedThresholdPercent(t *testing.T) {
 			CPUEvictor := c.(*cpuEvictor)
 			CPUEvictor.Setup(&framework.Context{Evictor: evictor, OnlyEvictByAPI: true})
 			CPUEvictor.lastEvictTime = time.Now().Add(-30 * time.Second)
-			nodeMilliCPUCapacity := tt.node.Status.Capacity.Cpu().MilliValue()
-			res := CPUEvictor.calculateMilliReleaseByUsedThresholdPercent(tt.thresholdConfig, nodeMilliCPUCapacity)
-			assert.Equal(t, tt.expectRelease, res)
+			res, _ := CPUEvictor.calculateMilliReleaseByUsedThresholdPercent(tt.thresholdConfig, tt.node, nil)
+			if len(res) == 0 {
+				assert.Equal(t, tt.expectRelease, int64(0), "checkRelease")
+			} else {
+				q, _ := res[corev1.ResourceCPU]
+				assert.Equal(t, tt.expectRelease, q.MilliValue(), "checkRelease")
+			}
+		})
+	}
+}
+
+func Test_calculateMilliReleaseByAllocatableThresholdPercent(t *testing.T) {
+	tests := []struct {
+		name                   string
+		node                   *corev1.Node
+		pods                   []*corev1.Pod
+		thresholdConfig        *slov1alpha1.ResourceThresholdStrategy
+		expectRelease          corev1.ResourceList
+		expectReleaseResources []corev1.ResourceName
+		expectPodResourceList  map[string]corev1.ResourceList
+	}{
+		{
+			name: "allocatable threshold not exceeded",
+			node: testutil.MockTestNodeWithExtendResource("100", "120G", corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100, resource.DecimalSI),
+			}, corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100, resource.DecimalSI),
+			}),
+			pods: []*corev1.Pod{
+				mockBEPodForCPUEvict("batch-pod-1", 2*000, 100, corev1.PodRunning),
+				mockBEPodForCPUEvict("batch-pod-2", 3*000, 100, corev1.PodRunning),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                              ptr.To[bool](true),
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease:          corev1.ResourceList{},
+			expectReleaseResources: []corev1.ResourceName{},
+			// no resource need to release
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": nil,
+				"batch-pod-2": nil,
+			},
+		},
+		{
+			name: "allocatable threshold exceeded - batch cpu",
+			node: testutil.MockTestNodeWithExtendResource("100", "120G", corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+			}, corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+			}),
+			pods: []*corev1.Pod{
+				mockBEPodForCPUEvict("batch-pod-1", 45000, 5000, corev1.PodRunning),
+				mockBEPodForCPUEvict("batch-pod-2", 40000, 5000, corev1.PodRunning),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                              ptr.To[bool](true),
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(15000, resource.DecimalSI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchCPU},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchCPU: *resource.NewQuantity(45000, resource.DecimalSI),
+				},
+				"batch-pod-2": {
+					apiext.BatchCPU: *resource.NewQuantity(40000, resource.DecimalSI)},
+			},
+		},
+		{
+			name: "allocatable threshold exceeded - mixed priority",
+			node: testutil.MockTestNodeWithExtendResource("100", "120G", corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewQuantity(100000, resource.DecimalSI),
+			}, corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewQuantity(100000, resource.DecimalSI),
+			}),
+			pods: []*corev1.Pod{
+				mockBEPodForCPUEvict("batch-pod-1", 85000, 5000, corev1.PodRunning),
+				mockPodForCPUEvictWithPriority("mid-pod-1", apiext.QoSLS, 7000, corev1.ResourceList{
+					corev1.ResourceCPU: *resource.NewMilliQuantity(85000, resource.DecimalSI),
+					apiext.MidCPU:      *resource.NewQuantity(85000, resource.DecimalSI),
+				}, corev1.ResourceList{
+					corev1.ResourceCPU: *resource.NewMilliQuantity(85000, resource.DecimalSI),
+					apiext.MidCPU:      *resource.NewQuantity(85000, resource.DecimalSI),
+				}, corev1.PodRunning),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                              ptr.To[bool](true),
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityMidValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(15000, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewQuantity(15000, resource.DecimalSI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchCPU, apiext.MidCPU},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchCPU: *resource.NewQuantity(85000, resource.DecimalSI),
+				},
+				"mid-pod-1": {
+					apiext.MidCPU: *resource.NewQuantity(85000, resource.DecimalSI),
+				},
+			},
+		},
+		{
+			name: "allocatable threshold exceeded - mixed priority, lower AllocatableEvictPriorityThreshold",
+			node: testutil.MockTestNodeWithExtendResource("100", "120G", corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewQuantity(100000, resource.DecimalSI),
+			}, corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewQuantity(100000, resource.DecimalSI),
+			}),
+			pods: []*corev1.Pod{
+				mockBEPodForCPUEvict("batch-pod-1", 85000, 5000, corev1.PodRunning),
+				mockPodForCPUEvictWithPriority("mid-pod-1", apiext.QoSLS, 7000, corev1.ResourceList{
+					corev1.ResourceCPU: *resource.NewMilliQuantity(85000, resource.DecimalSI),
+					apiext.MidCPU:      *resource.NewQuantity(85000, resource.DecimalSI),
+				}, corev1.ResourceList{
+					corev1.ResourceCPU: *resource.NewMilliQuantity(85000, resource.DecimalSI),
+					apiext.MidCPU:      *resource.NewQuantity(85000, resource.DecimalSI),
+				}, corev1.PodRunning),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                              ptr.To[bool](true),
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(15000, resource.DecimalSI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchCPU},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchCPU: *resource.NewQuantity(85000, resource.DecimalSI),
+				},
+			},
+		},
+		{
+			name: "allocatable threshold = 0",
+			node: testutil.MockTestNodeWithExtendResource("100", "120G", corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewQuantity(100000, resource.DecimalSI),
+			}, corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewQuantity(100000, resource.DecimalSI),
+			}),
+			pods: []*corev1.Pod{
+				mockBEPodForCPUEvict("batch-pod-1", 85000, 5000, corev1.PodRunning),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                              ptr.To[bool](true),
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](0),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](0),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(85000, resource.DecimalSI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchCPU},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchCPU: *resource.NewQuantity(85000, resource.DecimalSI),
+				},
+			},
+		},
+		{
+			name: "node without allocatable batch-cpu resource",
+			node: testutil.MockTestNode("80", "120G"),
+			pods: []*corev1.Pod{
+				mockBEPodForCPUEvict("batch-pod-1", 85000, 5000, corev1.PodRunning),
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                              ptr.To[bool](true),
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](apiext.PriorityBatchValueMax),
+			},
+			expectRelease: corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(85000, resource.DecimalSI),
+			},
+			expectReleaseResources: []corev1.ResourceName{apiext.BatchCPU},
+			expectPodResourceList: map[string]corev1.ResourceList{
+				"batch-pod-1": {
+					apiext.BatchCPU: *resource.NewQuantity(85000, resource.DecimalSI),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctl := gomock.NewController(t)
+			defer ctl.Finish()
+
+			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
+			// Mock GetAllPods to return test pods
+			mockStatesInformer.EXPECT().GetAllPods().Return(testutil.GetPodMetas(tt.pods)).AnyTimes()
+
+			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+
+			fakeRecorder := &testutil.FakeRecorder{}
+			client := clientsetfake.NewSimpleClientset()
+			stop := make(chan struct{})
+			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+			evictor.Start(stop)
+			defer func() { stop <- struct{}{} }()
+
+			runtime.DockerHandler = handler.NewFakeRuntimeHandler()
+
+			opt := &framework.Options{
+				StatesInformer:      mockStatesInformer,
+				MetricCache:         mockMetricCache,
+				Config:              framework.NewDefaultConfig(),
+				MetricAdvisorConfig: maframework.NewDefaultConfig(),
+			}
+			c := New(opt)
+			CPUEvictor := c.(*cpuEvictor)
+			CPUEvictor.Setup(&framework.Context{Evictor: evictor, OnlyEvictByAPI: true})
+			CPUEvictor.lastEvictTime = time.Now().Add(-30 * time.Second)
+
+			res, calculateFunc := CPUEvictor.calculateMilliReleaseByAllocatableThresholdPercent(tt.thresholdConfig, tt.node, CPUEvictor.statesInformer.GetAllPods())
+
+			if len(tt.expectRelease) == 0 {
+				assert.Equal(t, 0, len(res), "checkRelease")
+			} else {
+				// Verify expected resources are present
+				for _, expectedRes := range tt.expectReleaseResources {
+					_, exists := res[expectedRes]
+					assert.True(t, exists, "expected resource %s should exist in result", expectedRes)
+				}
+				for _, expectedRes := range tt.expectReleaseResources {
+					eq := tt.expectRelease[expectedRes]
+					rq := res[expectedRes]
+					assert.Equal(t, eq.Value(), rq.Value(), "total release should be be equal")
+				}
+			}
+
+			// Verify calculateFunc is not nil when there's resource to release
+			if len(res) > 0 {
+				assert.NotNil(t, calculateFunc, "calculateFunc should not be nil when releasing resources")
+				// Test calculateFunc with a pod from the test
+				for _, pod := range tt.pods {
+					podInfo := &qosmanagerUtil.PodEvictInfo{Pod: pod}
+					podResource := calculateFunc(podInfo)
+					// Verify calculateFunc returns correct resource for pods within priority threshold
+					priority := apiext.GetPodPriorityValueWithDefault(pod)
+					if priority != nil && *priority <= *tt.thresholdConfig.AllocatableEvictPriorityThreshold {
+						assert.Equal(t, tt.expectPodResourceList[pod.Name], podResource, "calculateFunc should return resource for pod within priority threshold")
+					}
+				}
+			}
 		})
 	}
 }
@@ -886,6 +1321,15 @@ type podCPUSample struct {
 }
 
 func Test_cpuEvict(t *testing.T) {
+	klog.InitFlags(nil)
+	flag.Set("v", "5")
+	flag.Set("logtostderr", "true")
+
+	flag.Parse()
+
+	defer func() {
+		klog.Flush()
+	}()
 	pod0 := createCPUEvictTestPodWithLabels("test_failed_pod", apiext.QoSLSR, 1000, map[string]string{apiext.LabelPodEvictEnabled: "true", apiext.LabelPodPriority: "1000"}, corev1.PodFailed)
 	pod1 := createCPUEvictTestPodWithLabels("test_evictDisabled_pod", apiext.QoSLSR, 1000, map[string]string{apiext.LabelPodPriority: "1000"}, corev1.PodRunning)
 	pod2 := createCPUEvictTestPodWithLabels("test_higher_priority", apiext.QoSLS, 3400, map[string]string{apiext.LabelPodEvictEnabled: "true", apiext.LabelPodPriority: "1000"}, corev1.PodRunning)
@@ -895,6 +1339,14 @@ func Test_cpuEvict(t *testing.T) {
 	pod6 := createCPUEvictTestPodWithLabels("test_podPriority_100_9999", apiext.QoSBE, 100, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
 	pod7 := createCPUEvictTestPodWithLabels("test_podPriority_100_9999_1", apiext.QoSBE, 100, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
 
+	pod8 := mockBEPodForCPUEvictWithAnnotationsLabels("batch-pod-1", 85000, 100, nil, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
+	pod9 := mockPodForCPUEvictWithPriorityAnnotationsLabels("mid-pod-1", apiext.QoSLS, 7000, corev1.ResourceList{
+		corev1.ResourceCPU: *resource.NewMilliQuantity(85000, resource.DecimalSI),
+		apiext.MidCPU:      *resource.NewQuantity(85000, resource.DecimalSI),
+	}, corev1.ResourceList{
+		corev1.ResourceCPU: *resource.NewMilliQuantity(85000, resource.DecimalSI),
+		apiext.MidCPU:      *resource.NewQuantity(85000, resource.DecimalSI),
+	}, nil, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
 	tests := []struct {
 		name              string
 		triggerFeatures   []featuregate.Feature
@@ -944,6 +1396,31 @@ func Test_cpuEvict(t *testing.T) {
 			customEvictor:     true,
 		},
 		{
+			name:            "only feature: CPUAllocatableEvict",
+			triggerFeatures: []featuregate.Feature{features.CPUAllocatableEvict},
+			node: testutil.MockTestNodeWithExtendResource("100", "120G", corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewQuantity(100000, resource.DecimalSI),
+			}, corev1.ResourceList{
+				apiext.BatchCPU: *resource.NewQuantity(100000, resource.DecimalSI),
+				apiext.MidCPU:   *resource.NewQuantity(100000, resource.DecimalSI),
+			}),
+			nodeCPUUsed: resource.MustParse("81"),
+			pods:        []*corev1.Pod{pod8, pod9},
+			podMetrics: []podCPUSample{
+				{UID: "batch-pod-1", CpuUsed: resource.MustParse("4")},
+				{UID: "mid-pod-1", CpuUsed: resource.MustParse("3")},
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                              ptr.To[bool](true),
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](7999),
+			},
+			expectEvictedPods: []*corev1.Pod{pod8, pod9},
+			customEvictor:     true,
+		},
+		{
 			name:            "feature CPUEvict ok, BECPUEvict invalid configuration",
 			triggerFeatures: []featuregate.Feature{features.CPUEvict, features.BECPUEvict},
 			node:            testutil.MockTestNode("100", "120G"),
@@ -964,6 +1441,63 @@ func Test_cpuEvict(t *testing.T) {
 				EvictEnabledPriorityThreshold: ptr.To[int32](3000),
 			},
 			expectEvictedPods: []*corev1.Pod{pod3, pod4, pod6, pod7},
+			customEvictor:     true,
+		},
+		{
+			name:            "feature CPUAllocatableEvict ok, BECPUEvict invalid configuration",
+			triggerFeatures: []featuregate.Feature{features.CPUAllocatableEvict, features.BECPUEvict},
+			node:            testutil.MockTestNode("100", "120G"),
+			nodeCPUUsed:     resource.MustParse("81"),
+			pods:            []*corev1.Pod{pod0, pod1, pod2, pod3, pod4, pod5, pod6, pod7, pod8, pod9},
+			podMetrics: []podCPUSample{
+				{UID: "test_evictDisabled_pod", CpuUsed: resource.MustParse("4")},
+				{UID: "test_higher_priority", CpuUsed: resource.MustParse("3")},
+				{UID: "test_podPriority_120_2000", CpuUsed: resource.MustParse("1")},
+				{UID: "test_podPriority_120_3000", CpuUsed: resource.MustParse("5")},
+				{UID: "test_podPriority_120_4000", CpuUsed: resource.MustParse("2")},
+				{UID: "test_podPriority_100_9999", CpuUsed: resource.MustParse("1")},
+				{UID: "test_podPriority_100_9999_1", CpuUsed: resource.MustParse("2")},
+				{UID: "batch-pod-1", CpuUsed: resource.MustParse("4")},
+				{UID: "mid-pod-1", CpuUsed: resource.MustParse("3")},
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                              ptr.To[bool](true),
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](7999),
+				CPUEvictThresholdPercent:            ptr.To[int64](78),
+				EvictEnabledPriorityThreshold:       ptr.To[int32](3000),
+			},
+			expectEvictedPods: []*corev1.Pod{pod8, pod9},
+			customEvictor:     true,
+		},
+		{
+			name:            "feature CPUEvict/CPUAllocatableEvict ok",
+			triggerFeatures: []featuregate.Feature{features.CPUAllocatableEvict, features.CPUEvict},
+			// no batch resource, need evict all be pods
+			node:        testutil.MockTestNode("100", "120G"),
+			nodeCPUUsed: resource.MustParse("81"),
+			pods:        []*corev1.Pod{pod0, pod1, pod2, pod3, pod4, pod5, pod6, pod7, pod8, pod9},
+			podMetrics: []podCPUSample{
+				{UID: "test_evictDisabled_pod", CpuUsed: resource.MustParse("4")},
+				{UID: "test_higher_priority", CpuUsed: resource.MustParse("3")},
+				{UID: "test_podPriority_120_2000", CpuUsed: resource.MustParse("1")},
+				{UID: "test_podPriority_120_3000", CpuUsed: resource.MustParse("5")},
+				{UID: "test_podPriority_120_4000", CpuUsed: resource.MustParse("2")},
+				{UID: "test_podPriority_100_9999", CpuUsed: resource.MustParse("1")},
+				{UID: "test_podPriority_100_9999_1", CpuUsed: resource.MustParse("2")},
+				{UID: "batch-pod-1", CpuUsed: resource.MustParse("4")},
+				{UID: "mid-pod-1", CpuUsed: resource.MustParse("3")},
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                              ptr.To[bool](true),
+				CPUAllocatableEvictThresholdPercent: ptr.To[int64](80),
+				CPUAllocatableEvictLowerPercent:     ptr.To[int64](70),
+				AllocatableEvictPriorityThreshold:   ptr.To[int32](7999),
+				CPUEvictThresholdPercent:            ptr.To[int64](78),
+				EvictEnabledPriorityThreshold:       ptr.To[int32](3000),
+			},
+			expectEvictedPods: []*corev1.Pod{pod2, pod4, pod5, pod6, pod7, pod8, pod9, pod3},
 			customEvictor:     true,
 		},
 	}
