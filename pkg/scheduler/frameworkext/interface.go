@@ -64,6 +64,12 @@ type FrameworkExtender interface {
 	framework.Framework
 	ExtendedHandle
 
+	// RunFindOneNodePlugin invokes the registered FindOneNodePlugin (if any) during the PreFilter phase.
+	// The plugin's FindOneNode method attempts to deterministically select a single target node name for the given pod.
+	// The normal Filter/Score cycle will still run as a validation step, but only against the single node returned by FindOneNode.
+	// It returns the chosen node name and a Status. If no plugin is registered, or the plugin decides not to intervene,
+	// the status will be framework.Skip and the scheduler falls back to the standard multi-node filtering flow.
+	RunFindOneNodePlugin(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status)
 	SetConfiguredPlugins(plugins *schedconfig.Plugins)
 
 	RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status

@@ -302,22 +302,26 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 			return nil, status
 		}
 	}
+	nodeName, status := ext.RunFindOneNodePlugin(ctx, cycleState, pod, result)
+	if status.IsSkip() {
+		return result, nil
+	}
+	if !status.IsSuccess() {
+		status.SetFailedPlugin(ext.findOneNodePlugin.Name())
+		klog.ErrorS(status.AsError(), "Failed to run FindOneNodePlugin", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name())
+		return nil, status
+	}
+	return &framework.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil
+}
+
+func (ext *frameworkExtenderImpl) RunFindOneNodePlugin(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status) {
 	if ext.findOneNodePlugin != nil {
 		startTime := time.Now()
 		nodeName, status := ext.findOneNodePlugin.FindOneNode(ctx, cycleState, pod, result)
 		ext.metricsRecorder.ObservePluginDurationAsync("FindOneNodePlugin", ext.findOneNodePlugin.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
-		if status.IsSkip() {
-			return result, nil
-		}
-		if !status.IsSuccess() {
-			status.SetFailedPlugin(ext.findOneNodePlugin.Name())
-			klog.ErrorS(status.AsError(), "Failed to run FindOneNodePlugin", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name())
-			return nil, status
-		}
-		return &framework.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil
+		return nodeName, status
 	}
-
-	return result, nil
+	return "", framework.NewStatus(framework.Skip)
 }
 
 // RunFilterPluginsWithNominatedPods transforms the Filter phase of framework with filter transformers.
