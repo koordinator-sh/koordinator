@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
@@ -116,6 +115,7 @@ for cost reduction and efficiency enhancement.
 
 	nfs := opts.Flags
 	verflag.AddFlags(nfs.FlagSet("global"))
+	AddSyncBarrierFlags(nfs.FlagSet("global"))
 	globalflag.AddGlobalFlags(nfs.FlagSet("global"), cmd.Name(), logs.SkipLoggingConfigurationFlags())
 	frameworkext.AddFlags(nfs.FlagSet("extend"))
 	fs := cmd.Flags()
@@ -267,6 +267,8 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 					logger.Info("Starting informers and waiting for sync...")
 					startInformersAndWaitForSync(ctx)
 					logger.Info("Sync completed")
+				} else {
+					waitForLatestSynced(ctx, cc, sched)
 				}
 				extenderFactory.Run(ctx)
 				RunWorkflow(ctx, sched, customWorkflow)
