@@ -351,9 +351,7 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, 
 		// handle pre-allocation cases
 		if reservationutil.IsReservePodPreAllocation(pod) {
 			selectedPreAllocatablePods, status := pl.filterWithPreAllocatablePods(ctx, cycleState, state.rInfo, nodeInfo, nodeRState.preAllocatablePods, state.isPreAllocationRequired)
-			if len(selectedPreAllocatablePods) > 0 {
-				nodeRState.selectedPreAllocatablePods = selectedPreAllocatablePods
-			}
+			nodeRState.selectedPreAllocatablePods = selectedPreAllocatablePods
 			return status
 		}
 
