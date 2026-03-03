@@ -99,6 +99,16 @@ const (
 	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
 
 	PodDisruptionBudget featuregate.Feature = "PodDisruptionBudget"
+
+	// SyncBarrier owner: @ZiMengSheng
+	// alpha: v1.7
+	//
+	// SyncBarrier enables a synchronization barrier mechanism during scheduler leader election.
+	// When enabled, the newly elected leader will patch a dedicated "barrier pod" to ensure its
+	// local informer cache has fully caught up with the API server's state. This prevents
+	// resource overcommitment caused by scheduling pods based on a stale cache from the
+	// previous leader's final moments.
+	SyncBarrier featuregate.Feature = "SyncBarrier"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -123,6 +133,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA},    // remove in 1.26
 	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},
+	SyncBarrier:                               {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {
