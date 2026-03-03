@@ -41,13 +41,13 @@ spec:
             properties:
               highThresholds:
                 additionalProperties:
-                  type: string
+                  type: number
                 description: HighThresholds defines the target usage threshold of
                   node resources
                 type: object
               lowThresholds:
                 additionalProperties:
-                  type: string
+                  type: number
                 description: LowThresholds defines the low usage threshold of node
                   resources
                 type: object

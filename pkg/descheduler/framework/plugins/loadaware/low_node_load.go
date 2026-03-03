@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	koordslolisters "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
@@ -177,6 +178,37 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 
 	logUtilizationCriteria(nodePool.Name, "Criteria for nodes under low thresholds and above high thresholds", lowThresholds, highThresholds,
 		prodLowThresholds, prodHighThresholds, len(lowNodes), len(sourceNodes), len(prodLowNodes), len(prodHighNodes), len(bothLowNodes), len(nodes))
+	//	totalLowNodesNumber, totalHighNodesNumber, prodLowNodesNumber, prodHighNodesNumber, bothLowNodesNumber, totalNumber int
+	// lowNodes  -> totalLowNodesNumber
+	// sourceNodes -> totalHighNodesNumber
+	// prodLowNodes -> prodLowNodesNumber
+	// prodHighNodes ->  prodHighNodesNumber
+	// nodes -> total number node
+	//TODO: add nodeWarter CR
+
+	klog.Info("createOrUpdateNodeWaterMark  before")
+	for _, node := range nodes {
+		nt := nodeType(nodeUsages, nodeThresholds, false, node.Name)
+		basewm := buildBasicNodeWaterMark(node, nt)
+		if basewm.Spec.LowThresholds == nil {
+			basewm.Spec.LowThresholds = make(schedulingv1alpha1.ResourceThresholds)
+		}
+		if basewm.Spec.HighThresholds == nil {
+			basewm.Spec.HighThresholds = make(schedulingv1alpha1.ResourceThresholds)
+		}
+		for k, v := range lowThresholds {
+			basewm.Spec.LowThresholds[k] = schedulingv1alpha1.Percentage(v)
+		}
+		for k, v := range highThresholds {
+			basewm.Spec.HighThresholds[k] = schedulingv1alpha1.Percentage(v)
+		}
+		if err := createOrUpdateNodeWaterMark(ctx, pl.nodeWaterMarkClient, basewm); err != nil {
+			klog.Error(err)
+			continue
+		}
+	}
+
+	klog.Info("createOrUpdateNodeWaterMark  after")
 
 	if len(sourceNodes) == 0 && len(prodHighNodes) == 0 {
 		klog.V(4).InfoS("All nodes are under target utilization, nothing to do here", "nodePool", nodePool.Name)

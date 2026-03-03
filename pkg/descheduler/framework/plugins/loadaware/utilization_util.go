@@ -457,7 +457,7 @@ func balancePods(ctx context.Context,
 			"nodePool", nodePoolName, "node", klog.KObj(srcNode.node), "prod", prod, "usage", srcNode.usage,
 			"allPods", len(allPods), "nonRemovablePods", len(nonRemovablePods), "removablePods", len(removablePods))
 
-		basewm := buildBasicNodeWaterMark(srcNode.node)
+		basewm := buildBasicNodeWaterMark(srcNode.node, "")
 		for _, pod := range removablePods {
 			basewm.Spec.WillEvictedPods = append(basewm.Spec.WillEvictedPods, schedulingv1alpha1.WillEvictedPod{
 				Name: pod.Name, Namespace: pod.Namespace})
@@ -503,13 +503,12 @@ func createOrUpdateNodeWaterMark(ctx context.Context, cli koordclientset.Interfa
 	return nil
 }
 
-func buildBasicNodeWaterMark(node *corev1.Node) *schedulingv1alpha1.NodeWatermark {
+func buildBasicNodeWaterMark(node *corev1.Node, nodeType string) *schedulingv1alpha1.NodeWatermark {
 	mark := &schedulingv1alpha1.NodeWatermark{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: node.Name,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-
 					APIVersion:         "v1",
 					Kind:               "Node",
 					Name:               node.Name,
@@ -518,6 +517,9 @@ func buildBasicNodeWaterMark(node *corev1.Node) *schedulingv1alpha1.NodeWatermar
 					BlockOwnerDeletion: ptr.To(true),
 				},
 			},
+		},
+		Spec: schedulingv1alpha1.NodeWatermarkSpec{
+			Type: nodeType,
 		},
 	}
 	return mark
@@ -838,4 +840,38 @@ func podFitsAnyNodeWithThreshold(nodeIndexer podutil.GetPodsAssignedToNodeFunc, 
 		}
 	}
 	return false
+}
+
+// Type value is Hot, Normal, idle type
+func nodeType(nodeUsages map[string]*NodeUsage, nodeThresholds map[string]NodeThresholds, prod bool, node string) string {
+	nodeUsage, usageOk := nodeUsages[node]
+	nodeThreshold, thresholdOk := nodeThresholds[node]
+	if usageOk && thresholdOk {
+		var usage, highThresholds, lowThresholds map[corev1.ResourceName]*resource.Quantity
+		if prod {
+			usage = nodeUsage.prodUsage
+			highThresholds = nodeThreshold.prodHighResourceThreshold
+			lowThresholds = nodeThreshold.prodLowResourceThreshold
+		} else {
+			usage = nodeUsage.usage
+			highThresholds = nodeThreshold.highResourceThreshold
+			lowThresholds = nodeThreshold.lowResourceThreshold
+		}
+
+		for resourceName, threshold := range highThresholds {
+			if used := usage[resourceName]; used != nil {
+				if used.Cmp(*threshold) > 0 {
+					return "hot"
+				}
+			}
+		}
+		for resourceName, threshold := range lowThresholds {
+			if used := usage[resourceName]; used != nil {
+				if used.Cmp(*threshold) < 0 {
+					return "idle"
+				}
+			}
+		}
+	}
+	return "normal"
 }
