@@ -15,92 +15,86 @@ import (
 	"path/filepath"
 	"time"
 
-	"hybrid/pkg/constants"
-
 	"k8s.io/klog/v2"
+
+	"hybrid/pkg/constants"
 )
 
+// Service downloads the prediction CSV from the AI server.
+// It implements the Downloader interface.
 type Service struct {
-	url       string
+	client    *http.Client
+	serverURL string
 	token     string
 	outputDir string
-	fileName  string
-	client    *http.Client
-	stopCh    chan struct{}
 }
 
-func NewService(url, token string) *Service {
+// NewDownloadService creates a Service with the given server URL, auth token, and local output directory.
+func NewDownloadService(serverURL, token, outputDir string) *Service {
+	if outputDir == "" {
+		outputDir = constants.DefaultOutputDir
+	}
 	return &Service{
-		url:       url,
+		serverURL: serverURL,
 		token:     token,
-		outputDir: constants.DefaultOutputDir,
-		fileName:  constants.DefaultPredictionFile,
-		client: &http.Client{
-			Timeout: time.Second * 30,
-		},
-		stopCh: make(chan struct{}),
+		outputDir: outputDir,
+		client:    &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-func (d *Service) DownloadNow(ctx context.Context) error {
-	if err := os.MkdirAll(d.outputDir, 0755); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
+// Download fetches the latest prediction CSV and atomically replaces the local copy.
+// It implements the Downloader interface.
+func (s *Service) Download(ctx context.Context) error {
+	if err := os.MkdirAll(s.outputDir, 0o755); err != nil {
+		return fmt.Errorf("create output directory %q: %w", s.outputDir, err)
 	}
-	return d.download(ctx)
-}
 
-func (d *Service) download(ctx context.Context) error {
-	startTime := time.Now()
-	endpoint := d.url + constants.DownloadCSVEndpoint
-
-	klog.V(4).Infof("Downloading from: %s", endpoint)
+	start := time.Now()
+	endpoint := s.serverURL + constants.DownloadCSVEndpoint
+	klog.V(4).InfoS("Downloading prediction file", "endpoint", endpoint)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return fmt.Errorf("build request: %w", err)
 	}
-	req.Header.Set("accept", "application/json")
-	req.Header.Set("x-token", d.token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-token", s.token)
 
-	resp, err := d.client.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return fmt.Errorf("execute request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return fmt.Errorf("unexpected HTTP status %d from %s", resp.StatusCode, endpoint)
 	}
 
-	outputPath := filepath.Join(d.outputDir, d.fileName)
-	tmpPath := outputPath + ".tmp"
+	destPath := filepath.Join(s.outputDir, constants.DefaultPredictionFile)
+	tmpPath := destPath + ".tmp"
 
+	// Write to a temp file, then rename — prevents partial reads by the parser.
 	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer func() {
-		tmpFile.Close()
-		if err != nil {
-			os.Remove(tmpPath)
-		}
-	}()
-
-	written, err := io.Copy(tmpFile, resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
 
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed to close temp file: %w", err)
+	written, copyErr := io.Copy(tmpFile, resp.Body)
+	closeErr := tmpFile.Close() // close explicitly before rename (Windows-safe)
+
+	if copyErr != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("write prediction file: %w", copyErr)
+	}
+	if closeErr != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close temp file: %w", closeErr)
+	}
+	if err := os.Rename(tmpPath, destPath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("replace prediction file: %w", err)
 	}
 
-	if err := os.Rename(tmpPath, outputPath); err != nil {
-		return fmt.Errorf("failed to rename file: %w", err)
-	}
-
-	duration := time.Since(startTime)
-	klog.Infof("Successfully downloaded %d bytes to %s (took %v)", written, outputPath, duration)
-
+	klog.InfoS("Prediction file downloaded", "bytes", written, "dest", destPath, "elapsed", time.Since(start))
 	return nil
 }

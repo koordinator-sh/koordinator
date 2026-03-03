@@ -20,3 +20,9 @@ const (
 	UploadStatusEndpoint = "/v1/v1/upload-status"
 	UploadCleanEndpoint  = "/v1/v1/clean-directories"
 )
+
+var DefaultExcludeNamespaces = []string{
+	"kube-system",
+	"kube-public",
+	"kube-node-lease",
+}

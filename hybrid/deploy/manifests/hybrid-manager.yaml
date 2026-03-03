@@ -81,7 +81,7 @@ spec:
           imagePullPolicy: IfNotPresent
           command: [ "hybrid-manager" ]
           args:
-            - --interval=5m
+            - --sync-interval=5m
           env:
             - name: AI_SERVER
               valueFrom:
