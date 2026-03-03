@@ -56,6 +56,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&DeschedulerConfiguration{},
 		&MigrationControllerArgs{},
 		&LowNodeLoadArgs{},
+		&CustomPriorityArgs{},
 	)
 
 	return nil
