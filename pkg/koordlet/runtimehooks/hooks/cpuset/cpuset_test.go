@@ -776,6 +776,189 @@ func TestUnsetContainerCPUQuota(t *testing.T) {
 	}
 }
 
+func initCPUSetMems(dirWithKube string, value string, helper *system.FileTestUtil) {
+	helper.WriteCgroupFileContents(dirWithKube, system.CPUSetMems, value)
+}
+
+func getCPUSetMems(dirWithKube string, helper *system.FileTestUtil) string {
+	return helper.ReadCgroupFileContents(dirWithKube, system.CPUSetMems)
+}
+
+func Test_cpusetPlugin_SetContainerCPUSetMems(t *testing.T) {
+	type args struct {
+		podAlloc *ext.ResourceStatus
+		proto    protocol.HooksProtocol
+	}
+	tests := []struct {
+		name         string
+		args         args
+		wantErr      bool
+		wantCPUMems  *string
+	}{
+		{
+			name: "nil protocol returns error",
+			args: args{
+				proto: nil,
+			},
+			wantErr:     true,
+			wantCPUMems: nil,
+		},
+		{
+			name: "bad annotation format returns error",
+			args: args{
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+						PodAnnotations: map[string]string{
+							ext.AnnotationResourceStatus: "bad-format",
+						},
+					},
+				},
+			},
+			wantErr:     true,
+			wantCPUMems: nil,
+		},
+		{
+			name: "no NUMANodeResources does nothing",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					CPUSet: "0-3",
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+			},
+			wantErr:     false,
+			wantCPUMems: nil,
+		},
+		{
+			name: "no annotation does nothing",
+			args: args{
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+			},
+			wantErr:     false,
+			wantCPUMems: nil,
+		},
+		{
+			name: "single NUMA node sets cpuset.mems",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					NUMANodeResources: []ext.NUMANodeResource{
+						{
+							Node: 0,
+							Resources: map[corev1.ResourceName]resource.Quantity{
+								corev1.ResourceCPU: *resource.NewQuantity(4, resource.DecimalSI),
+							},
+						},
+					},
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+			},
+			wantErr:     false,
+			wantCPUMems: ptr.To[string]("0"),
+		},
+		{
+			name: "multiple NUMA nodes sets cpuset.mems",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					NUMANodeResources: []ext.NUMANodeResource{
+						{
+							Node: 0,
+							Resources: map[corev1.ResourceName]resource.Quantity{
+								corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI),
+							},
+						},
+						{
+							Node: 1,
+							Resources: map[corev1.ResourceName]resource.Quantity{
+								corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI),
+							},
+						},
+					},
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+			},
+			wantErr:     false,
+			wantCPUMems: ptr.To[string]("0,1"),
+		},
+		{
+			name: "NUMANodeResources with no resources still sets mems",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					NUMANodeResources: []ext.NUMANodeResource{
+						{
+							Node: 2,
+						},
+					},
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+			},
+			wantErr:     false,
+			wantCPUMems: ptr.To[string]("2"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testHelper := system.NewFileTestUtil(t)
+			p := &cpusetPlugin{
+				executor: resourceexecutor.NewResourceUpdateExecutor(),
+			}
+
+			var containerCtx *protocol.ContainerContext
+			if tt.args.proto != nil {
+				containerCtx = tt.args.proto.(*protocol.ContainerContext)
+				initCPUSetMems(containerCtx.Request.CgroupParent, "", testHelper)
+				if tt.args.podAlloc != nil {
+					podAllocJson := util.DumpJSON(tt.args.podAlloc)
+					containerCtx.Request.PodAnnotations = map[string]string{
+						ext.AnnotationResourceStatus: podAllocJson,
+					}
+				}
+			}
+
+			err := p.SetContainerCPUSetMems(containerCtx)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SetContainerCPUSetMems() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if containerCtx == nil {
+				return
+			}
+
+			stop := make(chan struct{})
+			defer close(stop)
+			p.executor.Run(stop)
+
+			if tt.wantCPUMems == nil {
+				assert.Nil(t, containerCtx.Response.Resources.CPUSetMems, "cpuset.mems should be nil")
+			} else {
+				containerCtx.ReconcilerDone(p.executor)
+				assert.Equal(t, *tt.wantCPUMems, *containerCtx.Response.Resources.CPUSetMems, "container cpuset.mems should be equal")
+				gotMems := getCPUSetMems(containerCtx.Request.CgroupParent, testHelper)
+				assert.Equal(t, *tt.wantCPUMems, gotMems, "cgroup cpuset.mems should be equal")
+			}
+		})
+	}
+}
+
 func Test_cpusetPlugin_SetHostAppCPUSet(t *testing.T) {
 	type fields struct {
 		rule *cpusetRule
