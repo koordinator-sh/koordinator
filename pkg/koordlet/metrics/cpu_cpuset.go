@@ -80,6 +80,10 @@ func RecordCPUSetSharePoolInfo(cpu int) {
 	CPUSetSharePoolInfo.With(labels).Set(1)
 }
 
+func ResetCPUSetSharePoolInfo() {
+	CPUSetSharePoolInfo.Reset()
+}
+
 func RecordCPUSetBESharePoolInfo(cpu int) {
 	labels := genNodeLabels()
 	if labels == nil {
@@ -87,4 +91,8 @@ func RecordCPUSetBESharePoolInfo(cpu int) {
 	}
 	labels[CPUIDKey] = strconv.Itoa(cpu)
 	CPUSetBESharePoolInfo.With(labels).Set(1)
+}
+
+func ResetCPUSetBESharePoolInfo() {
+	CPUSetBESharePoolInfo.Reset()
 }

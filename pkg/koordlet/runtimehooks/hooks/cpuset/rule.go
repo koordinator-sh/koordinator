@@ -192,9 +192,12 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 		}
 	}
 
-	// record sharePool, beSharePool cpu numbers and cpu ID info.
-	recordPerCPUInfo := features.DefaultKoordletFeatureGate.Enabled(features.CPUSetMetricEnhance)
 	var shareCPUSetCount, beShareCPUSetCount int
+	if p.recordPerSharePoolCPUInfo {
+		// sharePool CPUSet ID info may be expired and needs to be reset before record new metrics.
+		metrics.ResetCPUSetSharePoolInfo()
+		metrics.ResetCPUSetBESharePoolInfo()
+	}
 	for _, nodeSharePool := range cpuSharePools {
 		nodeSharePoolCPUSet, err := cpuset.Parse(nodeSharePool.CPUSet)
 		if err != nil {
@@ -203,7 +206,7 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 		}
 		shareCPUSetCount += nodeSharePoolCPUSet.Size()
 
-		if recordPerCPUInfo {
+		if p.recordPerSharePoolCPUInfo {
 			for _, e := range nodeSharePoolCPUSet.ToSlice() {
 				metrics.RecordCPUSetSharePoolInfo(e)
 			}
@@ -218,7 +221,7 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 		}
 		beShareCPUSetCount += nodeBESharePoolCPUSet.Size()
 
-		if recordPerCPUInfo {
+		if p.recordPerSharePoolCPUInfo {
 			for _, e := range nodeBESharePoolCPUSet.ToSlice() {
 				metrics.RecordCPUSetBESharePoolInfo(e)
 			}
