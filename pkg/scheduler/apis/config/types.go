@@ -328,3 +328,14 @@ type ResourcesType struct {
 	Type   config.ScoringStrategyType
 	Weight int64
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// PodTypeArgs holds arguments used to configure the PodType plugin.
+type PodTypeArgs struct {
+	metav1.TypeMeta
+
+	// EnablePodType indicates whether the podtype plugin is enabled.
+	// Default is true. Use pointer so we can distinguish "not set".
+	EnablePodType *bool
+}

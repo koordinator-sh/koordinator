@@ -255,3 +255,15 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 		obj.GPUSharedResourceTemplatesConfig = defaultGPUSharedResourceTemplatesConfig
 	}
 }
+
+// SetDefaults_PodTypeArgs sets the default parameters for PodType plugin.
+func SetDefaults_PodTypeArgs(obj *PodTypeArgs) {
+	if obj == nil {
+		return
+	}
+	// If EnablePodType is nil (not set by user), default to true
+	if obj.EnablePodType == nil {
+		b := true
+		obj.EnablePodType = &b
+	}
+}
