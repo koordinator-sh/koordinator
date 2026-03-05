@@ -102,7 +102,7 @@ func getNodeThresholds(
 			prodLowResourceThreshold:  map[corev1.ResourceName]*resource.Quantity{},
 			prodHighResourceThreshold: map[corev1.ResourceName]*resource.Quantity{},
 		}
-		allocatable := nodeUsage.node.Status.Allocatable
+		allocatable := GetNodeRawAllocatableFromNode(nodeUsage.node)
 		for _, resourceName := range resourceNames {
 			if useDeviationThresholds {
 				resourceCapacity := allocatable[resourceName]
@@ -287,7 +287,7 @@ func classifyNodes(
 }
 
 func resourceUsagePercentages(nodeUsage *NodeUsage, prod bool) map[corev1.ResourceName]float64 {
-	allocatable := nodeUsage.node.Status.Allocatable
+	allocatable := GetNodeRawAllocatableFromNode(nodeUsage.node)
 	resourceUsagePercentage := map[corev1.ResourceName]float64{}
 	var usage map[corev1.ResourceName]*resource.Quantity
 	if prod {
@@ -585,8 +585,8 @@ func sortNodesByUsage(nodes []NodeInfo, resourceToWeightMap map[corev1.ResourceN
 			jNodeUsage = usageToResourceList(nodes[j].usage)
 		}
 
-		iScore := scorer(iNodeUsage, nodes[i].node.Status.Allocatable)
-		jScore := scorer(jNodeUsage, nodes[j].node.Status.Allocatable)
+		iScore := scorer(iNodeUsage, GetNodeRawAllocatableFromNode(nodes[i].node))
+		jScore := scorer(jNodeUsage, GetNodeRawAllocatableFromNode(nodes[j].node))
 		if ascending {
 			return iScore < jScore
 		}
@@ -661,7 +661,7 @@ func calcAverageResourceUsagePercent(nodeUsages map[string]*NodeUsage) (Resource
 	for _, nodeUsage := range nodeUsages {
 		usage := nodeUsage.usage
 		prodUsage := nodeUsage.prodUsage
-		allocatable := nodeUsage.node.Status.Allocatable
+		allocatable := GetNodeRawAllocatableFromNode(nodeUsage.node)
 		for resourceName, used := range usage {
 			total := allocatable[resourceName]
 			if total.IsZero() {
@@ -721,7 +721,7 @@ func sortPodsOnOneOverloadedNode(srcNode NodeInfo, removablePods []*corev1.Pod, 
 		resourcesThatExceedThresholds,
 		removablePods,
 		srcNode.podMetrics,
-		map[string]corev1.ResourceList{srcNode.node.Name: srcNode.node.Status.Allocatable},
+		map[string]corev1.ResourceList{srcNode.node.Name: GetNodeRawAllocatableFromNode(srcNode.node)},
 		weights,
 	)
 }
@@ -776,4 +776,22 @@ func podFitsAnyNodeWithThreshold(nodeIndexer podutil.GetPodsAssignedToNodeFunc, 
 		}
 	}
 	return false
+}
+
+// GetNodeRawAllocatableFromNode gets the raw allocatable from node annotation.
+// In the cpu-normalization or amplification scenario, node Allocatable will be amplified,
+// so raw-allocatable needs to be obtained during descheduling to accurately calculate node usage percent.
+// If raw-allocatable is not set or fails to parse, returns the amplified Allocatable as fallback.
+func GetNodeRawAllocatableFromNode(node *corev1.Node) corev1.ResourceList {
+	allocatable := node.Status.Allocatable
+	rawAllocatable, err := extension.GetNodeRawAllocatable(node.Annotations)
+	if err != nil {
+		klog.Errorf("Failed to parse %s raw allocatable, using amplified allocatable as fallback, err: %v", node.Name, err)
+		return allocatable
+	}
+	if rawAllocatable == nil {
+		klog.V(3).Infof("Node %s has no raw-allocatable annotation, using node status allocatable", node.Name)
+		return allocatable
+	}
+	return rawAllocatable
 }
