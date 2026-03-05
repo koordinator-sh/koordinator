@@ -24,6 +24,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
@@ -45,6 +46,8 @@ type cpusetPlugin struct {
 	ruleRWMutex          sync.RWMutex
 	executor             resourceexecutor.ResourceUpdateExecutor
 	disableUnsetCPUQuota bool
+	// record sharePool, beSharePool cpu ID info.
+	recordPerSharePoolCPUInfo bool
 }
 
 var (
@@ -82,6 +85,7 @@ func (p *cpusetPlugin) Register(op hooks.Options) {
 	reconciler.RegisterHostAppReconciler(sysutil.CPUSet, "set host application cpuset",
 		p.SetHostAppCPUSet, &reconciler.ReconcilerOption{})
 	p.executor = op.Executor
+	p.recordPerSharePoolCPUInfo = features.DefaultKoordletFeatureGate.Enabled(features.PerCPUMetric)
 }
 
 var singleton *cpusetPlugin
