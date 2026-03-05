@@ -284,3 +284,19 @@ func ValidateNodeNUMAResourceArgs(path *field.Path, args *config.NodeNUMAResourc
 	}
 	return allErrs.ToAggregate()
 }
+
+// ValidateSchedulingHintArgs validates that SchedulingHintArgs are correct.
+func ValidateSchedulingHintArgs(path *field.Path, args *config.SchedulingHintArgs) error {
+	var allErrs field.ErrorList
+	if args.MaxHintNodes <= 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("maxHintNodes"),
+			args.MaxHintNodes,
+			"must be a positive value",
+		))
+	}
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
+}

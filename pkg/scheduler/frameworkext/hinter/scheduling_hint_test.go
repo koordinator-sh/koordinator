@@ -25,6 +25,7 @@ import (
 
 func TestSchedulingHintStateData_Clone(t *testing.T) {
 	originalNodeInfo := ""
+	preferredNodes := []string{"node-1", "node-2"}
 	extensions := map[string]interface{}{
 		"key1": "value1",
 		"key2": 123,
@@ -32,6 +33,7 @@ func TestSchedulingHintStateData_Clone(t *testing.T) {
 
 	original := &SchedulingHintStateData{
 		PreFilterNodes: []string{originalNodeInfo},
+		PreferredNodes: preferredNodes,
 		Extensions:     extensions,
 	}
 
@@ -39,6 +41,7 @@ func TestSchedulingHintStateData_Clone(t *testing.T) {
 
 	assert.NotNil(t, cloned)
 	assert.Equal(t, original.PreFilterNodes, cloned.PreFilterNodes)
+	assert.Equal(t, original.PreferredNodes, cloned.PreferredNodes)
 	assert.Equal(t, original.Extensions, cloned.Extensions)
 
 	assert.NotSame(t, original.Extensions, cloned.Extensions)
@@ -81,12 +84,14 @@ func TestSchedulingHintStateData_Integration(t *testing.T) {
 	cycleState := framework.NewCycleState()
 
 	nodeInfo := "test-node"
+	preferredNodes := []string{"preferred-node-1", "preferred-node-2"}
 	extensions := map[string]interface{}{
 		"testKey": "testValue",
 	}
 
 	stateData := &SchedulingHintStateData{
 		PreFilterNodes: []string{nodeInfo},
+		PreferredNodes: preferredNodes,
 		Extensions:     extensions,
 	}
 
@@ -95,6 +100,7 @@ func TestSchedulingHintStateData_Integration(t *testing.T) {
 	retrieved := GetSchedulingHintState(cycleState)
 	assert.NotNil(t, retrieved)
 	assert.Equal(t, []string{nodeInfo}, retrieved.PreFilterNodes)
+	assert.Equal(t, preferredNodes, retrieved.PreferredNodes)
 	assert.Equal(t, extensions, retrieved.Extensions)
 
 	cloned := retrieved.Clone().(*SchedulingHintStateData)

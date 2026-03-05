@@ -91,6 +91,8 @@ var (
 			extension.ResourceHuaweiNPUCore,
 		},
 	}
+
+	defaultMaxHintNodes = ptr.To[int32](100)
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -272,5 +274,12 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 	}
 	if obj.GPUSharedResourceTemplatesConfig == nil {
 		obj.GPUSharedResourceTemplatesConfig = defaultGPUSharedResourceTemplatesConfig
+	}
+}
+
+// SetDefaults_SchedulingHintArgs sets the default parameters for SchedulingHint plugin.
+func SetDefaults_SchedulingHintArgs(obj *SchedulingHintArgs) {
+	if obj.MaxHintNodes == nil {
+		obj.MaxHintNodes = defaultMaxHintNodes
 	}
 }
