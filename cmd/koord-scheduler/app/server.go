@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
@@ -38,6 +37,7 @@ import (
 	"k8s.io/apiserver/pkg/server/healthz"
 	"k8s.io/apiserver/pkg/server/mux"
 	"k8s.io/apiserver/pkg/server/routes"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -65,6 +65,7 @@ import (
 
 	schedulerserverconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/options"
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
@@ -267,6 +268,9 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 					logger.Info("Starting informers and waiting for sync...")
 					startInformersAndWaitForSync(ctx)
 					logger.Info("Sync completed")
+				}
+				if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.SyncBarrier) {
+					waitForLatestSynced(ctx, cc, sched)
 				}
 				extenderFactory.Run(ctx)
 				RunWorkflow(ctx, sched, customWorkflow)
