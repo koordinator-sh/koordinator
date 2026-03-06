@@ -35,6 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scarceresourceavoidance"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/schedulinghint"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/podtype"
 
 	// Ensure metric package is initialized
 	_ "k8s.io/component-base/metrics/prometheus/clientgo"
@@ -53,6 +54,7 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	noderesourcesfitplus.Name:    noderesourcesfitplus.New,
 	scarceresourceavoidance.Name: scarceresourceavoidance.New,
 	schedulinghint.Name:          schedulinghint.New,
+	podtype.Name:                 podtype.New,
 }
 
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {
