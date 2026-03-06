@@ -29,7 +29,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/events"
@@ -266,7 +265,7 @@ func (o *Options) Config() (*deschedulerappconfig.Config, error) {
 		}
 	}
 
-	mgrKubeConfig := rest.CopyConfig(kubeConfig)
+	mgrKubeConfig := restclient.CopyConfig(kubeConfig)
 	mgrKubeConfig.ContentType = ""
 	mgrKubeConfig.AcceptContentTypes = ""
 	mgr, err := ctrl.NewManager(mgrKubeConfig, ctrl.Options{

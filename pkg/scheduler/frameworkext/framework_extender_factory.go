@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"time"
 
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"github.com/spf13/pflag"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,12 +65,13 @@ func AddFlags(fs *pflag.FlagSet) {
 }
 
 type extendedHandleOptions struct {
-	servicesEngine                   *services.Engine
-	koordinatorClientSet             koordinatorclientset.Interface
-	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	reservationCache                 ReservationCache
-	reservationNominator             ReservationNominator
-	networkTopologyManager           networktopology.TreeManager
+	servicesEngine                      *services.Engine
+	koordinatorClientSet                koordinatorclientset.Interface
+	koordinatorSharedInformerFactory    koordinatorinformers.SharedInformerFactory
+	nodeResourceTopologyInformerFactory nrtinformers.SharedInformerFactory
+	reservationCache                    ReservationCache
+	reservationNominator                ReservationNominator
+	networkTopologyManager              networktopology.TreeManager
 }
 
 type Option func(*extendedHandleOptions)
@@ -89,6 +91,12 @@ func WithKoordinatorClientSet(koordinatorClientSet koordinatorclientset.Interfac
 func WithKoordinatorSharedInformerFactory(informerFactory koordinatorinformers.SharedInformerFactory) Option {
 	return func(options *extendedHandleOptions) {
 		options.koordinatorSharedInformerFactory = informerFactory
+	}
+}
+
+func WithNodeResourceTopologySharedInformerFactory(informerFactory nrtinformers.SharedInformerFactory) Option {
+	return func(options *extendedHandleOptions) {
+		options.nodeResourceTopologyInformerFactory = informerFactory
 	}
 }
 
@@ -113,17 +121,18 @@ func WithNetworkTopologyManager(manager networktopology.TreeManager) Option {
 // FrameworkExtenderFactory is a factory for creating a FrameworkExtender.
 // NOTE: DO NOT put framework-level data here.
 type FrameworkExtenderFactory struct {
-	controllerMaps                   *ControllersMap
-	servicesEngine                   *services.Engine
-	koordinatorClientSet             koordinatorclientset.Interface
-	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
-	reservationCache                 ReservationCache     // for testing
-	reservationNominator             ReservationNominator // for testing
-	nextPodPlugin                    NextPodPlugin
-	profiles                         map[string]FrameworkExtender
-	monitor                          *SchedulerMonitor
-	scheduler                        Scheduler
-	schedulePod                      func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
+	controllerMaps                      *ControllersMap
+	servicesEngine                      *services.Engine
+	koordinatorClientSet                koordinatorclientset.Interface
+	koordinatorSharedInformerFactory    koordinatorinformers.SharedInformerFactory
+	nodeResourceTopologyInformerFactory nrtinformers.SharedInformerFactory
+	reservationCache                    ReservationCache     // for testing
+	reservationNominator                ReservationNominator // for testing
+	nextPodPlugin                       NextPodPlugin
+	profiles                            map[string]FrameworkExtender
+	monitor                             *SchedulerMonitor
+	scheduler                           Scheduler
+	schedulePod                         func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 	*errorHandlerDispatcher
 
 	networkTopologyTreeManager networktopology.TreeManager
@@ -142,17 +151,18 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 	}
 
 	return &FrameworkExtenderFactory{
-		controllerMaps:                   NewControllersMap(),
-		servicesEngine:                   handleOptions.servicesEngine,
-		koordinatorClientSet:             handleOptions.koordinatorClientSet,
-		koordinatorSharedInformerFactory: handleOptions.koordinatorSharedInformerFactory,
-		reservationCache:                 handleOptions.reservationCache,
-		reservationNominator:             handleOptions.reservationNominator,
-		profiles:                         map[string]FrameworkExtender{},
-		monitor:                          NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
-		errorHandlerDispatcher:           newErrorHandlerDispatcher(),
-		networkTopologyTreeManager:       handleOptions.networkTopologyManager,
-		metricsRecorder:                  metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
+		controllerMaps:                      NewControllersMap(),
+		servicesEngine:                      handleOptions.servicesEngine,
+		koordinatorClientSet:                handleOptions.koordinatorClientSet,
+		koordinatorSharedInformerFactory:    handleOptions.koordinatorSharedInformerFactory,
+		nodeResourceTopologyInformerFactory: handleOptions.nodeResourceTopologyInformerFactory,
+		reservationCache:                    handleOptions.reservationCache,
+		reservationNominator:                handleOptions.reservationNominator,
+		profiles:                            map[string]FrameworkExtender{},
+		monitor:                             NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
+		errorHandlerDispatcher:              newErrorHandlerDispatcher(),
+		networkTopologyTreeManager:          handleOptions.networkTopologyManager,
+		metricsRecorder:                     metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
 	}, nil
 }
 

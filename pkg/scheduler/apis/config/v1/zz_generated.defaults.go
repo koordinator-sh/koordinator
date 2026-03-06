@@ -35,6 +35,7 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&LoadAwareSchedulingArgs{}, func(obj interface{}) { SetObjectDefaults_LoadAwareSchedulingArgs(obj.(*LoadAwareSchedulingArgs)) })
 	scheme.AddTypeDefaultingFunc(&NodeNUMAResourceArgs{}, func(obj interface{}) { SetObjectDefaults_NodeNUMAResourceArgs(obj.(*NodeNUMAResourceArgs)) })
 	scheme.AddTypeDefaultingFunc(&ReservationArgs{}, func(obj interface{}) { SetObjectDefaults_ReservationArgs(obj.(*ReservationArgs)) })
+	scheme.AddTypeDefaultingFunc(&SchedulingHintArgs{}, func(obj interface{}) { SetObjectDefaults_SchedulingHintArgs(obj.(*SchedulingHintArgs)) })
 	return nil
 }
 
@@ -60,4 +61,8 @@ func SetObjectDefaults_NodeNUMAResourceArgs(in *NodeNUMAResourceArgs) {
 
 func SetObjectDefaults_ReservationArgs(in *ReservationArgs) {
 	SetDefaults_ReservationArgs(in)
+}
+
+func SetObjectDefaults_SchedulingHintArgs(in *SchedulingHintArgs) {
+	SetDefaults_SchedulingHintArgs(in)
 }

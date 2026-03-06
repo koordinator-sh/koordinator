@@ -19,6 +19,7 @@ package frameworkext
 import (
 	"context"
 
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -43,6 +44,7 @@ type ExtendedHandle interface {
 	Scheduler() Scheduler
 	KoordinatorClientSet() koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory
+	NodeResourceTopologyInformerFactory() nrtinformers.SharedInformerFactory
 	// RegisterErrorHandlerFilters supports registering custom PreErrorHandlerFilter and PostErrorHandlerFilter to intercept scheduling errors.
 	// If PreErrorHandlerFilter returns true, the k8s scheduler's default error handler and other handlers will not be called.
 	// After handling scheduling errors, will execute PostErrorHandlerFilter, and if return true, other custom handlers will not be called.
@@ -62,6 +64,12 @@ type FrameworkExtender interface {
 	framework.Framework
 	ExtendedHandle
 
+	// RunFindOneNodePlugin invokes the registered FindOneNodePlugin (if any) during the PreFilter phase.
+	// The plugin's FindOneNode method attempts to deterministically select a single target node name for the given pod.
+	// The normal Filter/Score cycle will still run as a validation step, but only against the single node returned by FindOneNode.
+	// It returns the chosen node name and a Status. If no plugin is registered, or the plugin decides not to intervene,
+	// the status will be framework.Skip and the scheduler falls back to the standard multi-node filtering flow.
+	RunFindOneNodePlugin(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status)
 	SetConfiguredPlugins(plugins *schedconfig.Plugins)
 
 	RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status
@@ -101,10 +109,22 @@ type FindOneNodePluginProvider interface {
 	FindOneNodePlugin() FindOneNodePlugin
 }
 
+// FindOneNodePlugin is responsible for finding a node for the pod according to calculated placement plans.
 type FindOneNodePlugin interface {
 	framework.Plugin
 	// FindOneNode  This extension point is used to help the scheduler customize the Pod Filter and Score process
 	FindOneNode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status)
+}
+
+type PreferNodesPluginProvider interface {
+	PreferNodesPlugin() PreferNodesPlugin
+}
+
+// PreferNodesPlugin is responsible to provide preferred nodes for the pod according to scheduling hints.
+type PreferNodesPlugin interface {
+	framework.Plugin
+	// PreferNodes is used to provide preferred nodes for the scheduler to try scheduling first.
+	PreferNodes(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) ([]string, *framework.Status)
 }
 
 // FilterTransformer is executed before Filter.
