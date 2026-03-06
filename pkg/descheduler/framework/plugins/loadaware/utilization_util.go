@@ -518,9 +518,10 @@ func buildBasicNodeWaterMark(node *corev1.Node, nodeType string) *schedulingv1al
 				},
 			},
 		},
-		Spec: schedulingv1alpha1.NodeWatermarkSpec{
-			Type: nodeType,
-		},
+	}
+
+	if nodeType != "" {
+		mark.Spec.Type = nodeType
 	}
 	return mark
 }

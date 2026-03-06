@@ -97,7 +97,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 	oldData, err := json.Marshal(node)
 	if err != nil {
-		klog.Errorf("failed to marshal old node %#v for node %q: %v", oldNode, nodeName, err)
+		klog.Errorf("failed to marshal old node %#v for node %q: %v", oldData, node.Name, err)
 		return ctrl.Result{Requeue: true}, nil
 	}
 
