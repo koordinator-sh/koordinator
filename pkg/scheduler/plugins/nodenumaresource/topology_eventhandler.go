@@ -22,10 +22,10 @@ import (
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 )
 
@@ -45,14 +45,9 @@ func registerNodeResourceTopologyEventHandler(informerFactory nrtinformers.Share
 func initNRTInformerFactory(handle framework.Handle) (nrtinformers.SharedInformerFactory, error) {
 	nrtClient, ok := handle.(nrtclientset.Interface)
 	if !ok {
-		kubeConfig := *handle.KubeConfig()
-		kubeConfig.ContentType = runtime.ContentTypeJSON
-		kubeConfig.AcceptContentTypes = runtime.ContentTypeJSON
-		var err error
-		nrtClient, err = nrtclientset.NewForConfig(&kubeConfig)
-		if err != nil {
-			return nil, err
-		}
+		extendedHandle := handle.(frameworkext.ExtendedHandle)
+		nodeResTopologyInformerFactory := extendedHandle.NodeResourceTopologyInformerFactory()
+		return nodeResTopologyInformerFactory, nil
 	}
 
 	nodeResTopologyInformerFactory := nrtinformers.NewSharedInformerFactoryWithOptions(nrtClient, 0)

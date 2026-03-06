@@ -114,8 +114,16 @@ func GetGangWaitTime(pod *corev1.Pod) (time.Duration, error) {
 }
 
 const (
+	// DEPRECATED: This api is marked as internal and will be removed next version.
+	// Please use the domain `internal.scheduling.koordinator.sh/` instead.
+	// DeprecatedAnnotationBindGangGroupId is the annotation key for the pod's gang group id to bind.
+	DeprecatedAnnotationBindGangGroupId = SchedulingDomainPrefix + "/bind-gang-group-id"
 	// AnnotationBindGangGroupId is the annotation key for the pod's gang group id to bind.
-	AnnotationBindGangGroupId = SchedulingDomainPrefix + "/bind-gang-group-id"
+	AnnotationBindGangGroupId = InternalSchedulingDomainPrefix + "/bind-gang-group-id"
+	// DEPRECATED: This api is marked as internal and will be removed next version.
+	// Please use the domain `internal.scheduling.koordinator.sh/` instead.
+	// DeprecatedAnnotationBindGangMemberCount is the annotation key for the count of the pod's gang group member pods to bind.
+	DeprecatedAnnotationBindGangMemberCount = SchedulingDomainPrefix + "/bind-gang-member-count"
 	// AnnotationBindGangMemberCount is the annotation key for the count of the pod's gang group member pods to bind.
-	AnnotationBindGangMemberCount = SchedulingDomainPrefix + "/bind-gang-member-count"
+	AnnotationBindGangMemberCount = InternalSchedulingDomainPrefix + "/bind-gang-member-count"
 )

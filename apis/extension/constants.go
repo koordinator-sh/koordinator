@@ -24,6 +24,8 @@ const (
 	ResourceDomainPrefix = corev1.ResourceDefaultNamespacePrefix
 	// SchedulingDomainPrefix represents the scheduling domain prefix
 	SchedulingDomainPrefix = "scheduling.koordinator.sh"
+	// InternalSchedulingDomainPrefix represents the internal scheduling domain prefix
+	InternalSchedulingDomainPrefix = "internal.scheduling.koordinator.sh"
 	// NodeDomainPrefix represents the node domain prefix
 	NodeDomainPrefix = "node.koordinator.sh"
 	PodDomainPrefix  = "pod.koordinator.sh"
