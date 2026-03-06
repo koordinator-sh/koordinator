@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/events"
@@ -265,10 +266,10 @@ func (o *Options) Config() (*deschedulerappconfig.Config, error) {
 		}
 	}
 
-	mgrKubeConfig := *kubeConfig
+	mgrKubeConfig := rest.CopyConfig(kubeConfig)
 	mgrKubeConfig.ContentType = ""
 	mgrKubeConfig.AcceptContentTypes = ""
-	mgr, err := ctrl.NewManager(&mgrKubeConfig, ctrl.Options{
+	mgr, err := ctrl.NewManager(mgrKubeConfig, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "0",
@@ -284,7 +285,7 @@ func (o *Options) Config() (*deschedulerappconfig.Config, error) {
 	c.Client = client
 	c.KubeConfig = kubeConfig
 	c.InformerFactory = informers.NewSharedInformerFactory(mgr, 0)
-	dynClient := dynamic.NewForConfigOrDie(kubeConfig)
+	dynClient := dynamic.NewForConfigOrDie(mgrKubeConfig)
 	c.DynInformerFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 0, corev1.NamespaceAll, nil)
 	c.LeaderElection = leaderElectionConfig
 
