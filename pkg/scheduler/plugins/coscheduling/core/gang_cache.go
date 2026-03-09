@@ -23,7 +23,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
@@ -42,10 +42,10 @@ type GangCache struct {
 	podLister        listerv1.PodLister
 	pgLister         pglister.PodGroupLister
 	pgClient         pgclientset.Interface
-	handle           framework.Handle
+	handle           fwktype.Handle
 }
 
-func NewGangCache(args *config.CoschedulingArgs, podLister listerv1.PodLister, pgLister pglister.PodGroupLister, client pgclientset.Interface, handle framework.Handle) *GangCache {
+func NewGangCache(args *config.CoschedulingArgs, podLister listerv1.PodLister, pgLister pglister.PodGroupLister, client pgclientset.Interface, handle fwktype.Handle) *GangCache {
 	return &GangCache{
 		gangItems:        make(map[string]*Gang),
 		gangGroupInfoMap: make(map[string]*GangGroupInfo),

@@ -85,7 +85,7 @@ func (r *Evictor) EvictPodIfNotEvicted(evictPod *corev1.Pod, reason string, mess
 
 func (r *Evictor) evictPod(evictPod *corev1.Pod, reason string, message string) bool {
 	podEvictMessage := fmt.Sprintf("evict Pod:%s/%s, reason: %s, message: %v", evictPod.Namespace, evictPod.Name, reason, message)
-	_ = audit.V(0).Pod(evictPod.Namespace, evictPod.Name).Reason(reason).Message(message).Do()
+	_ = audit.V(0).Pod(evictPod.Namespace, evictPod.Name).Reason(reason).Message("%s", message).Do()
 
 	if err := util.EvictPodByVersion(context.TODO(), r.kubeClient, evictPod.Namespace, evictPod.Name, metav1.DeleteOptions{
 		GracePeriodSeconds: nil,

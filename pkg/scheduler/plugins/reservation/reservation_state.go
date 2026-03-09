@@ -21,12 +21,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
-var _ framework.StateData = &stateData{}
+var _ fwktype.StateData = &stateData{}
 
 type stateData struct {
 	// scheduling cycle data
@@ -100,7 +101,7 @@ type nodeDiagnosisState struct {
 	errUnmatched             int // unmatched due to parse ownership or affinity error
 }
 
-func (s *stateData) Clone() framework.StateData {
+func (s *stateData) Clone() fwktype.StateData {
 	ns := &stateData{
 		schedulingStateData: schedulingStateData{
 			hasAffinity:              s.hasAffinity,
@@ -150,7 +151,7 @@ func (s *stateData) CleanSchedulingData() {
 	s.schedulingStateData = schedulingStateData{}
 }
 
-func getStateData(cycleState *framework.CycleState) *stateData {
+func getStateData(cycleState fwktype.CycleState) *stateData {
 	v, err := cycleState.Read(stateKey)
 	if err != nil {
 		return &stateData{}

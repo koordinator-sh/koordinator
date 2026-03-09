@@ -37,8 +37,8 @@ import (
 	corelister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	componentresource "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -337,7 +337,7 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation, pod
 			Name:      pod.Name,
 			UID:       pod.UID,
 		})
-		requests := resource.PodRequests(pod, resource.PodResourcesOptions{})
+		requests := componentresource.PodRequests(pod, componentresource.PodResourcesOptions{})
 		actualAllocated = quotav1.Add(actualAllocated, requests)
 	}
 

@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/controller"
@@ -43,6 +44,18 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 )
+
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 func Test_Run(t *testing.T) {
 	ctx := context.TODO()

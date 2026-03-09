@@ -19,114 +19,34 @@ limitations under the License.
 package fake
 
 import (
-	"context"
-
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/scheduling/v1alpha1"
+	gentype "k8s.io/client-go/gentype"
 )
 
-// FakeReservations implements ReservationInterface
-type FakeReservations struct {
+// fakeReservations implements ReservationInterface
+type fakeReservations struct {
+	*gentype.FakeClientWithList[*v1alpha1.Reservation, *v1alpha1.ReservationList]
 	Fake *FakeSchedulingV1alpha1
 }
 
-var reservationsResource = v1alpha1.SchemeGroupVersion.WithResource("reservations")
-
-var reservationsKind = v1alpha1.SchemeGroupVersion.WithKind("Reservation")
-
-// Get takes name of the reservation, and returns the corresponding reservation object, and an error if there is any.
-func (c *FakeReservations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.Reservation, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(reservationsResource, name), &v1alpha1.Reservation{})
-	if obj == nil {
-		return nil, err
+func newFakeReservations(fake *FakeSchedulingV1alpha1) schedulingv1alpha1.ReservationInterface {
+	return &fakeReservations{
+		gentype.NewFakeClientWithList[*v1alpha1.Reservation, *v1alpha1.ReservationList](
+			fake.Fake,
+			"",
+			v1alpha1.SchemeGroupVersion.WithResource("reservations"),
+			v1alpha1.SchemeGroupVersion.WithKind("Reservation"),
+			func() *v1alpha1.Reservation { return &v1alpha1.Reservation{} },
+			func() *v1alpha1.ReservationList { return &v1alpha1.ReservationList{} },
+			func(dst, src *v1alpha1.ReservationList) { dst.ListMeta = src.ListMeta },
+			func(list *v1alpha1.ReservationList) []*v1alpha1.Reservation {
+				return gentype.ToPointerSlice(list.Items)
+			},
+			func(list *v1alpha1.ReservationList, items []*v1alpha1.Reservation) {
+				list.Items = gentype.FromPointerSlice(items)
+			},
+		),
+		fake,
 	}
-	return obj.(*v1alpha1.Reservation), err
-}
-
-// List takes label and field selectors, and returns the list of Reservations that match those selectors.
-func (c *FakeReservations) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ReservationList, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(reservationsResource, reservationsKind, opts), &v1alpha1.ReservationList{})
-	if obj == nil {
-		return nil, err
-	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &v1alpha1.ReservationList{ListMeta: obj.(*v1alpha1.ReservationList).ListMeta}
-	for _, item := range obj.(*v1alpha1.ReservationList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
-}
-
-// Watch returns a watch.Interface that watches the requested reservations.
-func (c *FakeReservations) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(reservationsResource, opts))
-}
-
-// Create takes the representation of a reservation and creates it.  Returns the server's representation of the reservation, and an error, if there is any.
-func (c *FakeReservations) Create(ctx context.Context, reservation *v1alpha1.Reservation, opts v1.CreateOptions) (result *v1alpha1.Reservation, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(reservationsResource, reservation), &v1alpha1.Reservation{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.Reservation), err
-}
-
-// Update takes the representation of a reservation and updates it. Returns the server's representation of the reservation, and an error, if there is any.
-func (c *FakeReservations) Update(ctx context.Context, reservation *v1alpha1.Reservation, opts v1.UpdateOptions) (result *v1alpha1.Reservation, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(reservationsResource, reservation), &v1alpha1.Reservation{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.Reservation), err
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeReservations) UpdateStatus(ctx context.Context, reservation *v1alpha1.Reservation, opts v1.UpdateOptions) (*v1alpha1.Reservation, error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(reservationsResource, "status", reservation), &v1alpha1.Reservation{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.Reservation), err
-}
-
-// Delete takes name of the reservation and deletes it. Returns an error if one occurs.
-func (c *FakeReservations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteActionWithOptions(reservationsResource, name, opts), &v1alpha1.Reservation{})
-	return err
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *FakeReservations) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(reservationsResource, listOpts)
-
-	_, err := c.Fake.Invokes(action, &v1alpha1.ReservationList{})
-	return err
-}
-
-// Patch applies the patch and returns the patched reservation.
-func (c *FakeReservations) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.Reservation, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(reservationsResource, name, pt, data, subresources...), &v1alpha1.Reservation{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.Reservation), err
 }

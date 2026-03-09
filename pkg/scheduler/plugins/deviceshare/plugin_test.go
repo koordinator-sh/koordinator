@@ -37,13 +37,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	fakeclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
@@ -55,7 +58,7 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	v1beta3schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -63,22 +66,35 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
+
 var (
 	testGPUSharedResourceTemplatesCache            = &gpuSharedResourceTemplatesCache{gpuSharedResourceTemplatesInfos: testTemplatesInfos}
 	testGPUSharedResourceTemplatesMatchedResources = []corev1.ResourceName{apiext.ResourceHuaweiNPUCore}
 )
 
-var _ framework.SharedLister = &testSharedLister{}
+var _ fwktype.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*corev1.Node
-	nodeInfos   []*framework.NodeInfo
+	nodeInfos   []fwktype.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
 }
 
 func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLister {
 	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	nodeInfos := make([]*framework.NodeInfo, 0)
+	nodeInfos := make([]fwktype.NodeInfo, 0)
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
@@ -104,11 +120,11 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 	}
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwktype.NodeInfoLister {
 	return f
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwktype.StorageInfoLister {
 	return f
 }
 
@@ -116,19 +132,19 @@ func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
 	return false
 }
 
-func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) List() ([]fwktype.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
 
-func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 	nodeInfo, ok := f.nodeInfoMap[nodeName]
 	if !ok {
 		return nil, fmt.Errorf("unable to find node: %s", nodeName)
@@ -195,10 +211,10 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
 }
 
 func getDefaultArgs() *schedulerconfig.DeviceShareArgs {
-	v1beta3Args := &v1beta3schedulerconfig.DeviceShareArgs{}
-	v1beta3schedulerconfig.SetDefaults_DeviceShareArgs(v1beta3Args)
+	v1Args := &v1schedulerconfig.DeviceShareArgs{}
+	v1schedulerconfig.SetDefaults_DeviceShareArgs(v1Args)
 	args := &schedulerconfig.DeviceShareArgs{}
-	_ = v1beta3schedulerconfig.Convert_v1beta3_DeviceShareArgs_To_config_DeviceShareArgs(v1beta3Args, args, nil)
+	_ = v1schedulerconfig.Convert_v1_DeviceShareArgs_To_config_DeviceShareArgs(v1Args, args, nil)
 	return args
 }
 
@@ -228,7 +244,7 @@ func Test_New(t *testing.T) {
 		runtime.WithSnapshotSharedLister(snapshot),
 	)
 	assert.Nil(t, err)
-	p, err := proxyNew(getDefaultArgs(), fh)
+	p, err := proxyNew(context.TODO(), getDefaultArgs(), fh)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 	assert.Equal(t, Name, p.Name())
@@ -244,7 +260,7 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	nodeInfo.SetNode(node)
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
@@ -267,7 +283,7 @@ func Test_Plugin_PreFilterExtensions(t *testing.T) {
 			},
 		},
 	}
-	_, status := pl.PreFilter(context.TODO(), cycleState, pod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 	assert.True(t, status.IsSuccess())
 
 	pl.nodeDeviceCache.updateNodeDevice("test-node-1", &schedulingv1alpha1.Device{
@@ -365,7 +381,7 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 	assert.NoError(t, reservationutil.SetReservationAvailable(testReservation, node.Name))
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
@@ -391,7 +407,7 @@ func Test_Plugin_PreFilterExtensionsWithReservation(t *testing.T) {
 			},
 		},
 	}
-	_, status := pl.PreFilter(context.TODO(), cycleState, pod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 	assert.True(t, status.IsSuccess())
 
 	pl.nodeDeviceCache.updateNodeDevice("test-node-1", &schedulingv1alpha1.Device{
@@ -501,7 +517,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 	tests := []struct {
 		name       string
 		pod        *corev1.Pod
-		wantStatus *framework.Status
+		wantStatus *fwktype.Status
 		wantState  *preFilterState
 	}{
 		{
@@ -512,7 +528,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
-			wantStatus: framework.NewStatus(framework.Skip),
+			wantStatus: fwktype.NewStatus(fwktype.Skip),
 		},
 		{
 			name: "pod has invalid fpga request",
@@ -536,7 +552,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource unit %v: 101", apiext.ResourceFPGA)),
+			wantStatus: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource unit %v: 101", apiext.ResourceFPGA)),
 		},
 		{
 			name: "pod has invalid gpu request 1",
@@ -560,7 +576,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource unit %v: 101", apiext.ResourceGPU)),
+			wantStatus: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource unit %v: 101", apiext.ResourceGPU)),
 		},
 		{
 			name: "pod has invalid gpu request 2",
@@ -584,7 +600,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource device requests: [%s]", apiext.ResourceGPUCore)),
+			wantStatus: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource device requests: [%s]", apiext.ResourceGPUCore)),
 		},
 		{
 			name: "pod has invalid gpu request 3",
@@ -608,7 +624,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource device requests: [%s]", apiext.ResourceGPUMemoryRatio)),
+			wantStatus: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource device requests: [%s]", apiext.ResourceGPUMemoryRatio)),
 		},
 		{
 			name: "pod has invalid gpu request 4",
@@ -632,7 +648,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource device requests: [%s]", apiext.ResourceHuaweiNPUCore)),
+			wantStatus: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("invalid resource device requests: [%s]", apiext.ResourceHuaweiNPUCore)),
 		},
 		{
 			name: "pod has invalid gpu request 5",
@@ -660,7 +676,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNoMatchedGPUSharedResourceTemplate),
+			wantStatus: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNoMatchedGPUSharedResourceTemplate),
 		},
 		{
 			name: "pod has valid gpu request 1",
@@ -1081,7 +1097,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
 				preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 			},
-			wantStatus: framework.NewStatus(framework.Skip),
+			wantStatus: fwktype.NewStatus(fwktype.Skip),
 		},
 	}
 	for _, tt := range tests {
@@ -1091,7 +1107,7 @@ func Test_Plugin_PreFilter(t *testing.T) {
 				gpuSharedResourceTemplatesMatchedResources: testGPUSharedResourceTemplatesMatchedResources,
 			}
 			cycleState := framework.NewCycleState()
-			_, status := p.PreFilter(context.TODO(), cycleState, tt.pod)
+			_, status := p.PreFilter(context.TODO(), cycleState, tt.pod, nil)
 			assert.Equal(t, tt.wantStatus, status)
 			state, _ := getPreFilterState(cycleState)
 			if tt.wantState != nil && tt.wantState.podRequests != nil {
@@ -1155,12 +1171,12 @@ func Test_Plugin_Filter(t *testing.T) {
 		reserved             apiext.DeviceAllocations
 		nodeDeviceCache      *nodeDeviceCache
 		designatedAllocation apiext.DeviceAllocations
-		nodeInfo             *framework.NodeInfo
-		want                 *framework.Status
+		nodeInfo             fwktype.NodeInfo
+		want                 *fwktype.Status
 	}{
 		{
 			name: "error missing preFilterState",
-			want: framework.AsStatus(framework.ErrNotFound),
+			want: fwktype.AsStatus(fwktype.ErrNotFound),
 		},
 		{
 			name:  "skip == true",
@@ -1191,7 +1207,7 @@ func Test_Plugin_Filter(t *testing.T) {
 				},
 			},
 			nodeInfo: testNodeInfo,
-			want:     framework.NewStatus(framework.UnschedulableAndUnresolvable, "Insufficient gpu devices"),
+			want:     fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "Insufficient gpu devices"),
 		},
 		{
 			name: "insufficient device resource 2",
@@ -1255,7 +1271,7 @@ func Test_Plugin_Filter(t *testing.T) {
 				},
 			},
 			nodeInfo: testNodeInfo,
-			want:     framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+			want:     fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 		},
 		{
 			name: "insufficient device resource 3",
@@ -1343,7 +1359,7 @@ func Test_Plugin_Filter(t *testing.T) {
 				},
 			},
 			nodeInfo: testNodeInfo,
-			want:     framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+			want:     fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 		},
 		{
 			name: "insufficient device resource 4",
@@ -1436,7 +1452,7 @@ func Test_Plugin_Filter(t *testing.T) {
 				},
 			},
 			nodeInfo: testNodeInfo,
-			want:     framework.NewStatus(framework.Unschedulable, "Insufficient"),
+			want:     fwktype.NewStatus(fwktype.Unschedulable, "Insufficient"),
 		},
 		{
 			name: "insufficient device resource 5",
@@ -1508,7 +1524,7 @@ func Test_Plugin_Filter(t *testing.T) {
 				},
 			},
 			nodeInfo: testHuaweiNodeInfo,
-			want:     framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+			want:     fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 		},
 		{
 			name: "insufficient device resource 6",
@@ -1583,7 +1599,7 @@ func Test_Plugin_Filter(t *testing.T) {
 				},
 			},
 			nodeInfo: testHuaweiNodeInfo,
-			want:     framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+			want:     fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 		},
 		{
 			name: "sufficient device resource 1",
@@ -2634,7 +2650,7 @@ func Test_Plugin_Filter(t *testing.T) {
 			},
 			nodeDeviceCache: newNodeDeviceCache(),
 			nodeInfo:        testNodeInfo,
-			want:            framework.NewStatus(framework.Error, "GPUIsolationProviderHAMICore not found on the node"),
+			want:            fwktype.NewStatus(fwktype.Error, "GPUIsolationProviderHAMICore not found on the node"),
 		},
 		{
 			name: "the pod requires hami's GPU isolation capability, and hami-core is installed on the node",
@@ -2742,7 +2758,7 @@ func Test_Plugin_Filter(t *testing.T) {
 				},
 			},
 			nodeInfo: testNodeInfo,
-			want:     framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+			want:     fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 		},
 		{
 			name: "allocate by designated, succeed",
@@ -3099,7 +3115,7 @@ func Test_Plugin_Filter(t *testing.T) {
 				assert.NoError(t, err)
 			}
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 			pl.nodeDeviceCache = tt.nodeDeviceCache
@@ -3179,7 +3195,7 @@ func Test_Plugin_FilterNominateReservation(t *testing.T) {
 		},
 	}
 	suit := newPluginTestSuit(t, []*corev1.Node{node})
-	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
@@ -3202,7 +3218,7 @@ func Test_Plugin_FilterNominateReservation(t *testing.T) {
 			},
 		},
 	}
-	_, status := pl.PreFilter(context.TODO(), cycleState, pod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 	assert.True(t, status.IsSuccess())
 
 	pl.nodeDeviceCache.updateNodeDevice("test-node-1", &schedulingv1alpha1.Device{
@@ -3313,7 +3329,7 @@ func Test_Plugin_FilterNominateReservation(t *testing.T) {
 	assert.True(t, status.IsSuccess())
 
 	status = pl.FilterNominateReservation(context.TODO(), cycleState, pod, reservationInfo, "test-node-1")
-	assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"), status)
+	assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient gpu devices"), status)
 }
 
 func Test_Plugin_Reserve(t *testing.T) {
@@ -3341,7 +3357,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 	}
 	type wants struct {
 		allocationResult apiext.DeviceAllocations
-		status           *framework.Status
+		status           *fwktype.Status
 	}
 	tests := []struct {
 		name  string
@@ -3355,7 +3371,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				node: testNode,
 			},
 			wants: wants{
-				status: framework.AsStatus(framework.ErrNotFound),
+				status: fwktype.AsStatus(fwktype.ErrNotFound),
 			},
 		},
 		{
@@ -3443,7 +3459,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+				status: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 			},
 		},
 		{
@@ -3507,7 +3523,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+				status: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 			},
 		},
 		{
@@ -3563,7 +3579,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+				status: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 			},
 		},
 		{
@@ -3620,7 +3636,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.Unschedulable, "Insufficient"),
+				status: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient"),
 			},
 		},
 		{
@@ -3692,7 +3708,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.Unschedulable, "Insufficient"),
+				status: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient"),
 			},
 		},
 		{
@@ -3762,7 +3778,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+				status: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 			},
 		},
 		{
@@ -3835,7 +3851,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+				status: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 			},
 		},
 		{
@@ -4920,7 +4936,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.Unschedulable, "Insufficient rdma devices"),
+				status: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient rdma devices"),
 			},
 		},
 		{
@@ -5072,14 +5088,14 @@ func Test_Plugin_Reserve(t *testing.T) {
 				},
 			},
 			wants: wants{
-				status: framework.NewStatus(framework.Unschedulable, "Insufficient rdma devices"),
+				status: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient rdma devices"),
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, []*corev1.Node{tt.args.node})
-			p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 			pl.nodeDeviceCache = tt.args.nodeDeviceCache
@@ -5524,7 +5540,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 		wantPod                            *corev1.Pod
 		deviceCR                           *schedulingv1alpha1.Device
 		devicePluginAdaptionFeatureEnabled bool
-		wantStatus                         *framework.Status
+		wantStatus                         *fwktype.Status
 	}{
 		{
 			name: "empty state",
@@ -5532,7 +5548,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 				pod: &corev1.Pod{},
 			},
 			wantPod:    &corev1.Pod{},
-			wantStatus: framework.AsStatus(framework.ErrNotFound),
+			wantStatus: fwktype.AsStatus(fwktype.ErrNotFound),
 		},
 		{
 			name: "state skip",
@@ -5740,7 +5756,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			pl, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 
 			suit.Framework.SharedInformerFactory().Start(nil)
@@ -5818,7 +5834,7 @@ func Test_Plugin_PreBindReservation(t *testing.T) {
 	_, err = suit.koordClientSet.SchedulingV1alpha1().Devices().Create(context.TODO(), fakeDeviceCRWithoutTopology, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	pl, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+	pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 
 	suit.Framework.SharedInformerFactory().Start(nil)

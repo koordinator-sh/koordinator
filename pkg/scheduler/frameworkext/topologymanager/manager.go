@@ -21,7 +21,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kube-scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
@@ -33,16 +34,16 @@ const (
 )
 
 type Interface interface {
-	Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status
+	Admit(ctx context.Context, cycleState framework.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *fwktype.Status
 }
 
 type NUMATopologyHintProvider interface {
 	// GetPodTopologyHints returns a map of resource names to a list of possible
 	// concrete resource allocations per Pod in terms of NUMA locality hints.
-	GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]NUMATopologyHint, *framework.Status)
+	GetPodTopologyHints(ctx context.Context, cycleState framework.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]NUMATopologyHint, *fwktype.Status)
 	// Allocate triggers resource allocation to occur on the HintProvider after
 	// all hints have been gathered and the aggregated Hint
-	Allocate(ctx context.Context, cycleState *framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *framework.Status
+	Allocate(ctx context.Context, cycleState framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *fwktype.Status
 }
 
 var _ Interface = &topologyManager{}
@@ -61,10 +62,10 @@ func New(hintProviderFactory NUMATopologyHintProviderFactory) Interface {
 	}
 }
 
-func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status {
+func (m *topologyManager) Admit(ctx context.Context, cycleState framework.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *fwktype.Status {
 	s, err := cycleState.Read(affinityStateKey)
 	if err != nil {
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 	store := s.(*Store)
 
@@ -78,7 +79,7 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.Cycle
 			klog.KObj(pod), bestHint, node.Name, policy, exclusivePolicy, admit, reasons)
 		if !admit {
 			if len(reasons) != 0 {
-				return framework.NewStatus(framework.Unschedulable, reasons...)
+				return fwktype.NewStatus(fwktype.Unschedulable, reasons...)
 			}
 		}
 		// TODO If the Affinity above is confirmed to be allocatable, it seems unnecessary to call this again here.
@@ -96,7 +97,7 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState *framework.Cycle
 	return nil
 }
 
-func (m *topologyManager) calculateAffinity(ctx context.Context, cycleState *framework.CycleState, policy Policy, pod *corev1.Pod, node *corev1.Node, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool, []string) {
+func (m *topologyManager) calculateAffinity(ctx context.Context, cycleState framework.CycleState, policy Policy, pod *corev1.Pod, node *corev1.Node, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) (NUMATopologyHint, bool, []string) {
 	providersHints, reasons := m.accumulateProvidersHints(ctx, cycleState, pod, node)
 	if len(reasons) != 0 {
 		return NUMATopologyHint{}, false, reasons
@@ -110,7 +111,7 @@ func (m *topologyManager) calculateAffinity(ctx context.Context, cycleState *fra
 	return bestHint, admit, reasons
 }
 
-func (m *topologyManager) accumulateProvidersHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) ([]map[string][]NUMATopologyHint, []string) {
+func (m *topologyManager) accumulateProvidersHints(ctx context.Context, cycleState framework.CycleState, pod *corev1.Pod, node *corev1.Node) ([]map[string][]NUMATopologyHint, []string) {
 	var providersHints []map[string][]NUMATopologyHint
 
 	hintProviders := m.hintProviderFactory.GetNUMATopologyHintProvider()
@@ -128,7 +129,7 @@ func (m *topologyManager) accumulateProvidersHints(ctx context.Context, cycleSta
 	return providersHints, reasons
 }
 
-func (m *topologyManager) allocateResources(ctx context.Context, cycleState *framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *framework.Status {
+func (m *topologyManager) allocateResources(ctx context.Context, cycleState framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *fwktype.Status {
 	hintProviders := m.hintProviderFactory.GetNUMATopologyHintProvider()
 	for _, provider := range hintProviders {
 		status := provider.Allocate(ctx, cycleState, affinity, pod, node)

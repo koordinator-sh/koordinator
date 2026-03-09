@@ -24,7 +24,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -40,11 +40,11 @@ type mockNUMATopologyHintProvider struct {
 	//allocateError error
 }
 
-func (m *mockNUMATopologyHintProvider) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]NUMATopologyHint, *framework.Status) {
+func (m *mockNUMATopologyHintProvider) GetPodTopologyHints(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]NUMATopologyHint, *fwktype.Status) {
 	return m.th, nil
 }
 
-func (m *mockNUMATopologyHintProvider) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *framework.Status {
+func (m *mockNUMATopologyHintProvider) Allocate(ctx context.Context, cycleState fwktype.CycleState, affinity NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *fwktype.Status {
 	return nil
 }
 

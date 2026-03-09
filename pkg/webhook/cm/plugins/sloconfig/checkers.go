@@ -50,7 +50,7 @@ func CreateCheckersAll(oldConfig *corev1.ConfigMap, config *corev1.ConfigMap, ne
 func (c checkers) CheckConfigContents() error {
 	for _, checker := range c {
 		if checker.InitStatus() != InitSuccess {
-			return fmt.Errorf(checker.InitStatus())
+			return fmt.Errorf("%s", checker.InitStatus())
 		}
 		err := checker.ConfigParamValid()
 		if err != nil {

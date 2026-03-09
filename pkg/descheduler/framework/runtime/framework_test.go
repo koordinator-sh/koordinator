@@ -59,7 +59,7 @@ type TestEvictorPlugin struct {
 }
 
 func newTestEvictorPluginFactory(filters ...evictFilterFn) PluginFactory {
-	return func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	return func(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 		return &TestEvictorPlugin{
 			handle:  handle,
 			filters: filters,
@@ -98,7 +98,7 @@ type TestDeschedulePluginWithEvictor struct {
 	evictor framework.Evictor
 }
 
-func newTestDeschedulePluginWithEvictor(injArgs runtime.Object, f framework.Handle) (framework.Plugin, error) {
+func newTestDeschedulePluginWithEvictor(ctx context.Context, injArgs runtime.Object, f framework.Handle) (framework.Plugin, error) {
 	return &TestDeschedulePluginWithEvictor{evictor: f.Evictor()}, nil
 }
 
@@ -118,7 +118,7 @@ type TestPlugin struct {
 	inj  injectedResult
 }
 
-func newDeschedulePlugin(injArgs runtime.Object, f framework.Handle) (framework.Plugin, error) {
+func newDeschedulePlugin(ctx context.Context, injArgs runtime.Object, f framework.Handle) (framework.Plugin, error) {
 	var inj injectedResult
 	if err := DecodeInto(injArgs, &inj); err != nil {
 		return nil, err
@@ -273,9 +273,9 @@ func TestNewFramework(t *testing.T) {
 			initTimes := map[string]int{}
 			for k, v := range registryClone {
 				pluginName, pluginFactory := k, v
-				registryClone[pluginName] = func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+				registryClone[pluginName] = func(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 					initTimes[pluginName]++
-					return pluginFactory(args, handle)
+					return pluginFactory(ctx, args, handle)
 				}
 			}
 
@@ -286,7 +286,7 @@ func TestNewFramework(t *testing.T) {
 			eventRecorderAdapter := record.NewEventRecorderAdapter(fakeRecorder)
 			kubeConfig := &restclient.Config{}
 
-			f, err := NewFramework(registryClone, tt.profile,
+			f, err := NewFramework(context.TODO(), registryClone, tt.profile,
 				WithClientSet(fakeClient),
 				WithSharedInformerFactory(sharedInformerFactory),
 				WithKubeConfig(kubeConfig),
@@ -431,7 +431,7 @@ func TestRunDeschedulePlugins(t *testing.T) {
 
 			registryClone[testDeschedulePluginName] = newDeschedulePlugin
 
-			f, err := NewFramework(registryClone, tt.profile)
+			f, err := NewFramework(context.TODO(), registryClone, tt.profile)
 			if err != nil {
 				t.Fatalf("failed to NewFramework, err %v", err)
 			}
@@ -559,7 +559,7 @@ func TestRunBalancePlugins(t *testing.T) {
 
 			registryClone[testBalancePluginName] = newDeschedulePlugin
 
-			f, err := NewFramework(registryClone, tt.profile)
+			f, err := NewFramework(context.TODO(), registryClone, tt.profile)
 			if err != nil {
 				t.Fatalf("failed to NewFramework, err %v", err)
 			}

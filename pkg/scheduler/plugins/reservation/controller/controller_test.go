@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	basemetrics "k8s.io/component-base/metrics"
@@ -48,6 +49,20 @@ import (
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
+
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	// In k8s v1.35, WatchListClient defaults to true (Beta), but fake clients
+	// don't support bookmark events required by WatchList, causing WaitForCacheSync to hang.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 func TestFailedOrSucceededReservation(t *testing.T) {
 	fakeClientSet := kubefake.NewSimpleClientset()

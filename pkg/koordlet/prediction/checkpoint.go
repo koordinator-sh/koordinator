@@ -39,7 +39,7 @@ type ModelCheckpoint struct {
 	Memory      *histogram.HistogramCheckpoint
 	LastUpdated metav1.Time
 
-	Error error `json:"-,omitempty"`
+	Error error `json:"-"`
 }
 
 // Checkpointer is an interface for saving and restoring model checkpoints.

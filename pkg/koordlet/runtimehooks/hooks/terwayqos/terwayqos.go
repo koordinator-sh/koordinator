@@ -77,7 +77,7 @@ func (p *Plugin) Register(op hooks.Options) {
 
 	err := os.MkdirAll(rootPath, os.ModeDir)
 	if err != nil {
-		klog.Fatal("create terway qos dir failed, err: %v", err)
+		klog.Fatalf("create terway qos dir failed, err: %v", err)
 	}
 
 	go p.run()

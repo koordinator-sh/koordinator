@@ -29,7 +29,7 @@ type FakeConfigV1alpha1 struct {
 }
 
 func (c *FakeConfigV1alpha1) ClusterColocationProfiles() v1alpha1.ClusterColocationProfileInterface {
-	return &FakeClusterColocationProfiles{c}
+	return newFakeClusterColocationProfiles(c)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

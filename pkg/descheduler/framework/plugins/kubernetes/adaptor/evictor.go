@@ -18,6 +18,7 @@ package adaptor
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	k8sdeschedulerevictions "sigs.k8s.io/descheduler/pkg/descheduler/evictions"
@@ -47,12 +48,15 @@ func (a *evictorAdaptor) PreEvictionFilter(pod *corev1.Pod) bool {
 }
 
 // Evict evicts a pod (no pre-check performed)
-func (a *evictorAdaptor) Evict(ctx context.Context, pod *corev1.Pod, evictOptions k8sdeschedulerevictions.EvictOptions) bool {
+func (a *evictorAdaptor) Evict(ctx context.Context, pod *corev1.Pod, evictOptions k8sdeschedulerevictions.EvictOptions) error {
 	options := framework.EvictOptions{
 		Reason: evictOptions.Reason,
 	}
 	framework.FillEvictOptionsFromContext(ctx, &options)
-	return a.evictor.Evict(ctx, pod, options)
+	if ok := a.evictor.Evict(ctx, pod, options); !ok {
+		return fmt.Errorf("failed to evict pod %s/%s", pod.Namespace, pod.Name)
+	}
+	return nil
 }
 
 // NodeLimitExceeded checks if the number of evictions for a node was exceeded
