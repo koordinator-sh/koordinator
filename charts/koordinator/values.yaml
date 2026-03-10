@@ -1,0 +1,194 @@
+# Default values for koordinator.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+crds:
+  # whether enable crds
+  managed: true
+  # enable or disable specific crds
+  clustercolocationprofiles: true
+  devices: true
+  elasticquotaprofiles: true
+  elasticquotas: true
+  nodemetrics: true
+  nodeslos: true
+  noderesourcetopologies: true
+  recommendations: true
+  reservations: true
+  podgroups: true
+  podmigrationjobs: true
+  clusternetworktopologies: true
+  scheduleexplanations: true
+
+# values for koordinator installation
+installation:
+  namespace: koordinator-system
+  roleListGroups:
+    - '*'
+
+featureGates: ""
+
+imageRepositoryHost: registry.cn-beijing.aliyuncs.com
+
+imagePullSecrets: {}
+
+koordlet:
+  image:
+    repository: koordinator-sh/koordlet
+    tag: "v1.7.0"
+  resources:
+    limits:
+      cpu: 200m
+      # recommended for less than 200 pods per node
+      memory: 256Mi
+    requests:
+      cpu: "0"
+      memory: "0"
+  features: ""
+  log:
+    # log level for koordlet
+    level: "4"
+  hostDirs:
+    kubeletConfigDir: /etc/kubernetes/
+    kubeletLibDir: /var/lib/kubelet/
+    koordProxyRegisterDir: /etc/runtime/hookserver.d/
+    koordletSockDir: /var/run/koordlet
+    predictionCheckpointDir: /var/run/koordlet/prediction-checkpoints
+    # if not specified, use tmpfs by default
+    koordletTSDBDir: ""
+    podResourcesProxyPath: /var/run/koordlet/pod-resources/
+  runtimeClassName: ""
+  nodeAffinity: {}
+  metrics:
+    port: 9316
+  enableServiceMonitor: false
+
+
+manager:
+  # settings for log print
+  log:
+    # log level for koord-manager
+    level: "4"
+
+  replicas: 2
+  image:
+    repository: koordinator-sh/koord-manager
+    tag: "v1.7.0"
+  webhook:
+    port: 9876
+  metrics:
+    addr: ""
+    port: 8080
+  healthProbe:
+    port: 8000
+
+  resyncPeriod: "0"
+
+  # resources of koord-manager container
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+
+  hostNetwork: false
+
+  nodeAffinity: {}
+  nodeSelector: {}
+  tolerations: []
+
+webhookConfiguration:
+  failurePolicy:
+    pods: Ignore
+    elasticquotas: Ignore
+    nodeStatus: Ignore
+    nodes: Ignore
+    reservations: Ignore
+  timeoutSeconds: 30
+
+serviceAccount:
+  annotations: {}
+
+
+scheduler:
+  # settings for log print
+  log:
+    # log level for koord-scheduler
+    level: "4"
+
+  replicas: 2
+  image:
+    repository: koordinator-sh/koord-scheduler
+    tag: "v1.7.0"
+  port: 10251
+
+  # feature-gates for k8s > 1.22
+  featureGates: ""
+  # feature-gates for k8s 1.22
+  compatible122FeatureGates: "CompatibleCSIStorageCapacity=true"
+  # feature-gates for k8s < 1.22
+  compatibleBelow122FeatureGates: "DisableCSIStorageCapacityInformer=true,CompatiblePodDisruptionBudget=true"
+  enableJobPreemption: true
+
+  # resources of koord-scheduler container
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+
+  hostNetwork: false
+
+  nodeAffinity: {}
+  nodeSelector: {}
+  tolerations: []
+
+descheduler:
+  # settings for log print
+  log:
+    # log level for koord-descheduler
+    level: "4"
+
+  replicas: 2
+  image:
+    repository: koordinator-sh/koord-descheduler
+    tag: "v1.7.0"
+  port: 10251
+
+  featureGates: ""
+
+  # resources of koord-descheduler container
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+
+  hostNetwork: false
+
+  nodeAffinity: {}
+  nodeSelector: {}
+  tolerations: []
+
+deviceDaemon:
+  image:
+    repository: koordinator-sh/koord-device-daemon
+    tag: "v1.7.0"
+  resources:
+    limits:
+      cpu: 200m
+      # recommended for less than 200 pods per node
+      memory: 256Mi
+    requests:
+      cpu: "0"
+      memory: "0"
+  log:
+    # log level for koordlet
+    level: "4"
+  nodeAffinity: {}

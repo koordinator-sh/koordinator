@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    koord-app: koord-descheduler
+  name: koord-descheduler
+  namespace: {{ .Values.installation.namespace }}
+spec:
+  replicas: {{ .Values.descheduler.replicas }}
+  selector:
+    matchLabels:
+      koord-app: koord-descheduler
+  minReadySeconds: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 100%
+  template:
+    metadata:
+      labels:
+        koord-app: koord-descheduler
+    spec:
+{{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{- toYaml . | nindent 8 }}
+{{- end }}
+      containers:
+        - args:
+            - --v={{ .Values.descheduler.log.level }}
+            - --config=/config/koord-descheduler.config
+          command:
+            - /koord-descheduler
+          image: "{{ .Values.imageRepositoryHost }}/{{ .Values.descheduler.image.repository }}:{{ .Values.descheduler.image.tag }}"
+          imagePullPolicy: Always
+          name: descheduler
+          volumeMounts:
+            - mountPath: /config
+              name: koord-descheduler-config-volume
+          readinessProbe:
+            httpGet:
+              path: healthz
+              port: {{ .Values.descheduler.port }}
+          resources:
+            {{- toYaml .Values.descheduler.resources | nindent 12 }}
+      hostNetwork: {{ .Values.descheduler.hostNetwork }}
+      terminationGracePeriodSeconds: 10
+      serviceAccountName: koord-descheduler
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: koord-descheduler-config
+            path: koord-descheduler.config
+          name: koord-descheduler-config
+        name: koord-descheduler-config-volume
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: koord-app
+                  operator: In
+                  values:
+                  - koord-descheduler
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+{{- with .Values.descheduler.nodeAffinity }}
+        nodeAffinity:
+{{ toYaml . | indent 10 }}
+{{- end }}
+
+{{- if .Values.descheduler.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.descheduler.nodeSelector | indent 8 }}
+{{- end }}
+
+{{- if .Values.descheduler.tolerations }}
+      tolerations:
+{{ toYaml .Values.descheduler.tolerations | indent 8 }}
+{{- end }}
+

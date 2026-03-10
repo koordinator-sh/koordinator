@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: koord-device-daemon
+  namespace: {{ .Values.installation.namespace }}
+  labels:
+    koord-app: koord-device-daemon
+spec:
+  selector:
+    matchLabels:
+      koord-app: koord-device-daemon
+  minReadySeconds: 10
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 20%
+  template:
+    metadata:
+      labels:
+        koord-app: koord-device-daemon
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - command:
+            - /koord-device-daemon
+          args:
+          - --v={{ .Values.deviceDaemon.log.level }}
+          image: "{{ .Values.imageRepositoryHost }}/{{ .Values.deviceDaemon.image.repository }}:{{ .Values.deviceDaemon.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          name: koord-device-daemon
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+            - name: MIG_STRATEGY
+              value: none
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          resources:
+            {{- toYaml .Values.deviceDaemon.resources | nindent 12 }}
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /hostfs
+              name: host-root
+            - mountPath: /host-sys/
+              name: host-sys
+            - mountPath: /var/run/koordlet/xpu-device-infos/
+              mountPropagation: Bidirectional
+              name: device-infos
+            - mountPath: /dev/
+              name: host-dev
+{{- if .Values.deviceDaemon.nodeAffinity }}
+      affinity:
+        {{- toYaml .Values.deviceDaemon.nodeAffinity | nindent 8 }}
+{{- end }}
+      tolerations:
+        - operator: Exists
+      hostIPC: true
+      hostNetwork: true
+      hostPID: true
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsUser: 0
+        seccompProfile:
+          type: Unconfined
+      volumes:
+        - hostPath:
+            path: /
+            type: ""
+          name: host-root
+        - hostPath:
+            path: /sys/
+            type: ""
+          name: host-sys
+        - hostPath:
+            path: /var/run/koordlet/xpu-device-infos
+            type: DirectoryOrCreate
+          name: device-infos
+        - hostPath:
+            path: /dev/
+            type: ""
+          name: host-dev

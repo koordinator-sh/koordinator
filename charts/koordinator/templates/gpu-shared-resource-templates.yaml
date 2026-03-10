@@ -1,0 +1,162 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-shared-resource-templates
+  namespace: {{ .Values.installation.namespace }}
+data:
+  data.yaml: |-
+    huawei-Ascend-310P:
+      vir01:
+        huawei.com/npu-core: "1"
+        huawei.com/npu-cpu: "1"
+        huawei.com/npu-dvpp: "12"
+        koordinator.sh/gpu-memory: 3Gi
+      vir02:
+        huawei.com/npu-core: "2"
+        huawei.com/npu-cpu: "2"
+        huawei.com/npu-dvpp: "25"
+        koordinator.sh/gpu-memory: 6Gi
+      vir02_1c:
+        huawei.com/npu-core: "2"
+        huawei.com/npu-cpu: "1"
+        huawei.com/npu-dvpp: "25"
+        koordinator.sh/gpu-memory: 6Gi
+      vir04:
+        huawei.com/npu-core: "4"
+        huawei.com/npu-cpu: "4"
+        huawei.com/npu-dvpp: "50"
+        koordinator.sh/gpu-memory: 12Gi
+      vir04_3c:
+        huawei.com/npu-core: "4"
+        huawei.com/npu-cpu: "3"
+        huawei.com/npu-dvpp: "50"
+        koordinator.sh/gpu-memory: 12Gi
+      vir04_3c_ndvpp:
+        huawei.com/npu-core: "4"
+        huawei.com/npu-cpu: "3"
+        koordinator.sh/gpu-memory: 12Gi
+      vir04_4c_dvpp:
+        huawei.com/npu-core: "4"
+        huawei.com/npu-cpu: "4"
+        huawei.com/npu-dvpp: "100"
+        koordinator.sh/gpu-memory: 12Gi
+    huawei-Ascend-310P3:
+      vir01:
+        huawei.com/npu-core: "1"
+        huawei.com/npu-cpu: "1"
+        huawei.com/npu-dvpp: "12"
+        koordinator.sh/gpu-memory: 3Gi
+      vir02:
+        huawei.com/npu-core: "2"
+        huawei.com/npu-cpu: "2"
+        huawei.com/npu-dvpp: "25"
+        koordinator.sh/gpu-memory: 6Gi
+      vir02_1c:
+        huawei.com/npu-core: "2"
+        huawei.com/npu-cpu: "1"
+        huawei.com/npu-dvpp: "25"
+        koordinator.sh/gpu-memory: 6Gi
+      vir04:
+        huawei.com/npu-core: "4"
+        huawei.com/npu-cpu: "4"
+        huawei.com/npu-dvpp: "50"
+        koordinator.sh/gpu-memory: 12Gi
+      vir04_3c:
+        huawei.com/npu-core: "4"
+        huawei.com/npu-cpu: "3"
+        huawei.com/npu-dvpp: "50"
+        koordinator.sh/gpu-memory: 12Gi
+      vir04_3c_ndvpp:
+        huawei.com/npu-core: "4"
+        huawei.com/npu-cpu: "3"
+        koordinator.sh/gpu-memory: 12Gi
+      vir04_4c_dvpp:
+        huawei.com/npu-core: "4"
+        huawei.com/npu-cpu: "4"
+        huawei.com/npu-dvpp: "100"
+        koordinator.sh/gpu-memory: 12Gi
+    huawei-Ascend-910:
+      vir02:
+        huawei.com/npu-core: "2"
+        huawei.com/npu-cpu: "1"
+        koordinator.sh/gpu-memory: 2Gi
+      vir04:
+        huawei.com/npu-core: "4"
+        huawei.com/npu-cpu: "1"
+        koordinator.sh/gpu-memory: 4Gi
+      vir08:
+        huawei.com/npu-core: "8"
+        huawei.com/npu-cpu: "3"
+        koordinator.sh/gpu-memory: 8Gi
+      vir16:
+        huawei.com/npu-core: "16"
+        huawei.com/npu-cpu: "7"
+        koordinator.sh/gpu-memory: 16Gi
+    huawei-Ascend-910B1:
+      vir03_1c_8g:
+        huawei.com/npu-core: "3"
+        huawei.com/npu-cpu: "1"
+        koordinator.sh/gpu-memory: 8Gi
+      vir06_1c_16g:
+        huawei.com/npu-core: "6"
+        huawei.com/npu-cpu: "1"
+        koordinator.sh/gpu-memory: 16Gi
+      vir12_3c_32g:
+        huawei.com/npu-core: "12"
+        huawei.com/npu-cpu: "3"
+        koordinator.sh/gpu-memory: 32Gi
+    huawei-Ascend-910B2:
+      vir03_1c_8g:
+        huawei.com/npu-core: "3"
+        huawei.com/npu-cpu: "1"
+        koordinator.sh/gpu-memory: 8Gi
+      vir06_1c_16g:
+        huawei.com/npu-core: "6"
+        huawei.com/npu-cpu: "1"
+        koordinator.sh/gpu-memory: 16Gi
+      vir12_3c_32g:
+        huawei.com/npu-core: "12"
+        huawei.com/npu-cpu: "3"
+        koordinator.sh/gpu-memory: 32Gi
+    huawei-Ascend-910B2C:
+      vir03_1c_8g:
+        huawei.com/npu-core: "3"
+        huawei.com/npu-cpu: "1"
+        koordinator.sh/gpu-memory: 8Gi
+      vir06_1c_16g:
+        huawei.com/npu-core: "6"
+        huawei.com/npu-cpu: "1"
+        koordinator.sh/gpu-memory: 16Gi
+      vir12_3c_32g:
+        huawei.com/npu-core: "12"
+        huawei.com/npu-cpu: "3"
+        koordinator.sh/gpu-memory: 32Gi
+    huawei-Ascend-910B3:
+      vir05_1c_16g:
+        huawei.com/npu-core: "5"
+        huawei.com/npu-cpu: "1"
+        koordinator.sh/gpu-memory: 16Gi
+      vir10_3c_32g:
+        huawei.com/npu-core: "10"
+        huawei.com/npu-cpu: "3"
+        koordinator.sh/gpu-memory: 32Gi
+    huawei-Ascend-910B4:
+      vir05_1c_8g:
+        huawei.com/npu-core: "5"
+        huawei.com/npu-cpu: "1"
+        huawei.com/npu-dvpp: "25"
+        koordinator.sh/gpu-memory: 8Gi
+      vir10_3c_16g:
+        huawei.com/npu-core: "10"
+        huawei.com/npu-cpu: "3"
+        huawei.com/npu-dvpp: "50"
+        koordinator.sh/gpu-memory: 16Gi
+      vir10_3c_16g_nm:
+        huawei.com/npu-core: "10"
+        huawei.com/npu-cpu: "3"
+        koordinator.sh/gpu-memory: 16Gi
+      vir10_4c_16g_m:
+        huawei.com/npu-core: "10"
+        huawei.com/npu-cpu: "4"
+        huawei.com/npu-dvpp: "100"
+        koordinator.sh/gpu-memory: 16Gi

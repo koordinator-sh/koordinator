@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: koord-descheduler-config
+  namespace: {{ .Values.installation.namespace }}
+data:
+  koord-descheduler-config: |
+    apiVersion: descheduler/v1alpha2
+    kind: DeschedulerConfiguration
+    enableContentionProfiling: true
+    enableProfiling: true
+    healthzBindAddress: 0.0.0.0:{{ .Values.descheduler.port }}
+    metricsBindAddress: 0.0.0.0:{{ .Values.descheduler.port }}
+    leaderElection:
+      resourceLock: leases
+      resourceName: koord-descheduler
+      resourceNamespace: {{ .Values.installation.namespace }}
+    deschedulingInterval: 10s
+    dryRun: false
+    profiles:
+    - name: koord-descheduler
+      plugins:
+        deschedule:
+          disabled:
+            - name: "*"
+        # disable LowNodeLoad by default
+        # balance:
+        #   enabled:
+        #   - name: LowNodeLoad
+        evict:
+          disabled:
+            - name: "*"
+          enabled:
+            - name: MigrationController
+      pluginConfig:
+      - name: MigrationController
+        args:
+          apiVersion: descheduler/v1alpha2
+          kind: MigrationControllerArgs
+          evictionPolicy: Eviction
+          namespaces:
+            exclude:
+              - kube-system
+              - {{ .Values.installation.namespace }}
+          evictQPS: "10"
+          evictBurst: 1
+      - name: LowNodeLoad
+        args:
+          apiVersion: descheduler/v1alpha2
+          kind: LowNodeLoadArgs
+          evictableNamespaces:
+            exclude:
+              - kube-system
+              - {{ .Values.installation.namespace }}
+          useDeviationThresholds: false
+          lowThresholds:
+            cpu: 45
+            memory: 55
+          highThresholds:
+            cpu: 75
+            memory: 80

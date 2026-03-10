@@ -1,0 +1,14 @@
+apiVersion: v2
+name: koordinator
+description: A Helm chart for Koordinator
+type: application
+version: 1.7.0
+appVersion: 1.7.0
+icon: https://koordinator.sh/img/logo.svg
+keywords:
+  - koordinator
+  - co-location
+  - mixed-workloads
+home: https://koordinator.sh
+sources: 
+  - https://github.com/koordinator-sh/koordinator

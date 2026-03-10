@@ -1,0 +1,19 @@
+{{- if .Values.koordlet.enableServiceMonitor }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    koord-app: koordlet
+  name: koordlet-service
+  namespace: {{ .Values.installation.namespace }}
+spec:
+  clusterIP: None
+  ports:
+  - name: http
+    port: {{ .Values.koordlet.metrics.port }}
+    targetPort: {{ .Values.koordlet.metrics.port }}
+  selector:
+    koord-app: koordlet
+
+{{- end }}

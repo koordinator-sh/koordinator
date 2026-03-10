@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    koord-app: koord-scheduler
+  name: koord-scheduler
+  namespace: {{ .Values.installation.namespace }}
+spec:
+  replicas: {{ .Values.scheduler.replicas }}
+  selector:
+    matchLabels:
+      koord-app: koord-scheduler
+  minReadySeconds: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 100%
+  template:
+    metadata:
+      labels:
+        koord-app: koord-scheduler
+    spec:
+{{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{- toYaml . | nindent 8 }}
+{{- end }}
+      containers:
+        - args:
+            - --port={{ .Values.scheduler.port }}
+            - --authentication-skip-lookup=true
+            - --v={{ .Values.scheduler.log.level }}
+{{- if semverCompare "= 1.22-0" .Capabilities.KubeVersion.Version }}
+            - --feature-gates={{ .Values.scheduler.compatible122FeatureGates }}
+{{- else if semverCompare "< 1.22-0" .Capabilities.KubeVersion.Version }}
+            - --feature-gates={{ .Values.scheduler.compatibleBelow122FeatureGates }}
+{{- else }}
+            - --feature-gates={{ .Values.scheduler.featureGates }}
+{{- end }}
+            - --config=/config/koord-scheduler.config
+            - --enable-network-topology-manager=true
+          command:
+            - /koord-scheduler
+          image: "{{ .Values.imageRepositoryHost }}/{{ .Values.scheduler.image.repository }}:{{ .Values.scheduler.image.tag }}"
+          imagePullPolicy: Always
+          name: scheduler
+          volumeMounts:
+            - mountPath: /config
+              name: koord-scheduler-config-volume
+          readinessProbe:
+            httpGet:
+              path: healthz
+              port: {{ .Values.scheduler.port }}
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+      hostNetwork: {{ .Values.scheduler.hostNetwork }}
+      terminationGracePeriodSeconds: 10
+      serviceAccountName: koord-scheduler
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: koord-scheduler-config
+            path: koord-scheduler.config
+          name: koord-scheduler-config
+        name: koord-scheduler-config-volume
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: koord-app
+                  operator: In
+                  values:
+                  - koord-scheduler
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+{{- with .Values.scheduler.nodeAffinity }}
+        nodeAffinity:
+{{ toYaml . | indent 10 }}
+{{- end }}
+
+{{- if .Values.scheduler.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.scheduler.nodeSelector | indent 8 }}
+{{- end }}
+
+{{- if .Values.scheduler.tolerations }}
+      tolerations:
+{{ toYaml .Values.scheduler.tolerations | indent 8 }}
+{{- end }}
+

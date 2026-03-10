@@ -1,0 +1,110 @@
+{{- if and .Values.crds.managed .Values.crds.elasticquotaprofiles }}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: elasticquotaprofiles.quota.koordinator.sh
+spec:
+  group: quota.koordinator.sh
+  names:
+    kind: ElasticQuotaProfile
+    listKind: ElasticQuotaProfileList
+    plural: elasticquotaprofiles
+    shortNames:
+      - eqp
+    singular: elasticquotaprofile
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          properties:
+            apiVersion:
+              description: |-
+                APIVersion defines the versioned schema of this representation of an object.
+                Servers should convert recognized schemas to the latest internal value, and
+                may reject unrecognized values.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+              type: string
+            kind:
+              description: |-
+                Kind is a string value representing the REST resource this object represents.
+                Servers may infer this from the endpoint the client submits requests to.
+                Cannot be updated.
+                In CamelCase.
+                More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                nodeSelector:
+                  description: NodeSelector defines a node selector to select nodes.
+                  properties:
+                    matchExpressions:
+                      description: matchExpressions is a list of label selector requirements.
+                        The requirements are ANDed.
+                      items:
+                        description: |-
+                          A label selector requirement is a selector that contains values, a key, and an operator that
+                          relates the key and values.
+                        properties:
+                          key:
+                            description: key is the label key that the selector applies
+                              to.
+                            type: string
+                          operator:
+                            description: |-
+                              operator represents a key's relationship to a set of values.
+                              Valid operators are In, NotIn, Exists and DoesNotExist.
+                            type: string
+                          values:
+                            description: |-
+                              values is an array of string values. If the operator is In or NotIn,
+                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                              the values array must be empty. This array is replaced during a strategic
+                              merge patch.
+                            items:
+                              type: string
+                            type: array
+                        required:
+                          - key
+                          - operator
+                        type: object
+                      type: array
+                    matchLabels:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                        map is equivalent to an element of matchExpressions, whose key field is "key", the
+                        operator is "In", and the values array contains only "value". The requirements are ANDed.
+                      type: object
+                  type: object
+                  x-kubernetes-map-type: atomic
+                quotaLabels:
+                  additionalProperties:
+                    type: string
+                  description: QuotaLabels defines the labels of the quota.
+                  type: object
+                quotaName:
+                  description: QuotaName defines the associated quota name of the profile.
+                  type: string
+                resourceRatio:
+                  description: |-
+                    ResourceRatio is a ratio, we will use it to fix the resource fragmentation problem.
+                    If the total resource is 100 and the resource ratio is 0.9, the allocable resource is 100*0.9=90
+                  type: string
+              required:
+                - nodeSelector
+                - quotaName
+              type: object
+            status:
+              type: object
+          type: object
+      served: true
+      storage: true
+
+{{- end }}

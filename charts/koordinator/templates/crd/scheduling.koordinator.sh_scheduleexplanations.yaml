@@ -1,0 +1,257 @@
+{{- if and .Values.crds.managed .Values.crds.scheduleexplanations }}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  name: scheduleexplanations.scheduling.koordinator.sh
+spec:
+  group: scheduling.koordinator.sh
+  names:
+    kind: ScheduleExplanation
+    listKind: ScheduleExplanationList
+    plural: scheduleexplanations
+    shortNames:
+    - sched-exp
+    singular: scheduleexplanation
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              questionObjectReference:
+                description: |-
+                  QuestionObjectReference is the object that needs to be questioned. Currently, Reservation and Pod is supported.
+                  To query the PodGroup or GangGroup, you can simply pass any of its member Pod here
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                      TODO: this design is not final and this field is subject to change in the future.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              questionObjectTemplate:
+                description: QuestionObjectTemplate defines the questioned pod template.
+                x-kubernetes-preserve-unknown-fields: true
+            type: object
+          status:
+            properties:
+              detailedExplanation:
+                description: DetailedExplanation indicates the detailed explanation
+                  in each topology domain.
+                items:
+                  properties:
+                    failedMessage:
+                      description: FailedMessage indicates the reason for the QuestionObject
+                        can't be scheduled in this topology domain.
+                      type: string
+                    nodePossibleVictims:
+                      description: NodePossibleVictims indicates the possible victims
+                        for members that can't be scheduled.
+                      items:
+                        properties:
+                          nodeName:
+                            type: string
+                          possibleVictims:
+                            items:
+                              properties:
+                                isNominatedPod:
+                                  type: boolean
+                                name:
+                                  type: string
+                                namespace:
+                                  type: string
+                                uid:
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      type: array
+                    preemptExplanation:
+                      properties:
+                        failedMessage:
+                          description: FailedMessage indicates the reason for the
+                            QuestionObject can't be scheduled in this topology domain.
+                          type: string
+                        feasibleSchedulingResult:
+                          description: |-
+                            FeasibleSchedulingResult indicates the possible scheduling results.
+                            If the QuestionObject can be scheduled, it returns the scheduling result for members that can be partially scheduled.
+                          items:
+                            properties:
+                              name:
+                                type: string
+                              namespace:
+                                type: string
+                              nodeName:
+                                type: string
+                              uid:
+                                type: string
+                            type: object
+                          type: array
+                        nodeFailedDetails:
+                          description: NodeFailedDetails If the QuestionObject cannot
+                            be scheduled, provide the reason for each node.
+                          items:
+                            properties:
+                              failedPlugin:
+                                type: string
+                              nodeName:
+                                type: string
+                              nominatedPods:
+                                items:
+                                  properties:
+                                    name:
+                                      type: string
+                                    namespace:
+                                      type: string
+                                    uid:
+                                      type: string
+                                  type: object
+                                type: array
+                              preemptMightHelp:
+                                type: boolean
+                              reason:
+                                type: string
+                            type: object
+                          type: array
+                        schedulable:
+                          description: Schedulable indicates whether the QuestionObject
+                            can be scheduled.
+                          type: boolean
+                      type: object
+                    schedulable:
+                      description: Schedulable indicates whether the QuestionObject
+                        can be scheduled.
+                      type: boolean
+                    scheduleExplanation:
+                      properties:
+                        failedMessage:
+                          description: FailedMessage indicates the reason for the
+                            QuestionObject can't be scheduled in this topology domain.
+                          type: string
+                        feasibleSchedulingResult:
+                          description: |-
+                            FeasibleSchedulingResult indicates the possible scheduling results.
+                            If the QuestionObject can be scheduled, it returns the scheduling result for members that can be partially scheduled.
+                          items:
+                            properties:
+                              name:
+                                type: string
+                              namespace:
+                                type: string
+                              nodeName:
+                                type: string
+                              uid:
+                                type: string
+                            type: object
+                          type: array
+                        nodeFailedDetails:
+                          description: NodeFailedDetails If the QuestionObject cannot
+                            be scheduled, provide the reason for each node.
+                          items:
+                            properties:
+                              failedPlugin:
+                                type: string
+                              nodeName:
+                                type: string
+                              nominatedPods:
+                                items:
+                                  properties:
+                                    name:
+                                      type: string
+                                    namespace:
+                                      type: string
+                                    uid:
+                                      type: string
+                                  type: object
+                                type: array
+                              preemptMightHelp:
+                                type: boolean
+                              reason:
+                                type: string
+                            type: object
+                          type: array
+                        schedulable:
+                          description: Schedulable indicates whether the QuestionObject
+                            can be scheduled.
+                          type: boolean
+                      type: object
+                    topologyDomain:
+                      description: TopologyDomain indicates the topology domain.
+                      type: string
+                  type: object
+                type: array
+              failedMessage:
+                description: FailedMessage indicates the reason for the QuestionObject
+                  can't be scheduled.
+                type: string
+              schedulable:
+                description: Schedulable indicates whether the QuestionObject can
+                  be scheduled.
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+
+{{- end }}

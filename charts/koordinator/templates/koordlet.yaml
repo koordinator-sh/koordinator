@@ -1,0 +1,199 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: koordlet
+  namespace: {{ .Values.installation.namespace }}
+  labels:
+    koord-app: koordlet
+spec:
+  selector:
+    matchLabels:
+      koord-app: koordlet
+  minReadySeconds: 10
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 20%
+  template:
+    metadata:
+      labels:
+        koord-app: koordlet
+        runtimeproxy.koordinator.sh/skip-hookserver: "true"
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - command:
+            - /koordlet
+          args:
+          - -addr=:{{ .Values.koordlet.metrics.port }}
+          - -cgroup-root-dir=/host-cgroup/
+{{- if .Values.koordlet.features }}
+          - -feature-gates={{ .Values.koordlet.features }}
+{{- else }}
+          # other feature-gates enabled by default include BECPUSuppress, CPUBurst, RdtResctrl and NodeTopologyReport
+          - -feature-gates=BECPUEvict=true,BEMemoryEvict=true,CgroupReconcile=true,Accelerators=true
+{{- end }}
+          - -runtime-hooks-host-endpoint={{ .Values.koordlet.hostDirs.koordletSockDir }}/koordlet.sock
+          - --logtostderr=true
+          - --v={{ .Values.koordlet.log.level }}
+          image: "{{ .Values.imageRepositoryHost }}/{{ .Values.koordlet.image.repository }}:{{ .Values.koordlet.image.tag }}"
+          imagePullPolicy: Always
+          name: koordlet
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          resources:
+            {{- toYaml .Values.koordlet.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: true
+            capabilities:
+              add:
+                - SYS_ADMIN
+            privileged: true
+          volumeMounts:
+            - mountPath: /etc/localtime
+              name: host-time
+              readOnly: true
+            - mountPath: /host-cgroup/
+              name: host-cgroup-root
+            - mountPath: /host-sys-fs/
+              name: host-sys-fs
+              mountPropagation: Bidirectional
+            - mountPath: /host-var-run/
+              name: host-var-run
+              readOnly: true
+            - mountPath: /host-run/
+              name: host-run
+              readOnly: true
+            - mountPath: /host-var-run-koordlet/
+              name: host-var-run-koordlet
+              mountPropagation: Bidirectional
+            - mountPath: /prediction-checkpoints
+              name: host-koordlet-checkpoint-dir
+              mountPropagation: Bidirectional
+            - mountPath: /host-sys/
+              name: host-sys
+              readOnly: true
+            - mountPath: /etc/kubernetes/
+              name: host-kubernetes
+              readOnly: true
+            - mountPath: /host-etc-hookserver/
+              name: host-etc-hookserver
+              mountPropagation: Bidirectional
+            - mountPath: /var/lib/kubelet
+              name: host-kubelet-rootdir
+              readOnly: true
+              mountPropagation: HostToContainer
+            - mountPath: /var/run/koordlet/pod-resources/
+              mountPropagation: Bidirectional
+              name: pod-resources-proxy
+{{- if contains "TerwayQoS=true" .Values.koordlet.features }}
+            - mountPath: /host-var-lib/terway/qos
+              name: host-terway-qos
+{{- end }}
+            - mountPath: /dev
+              name: host-dev
+              mountPropagation: HostToContainer
+            - mountPath: /metric-data/
+              name: metric-db-path
+            - mountPath: /var/run/koordlet/xpu-device-infos/
+              mountPropagation: Bidirectional
+              name: xpu-device-infos
+            - mountPath: /usr/local/vgpu/containers
+              name: host-vgpu-containers
+{{- if .Values.koordlet.runtimeClassName }}
+      runtimeClassName: {{ .Values.koordlet.runtimeClassName }}
+{{- end }}
+{{- if .Values.koordlet.nodeAffinity }}
+      affinity:
+        {{- toYaml .Values.koordlet.nodeAffinity | nindent 8 }}
+{{- end }}
+      tolerations:
+        - operator: Exists
+      hostNetwork: true
+      hostPID: true
+      terminationGracePeriodSeconds: 10
+      serviceAccountName: koordlet
+      volumes:
+        - hostPath:
+            path: /etc/localtime
+            type: ""
+          name: host-time
+        - hostPath:
+            path: /sys/fs/cgroup/
+            type: ""
+          name: host-cgroup-root
+        - hostPath:
+            path: /sys/fs/
+            type: ""
+          name: host-sys-fs
+        - hostPath:
+            path: /var/run/
+            type: ""
+          name: host-var-run
+        - hostPath:
+            path: /run/
+            type: ""
+          name: host-run
+        - hostPath:
+            path: {{ .Values.koordlet.hostDirs.koordletSockDir }}
+            type: "DirectoryOrCreate"
+          name: host-var-run-koordlet
+        - hostPath:
+            path: {{ .Values.koordlet.hostDirs.predictionCheckpointDir }}
+            type: "DirectoryOrCreate"
+          name: host-koordlet-checkpoint-dir
+        - hostPath:
+            path: /sys/
+            type: ""
+          name: host-sys
+        - hostPath:
+            path: {{ .Values.koordlet.hostDirs.kubeletConfigDir }}
+            type: ""
+          name: host-kubernetes
+        - hostPath:
+            path: {{ .Values.koordlet.hostDirs.koordProxyRegisterDir }}
+            type: ""
+          name: host-etc-hookserver
+        - hostPath:
+            path: {{ .Values.koordlet.hostDirs.kubeletLibDir }}
+            type: ""
+          name: host-kubelet-rootdir
+        - hostPath:
+            path: /dev
+            type: ""
+          name: host-dev
+        - hostPath:
+            path:  {{ .Values.koordlet.hostDirs.podResourcesProxyPath }}
+            type: DirectoryOrCreate
+          name: pod-resources-proxy
+{{- if contains "TerwayQoS=true" .Values.koordlet.features }}
+        - hostPath:
+            path: /var/lib/terway/qos
+            type: "DirectoryOrCreate"
+          name: host-terway-qos
+{{- end }}
+{{- if .Values.koordlet.hostDirs.koordletTSDBDir }}
+        - hostPath:
+            path: {{ .Values.koordlet.hostDirs.koordletTSDBDir }}
+            type: ""
+{{- else }}
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 150Mi
+{{- end }}
+          name: metric-db-path
+        - hostPath:
+            path: /var/run/koordlet/xpu-device-infos/
+            type: DirectoryOrCreate
+          name: xpu-device-infos
+        - hostPath:
+            path: /usr/local/vgpu/containers
+            type: DirectoryOrCreate
+          name: host-vgpu-containers
