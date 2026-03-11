@@ -31,6 +31,7 @@ import (
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -46,6 +47,122 @@ import (
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
+
+// TestForgetPod_SchedulerNil verifies that ForgetPod does not panic when the scheduler
+// has not been initialized yet (InitScheduler not called), and that all registered
+// ForgetPodHandlers are still invoked so plugin-level accounting stays consistent.
+func TestForgetPod_SchedulerNil(t *testing.T) {
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, err := NewFrameworkExtenderFactory(
+		WithKoordinatorClientSet(koordClientSet),
+		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	assert.NoError(t, err)
+
+	fakeClient := kubefake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
+		registeredPlugins,
+		"koord-scheduler",
+		frameworkruntime.WithClientSet(fakeClient),
+		frameworkruntime.WithInformerFactory(sharedInformerFactory),
+	)
+	assert.NoError(t, err)
+
+	// Do NOT call extenderFactory.InitScheduler — simulate the startup window
+	// where plugin.New() has run but scheduler is not yet set.
+	extender := extenderFactory.NewFrameworkExtender(fh)
+	impl := extender.(*frameworkExtenderImpl)
+
+	// Verify Scheduler() is nil at this point.
+	assert.Nil(t, impl.Scheduler())
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+	}
+
+	// Register a ForgetPodHandler to ensure it is still called even when scheduler is nil.
+	handlerCalled := false
+	impl.RegisterForgetPodHandler(func(p *corev1.Pod) {
+		handlerCalled = true
+		assert.Equal(t, pod, p)
+	})
+
+	// Must not panic; should return an error indicating scheduler is nil.
+	err = extender.ForgetPod(klog.Background(), pod)
+	assert.Error(t, err, "expected an error when scheduler is nil")
+	assert.True(t, handlerCalled, "ForgetPodHandler must be called even when scheduler is nil")
+}
+
+// TestForgetPod_SchedulerReady verifies the normal path: when the scheduler is initialized,
+// ForgetPod removes the pod from the assumed cache and calls all ForgetPodHandlers.
+func TestForgetPod_SchedulerReady(t *testing.T) {
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, err := NewFrameworkExtenderFactory(
+		WithKoordinatorClientSet(koordClientSet),
+		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	assert.NoError(t, err)
+
+	fakeClient := kubefake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
+		registeredPlugins,
+		"koord-scheduler",
+		frameworkruntime.WithClientSet(fakeClient),
+		frameworkruntime.WithInformerFactory(sharedInformerFactory),
+	)
+	assert.NoError(t, err)
+
+	fakeSched := NewFakeScheduler()
+	extenderFactory.InitScheduler(fakeSched)
+
+	extender := extenderFactory.NewFrameworkExtender(fh)
+	impl := extender.(*frameworkExtenderImpl)
+
+	assert.NotNil(t, impl.Scheduler())
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+	}
+
+	// Assume the pod first so ForgetPod has something to remove.
+	logger := klog.Background()
+	assert.NoError(t, fakeSched.AssumePod(logger, pod))
+	assumed, _ := fakeSched.IsAssumedPod(pod)
+	assert.True(t, assumed)
+
+	handlerCalled := false
+	impl.RegisterForgetPodHandler(func(p *corev1.Pod) {
+		handlerCalled = true
+		assert.Equal(t, pod, p)
+	})
+
+	err = extender.ForgetPod(logger, pod)
+	assert.NoError(t, err)
+	assert.True(t, handlerCalled, "ForgetPodHandler must be called on success path")
+
+	assumed, _ = fakeSched.IsAssumedPod(pod)
+	assert.False(t, assumed, "pod should be removed from assumed cache after ForgetPod")
+}
 
 var (
 	_ framework.PreFilterPlugin = &TestTransformer{}
