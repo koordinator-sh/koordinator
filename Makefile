@@ -39,7 +39,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 LINT_TIMEOUT ?= 15m
-DOCKER_BUILDER ?= buildx build
+DOCKER_BUILDER ?= buildx build  --platform=linux/amd64 --build-arg TARGETOS=linux  --build-arg TARGETARCH=amd64  --build-arg BUILD_MODE=vendor --allow=network.host
 
 .PHONY: all
 all: build
