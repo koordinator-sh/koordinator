@@ -55,6 +55,7 @@ corresponding Kubernetes workloads (Deployment, StatefulSet, DaemonSet, etc).`,
 // Run is the main entrypoint after flag parsing.
 // It wires dependencies together and blocks until a shutdown signal is received.
 func Run(s *options.HybridManagerOptions) error {
+	s.MergeDefaultExcludeNamespaces()
 	cm, err := s.NewControllerManager()
 	if err != nil {
 		return fmt.Errorf("failed to create controller manager: %w", err)

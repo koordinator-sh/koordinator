@@ -1,0 +1,120 @@
+# Default values for hybrid chart
+
+# Namespace configuration
+namespace:
+  create: true
+  name: hybrid-system
+
+# Hybrid Manager configuration
+manager:
+  enabled: true
+  image:
+    repository: koordinator/hybrid-manager
+    tag: v1.0
+    pullPolicy: IfNotPresent
+  replicas: 1
+  syncInterval: 5m
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  extraArgs:
+    - "--exclude-namespaces=hybrid-system"
+
+# Hybrid Collector configuration
+collector:
+  enabled: true
+  image:
+    repository: koordinator/hybrid-collector
+    tag: v1.0
+    pullPolicy: IfNotPresent
+  replicas: 1
+  exportInterval: 2h
+  prometheus:
+    url: http://localhost:9090
+    timeout: 30s
+    auth:
+      type: none # "none", "basic", "bearer"
+      username: ""
+      password: ""
+      token: ""
+  export:
+    mode: local
+    outputDir: /data/hybrid-output
+    format: timestamp
+  queries:
+    cpuUsage:
+      query: container_cpu_usage_seconds_total{__name__!=""}
+      range: 24h
+      step: 3m
+    memoryUsage:
+      query: container_memory_usage_bytes{__name__!=""}
+      range: 24h
+      step: 3m
+    memoryLimit:
+      query: container_spec_memory_limit_bytes{__name__!=""}
+      range: 24h
+      step: 3m
+    fsReads:
+      query: container_fs_reads_bytes_total{__name__!=""}
+      range: 24h
+      step: 3m
+    fsWrites:
+      query: container_fs_writes_bytes_total{__name__!=""}
+      range: 24h
+      step: 3m
+    networkReceive:
+      query: container_network_receive_bytes_total{__name__!=""}
+      range: 24h
+      step: 3m
+    networkTransmit:
+      query: container_network_transmit_bytes_total{__name__!=""}
+      range: 24h
+      step: 3m
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+# Persistent volume claim for collector output
+persistence:
+  enabled: true
+  accessModes:
+    - ReadWriteOnce
+  storageClass: ""
+  size: 10Gi
+
+# AI credentials
+aiCredentials:
+  create: true
+  server: http://10.64.7.230:8000
+  token: aGVsbG8scHl0aG9ulQ==
+
+# Service account configuration
+serviceAccount:
+  create: true
+  name: hybrid-manager
+
+# RBAC configuration
+rbac:
+  create: true

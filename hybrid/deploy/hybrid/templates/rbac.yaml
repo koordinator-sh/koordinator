@@ -1,0 +1,48 @@
+{{- if .Values.rbac.create }}
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ include "hybrid.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "hybrid.fullname" . }}-manager
+  labels:
+    app.kubernetes.io/name: {{ include "hybrid.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+rules:
+  - apiGroups: [ "" ]
+    resources: [ "pods" ]
+    verbs: [ "get", "list", "watch" ]
+  - apiGroups: [ "apps" ]
+    resources: [ "deployments", "statefulsets", "daemonsets", "replicasets" ]
+    verbs: [ "get", "list", "watch", "update", "patch" ]
+  - apiGroups: [ "batch" ]
+    resources: [ "jobs", "cronjobs" ]
+    verbs: [ "get", "list", "watch", "update", "patch" ]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "hybrid.fullname" . }}-manager
+  labels:
+    app.kubernetes.io/name: {{ include "hybrid.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "hybrid.fullname" . }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Values.namespace.name }}
+{{- end }}
