@@ -759,8 +759,12 @@ func (ext *frameworkExtenderImpl) RegisterForgetPodHandler(handler ForgetPodHand
 	ext.forgetPodHandlers = append(ext.forgetPodHandlers, handler)
 }
 
-func (ext *frameworkExtenderImpl) ForgetPod(logger klog.Logger, pod *corev1.Pod) error {
-	err := ext.Scheduler().GetCache().ForgetPod(logger, pod)
+func (ext *frameworkExtenderImpl) ForgetPod(logger klog.Logger, pod *corev1.Pod) (err error) {
+	if ext.Scheduler() == nil || ext.Scheduler().GetCache() == nil {
+		err = fmt.Errorf("scheduler or scheduler cache is nil")
+	} else {
+		err = ext.Scheduler().GetCache().ForgetPod(logger, pod)
+	}
 
 	// Always call plugin handlers even if ForgetPod fails.
 	// It is tolerated for multi-scheduler scenarios where the pod is not in assumed
