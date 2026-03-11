@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"strings"
 	"time"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -37,6 +38,7 @@ const (
 	ExtendedResourceSpec     = "ExtendedResourceSpec"
 	MultiQuotaTree           = "MultiQuotaTree"
 	DeviceResourceSpec       = "DeviceResourceSpec"
+	UpdateSchedulerName      = "SchedulerName"
 )
 
 // PodMutatingHandler handles Pod
@@ -110,8 +112,43 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 	return admission.PatchResponseFromRaw(original, marshaled)
 }
 
+func (h *PodMutatingHandler) handleScheduler(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
+	if req.Operation != admissionv1.Create {
+		return nil
+	}
+	labels := obj.Labels
+	annotations := obj.Annotations
+	var needUpdateSchedulerName bool
+	for k, _ := range labels {
+		if strings.Contains(k, "koordinator.sh") {
+			needUpdateSchedulerName = true
+		}
+	}
+
+	for k, _ := range annotations {
+		if strings.Contains(k, "koordinator.sh") {
+			needUpdateSchedulerName = true
+		}
+	}
+	// // checking Pod whether or not add koordinator scheduler name
+	if needUpdateSchedulerName && obj.Spec.SchedulerName != "koord-scheduler" {
+		obj.Spec.SchedulerName = "koord-scheduler"
+	}
+	return nil
+}
+
 func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
 	start := time.Now()
+
+	if err := h.handleScheduler(ctx, req, obj); err != nil {
+		klog.Errorf("Failed to update Pod %s/%s by updating koord-scheduler name, err: %v", obj.Namespace, obj.Name, err)
+		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+			metrics.Pod, string(req.Operation), err, UpdateSchedulerName, time.Since(start).Seconds())
+		return err
+	}
+	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+		metrics.Pod, string(req.Operation), nil, UpdateSchedulerName, time.Since(start).Seconds())
+
 	if err := h.clusterColocationProfileMutatingPod(ctx, req, obj); err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by ClusterColocationProfile, err: %v", obj.Namespace, obj.Name, err)
 		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
