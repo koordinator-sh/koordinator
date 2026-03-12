@@ -41,17 +41,9 @@ const (
 
 func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	if reservationutil.IsReservePod(pod) {
-		if reservationutil.IsReservePodPreAllocation(pod) {
-			return pl.preScoreForPreAllocation(ctx, cycleState, pod, nodes)
-		}
-
 		return framework.NewStatus(framework.Skip)
 	}
 
-	return pl.preScoreForNormalPod(ctx, cycleState, pod, nodes)
-}
-
-func (pl *Plugin) preScoreForNormalPod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	// if the pod is reservation-ignored, it does not want a nominated reservation
 	if apiext.IsReservationIgnored(pod) {
 		return framework.NewStatus(framework.Skip)
@@ -204,6 +196,16 @@ func (pl *Plugin) scoreForPreAllocation(ctx context.Context, cycleState *framewo
 
 	if state.preferredNode == nodeName {
 		return mostPreferredScore, nil
+	}
+
+	if state.rInfo.IsMultiplePAPodsEnabled() {
+		// If there is no pre-allocatable pod nominated on this node, give it the highest priority.
+		nodeRState := state.nodeReservationStates[nodeName]
+		if nodeRState == nil || len(nodeRState.selectedPreAllocatablePods) == 0 {
+			return framework.MaxNodeScore, nil
+		}
+		// The more pre-allocatable pods are selected on this node, the lower priority it will get.
+		return framework.MaxNodeScore / int64(1+len(nodeRState.selectedPreAllocatablePods)), nil
 	}
 
 	preAllocatable := pl.handle.GetReservationNominator().GetNominatedPreAllocation(state.rInfo, nodeName)
