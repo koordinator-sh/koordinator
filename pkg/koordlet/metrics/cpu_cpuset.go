@@ -38,13 +38,13 @@ var (
 	CPUSetSharePoolInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "cpuset_share_pool_info",
-		Help:      "CPUSet share pool info, means this cpu id is in cpuset share pool",
+		Help:      "Indicates whether the CPU ID is currently part of the share pool (1 = in pool)",
 	}, []string{NodeKey, CPUIDKey})
 
 	CPUSetBESharePoolInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Subsystem: KoordletSubsystem,
 		Name:      "cpuset_be_share_pool_info",
-		Help:      "CPUSet be share pool info, means this cpu id is in cpuset be share pool",
+		Help:      "Indicates whether the CPU ID is currently part of the BE share pool (1 = in pool)",
 	}, []string{NodeKey, CPUIDKey})
 
 	CPUSetCollector = []prometheus.Collector{

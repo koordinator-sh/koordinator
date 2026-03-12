@@ -207,7 +207,7 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 		shareCPUSetCount += nodeSharePoolCPUSet.Size()
 
 		if p.recordPerSharePoolCPUInfo {
-			for _, e := range nodeSharePoolCPUSet.ToSlice() {
+			for _, e := range nodeSharePoolCPUSet.ToSliceNoSort() {
 				metrics.RecordCPUSetSharePoolInfo(e)
 			}
 		}
@@ -222,7 +222,7 @@ func (p *cpusetPlugin) parseRule(nodeTopoIf interface{}) (bool, error) {
 		beShareCPUSetCount += nodeBESharePoolCPUSet.Size()
 
 		if p.recordPerSharePoolCPUInfo {
-			for _, e := range nodeBESharePoolCPUSet.ToSlice() {
+			for _, e := range nodeBESharePoolCPUSet.ToSliceNoSort() {
 				metrics.RecordCPUSetBESharePoolInfo(e)
 			}
 		}
