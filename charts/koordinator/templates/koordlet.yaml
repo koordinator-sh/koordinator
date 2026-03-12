@@ -34,7 +34,8 @@ spec:
           - -feature-gates={{ .Values.koordlet.features }}
 {{- else }}
           # other feature-gates enabled by default include BECPUSuppress, CPUBurst, RdtResctrl and NodeTopologyReport
-          - -feature-gates=BECPUEvict=true,BEMemoryEvict=true,CgroupReconcile=true,Accelerators=true
+          - -feature-gates=BECPUEvict=true,BEMemoryEvict=true,CgroupReconcile=true,Accelerators=true,CPICollector=true,PSICollector=true,CPUBurst=true,PSICollector=true
+
 {{- end }}
           - -runtime-hooks-host-endpoint={{ .Values.koordlet.hostDirs.koordletSockDir }}/koordlet.sock
           - --logtostderr=true
@@ -42,6 +43,10 @@ spec:
           image: "{{ .Values.imageRepositoryHost }}/{{ .Values.koordlet.image.repository }}:{{ .Values.koordlet.image.tag }}"
           imagePullPolicy: Always
           name: koordlet
+          ports:
+          - containerPort: {{ .Values.koordlet.metrics.port }}
+            name: metrics
+            protocol: TCP
           env:
             - name: NODE_NAME
               valueFrom:

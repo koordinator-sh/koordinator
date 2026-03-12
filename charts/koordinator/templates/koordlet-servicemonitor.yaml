@@ -1,27 +1,24 @@
 {{- if .Values.koordlet.enableServiceMonitor }}
 ---
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMPodScrape
 metadata:
-  labels:
-    koord-app: koordlet
-  name: koordlet-service-monitor
+  name: koordlet-metrics
   namespace: {{ .Values.installation.namespace }}
 spec:
-  endpoints:
+  namespaceSelector:
+    any: true
+  podMetricsEndpoints:
   - interval: 30s
-    port: http
-    relabelings:
-    - action: replace
-      regex: (.*)
-      replacement: $1
-      sourceLabels:
-      - __meta_kubernetes_pod_node_name
-      targetLabel: node
-    scheme: http
-  jobLabel: koord-app
+    path: /metrics
+    targetPort: {{ .Values.koordlet.metrics.port }}
   selector:
     matchLabels:
       koord-app: koordlet
-
 {{- end }}
+
+
+
+
+
+
