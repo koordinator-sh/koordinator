@@ -118,19 +118,21 @@ func (h *PodMutatingHandler) handleScheduler(ctx context.Context, req admission.
 	}
 	labels := obj.Labels
 	annotations := obj.Annotations
+	koordinatorPrefix := "koordinator.sh"
 	var needUpdateSchedulerName bool
 	for k, _ := range labels {
-		if strings.Contains(k, "koordinator.sh") {
+		if strings.Contains(k, koordinatorPrefix) {
 			needUpdateSchedulerName = true
 		}
 	}
 
 	for k, _ := range annotations {
-		if strings.Contains(k, "koordinator.sh") {
+		if strings.Contains(k, koordinatorPrefix) {
 			needUpdateSchedulerName = true
 		}
 	}
 	// // checking Pod whether or not add koordinator scheduler name
+	//TODO: schedulerName is hardcode, need to support config in configmap
 	if needUpdateSchedulerName && obj.Spec.SchedulerName != "koord-scheduler" {
 		obj.Spec.SchedulerName = "koord-scheduler"
 	}
