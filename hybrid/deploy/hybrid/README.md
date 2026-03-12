@@ -1,0 +1,122 @@
+# Hybrid Helm Chart
+
+A Helm chart for deploying Hybrid Manager and Collector on Kubernetes.
+
+## Prerequisites
+
+- Kubernetes cluster (1.19+)
+- Helm 3.x installed
+- kubectl configured to access your cluster
+
+## Installation
+
+### Install into a specific namespace
+
+```bash
+helm install hybrid ./hybrid --namespace hybrid-system --create-namespace
+```
+
+### Install with custom values
+
+```bash
+helm install hybrid ./hybrid -f custom-values.yaml
+```
+
+
+
+## Configuration
+
+### Key Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `namespace.name` | Namespace to deploy | `hybrid-system` |
+| `namespace.create` | Create namespace if not exists | `true` |
+| `manager.enabled` | Enable Hybrid Manager | `true` |
+| `manager.replicas` | Number of manager replicas | `1` |
+| `manager.syncInterval` | Sync interval for manager | `5m` |
+| `collector.enabled` | Enable Hybrid Collector | `true` |
+| `collector.replicas` | Number of collector replicas | `1` |
+| `collector.prometheus.url` | Prometheus server URL | `http://localhost:9090` |
+| `persistence.enabled` | Enable persistent storage | `true` |
+| `persistence.size` | PVC size | `10Gi` |
+| `aiCredentials.server` | AI server URL | `http://10.64.7.230:8000` |
+| `aiCredentials.token` | AI authentication token | Base64 encoded |
+
+### AI Credentials
+
+To configure AI credentials, update the `values.yaml`:
+
+```yaml
+aiCredentials:
+  create: true
+  server: "your-ai-server-url"
+  token: "your-base64-encoded-token"
+```
+
+Or use existing secret:
+
+```yaml
+aiCredentials:
+  create: false
+  existingSecret: "your-secret-name"
+```
+
+### Storage Configuration
+
+To use a specific storage class:
+
+```yaml
+persistence:
+  enabled: true
+  storageClass: "fast-ssd"
+  size: 20Gi
+```
+
+## Uninstall
+
+```bash
+helm uninstall hybrid
+```
+
+## Upgrading
+
+```bash
+helm upgrade hybrid ./hybrid --namespace hybrid-system
+```
+
+## Components
+
+### Hybrid Manager
+- Manages Kubernetes workloads
+- Syncs with AI server for intelligent decisions
+- Requires RBAC permissions for pods, deployments, statefulsets, daemonsets, replicasets, jobs, and cronjobs
+
+### Hybrid Collector
+- Collects metrics from Prometheus
+- Exports data for AI analysis
+- Supports CPU, memory, I/O, and network metrics
+
+## Troubleshooting
+
+### Check pod status
+
+```bash
+kubectl get pods -n hybrid-system
+```
+
+### View logs
+
+```bash
+# Manager logs
+kubectl logs -n hybrid-system deployment/hybrid-manager
+
+# Collector logs
+kubectl logs -n hybrid-system deployment/hybrid-collector
+```
+
+### Check events
+
+```bash
+kubectl get events -n hybrid-system --sort-by='.lastTimestamp'
+```

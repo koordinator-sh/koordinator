@@ -1,0 +1,13 @@
+apiVersion: v2
+name: hybrid
+description: A Helm chart for Hybrid Manager and Collector
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - hybrid
+  - manager
+  - collector
+maintainers:
+  - name: Hybrid Team
+home: https://github.com/koordinator/hybrid

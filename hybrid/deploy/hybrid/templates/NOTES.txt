@@ -1,0 +1,21 @@
+Thank you for installing the Hybrid Chart!
+
+Your release is named {{ .Release.Name }}.
+
+To check the status of your deployment, run:
+
+  kubectl get all -n {{ .Values.namespace.name }}
+
+To view logs:
+
+  # Manager logs
+  kubectl logs -n {{ .Values.namespace.name }} deployment/{{ include "hybrid.fullname" . }}-manager
+
+  # Collector logs
+  kubectl logs -n {{ .Values.namespace.name }} deployment/{{ include "hybrid.fullname" . }}-collector
+
+To uninstall the chart:
+
+  helm uninstall {{ .Release.Name }}
+
+For more information, visit: https://github.com/koordinator/hybrid

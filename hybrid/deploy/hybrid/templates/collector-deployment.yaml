@@ -1,0 +1,64 @@
+{{- if .Values.collector.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hybrid.fullname" . }}-collector
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ include "hybrid.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: collector
+spec:
+  replicas: {{ .Values.collector.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "hybrid.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "hybrid.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: collector
+    spec:
+      containers:
+        - name: hybrid-collector
+          image: "{{ .Values.collector.image.repository }}:{{ .Values.collector.image.tag }}"
+          imagePullPolicy: {{ .Values.collector.image.pullPolicy }}
+          command: [ "hybrid-collector" ]
+          args: [ "--config", "/etc/hybrid/collector.yaml" ]
+          env:
+            - name: AI_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: hybrid-ai-credentials
+                  key: AI_SERVER
+            - name: AI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hybrid-ai-credentials
+                  key: AI_TOKEN
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/hybrid
+              readOnly: true
+            {{- if .Values.persistence.enabled }}
+            - name: output-storage
+              mountPath: {{ .Values.collector.export.outputDir }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.collector.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.collector.resources | nindent 12 }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: collector-config
+        {{- if .Values.persistence.enabled }}
+        - name: output-storage
+          persistentVolumeClaim:
+            claimName: hybrid-output-pvc
+        {{- end }}
+      restartPolicy: Always
+{{- end }}

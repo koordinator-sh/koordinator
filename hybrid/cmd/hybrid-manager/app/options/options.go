@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/homedir"
 	"k8s.io/klog/v2"
 
@@ -56,9 +57,8 @@ type HybridManagerOptions struct {
 // NewHybridManagerOptions returns Options with default values applied.
 func NewHybridManagerOptions() *HybridManagerOptions {
 	opts := &HybridManagerOptions{
-		SyncInterval:      constants.DefaultSyncInterval,
-		OutputDir:         constants.DefaultOutputDir,
-		ExcludeNamespaces: constants.DefaultExcludeNamespaces,
+		SyncInterval: constants.DefaultSyncInterval,
+		OutputDir:    constants.DefaultOutputDir,
 	}
 
 	if home := homedir.HomeDir(); home != "" {
@@ -100,6 +100,12 @@ func (o *HybridManagerOptions) Validate() error {
 	}
 
 	return nil
+}
+
+func (o *HybridManagerOptions) MergeDefaultExcludeNamespaces() *HybridManagerOptions {
+	o.ExcludeNamespaces = sets.List(
+		sets.New[string](o.ExcludeNamespaces...).Insert(constants.DefaultExcludeNamespaces...))
+	return o
 }
 
 // NewControllerManager wires all dependencies and returns a ready-to-run Manager.
