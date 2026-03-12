@@ -154,6 +154,7 @@ func TestValidateLowLoadUtilizationArgs_NodePoolThresholds(t *testing.T) {
 			lowThresholds:  50,
 			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 				ConsecutiveAbnormalities: 5,
+				ConsecutiveNormalities:   3,
 			},
 			expectedError: false,
 		},
@@ -162,6 +163,16 @@ func TestValidateLowLoadUtilizationArgs_NodePoolThresholds(t *testing.T) {
 			lowThresholds:  50,
 			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
 				ConsecutiveAbnormalities: 0,
+				ConsecutiveNormalities:   3,
+			},
+			expectedError: true,
+		},
+		{
+			highThresholds: 100,
+			lowThresholds:  50,
+			anomalyCondition: &deschedulerconfig.LoadAnomalyCondition{
+				ConsecutiveAbnormalities: 5,
+				ConsecutiveNormalities:   0,
 			},
 			expectedError: true,
 		},
@@ -181,8 +192,10 @@ func TestValidateLowLoadUtilizationArgs_NodePoolThresholds(t *testing.T) {
 		anomalyCondition := &deschedulerconfig.LoadAnomalyCondition{}
 		if tc.anomalyCondition != nil {
 			anomalyCondition.ConsecutiveAbnormalities = tc.anomalyCondition.ConsecutiveAbnormalities
+			anomalyCondition.ConsecutiveNormalities = tc.anomalyCondition.ConsecutiveNormalities
 		} else {
 			anomalyCondition.ConsecutiveAbnormalities = 5
+			anomalyCondition.ConsecutiveNormalities = 3
 		}
 		args := &deschedulerconfig.LowNodeLoadArgs{
 			NodePools: []deschedulerconfig.LowNodeLoadNodePool{
