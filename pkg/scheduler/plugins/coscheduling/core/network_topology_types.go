@@ -33,6 +33,10 @@ func ContextWithTopologyState(ctx context.Context, topologyState *TopologyState)
 type JobTopologyRequirements struct {
 	TopologyLayerMustGather schedulingv1alpha1.TopologyLayer
 	DesiredOfferSlot        int
+	// LayerPodCountMultiple specifies the pod count multiple constraint for each topology layer.
+	// The number of Pods placed in a topology node of the specified layer must be
+	// a multiple of the corresponding value.
+	LayerPodCountMultiple map[schedulingv1alpha1.TopologyLayer]int
 }
 
 func GetMustGatherLayer(spec *extension.NetworkTopologySpec, isLayerAncestorFunc networktopology.IsLayerAncestorFunc) schedulingv1alpha1.TopologyLayer {
@@ -45,4 +49,20 @@ func GetMustGatherLayer(spec *extension.NetworkTopologySpec, isLayerAncestorFunc
 		}
 	}
 	return ""
+}
+
+func GetLayerPodCountMultiple(spec *extension.NetworkTopologySpec) map[schedulingv1alpha1.TopologyLayer]int {
+	if spec == nil {
+		return nil
+	}
+	result := make(map[schedulingv1alpha1.TopologyLayer]int)
+	for _, rule := range spec.GatherStrategy {
+		if rule.PodCountMultiple > 1 {
+			result[rule.Layer] = rule.PodCountMultiple
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
