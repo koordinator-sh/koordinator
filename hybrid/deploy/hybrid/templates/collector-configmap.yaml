@@ -58,4 +58,12 @@ data:
         query: {{ .Values.collector.queries.networkTransmit.query | quote }}
         range: {{ .Values.collector.queries.networkTransmit.range | quote }}
         step: {{ .Values.collector.queries.networkTransmit.step | quote }}
+      - name: "psi_collector"
+        query: {{ .Values.collector.queries.psiCollector.query | quote }}
+        range: {{ .Values.collector.queries.psiCollector.range | quote }}
+        step: {{ .Values.collector.queries.psiCollector.step | quote }}
+      - name: "cpi_collector"
+        query: {{ .Values.collector.queries.cpiCollector.query | quote }}
+        range: {{ .Values.collector.queries.cpiCollector.range | quote }}
+        step: {{ .Values.collector.queries.cpiCollector.step | quote }}
 {{- end }}
