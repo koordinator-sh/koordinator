@@ -45,7 +45,7 @@ last-updated: 2023-05-18
                 - [Usage in Preemption](#usage-in-preemption)
                 - [Usage in Descheduling](#usage-in-descheduling)
                 - [Usage in Pre-allocation](#usage-in-pre-allocation)
-                - [Usage in Pre-allocation with Cluster Mode](#usage-in-pre-allocation-with-cluster-mode)
+                - [Enable Cluster Mode](#enable-cluster-mode)
                 - [Usage in Pre-allocation with Multiple Pods](#usage-in-pre-allocation-with-multiple-pods)
         - [Risks and Mitigations](#risks-and-mitigations)
     - [Tests](#tests)

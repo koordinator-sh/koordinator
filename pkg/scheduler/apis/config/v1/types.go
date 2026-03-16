@@ -226,7 +226,8 @@ type PreAllocationConfig struct {
 	// +optional
 	ClusterPriorityAnnotationKey string `json:"clusterPriorityAnnotationKey,omitempty"`
 	// PreferNoPreAllocatedPods controls whether to prefer placing reservation
-	// without using pre-allocatable pods when PreAllocation is not required and multiple pre-allocated pods is enabled.
+	// without using pre-allocatable pods when pre-allocation is not required,
+	// in both single and multiple pre-allocation modes.
 	// Defaults to false.
 	// +optional
 	PreferNoPreAllocatedPods bool `json:"preferNoPreAllocatedPods,omitempty"`

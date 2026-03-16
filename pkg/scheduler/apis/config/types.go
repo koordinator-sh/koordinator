@@ -228,7 +228,8 @@ type PreAllocationConfig struct {
 	// Defaults to "pod.koordinator.sh/pre-allocatable-priority".
 	ClusterPriorityAnnotationKey string
 	// PreferNoPreAllocatedPods controls whether to prefer placing reservation
-	// without using pre-allocatable pods when PreAllocation is not required and multiple pre-allocated pods is enabled.
+	// without using pre-allocatable pods when pre-allocation is not required,
+	// in both single and multiple pre-allocation modes.
 	// Defaults to false.
 	PreferNoPreAllocatedPods bool
 }
