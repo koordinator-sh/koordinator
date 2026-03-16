@@ -265,7 +265,10 @@ func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 		obj.AnomalyCondition = defaultLoadAnomalyCondition
 	} else if obj.AnomalyCondition.ConsecutiveAbnormalities == 0 {
 		obj.AnomalyCondition.ConsecutiveAbnormalities = defaultLoadAnomalyCondition.ConsecutiveAbnormalities
+	} else if obj.AnomalyCondition.ConsecutiveNormalities == 0 {
+		obj.AnomalyCondition.ConsecutiveNormalities = defaultLoadAnomalyCondition.ConsecutiveNormalities
 	}
+
 	if obj.DetectorCacheTimeout == nil {
 		obj.DetectorCacheTimeout = &metav1.Duration{Duration: defaultDetectorCacheTimeout}
 	}
@@ -290,6 +293,40 @@ func SetDefaults_LowNodeLoadArgs(obj *LowNodeLoadArgs) {
 		for resourceName, weight := range defaultResourceWeights {
 			if v := obj.ResourceWeights[resourceName]; v <= 0 {
 				obj.ResourceWeights[resourceName] = weight
+			}
+		}
+	}
+
+	SetDefaults_LowNodeLoadNodePools(obj)
+}
+
+func SetDefaults_LowNodeLoadNodePools(args *LowNodeLoadArgs) {
+	for i := range args.NodePools {
+		pool := &args.NodePools[i]
+		if pool.HighThresholds == nil {
+			pool.HighThresholds = args.HighThresholds
+		}
+		if pool.LowThresholds == nil {
+			pool.LowThresholds = args.LowThresholds
+		}
+		if pool.ProdHighThresholds == nil {
+			pool.ProdHighThresholds = args.ProdHighThresholds
+		}
+		if pool.ProdLowThresholds == nil {
+			pool.ProdLowThresholds = args.ProdLowThresholds
+		}
+		if pool.ResourceWeights == nil {
+			pool.ResourceWeights = args.ResourceWeights
+		}
+
+		if pool.AnomalyCondition == nil {
+			pool.AnomalyCondition = args.AnomalyCondition
+		} else {
+			if pool.AnomalyCondition.ConsecutiveAbnormalities == 0 {
+				pool.AnomalyCondition.ConsecutiveAbnormalities = args.AnomalyCondition.ConsecutiveAbnormalities
+			}
+			if pool.AnomalyCondition.ConsecutiveNormalities == 0 {
+				pool.AnomalyCondition.ConsecutiveNormalities = args.AnomalyCondition.ConsecutiveNormalities
 			}
 		}
 	}
