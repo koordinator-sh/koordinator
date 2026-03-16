@@ -113,7 +113,7 @@ The user plans and reserves a batch of resources in advance, and the lifetime of
 
 #### Story 6
 
-As a cluster administrator, I want to use **Cluster Mode** to select pre-allocatable pods for reservation. In a multi-tenant cluster, pre-allocatable pods may belong to different owners. Using Reservation's Owner matchers is not flexible enough because pre-allocatable pods are often managed centrally and should be decoupled from reservation ownership. Additionally, clusters typically run various workload types, where batch jobs with predictable running time are ideal candidates for pre-allocation since they can complete earlier and release their reserved resources. With Cluster Mode, the scheduler identifies pre-allocatable pods using cluster-wide label selectors (e.g., `scheduling.koordinator.sh/is-pre-allocatable=true`) and prioritizes them via priority annotations, enabling centralized management of pre-allocatable pods across the entire cluster.
+As a cluster administrator, I want to use **Cluster Mode** to select pre-allocatable pods for reservation. In a multi-tenant cluster, pre-allocatable pods may belong to different owners. Using Reservation's Owner matchers is not flexible enough because pre-allocatable pods are often managed centrally and should be decoupled from reservation ownership. Additionally, clusters typically run various workload types, where batch jobs with predictable running time are ideal candidates for pre-allocation since they can complete earlier and release their reserved resources. With Cluster Mode, the scheduler identifies pre-allocatable pods using cluster-wide label selectors (e.g., `pod.koordinator.sh/is-pre-allocatable=true`) and prioritizes them via priority annotations, enabling centralized management of pre-allocatable pods across the entire cluster.
 
 #### Story 7
 
@@ -381,16 +381,16 @@ The reservation supports two modes for selecting pre-allocatable pods:
 
 1. **Default Mode** (`PreAllocationModeDefault`): Uses the `owners` field from the Reservation Spec to match pre-allocatable pods. The scheduler filters pods based on owner matchers and runs scoring plugins to prioritize them.
 
-2. **Cluster Mode** (`PreAllocationModeCluster`): Uses cluster-wide label and annotation selectors to identify and prioritize pre-allocatable pods. Pods are identified by the label `scheduling.koordinator.sh/is-pre-allocatable=true` and sorted by the annotation `scheduling.koordinator.sh/pre-allocatable-priority`. This mode is particularly useful when pre-allocatable pods span multiple owners, requiring `EnableClusterMode` in the scheduler's `PreAllocationConfig`.
+2. **Cluster Mode** (`PreAllocationModeCluster`): Uses cluster-wide label and annotation selectors to identify and prioritize pre-allocatable pods. Pods are identified by the label `pod.koordinator.sh/is-pre-allocatable=true` and sorted by the annotation `pod.koordinator.sh/pre-allocatable-priority`. This mode is particularly useful when pre-allocatable pods span multiple owners, requiring `EnableClusterMode` in the scheduler's `PreAllocationConfig`.
 
 Cluster Mode provides a different way to select pre-allocatable pods compared to Default Mode. The key difference is **how candidates are identified**:
 
-| Aspect               | Default Mode                      | Cluster Mode                                                                                             |
-|----------------------|-----------------------------------|----------------------------------------------------------------------------------------------------------|
-| Pod Selection        | Uses Reservation's `owners` field | Uses cluster-wide label selector (defaults to `scheduling.koordinator.sh/is-pre-allocatable=true`)       |
-| Priority Control     | Uses ReservationScore plugins     | Uses cluster-wide annotation selector (defaults to `scheduling.koordinator.sh/pre-allocatable-priority`) |
-| Cross-owners         | No, Limited by owner matching     | Yes                                                                                                      |
-| Plugin Configuration | None                              | Requires `EnableClusterMode` in scheduler plugin configuration                                           |
+| Aspect               | Default Mode                      | Cluster Mode                                                                                      |
+|----------------------|-----------------------------------|---------------------------------------------------------------------------------------------------|
+| Pod Selection        | Uses Reservation's `owners` field | Uses cluster-wide label selector (defaults to `pod.koordinator.sh/is-pre-allocatable=true`)       |
+| Priority Control     | Uses ReservationScore plugins     | Uses cluster-wide annotation selector (defaults to `pod.koordinator.sh/pre-allocatable-priority`) |
+| Cross-owners         | No, Limited by owner matching     | Yes                                                                                               |
+| Plugin Configuration | None                              | Requires `EnableClusterMode` in scheduler plugin configuration                                    |
 
 ##### Multiple Pre-Allocated Pods
 
@@ -417,15 +417,15 @@ profiles:
         args:
           preAllocationConfig:
             enableClusterMode: true
-            clusterLabelKey: "scheduling.koordinator.sh/is-pre-allocatable"
-            clusterPriorityAnnotationKey: "scheduling.koordinator.sh/pre-allocatable-priority"
+            clusterLabelKey: "pod.koordinator.sh/is-pre-allocatable"
+            clusterPriorityAnnotationKey: "pod.koordinator.sh/pre-allocatable-priority"
             preferNoPreAllocatedPods: false
 ```
 
 Configuration options:
 - `enableClusterMode`: Enables cluster-wide pod selection for pre-allocation
-- `clusterLabelKey`: Label key to identify pre-allocatable pods (defaults to `scheduling.koordinator.sh/is-pre-allocatable`)
-- `clusterPriorityAnnotationKey`: Annotation key for pod priority (defaults to `scheduling.koordinator.sh/pre-allocatable-priority`)
+- `clusterLabelKey`: Label key to identify pre-allocatable pods (defaults to `pod.koordinator.sh/is-pre-allocatable`)
+- `clusterPriorityAnnotationKey`: Annotation key for pod priority (defaults to `pod.koordinator.sh/pre-allocatable-priority`)
 - `preferNoPreAllocatedPods`: When true, prefers placing reservations without pre-allocated pods when pre-allocation is not required and node unallocated resources are sufficient
 
 ### Implementation Details
@@ -513,9 +513,9 @@ Reservations with `preAllocation` specified allow users to pre-allocate the node
    ```yaml
    metadata:
      labels:
-       scheduling.koordinator.sh/is-pre-allocatable: "true"
+       pod.koordinator.sh/is-pre-allocatable: "true"
      annotations:
-       scheduling.koordinator.sh/pre-allocatable-priority: "100"
+       pod.koordinator.sh/pre-allocatable-priority: "100"
    ```
 
 2. **Reservation Creation**: Create a Reservation with Cluster Mode:

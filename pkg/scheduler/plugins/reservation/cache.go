@@ -30,6 +30,7 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	schedulinglister "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
@@ -75,6 +76,10 @@ type reservationCache struct {
 	// preAllocatablePodsOnNode caches sorted pre-allocatable candidate pods per node
 	// Uses btree for automatic ordering by priority
 	preAllocatablePodsOnNode map[string]*preAllocatablePodCache
+	// preAllocatableLabelKey is the resolved label key for identifying pre-allocatable pods.
+	preAllocatableLabelKey string
+	// preAllocatablePriorityAnnotationKey is the resolved annotation key for pod priority.
+	preAllocatablePriorityAnnotationKey string
 }
 
 func newReservationCache(reservationLister schedulinglister.ReservationLister) *reservationCache {
@@ -86,7 +91,22 @@ func newReservationCache(reservationLister schedulinglister.ReservationLister) *
 		allocatedOnNode:          map[string]map[types.UID]struct{}{},
 		preAllocatablePodsOnNode: map[string]*preAllocatablePodCache{},
 	}
+	cache.preAllocatableLabelKey = apiext.LabelPodPreAllocatable
+	cache.preAllocatablePriorityAnnotationKey = apiext.AnnotationPodPreAllocatablePriority
 	return cache
+}
+
+// setPreAllocationConfig updates the label and annotation keys for pre-allocatable pod detection.
+// This should be called during plugin initialization if custom keys are needed.
+func (cache *reservationCache) setPreAllocationConfig(preAllocationConfig *config.PreAllocationConfig) {
+	if preAllocationConfig != nil {
+		if preAllocationConfig.ClusterLabelKey != "" {
+			cache.preAllocatableLabelKey = preAllocationConfig.ClusterLabelKey
+		}
+		if preAllocationConfig.ClusterPriorityAnnotationKey != "" {
+			cache.preAllocatablePriorityAnnotationKey = preAllocationConfig.ClusterPriorityAnnotationKey
+		}
+	}
 }
 
 func (cache *reservationCache) updateReservationsOnNode(nodeName string, uid types.UID) {
@@ -566,7 +586,7 @@ func (cache *reservationCache) addPreAllocatableCandidateOnNode(pod *corev1.Pod)
 		cache.preAllocatablePodsOnNode[nodeName] = podCache
 	}
 	// Add or update the pod
-	priority := getPreAllocatablePriorityFromPod(pod)
+	priority := cache.getPreAllocatablePriorityFromPod(pod)
 	item := &preAllocatablePodItem{
 		pod:      pod,
 		priority: priority,
@@ -592,7 +612,7 @@ func (cache *reservationCache) updatePreAllocatableCandidatePriority(pod *corev1
 		podCache.tree.Delete(oldItem)
 	}
 	// Insert new item with updated priority
-	priority := getPreAllocatablePriorityFromPod(pod)
+	priority := cache.getPreAllocatablePriorityFromPod(pod)
 	newItem := &preAllocatablePodItem{
 		pod:      pod,
 		priority: priority,
@@ -602,11 +622,11 @@ func (cache *reservationCache) updatePreAllocatableCandidatePriority(pod *corev1
 }
 
 // getPreAllocatablePriorityFromPod retrieves the pre-allocatable priority from pod annotation
-func getPreAllocatablePriorityFromPod(pod *corev1.Pod) int64 {
+func (cache *reservationCache) getPreAllocatablePriorityFromPod(pod *corev1.Pod) int64 {
 	if pod == nil || pod.Annotations == nil {
 		return 0
 	}
-	priorityStr, ok := pod.Annotations[apiext.AnnotationPodPreAllocatablePriority]
+	priorityStr, ok := pod.Annotations[cache.preAllocatablePriorityAnnotationKey]
 	if !ok {
 		return 0
 	}

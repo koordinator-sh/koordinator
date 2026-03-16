@@ -412,7 +412,7 @@ func TestPodEventHandler_PreAllocatableCacheSync(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup: add oldPod to cache if it's a candidate
-			if tt.oldPod != nil && isPreAllocatablePod(tt.oldPod) && tt.oldPod.Spec.NodeName != "" {
+			if tt.oldPod != nil && handler.isPreAllocatablePod(tt.oldPod) && tt.oldPod.Spec.NodeName != "" {
 				handler.cache.addPreAllocatableCandidateOnNode(tt.oldPod)
 			}
 

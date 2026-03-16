@@ -41,9 +41,17 @@ const (
 
 func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	if reservationutil.IsReservePod(pod) {
+		if reservationutil.IsReservePodPreAllocation(pod) {
+			return pl.preScoreForPreAllocation(ctx, cycleState, pod, nodes)
+		}
+
 		return framework.NewStatus(framework.Skip)
 	}
 
+	return pl.preScoreForNormalPod(ctx, cycleState, pod, nodes)
+}
+
+func (pl *Plugin) preScoreForNormalPod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
 	// if the pod is reservation-ignored, it does not want a nominated reservation
 	if apiext.IsReservationIgnored(pod) {
 		return framework.NewStatus(framework.Skip)
@@ -116,6 +124,13 @@ func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState *fram
 		return framework.AsStatus(fmt.Errorf("missing PreAllocation Reservation"))
 	}
 
+	if state.rInfo.IsMultiplePAPodsEnabled() {
+		// For multiple pre-allocatable pods mode, skip the nomination in PreScore phase.
+		// The selectedPreAllocatablePods are already determined during Filter phase,
+		// and Score phase will use them directly without needing a single nominated pod.
+		return framework.NewStatus(framework.Skip)
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -127,7 +142,7 @@ func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState *fram
 		node := nodes[piece]
 		var preAllocatable []*corev1.Pod
 		if nodeRState := state.nodeReservationStates[node.Name]; nodeRState != nil {
-			preAllocatable = nodeRState.preAllocatablePods
+			preAllocatable = nodeRState.selectedPreAllocatablePods
 		}
 		if len(preAllocatable) == 0 {
 			return
@@ -212,7 +227,7 @@ func (pl *Plugin) scoreForPreAllocation(ctx context.Context, cycleState *framewo
 	if preAllocatable == nil {
 		return framework.MinNodeScore, nil
 	}
-	for _, v := range state.nodeReservationStates[nodeName].preAllocatablePods {
+	for _, v := range state.nodeReservationStates[nodeName].selectedPreAllocatablePods {
 		if v.GetUID() == preAllocatable.GetUID() {
 			preAllocatable = v
 			break

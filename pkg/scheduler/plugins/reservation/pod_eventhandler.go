@@ -153,25 +153,25 @@ func (h *podEventHandler) deletePod(pod *corev1.Pod) {
 	}
 
 	// Remove pod from pre-allocatable candidates cache if it was a candidate
-	if isPreAllocatablePod(pod) && pod.Spec.NodeName != "" {
+	if h.isPreAllocatablePod(pod) && pod.Spec.NodeName != "" {
 		h.cache.deletePreAllocatableCandidateOnNode(pod.Spec.NodeName, pod.UID)
 	}
 }
 
 // isPreAllocatablePod checks if a pod is a pre-allocatable candidate
-func isPreAllocatablePod(pod *corev1.Pod) bool {
+func (h *podEventHandler) isPreAllocatablePod(pod *corev1.Pod) bool {
 	if pod == nil || pod.Labels == nil {
 		return false
 	}
-	return pod.Labels[apiext.LabelPodPreAllocatable] == "true"
+	return pod.Labels[h.cache.preAllocatableLabelKey] == "true"
 }
 
 // getPreAllocatablePriority retrieves the pre-allocatable priority from pod annotation
-func getPreAllocatablePriority(pod *corev1.Pod) int64 {
+func (h *podEventHandler) getPreAllocatablePriority(pod *corev1.Pod) int64 {
 	if pod == nil || pod.Annotations == nil {
 		return 0
 	}
-	priorityStr, ok := pod.Annotations[apiext.AnnotationPodPreAllocatablePriority]
+	priorityStr, ok := pod.Annotations[h.cache.preAllocatablePriorityAnnotationKey]
 	if !ok {
 		return 0
 	}
@@ -186,11 +186,17 @@ func getPreAllocatablePriority(pod *corev1.Pod) int64 {
 // Uses incremental updates with btree for efficiency
 func (h *podEventHandler) updatePreAllocatableCandidatesCache(oldPod, newPod *corev1.Pod) {
 	if newPod == nil || newPod.Spec.NodeName == "" {
+		// Defensive cleanup: in normal Kubernetes operations, spec.nodeName is immutable after
+		// a Pod is bound, so the transition from non-empty to empty nodeName should not happen.
+		// However, we handle this edge case defensively to ensure cache consistency.
+		if oldPod != nil && oldPod.Spec.NodeName != "" && h.isPreAllocatablePod(oldPod) {
+			h.cache.deletePreAllocatableCandidateOnNode(oldPod.Spec.NodeName, oldPod.UID)
+		}
 		return
 	}
 
-	oldIsCandidate := oldPod != nil && isPreAllocatablePod(oldPod)
-	newIsCandidate := isPreAllocatablePod(newPod)
+	oldIsCandidate := oldPod != nil && h.isPreAllocatablePod(oldPod)
+	newIsCandidate := h.isPreAllocatablePod(newPod)
 
 	// Case 1: Non-candidate -> Candidate (Add to cache)
 	if !oldIsCandidate && newIsCandidate {
@@ -217,8 +223,8 @@ func (h *podEventHandler) updatePreAllocatableCandidatesCache(oldPod, newPod *co
 		}
 
 		// Check if priority changed
-		oldPriority := getPreAllocatablePriority(oldPod)
-		newPriority := getPreAllocatablePriority(newPod)
+		oldPriority := h.getPreAllocatablePriority(oldPod)
+		newPriority := h.getPreAllocatablePriority(newPod)
 		if oldPriority != newPriority {
 			// Priority changed: update in btree (delete old + insert new)
 			h.cache.updatePreAllocatableCandidatePriority(newPod)
