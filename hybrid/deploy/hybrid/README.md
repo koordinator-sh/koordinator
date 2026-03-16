@@ -13,13 +13,13 @@ A Helm chart for deploying Hybrid Manager and Collector on Kubernetes.
 ### Install into a specific namespace
 
 ```bash
-helm install hybrid ./hybrid --namespace hybrid-system --create-namespace
+helm upgrade --install  hybrid ./hybrid/ --set collector.prometheus.url=http://localhost:9090 --set aiCredentials.server=http://localhost:8000
 ```
 
 ### Install with custom values
 
 ```bash
-helm install hybrid ./hybrid -f custom-values.yaml
+helm upgrade --install  hybrid ./hybrid/ -f custom-values.yaml
 ```
 
 
@@ -40,8 +40,8 @@ helm install hybrid ./hybrid -f custom-values.yaml
 | `collector.prometheus.url` | Prometheus server URL | `http://localhost:9090` |
 | `persistence.enabled` | Enable persistent storage | `true` |
 | `persistence.size` | PVC size | `10Gi` |
-| `aiCredentials.server` | AI server URL | `http://10.64.7.230:8000` |
-| `aiCredentials.token` | AI authentication token | Base64 encoded |
+| `aiCredentials.server` | AI server URL | `http://localhost:8000` |
+| `aiCredentials.token` | AI authentication token |
 
 ### AI Credentials
 
@@ -51,7 +51,7 @@ To configure AI credentials, update the `values.yaml`:
 aiCredentials:
   create: true
   server: "your-ai-server-url"
-  token: "your-base64-encoded-token"
+  token: "your-token"
 ```
 
 Or use existing secret:

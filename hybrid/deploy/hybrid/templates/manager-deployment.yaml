@@ -54,7 +54,7 @@ spec:
             - --sync-interval={{ .Values.manager.syncInterval }}
           {{- if .Values.manager.extraArgs }}
           {{- range .Values.manager.extraArgs }}
-          - {{ . | quote }}
+            - {{ . | quote }}
           {{- end }}
           {{- end }}
           env:

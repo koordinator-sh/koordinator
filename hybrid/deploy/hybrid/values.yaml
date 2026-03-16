@@ -81,6 +81,14 @@ collector:
       query: container_network_transmit_bytes_total{__name__!=""}
       range: 24h
       step: 3m
+    psiCollector:
+      query: koordlet_container_psi{__name__!=""}
+      range: 24h
+      step: 3m
+    cpiCollector:
+      query: koordlet_container_cpi{__name__!=""}
+      range: 24h
+      step: 3m
   resources:
     limits:
       cpu: 500m
