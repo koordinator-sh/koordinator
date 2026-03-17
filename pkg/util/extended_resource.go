@@ -45,12 +45,35 @@ func GetBatchMemoryFromResourceList(r corev1.ResourceList) int64 {
 	return -1
 }
 
+func GetMidMilliCPUFromResourceList(r corev1.ResourceList) int64 {
+	// assert r != nil
+	if milliCPU, ok := r[extension.MidCPU]; ok {
+		return milliCPU.Value()
+	}
+	return -1
+}
+
+func GetMidMemoryFromResourceList(r corev1.ResourceList) int64 {
+	// assert r != nil
+	if memory, ok := r[extension.MidMemory]; ok {
+		return memory.Value()
+	}
+	return -1
+}
+
 func GetContainerBatchMilliCPURequest(c *corev1.Container) int64 {
 	return GetBatchMilliCPUFromResourceList(c.Resources.Requests)
 }
 
 func GetContainerBatchMilliCPULimit(c *corev1.Container) int64 {
 	return GetBatchMilliCPUFromResourceList(c.Resources.Limits)
+}
+
+func GetContainerMidMilliCPURequest(c *corev1.Container) int64 {
+	return GetMidMilliCPUFromResourceList(c.Resources.Requests)
+}
+func GetContainerMidMemoryByteRequest(c *corev1.Container) int64 {
+	return GetMidMemoryFromResourceList(c.Resources.Requests)
 }
 
 func GetContainerBatchMemoryByteRequest(c *corev1.Container) int64 {

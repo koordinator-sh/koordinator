@@ -1148,6 +1148,16 @@ func (in *ResourceThresholdStrategy) DeepCopyInto(out *ResourceThresholdStrategy
 		*out = new(int64)
 		**out = **in
 	}
+	if in.MemoryAllocatableEvictThresholdPercent != nil {
+		in, out := &in.MemoryAllocatableEvictThresholdPercent, &out.MemoryAllocatableEvictThresholdPercent
+		*out = new(int64)
+		**out = **in
+	}
+	if in.MemoryAllocatableEvictLowerPercent != nil {
+		in, out := &in.MemoryAllocatableEvictLowerPercent, &out.MemoryAllocatableEvictLowerPercent
+		*out = new(int64)
+		**out = **in
+	}
 	if in.CPUEvictBESatisfactionUpperPercent != nil {
 		in, out := &in.CPUEvictBESatisfactionUpperPercent, &out.CPUEvictBESatisfactionUpperPercent
 		*out = new(int64)
@@ -1178,8 +1188,23 @@ func (in *ResourceThresholdStrategy) DeepCopyInto(out *ResourceThresholdStrategy
 		*out = new(int64)
 		**out = **in
 	}
+	if in.CPUAllocatableEvictThresholdPercent != nil {
+		in, out := &in.CPUAllocatableEvictThresholdPercent, &out.CPUAllocatableEvictThresholdPercent
+		*out = new(int64)
+		**out = **in
+	}
+	if in.CPUAllocatableEvictLowerPercent != nil {
+		in, out := &in.CPUAllocatableEvictLowerPercent, &out.CPUAllocatableEvictLowerPercent
+		*out = new(int64)
+		**out = **in
+	}
 	if in.EvictEnabledPriorityThreshold != nil {
 		in, out := &in.EvictEnabledPriorityThreshold, &out.EvictEnabledPriorityThreshold
+		*out = new(int32)
+		**out = **in
+	}
+	if in.AllocatableEvictPriorityThreshold != nil {
+		in, out := &in.AllocatableEvictPriorityThreshold, &out.AllocatableEvictPriorityThreshold
 		*out = new(int32)
 		**out = **in
 	}
