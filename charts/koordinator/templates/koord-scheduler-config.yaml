@@ -71,6 +71,11 @@ data:
             enablePreemption: true
 {{- end }}
             awareNetworkTopology: true
+        - name: PodType
+          args: 
+            apiVersion: kubescheduler.config.k8s.io/v1
+            kind: PodTypeArgs
+            enablePodType: true
         plugins:
           preEnqueue:
             enabled:
@@ -88,6 +93,7 @@ data:
               - name: NodeNUMAResource
               - name: DeviceShare
               - name: ElasticQuota
+              - name: PodType
           filter:
             enabled:
               - name: Reservation
@@ -118,6 +124,8 @@ data:
                 weight: 1
               - name: Reservation
                 weight: 5000
+              - name: PodType
+                weight: 1
           reserve:
             enabled:
               - name: Reservation # The Reservation plugin must come first
@@ -126,6 +134,7 @@ data:
               - name: DeviceShare
               - name: Coscheduling
               - name: ElasticQuota
+              - name: PodType
           permit:
             enabled:
               - name: Coscheduling

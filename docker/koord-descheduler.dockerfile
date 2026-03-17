@@ -7,14 +7,7 @@ ENV VERSION $VERSION
 ENV GOOS linux
 ENV GOARCH $TARGETARCH
 
-COPY go.mod go.mod
-COPY go.sum go.sum
-
-RUN go mod download
-
-COPY apis/ apis/
-COPY cmd/ cmd/
-COPY pkg/ pkg/
+COPY . . 
 
 RUN CGO_ENABLED=0 go build -a -o koord-descheduler cmd/koord-descheduler/main.go
 
