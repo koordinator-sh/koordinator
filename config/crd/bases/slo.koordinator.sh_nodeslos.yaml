@@ -106,6 +106,84 @@ spec:
                       type: object
                   type: object
                 type: array
+              podCPUBurstStrategies:
+                description: Pod-level CPU burst configuration strategies, allows
+                  fine-grained control over
+                items:
+                  properties:
+                    cfsQuotaBurstPercent:
+                      description: pod cfs quota scale up ceil percentage, default
+                        = 300 (300%)
+                      format: int64
+                      type: integer
+                    cfsQuotaBurstPeriodSeconds:
+                      description: specifies a period of time for pod can use at burst,
+                        default = -1 (unlimited)
+                      format: int64
+                      type: integer
+                    cpuBurstPercent:
+                      description: 'cpu burst percentage for setting cpu.cfs_burst_us
+                        in Cgroupv1 or setting cpu.max.burst in Cgroupv2, legal range:
+                        [0, 10000], default as 1000 (1000%)'
+                      format: int64
+                      maximum: 10000
+                      minimum: 0
+                      type: integer
+                    namespace:
+                      type: string
+                    overridePod:
+                      type: boolean
+                    podSelector:
+                      description: |-
+                        A label selector is a label query over a set of resources. The result of matchLabels and
+                        matchExpressions are ANDed. An empty label selector matches all objects. A null
+                        label selector matches no objects.
+                      properties:
+                        matchExpressions:
+                          description: matchExpressions is a list of label selector
+                            requirements. The requirements are ANDed.
+                          items:
+                            description: |-
+                              A label selector requirement is a selector that contains values, a key, and an operator that
+                              relates the key and values.
+                            properties:
+                              key:
+                                description: key is the label key that the selector
+                                  applies to.
+                                type: string
+                              operator:
+                                description: |-
+                                  operator represents a key's relationship to a set of values.
+                                  Valid operators are In, NotIn, Exists and DoesNotExist.
+                                type: string
+                              values:
+                                description: |-
+                                  values is an array of string values. If the operator is In or NotIn,
+                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                  the values array must be empty. This array is replaced during a strategic
+                                  merge patch.
+                                items:
+                                  type: string
+                                type: array
+                            required:
+                            - key
+                            - operator
+                            type: object
+                          type: array
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                            map is equivalent to an element of matchExpressions, whose key field is "key", the
+                            operator is "In", and the values array contains only "value". The requirements are ANDed.
+                          type: object
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    policy:
+                      type: string
+                  type: object
+                type: array
               resourceQOSStrategy:
                 description: QoS config strategy for pods of different qos-class
                 properties:
