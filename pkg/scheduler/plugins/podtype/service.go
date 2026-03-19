@@ -11,7 +11,7 @@ type Service struct {
 
 // NewServiceFromCache receives existing cache from plugin
 func NewServiceFromCache(cache *PodTypeCache) *Service {
-    return &Service{cache: cache}
+	return &Service{cache: cache}
 }
 
 // GetCache returns the pod type cache

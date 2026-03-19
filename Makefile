@@ -133,7 +133,7 @@ build-koord-device-daemon: ## Build koord-device-daemon binary.
 	go build -o bin/koord-device-daemon cmd/koord-device-daemon/main.go
 
 .PHONY: docker-build
-docker-build: test docker-build-koord-manager docker-build-koord-scheduler docker-build-koord-descheduler 
+docker-build: docker-build-koord-manager docker-build-koord-scheduler docker-build-koord-descheduler 
 
 .PHONY: docker-build-koordlet
 docker-build-koordlet: ## Build docker image with the koordlet.

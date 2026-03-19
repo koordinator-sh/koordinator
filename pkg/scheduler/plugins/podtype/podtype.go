@@ -7,9 +7,9 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-    "k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -25,9 +25,9 @@ const (
 	PodTypeAnnotationKey = "koordinator.sh/pod-type"
 
 	// PodType values
-	PodTypeCPUIntensive    = "cpu-intensive"
-	PodTypeMemoryIntensive = "memory-intensive"
-	PodTypeIOIntensive     = "io-intensive"
+	PodTypeCPUIntensive     = "cpu-intensive"
+	PodTypeMemoryIntensive  = "memory-intensive"
+	PodTypeIOIntensive      = "io-intensive"
 	PodTypeNetworkIntensive = "network-intensive"
 
 	// ErrReasonPodTypeNotFound is the reason for pod type not found
@@ -52,8 +52,8 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, fmt.Errorf("want args to be of type PodTypeArgs, got %T", args)
 	}
 	if pluginArgs.EnablePodType != nil && !*pluginArgs.EnablePodType {
-	// plugin disabled by configuration; return nil so scheduler won't create it.
-	klog.V(4).InfoS("podtype plugin disabled by PodTypeArgs")
+		// plugin disabled by configuration; return nil so scheduler won't create it.
+		klog.V(4).InfoS("podtype plugin disabled by PodTypeArgs")
 		return nil, nil
 	}
 
@@ -76,7 +76,7 @@ func (p *Plugin) Name() string { return Name }
 func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
 	return []framework.ClusterEvent{
 		{
-			Resource: framework.Pod,
+			Resource:   framework.Pod,
 			ActionType: framework.Add | framework.Update | framework.Delete,
 		},
 	}
@@ -129,7 +129,7 @@ func (p *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod
 	defer func() {
 		klog.InfoS("podtype: leaving PreFilter", "pod", klog.KObj(pod), "duration", time.Since(start))
 	}()
- 	// We prefer to make this plugin best-effort: if pod lacks type -> skip plugin.
+	// We prefer to make this plugin best-effort: if pod lacks type -> skip plugin.
 	// If internal error occurs (e.g. failed to write state), we skip rather than failing scheduling.
 
 	// If pod has no type and owner has no type -> skip
@@ -138,7 +138,7 @@ func (p *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod
 		podType = getPodTypeFromOwners(pod, p.cache)
 	}
 	if podType == "" {
-        klog.V(4).InfoS("podtype preFilter: pod has no type annotation, skipping plugin", "pod", klog.KObj(pod))
+		klog.V(4).InfoS("podtype preFilter: pod has no type annotation, skipping plugin", "pod", klog.KObj(pod))
 		return nil, framework.NewStatus(framework.Skip, ErrReasonPodTypeNotFound)
 	}
 	// debug
@@ -164,7 +164,7 @@ func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 }
 
 func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
-    // debug
+	// debug
 	start := time.Now()
 	klog.InfoS("podtype: entering Score", "pod", klog.KObj(pod))
 	defer func() {
@@ -182,11 +182,11 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		podType = getPodTypeFromOwners(pod, p.cache)
 	}
 	if podType == "" {
-        klog.V(4).InfoS("podtype: pod type not found, skipping scoring", "pod", klog.KObj(pod))
+		klog.V(4).InfoS("podtype: pod type not found, skipping scoring", "pod", klog.KObj(pod))
 		return 0, framework.NewStatus(framework.Skip, ErrReasonPodTypeNotFound)
 	}
 	klog.V(4).InfoS("got podtype in Score", "pod", klog.KObj(pod), "podType", podType)
-    
+
 	// Score based on pod type
 	var (
 		score int64
@@ -200,7 +200,7 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 	case PodTypeIOIntensive, PodTypeNetworkIntensive:
 		score, st = p.scoreIONetIntensive(nodeName, podType, mergedCounts)
 	default:
-        klog.V(4).InfoS("podtype: unknown pod type, skipping scoring", "pod", klog.KObj(pod), "podType", podType)
+		klog.V(4).InfoS("podtype: unknown pod type, skipping scoring", "pod", klog.KObj(pod), "podType", podType)
 		return 0, framework.NewStatus(framework.Skip, "unknown pod type")
 	}
 	// if plugin-specific status indicates skipping / error, return it
@@ -235,11 +235,11 @@ func (p *Plugin) Reserve(ctx context.Context, state *framework.CycleState, pod *
 		podType = getPodTypeFromOwners(pod, p.cache)
 	}
 	if podType == "" {
-        klog.V(4).InfoS("podtype: pod type not found; skipping reserve", "pod", klog.KObj(pod))
+		klog.V(4).InfoS("podtype: pod type not found; skipping reserve", "pod", klog.KObj(pod))
 		return nil
 	}
-	
-    // Record reservation with podType
+
+	// Record reservation with podType
 	p.cache.Reserve(nodeName, podType, pod.UID)
 	return nil
 }

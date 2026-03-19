@@ -2,7 +2,7 @@ package podtype
 
 import (
 	"strings"
-	
+
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -33,7 +33,7 @@ func getPodTypeFromPod(pod *corev1.Pod) string {
 // getPodTypeFromOwners resolves pod type by checking ownerReferences mapping in cache.
 // It returns the first matched pod type or empty string if none found.
 func getPodTypeFromOwners(pod *corev1.Pod, cache *PodTypeCache) string {
-	if pod == nil  || cache == nil {
+	if pod == nil || cache == nil {
 		return ""
 	}
 	for _, owner := range pod.OwnerReferences {

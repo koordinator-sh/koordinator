@@ -73,7 +73,7 @@ func (c *PodTypeCache) ResourceEventHandlerFuncs() cache.ResourceEventHandlerFun
 // so we can capture annotations placed on owner objects.
 func (c *PodTypeCache) ownerResourceEventHandlerFuncs() cache.ResourceEventHandlerFuncs {
 	return cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) { c.handleOwnerAdd(obj) },
+		AddFunc:    func(obj interface{}) { c.handleOwnerAdd(obj) },
 		UpdateFunc: func(oldObj, newObj interface{}) { c.handleOwnerUpdate(oldObj, newObj) },
 		DeleteFunc: func(obj interface{}) { c.handleOwnerDelete(obj) },
 	}
@@ -473,7 +473,7 @@ func (c *PodTypeCache) GetReservedCounts() map[string]map[string]int {
 	return res
 }
 
-// resolvePodTypeForPodLocked returns pod type for the given pod for cache bookkeeping. 
+// resolvePodTypeForPodLocked returns pod type for the given pod for cache bookkeeping.
 // It first checks pod annotation, if empty it will look up ownerAnnotations map (thread-safe read).
 // Caller MUST hold c.mutex (write lock).
 func (c *PodTypeCache) resolvePodTypeForPodLocked(pod *corev1.Pod) string {

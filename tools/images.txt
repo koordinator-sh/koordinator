@@ -1,4 +1,4 @@
 registry.cn-beijing.aliyuncs.com/koordinator-sh/koordlet:v1.7.0
-ghcr.io/koordinator-sh/koord-descheduler:release-1.7-23f05842
-ghcr.io/koordinator-sh/koord-scheduler:release-1.7-23f05842
-ghcr.io/koordinator-sh/koord-manager:release-1.7-23f05842
+ghcr.io/koordinator-sh/koord-descheduler:release-1.7-16a8fb34
+ghcr.io/koordinator-sh/koord-scheduler:release-1.7-16a8fb34
+ghcr.io/koordinator-sh/koord-manager:release-1.7-16a8fb34
