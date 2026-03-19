@@ -323,6 +323,10 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		return nil, status
 	} // skip
 
+	if !result.AllNodes() && !result.NodeNames.Has(pod.Status.NominatedNodeName) {
+		klog.Warningf("Pod %s/%s is nominated to node %s, but it is not in the pre-filter result", pod.Namespace, pod.Name, pod.Status.NominatedNodeName)
+	}
+
 	// PreferNodes
 	nodeName, status = ext.RunPreferNodesPlugin(ctx, cycleState, pod, result)
 	if status.IsSuccess() {
