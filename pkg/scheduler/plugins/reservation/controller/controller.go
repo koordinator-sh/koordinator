@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -76,6 +77,7 @@ type Controller struct {
 	isGCDisabled               bool
 	gcDuration                 time.Duration
 	gcInterval                 time.Duration
+	resyncInterval             time.Duration
 
 	lock   sync.RWMutex
 	pods   map[string]map[types.UID]*corev1.Pod    // nodeName -> podUID -> pod
@@ -114,6 +116,10 @@ func New(
 	if args != nil && args.GCIntervalSeconds > 0 {
 		gcInterval = time.Duration(args.GCIntervalSeconds) * time.Second
 	}
+	resyncInterval := defaultResyncInterval
+	if args != nil && args.ResyncIntervalSeconds > 0 {
+		resyncInterval = time.Duration(args.ResyncIntervalSeconds) * time.Second
+	}
 	return &Controller{
 		sharedInformerFactory:      sharedInformerFactory,
 		koordSharedInformerFactory: koordSharedInformerFactory,
@@ -127,6 +133,7 @@ func New(
 		isGCDisabled:               isGCDisabled,
 		gcDuration:                 gcDuration,
 		gcInterval:                 gcInterval,
+		resyncInterval:             resyncInterval,
 		pods:                       map[string]map[types.UID]*corev1.Pod{},
 		podToR:                     map[types.UID]types.UID{},
 		rToPod:                     map[types.UID]map[types.UID]*corev1.Pod{},
@@ -168,6 +175,11 @@ func (c *Controller) Start() {
 		go wait.Until(c.gcReservations, c.gcInterval, nil)
 	} else {
 		klog.V(4).InfoS("garbage collection for reservations is disabled")
+	}
+	if c.resyncInterval > 0 {
+		go wait.Until(c.resyncReservations, c.resyncInterval, nil)
+	} else {
+		klog.V(4).InfoS("resync for reservations is disabled")
 	}
 }
 
@@ -320,7 +332,6 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation, pod
 	}
 
 	if reservation.Status.NodeName == "" {
-		RecordReservationPhases(reservation)
 		return nil
 	}
 
@@ -365,7 +376,6 @@ func (c *Controller) syncStatus(reservation *schedulingv1alpha1.Reservation, pod
 }
 
 func (c *Controller) updateReservationStatus(reservation *schedulingv1alpha1.Reservation) error {
-	RecordReservationPhases(reservation)
 	_, err := c.koordClientSet.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
 	if err != nil {
 		klog.ErrorS(err, "Failed to update reservation status", "reservation", klog.KObj(reservation), "uid", reservation.UID, "phase", reservation.Status.Phase)
@@ -408,6 +418,23 @@ func nextSyncTime(r *schedulingv1alpha1.Reservation) time.Duration {
 		duration = maxRetryAfterTime
 	}
 	return duration
+}
+
+const (
+	defaultResyncInterval = 60 * time.Second
+)
+
+func (c *Controller) resyncReservations() {
+	reservations, err := c.reservationLister.List(labels.Everything())
+	if err != nil {
+		klog.Errorf("failed to list reservations, abort the resync turn, err: %s", err)
+		return
+	}
+	metrics.ResetReservationPhase()
+	for _, reservation := range reservations {
+		// record metrics
+		RecordReservationPhases(reservation)
+	}
 }
 
 // RecordReservationPhases records all possible phases of a reservation as metrics.
