@@ -19,10 +19,10 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // ElasticQuotaProfileLister helps list ElasticQuotaProfiles.
@@ -30,7 +30,7 @@ import (
 type ElasticQuotaProfileLister interface {
 	// List lists all ElasticQuotaProfiles in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.ElasticQuotaProfile, err error)
+	List(selector labels.Selector) (ret []*quotav1alpha1.ElasticQuotaProfile, err error)
 	// ElasticQuotaProfiles returns an object that can list and get ElasticQuotaProfiles.
 	ElasticQuotaProfiles(namespace string) ElasticQuotaProfileNamespaceLister
 	ElasticQuotaProfileListerExpansion
@@ -38,25 +38,17 @@ type ElasticQuotaProfileLister interface {
 
 // elasticQuotaProfileLister implements the ElasticQuotaProfileLister interface.
 type elasticQuotaProfileLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*quotav1alpha1.ElasticQuotaProfile]
 }
 
 // NewElasticQuotaProfileLister returns a new ElasticQuotaProfileLister.
 func NewElasticQuotaProfileLister(indexer cache.Indexer) ElasticQuotaProfileLister {
-	return &elasticQuotaProfileLister{indexer: indexer}
-}
-
-// List lists all ElasticQuotaProfiles in the indexer.
-func (s *elasticQuotaProfileLister) List(selector labels.Selector) (ret []*v1alpha1.ElasticQuotaProfile, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.ElasticQuotaProfile))
-	})
-	return ret, err
+	return &elasticQuotaProfileLister{listers.New[*quotav1alpha1.ElasticQuotaProfile](indexer, quotav1alpha1.Resource("elasticquotaprofile"))}
 }
 
 // ElasticQuotaProfiles returns an object that can list and get ElasticQuotaProfiles.
 func (s *elasticQuotaProfileLister) ElasticQuotaProfiles(namespace string) ElasticQuotaProfileNamespaceLister {
-	return elasticQuotaProfileNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return elasticQuotaProfileNamespaceLister{listers.NewNamespaced[*quotav1alpha1.ElasticQuotaProfile](s.ResourceIndexer, namespace)}
 }
 
 // ElasticQuotaProfileNamespaceLister helps list and get ElasticQuotaProfiles.
@@ -64,36 +56,15 @@ func (s *elasticQuotaProfileLister) ElasticQuotaProfiles(namespace string) Elast
 type ElasticQuotaProfileNamespaceLister interface {
 	// List lists all ElasticQuotaProfiles in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.ElasticQuotaProfile, err error)
+	List(selector labels.Selector) (ret []*quotav1alpha1.ElasticQuotaProfile, err error)
 	// Get retrieves the ElasticQuotaProfile from the indexer for a given namespace and name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.ElasticQuotaProfile, error)
+	Get(name string) (*quotav1alpha1.ElasticQuotaProfile, error)
 	ElasticQuotaProfileNamespaceListerExpansion
 }
 
 // elasticQuotaProfileNamespaceLister implements the ElasticQuotaProfileNamespaceLister
 // interface.
 type elasticQuotaProfileNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ElasticQuotaProfiles in the indexer for a given namespace.
-func (s elasticQuotaProfileNamespaceLister) List(selector labels.Selector) (ret []*v1alpha1.ElasticQuotaProfile, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.ElasticQuotaProfile))
-	})
-	return ret, err
-}
-
-// Get retrieves the ElasticQuotaProfile from the indexer for a given namespace and name.
-func (s elasticQuotaProfileNamespaceLister) Get(name string) (*v1alpha1.ElasticQuotaProfile, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1alpha1.Resource("elasticquotaprofile"), name)
-	}
-	return obj.(*v1alpha1.ElasticQuotaProfile), nil
+	listers.ResourceIndexer[*quotav1alpha1.ElasticQuotaProfile]
 }

@@ -27,13 +27,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -44,6 +47,19 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 )
 
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
+
 func TestPlugin_Name(t *testing.T) {
 	p := &Plugin{maxHintNodes: 100}
 	assert.Equal(t, Name, p.Name())
@@ -53,7 +69,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 	p := &Plugin{maxHintNodes: 100}
 	state := framework.NewCycleState()
 	pod := &corev1.Pod{}
-	res, status := p.PreFilter(context.TODO(), state, pod)
+	res, status := p.PreFilter(context.TODO(), state, pod, nil)
 	assert.Nil(t, res)
 	assert.Nil(t, status)
 
@@ -66,9 +82,9 @@ func TestPlugin_PreFilter(t *testing.T) {
 	}
 	state = framework.NewCycleState()
 	_, _, _ = p.BeforePreFilter(context.TODO(), state, hintPod)
-	res, status = p.PreFilter(context.TODO(), state, hintPod)
+	res, status = p.PreFilter(context.TODO(), state, hintPod, nil)
 	assert.Nil(t, status)
-	assert.Equal(t, &framework.PreFilterResult{NodeNames: sets.New("node-1", "node-2")}, res)
+	assert.Equal(t, &fwktype.PreFilterResult{NodeNames: sets.New("node-1", "node-2")}, res)
 	_ = p.AfterPreFilter(context.TODO(), state, hintPod, res)
 }
 
@@ -91,7 +107,7 @@ func TestPlugin_BeforePreFilter(t *testing.T) {
 		pod            *corev1.Pod
 		wantModified   bool
 		wantStatusNil  bool
-		wantStatusCode framework.Code
+		wantStatusCode fwktype.Code
 		wantHintState  *hinter.SchedulingHintStateData
 	}{
 		{
@@ -100,7 +116,7 @@ func TestPlugin_BeforePreFilter(t *testing.T) {
 			wantModified:   false,
 			wantStatusNil:  true,
 			wantHintState:  nil,
-			wantStatusCode: framework.Success,
+			wantStatusCode: fwktype.Success,
 		},
 		{
 			name: "no scheduling hint annotation",
@@ -114,7 +130,7 @@ func TestPlugin_BeforePreFilter(t *testing.T) {
 			wantModified:   false,
 			wantStatusNil:  true,
 			wantHintState:  nil,
-			wantStatusCode: framework.Success,
+			wantStatusCode: fwktype.Success,
 		},
 		{
 			name: "valid scheduling hint with node names and extensions",
@@ -140,7 +156,7 @@ func TestPlugin_BeforePreFilter(t *testing.T) {
 				PreFilterNodes: []string{"node-1", "node-2"},
 				Extensions:     map[string]interface{}{"key": "value"},
 			},
-			wantStatusCode: framework.Success,
+			wantStatusCode: fwktype.Success,
 		},
 		{
 			name: "valid scheduling hint with preferred nodes",
@@ -168,7 +184,7 @@ func TestPlugin_BeforePreFilter(t *testing.T) {
 				PreferredNodes: []string{"node-1", "node-2"},
 				Extensions:     map[string]interface{}{"key": "value"},
 			},
-			wantStatusCode: framework.Success,
+			wantStatusCode: fwktype.Success,
 		},
 		{
 			name: "invalid scheduling hint json",
@@ -182,7 +198,7 @@ func TestPlugin_BeforePreFilter(t *testing.T) {
 			wantModified:   false,
 			wantStatusNil:  false,
 			wantHintState:  nil,
-			wantStatusCode: framework.Error,
+			wantStatusCode: fwktype.Error,
 		},
 	}
 
@@ -216,16 +232,16 @@ func TestPlugin_BeforePreFilter(t *testing.T) {
 	}
 }
 
-var _ framework.SharedLister = &testSharedLister{}
+var _ fwktype.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
-	nodeInfos   []*framework.NodeInfo
+	nodeInfos   []fwktype.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
 }
 
 func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLister {
 	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	nodeInfos := make([]*framework.NodeInfo, 0)
+	nodeInfos := make([]fwktype.NodeInfo, 0)
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
@@ -245,17 +261,17 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 	return &testSharedLister{nodeInfos: nodeInfos, nodeInfoMap: nodeInfoMap}
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister { return f }
-func (f *testSharedLister) IsPVCUsedByPods(key string) bool           { return false }
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister       { return f }
-func (f *testSharedLister) List() ([]*framework.NodeInfo, error)      { return f.nodeInfos, nil }
-func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) StorageInfos() fwktype.StorageInfoLister { return f }
+func (f *testSharedLister) IsPVCUsedByPods(key string) bool         { return false }
+func (f *testSharedLister) NodeInfos() fwktype.NodeInfoLister       { return f }
+func (f *testSharedLister) List() ([]fwktype.NodeInfo, error)       { return f.nodeInfos, nil }
+func (f *testSharedLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
-func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
-func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
@@ -330,7 +346,7 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p, err := proxyNew(tt.args, fh)
+			p, err := proxyNew(context.TODO(), tt.args, fh)
 			if tt.wantErr {
 				assert.Error(t, err)
 				if tt.errMsg != "" {
@@ -347,9 +363,9 @@ func TestNew(t *testing.T) {
 
 	// Test handle not being an ExtendedHandle.
 	t.Run("handle is not ExtendedHandle", func(t *testing.T) {
-		var handle framework.Handle
+		var handle fwktype.Handle
 		args := &config.SchedulingHintArgs{MaxHintNodes: 100}
-		p, err := New(args, handle)
+		p, err := New(context.TODO(), args, handle)
 		assert.Nil(t, p)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "frameworkext.ExtendedHandle")
@@ -364,25 +380,25 @@ func TestPlugin_PreferNodesPlugin(t *testing.T) {
 func TestPlugin_PreferNodes(t *testing.T) {
 	tests := []struct {
 		name              string
-		setupState        func() *framework.CycleState
+		setupState        func() fwktype.CycleState
 		pod               *corev1.Pod
-		preFilterResult   *framework.PreFilterResult
+		preFilterResult   *fwktype.PreFilterResult
 		wantNodeNames     []string
-		wantStatusCode    framework.Code
+		wantStatusCode    fwktype.Code
 		wantStatusMessage string
 	}{
 		{
 			name: "no scheduling hint state",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				return framework.NewCycleState()
 			},
 			pod:            &corev1.Pod{},
 			wantNodeNames:  nil,
-			wantStatusCode: framework.Skip,
+			wantStatusCode: fwktype.Skip,
 		},
 		{
 			name: "empty preferred nodes",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				state := framework.NewCycleState()
 				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
 					PreferredNodes: []string{},
@@ -391,11 +407,11 @@ func TestPlugin_PreferNodes(t *testing.T) {
 			},
 			pod:            &corev1.Pod{},
 			wantNodeNames:  nil,
-			wantStatusCode: framework.Skip,
+			wantStatusCode: fwktype.Skip,
 		},
 		{
 			name: "preferred nodes with nil prefilter result",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				state := framework.NewCycleState()
 				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
 					PreferredNodes: []string{"node-1", "node-2"},
@@ -410,11 +426,11 @@ func TestPlugin_PreferNodes(t *testing.T) {
 			},
 			preFilterResult: nil,
 			wantNodeNames:   []string{"node-1", "node-2"},
-			wantStatusCode:  framework.Success,
+			wantStatusCode:  fwktype.Success,
 		},
 		{
 			name: "preferred nodes with AllNodes prefilter result",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				state := framework.NewCycleState()
 				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
 					PreferredNodes: []string{"node-1", "node-2"},
@@ -427,13 +443,13 @@ func TestPlugin_PreferNodes(t *testing.T) {
 					Namespace: "default",
 				},
 			},
-			preFilterResult: &framework.PreFilterResult{},
+			preFilterResult: &fwktype.PreFilterResult{},
 			wantNodeNames:   []string{"node-1", "node-2"},
-			wantStatusCode:  framework.Success,
+			wantStatusCode:  fwktype.Success,
 		},
 		{
 			name: "some preferred nodes in prefilter result node names - return filtered",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				state := framework.NewCycleState()
 				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
 					PreferredNodes: []string{"node-1", "node-2", "node-3"},
@@ -446,15 +462,15 @@ func TestPlugin_PreferNodes(t *testing.T) {
 					Namespace: "default",
 				},
 			},
-			preFilterResult: &framework.PreFilterResult{
+			preFilterResult: &fwktype.PreFilterResult{
 				NodeNames: sets.New("node-1", "node-4"),
 			},
 			wantNodeNames:  []string{"node-1"},
-			wantStatusCode: framework.Success,
+			wantStatusCode: fwktype.Success,
 		},
 		{
 			name: "multiple preferred nodes match prefilter result - maintain order",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				state := framework.NewCycleState()
 				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
 					PreferredNodes: []string{"node-1", "node-2", "node-3", "node-4"},
@@ -467,15 +483,15 @@ func TestPlugin_PreferNodes(t *testing.T) {
 					Namespace: "default",
 				},
 			},
-			preFilterResult: &framework.PreFilterResult{
+			preFilterResult: &fwktype.PreFilterResult{
 				NodeNames: sets.New("node-2", "node-4", "node-5"),
 			},
 			wantNodeNames:  []string{"node-2", "node-4"},
-			wantStatusCode: framework.Success,
+			wantStatusCode: fwktype.Success,
 		},
 		{
 			name: "no preferred nodes in prefilter result node names - skip",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				state := framework.NewCycleState()
 				hinter.SetSchedulingHintState(state, &hinter.SchedulingHintStateData{
 					PreferredNodes: []string{"node-3", "node-4"},
@@ -488,15 +504,15 @@ func TestPlugin_PreferNodes(t *testing.T) {
 					Namespace: "default",
 				},
 			},
-			preFilterResult: &framework.PreFilterResult{
+			preFilterResult: &fwktype.PreFilterResult{
 				NodeNames: sets.New("node-1", "node-2"),
 			},
 			wantNodeNames:  nil,
-			wantStatusCode: framework.Skip,
+			wantStatusCode: fwktype.Skip,
 		},
 		{
 			name: "preferred nodes exceed maxHintNodes - truncated to first maxHintNodes",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				state := framework.NewCycleState()
 				// build a list larger than maxHintNodes (100)
 				nodes := make([]string, 110)
@@ -522,11 +538,11 @@ func TestPlugin_PreferNodes(t *testing.T) {
 				}
 				return nodes
 			}(),
-			wantStatusCode: framework.Success,
+			wantStatusCode: fwktype.Success,
 		},
 		{
 			name: "preferred nodes exactly at maxHintNodes - no truncation",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				state := framework.NewCycleState()
 				nodes := make([]string, 100)
 				for i := range nodes {
@@ -551,11 +567,11 @@ func TestPlugin_PreferNodes(t *testing.T) {
 				}
 				return nodes
 			}(),
-			wantStatusCode: framework.Success,
+			wantStatusCode: fwktype.Success,
 		},
 		{
 			name: "preferred nodes exceed maxHintNodes and intersect with prefilter result - truncated first, then intersected",
-			setupState: func() *framework.CycleState {
+			setupState: func() fwktype.CycleState {
 				state := framework.NewCycleState()
 				nodes := make([]string, 110)
 				for i := range nodes {
@@ -574,11 +590,11 @@ func TestPlugin_PreferNodes(t *testing.T) {
 			},
 			// Only nodes past the truncation boundary (node-100..node-109) appear in preFilterResult;
 			// after truncation to maxHintNodes the list ends at node-99, so all are filtered out.
-			preFilterResult: &framework.PreFilterResult{
+			preFilterResult: &fwktype.PreFilterResult{
 				NodeNames: sets.New("node-100", "node-105"),
 			},
 			wantNodeNames:  nil,
-			wantStatusCode: framework.Skip,
+			wantStatusCode: fwktype.Skip,
 		},
 	}
 

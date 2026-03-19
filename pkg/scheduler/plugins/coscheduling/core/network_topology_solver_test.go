@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 
@@ -292,7 +293,7 @@ func Test_calculateNodeExistingPodsNum(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var nodeInfos []*framework.NodeInfo
+			var nodeInfos []fwktype.NodeInfo
 			for _, node := range tt.args.nodes {
 				nodeInfo := framework.NewNodeInfo()
 				nodeInfo.SetNode(node)

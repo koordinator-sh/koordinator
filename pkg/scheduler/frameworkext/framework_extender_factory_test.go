@@ -32,13 +32,13 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	k8smetrics "k8s.io/component-base/metrics"
 	"k8s.io/component-base/metrics/testutil"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -60,7 +60,7 @@ func TestExtenderFactory(t *testing.T) {
 	assert.Equal(t, koordClientSet, factory.KoordinatorClientSet())
 	assert.Equal(t, koordSharedInformerFactory, factory.KoordinatorSharedInformerFactory())
 
-	proxyNew := PluginFactoryProxy(factory, func(args runtime.Object, f framework.Handle) (framework.Plugin, error) {
+	proxyNew := PluginFactoryProxy(factory, func(ctx context.Context, args runtime.Object, f fwktype.Handle) (fwktype.Plugin, error) {
 		return &TestTransformer{index: 1}, nil
 	})
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
@@ -73,12 +73,12 @@ func TestExtenderFactory(t *testing.T) {
 		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
-		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{}}),
+		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfoLister{}}),
 		frameworkruntime.WithClientSet(fakeClient),
 		frameworkruntime.WithInformerFactory(sharedInformerFactory),
 	)
 	assert.NoError(t, err)
-	pl, err := proxyNew(nil, fh)
+	pl, err := proxyNew(context.TODO(), nil, fh)
 	assert.NoError(t, err)
 	assert.NotNil(t, pl)
 	assert.Equal(t, "TestTransformer", pl.Name())
@@ -283,21 +283,30 @@ func TestCollectSchedulePodResult(t *testing.T) {
 				metricsRegistry.MustRegister(h)
 			}
 			mockSched := &scheduler.Scheduler{
-				SchedulePod: func(ctx context.Context, _ framework.Framework, _ *framework.CycleState, _ *corev1.Pod) (scheduler.ScheduleResult, error) {
+				SchedulePod: func(ctx context.Context, _ framework.Framework, _ fwktype.CycleState, _ *corev1.Pod) (scheduler.ScheduleResult, error) {
 					return tt.scheduleResult, tt.err
 				},
 			}
 			f := &FrameworkExtenderFactory{}
 			f.CollectSchedulePodResult(mockSched)
 			mockSched.SchedulePod(context.TODO(), nil, nil, nil)
-			for i, h := range histograms {
-				m := h.WithContext(context.TODO())
-				count, err := testutil.GetHistogramMetricCount(m)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expected[i*2], int(count))
-				sum, err := testutil.GetHistogramMetricValue(m)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expected[i*2+1], int(sum))
+			histogramNames := []string{
+				"scheduler_pod_scheduling_evaluated_nodes",
+				"scheduler_pod_scheduling_feasible_nodes",
+			}
+			for i, histName := range histogramNames {
+				histVec, err := testutil.GetHistogramVecFromGatherer(metricsRegistry, histName, map[string]string{})
+				if tt.expected[i*2] == 0 {
+					if err == nil {
+						assert.Equal(t, uint64(0), histVec.GetAggregatedSampleCount())
+					}
+				} else {
+					assert.NoError(t, err)
+					count := histVec.GetAggregatedSampleCount()
+					assert.Equal(t, tt.expected[i*2], int(count))
+					sum := histVec.GetAggregatedSampleSum()
+					assert.Equal(t, tt.expected[i*2+1], int(sum))
+				}
 			}
 		})
 	}
@@ -329,9 +338,12 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 				NumAllNodes: 0,
 				Diagnosis: framework.Diagnosis{
 					PreFilterMsg: "preFilterMessage",
-					NodeToStatusMap: map[string]*framework.Status{
-						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node1Message"),
-					},
+					NodeToStatus: framework.NewNodeToStatus(
+						map[string]*fwktype.Status{
+							"node1": fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "node1Message"),
+						},
+						fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable),
+					),
 				},
 			},
 			wantDiagnosis: Diagnosis{
@@ -377,9 +389,12 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 				Pod:         nil,
 				NumAllNodes: 0,
 				Diagnosis: framework.Diagnosis{
-					NodeToStatusMap: map[string]*framework.Status{
-						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node1Message"),
-					},
+					NodeToStatus: framework.NewNodeToStatus(
+						map[string]*fwktype.Status{
+							"node1": fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "node1Message"),
+						},
+						fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable),
+					),
 				},
 			},
 			wantDiagnosis: Diagnosis{
@@ -403,8 +418,8 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 				ScheduleDiagnosis: &ScheduleDiagnosis{
 					SchedulingMode: PodSchedulingMode,
 
-					NodeToStatusMap: map[string]*framework.Status{
-						"node1": framework.NewStatus(framework.UnschedulableAndUnresolvable, "node1Message"),
+					NodeToStatusMap: map[string]*fwktype.Status{
+						"node1": fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "node1Message"),
 					},
 				},
 				PreemptionDiagnosis: nil,

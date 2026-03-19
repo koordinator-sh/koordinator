@@ -17,6 +17,7 @@ limitations under the License.
 package nodenumaresource
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -45,7 +46,7 @@ func TestEndpointsQueryNode(t *testing.T) {
 		corev1.ResourceCPU: 1.5,
 	})
 	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
-	plugin, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	plugin, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
 	assert.NotNil(t, plugin)
 	p := plugin.(*Plugin)

@@ -44,7 +44,7 @@ func TestSchedulingHintStateData_Clone(t *testing.T) {
 	assert.Equal(t, original.PreferredNodes, cloned.PreferredNodes)
 	assert.Equal(t, original.Extensions, cloned.Extensions)
 
-	assert.NotSame(t, original.Extensions, cloned.Extensions)
+	assert.NotSame(t, &original, cloned)
 }
 
 func TestGetSchedulingHintState(t *testing.T) {

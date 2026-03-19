@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -33,7 +34,7 @@ var _ handler.EventHandler = &DeviceHandler{}
 
 type DeviceHandler struct{}
 
-func (d *DeviceHandler) Create(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Create(ctx context.Context, e event.TypedCreateEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	device := e.Object.(*schedulingv1alpha1.Device)
 	q.Add(reconcile.Request{
 		NamespacedName: types.NamespacedName{
@@ -42,7 +43,7 @@ func (d *DeviceHandler) Create(ctx context.Context, e event.CreateEvent, q workq
 	})
 }
 
-func (d *DeviceHandler) Update(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Update(ctx context.Context, e event.TypedUpdateEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	newDevice := e.ObjectNew.(*schedulingv1alpha1.Device)
 	oldDevice := e.ObjectOld.(*schedulingv1alpha1.Device)
 	if reflect.DeepEqual(newDevice.Spec, oldDevice.Spec) {
@@ -55,7 +56,7 @@ func (d *DeviceHandler) Update(ctx context.Context, e event.UpdateEvent, q workq
 	})
 }
 
-func (d *DeviceHandler) Delete(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Delete(ctx context.Context, e event.TypedDeleteEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	device, ok := e.Object.(*schedulingv1alpha1.Device)
 	if !ok {
 		return
@@ -67,5 +68,5 @@ func (d *DeviceHandler) Delete(ctx context.Context, e event.DeleteEvent, q workq
 	})
 }
 
-func (d *DeviceHandler) Generic(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (d *DeviceHandler) Generic(ctx context.Context, e event.TypedGenericEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }

@@ -19,10 +19,10 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // ScheduleExplanationLister helps list ScheduleExplanations.
@@ -30,7 +30,7 @@ import (
 type ScheduleExplanationLister interface {
 	// List lists all ScheduleExplanations in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.ScheduleExplanation, err error)
+	List(selector labels.Selector) (ret []*schedulingv1alpha1.ScheduleExplanation, err error)
 	// ScheduleExplanations returns an object that can list and get ScheduleExplanations.
 	ScheduleExplanations(namespace string) ScheduleExplanationNamespaceLister
 	ScheduleExplanationListerExpansion
@@ -38,25 +38,17 @@ type ScheduleExplanationLister interface {
 
 // scheduleExplanationLister implements the ScheduleExplanationLister interface.
 type scheduleExplanationLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*schedulingv1alpha1.ScheduleExplanation]
 }
 
 // NewScheduleExplanationLister returns a new ScheduleExplanationLister.
 func NewScheduleExplanationLister(indexer cache.Indexer) ScheduleExplanationLister {
-	return &scheduleExplanationLister{indexer: indexer}
-}
-
-// List lists all ScheduleExplanations in the indexer.
-func (s *scheduleExplanationLister) List(selector labels.Selector) (ret []*v1alpha1.ScheduleExplanation, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.ScheduleExplanation))
-	})
-	return ret, err
+	return &scheduleExplanationLister{listers.New[*schedulingv1alpha1.ScheduleExplanation](indexer, schedulingv1alpha1.Resource("scheduleexplanation"))}
 }
 
 // ScheduleExplanations returns an object that can list and get ScheduleExplanations.
 func (s *scheduleExplanationLister) ScheduleExplanations(namespace string) ScheduleExplanationNamespaceLister {
-	return scheduleExplanationNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return scheduleExplanationNamespaceLister{listers.NewNamespaced[*schedulingv1alpha1.ScheduleExplanation](s.ResourceIndexer, namespace)}
 }
 
 // ScheduleExplanationNamespaceLister helps list and get ScheduleExplanations.
@@ -64,36 +56,15 @@ func (s *scheduleExplanationLister) ScheduleExplanations(namespace string) Sched
 type ScheduleExplanationNamespaceLister interface {
 	// List lists all ScheduleExplanations in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.ScheduleExplanation, err error)
+	List(selector labels.Selector) (ret []*schedulingv1alpha1.ScheduleExplanation, err error)
 	// Get retrieves the ScheduleExplanation from the indexer for a given namespace and name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.ScheduleExplanation, error)
+	Get(name string) (*schedulingv1alpha1.ScheduleExplanation, error)
 	ScheduleExplanationNamespaceListerExpansion
 }
 
 // scheduleExplanationNamespaceLister implements the ScheduleExplanationNamespaceLister
 // interface.
 type scheduleExplanationNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all ScheduleExplanations in the indexer for a given namespace.
-func (s scheduleExplanationNamespaceLister) List(selector labels.Selector) (ret []*v1alpha1.ScheduleExplanation, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.ScheduleExplanation))
-	})
-	return ret, err
-}
-
-// Get retrieves the ScheduleExplanation from the indexer for a given namespace and name.
-func (s scheduleExplanationNamespaceLister) Get(name string) (*v1alpha1.ScheduleExplanation, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1alpha1.Resource("scheduleexplanation"), name)
-	}
-	return obj.(*v1alpha1.ScheduleExplanation), nil
+	listers.ResourceIndexer[*schedulingv1alpha1.ScheduleExplanation]
 }

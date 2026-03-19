@@ -19,7 +19,7 @@ package topologymanager
 import (
 	"sync"
 
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 )
 
 const (
@@ -30,11 +30,11 @@ type Store struct {
 	affinityMap sync.Map
 }
 
-func InitStore(cycleState *framework.CycleState) {
+func InitStore(cycleState fwktype.CycleState) {
 	cycleState.Write(affinityStateKey, &Store{})
 }
 
-func GetStore(cycleState *framework.CycleState) *Store {
+func GetStore(cycleState fwktype.CycleState) *Store {
 	s, err := cycleState.Read(affinityStateKey)
 	if err != nil {
 		return &Store{}
@@ -43,7 +43,7 @@ func GetStore(cycleState *framework.CycleState) *Store {
 	return store
 }
 
-func (s *Store) Clone() framework.StateData {
+func (s *Store) Clone() fwktype.StateData {
 	return s
 }
 

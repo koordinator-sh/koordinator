@@ -16,12 +16,12 @@ limitations under the License.
 
 package frameworkext
 
-import "k8s.io/kubernetes/pkg/scheduler/framework"
+import fwktype "k8s.io/kube-scheduler/framework"
 
 // DefaultReservationNormalizeScore generates a Normalize Score function that can normalize the
 // scores to [0, maxPriority]. If reverse is set to true, it reverses the scores by
 // subtracting it from maxPriority.
-func DefaultReservationNormalizeScore(maxPriority int64, reverse bool, scores ReservationScoreList) *framework.Status {
+func DefaultReservationNormalizeScore(maxPriority int64, reverse bool, scores ReservationScoreList) *fwktype.Status {
 	var maxCount int64
 	for i := range scores {
 		if scores[i].Score > maxCount {

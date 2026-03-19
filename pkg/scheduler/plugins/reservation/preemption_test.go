@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
@@ -56,10 +57,10 @@ func Test_newPreemptionMgr(t *testing.T) {
 
 func TestPostFilterWithPreemption(t *testing.T) {
 	preemptionPolicyNever := corev1.PreemptNever
-	testFilterReservationStatus := framework.NewStatus(framework.Unschedulable,
+	testFilterReservationStatus := fwktype.NewStatus(fwktype.Unschedulable,
 		reservationutil.NewReservationReason("Insufficient nvidia.com/gpu"),
 		reservationutil.NewReservationReason("Insufficient koordinator.sh/gpu-mem-ratio"))
-	testFilterReservationStatus1 := framework.NewStatus(framework.Unschedulable,
+	testFilterReservationStatus1 := fwktype.NewStatus(fwktype.Unschedulable,
 		reservationutil.NewReservationReason("Insufficient cpu"),
 		"Insufficient memory")
 	testNode := &corev1.Node{
@@ -137,24 +138,24 @@ func TestPostFilterWithPreemption(t *testing.T) {
 		hasStateData             bool
 		hasAffinity              bool
 		nodeReservationDiagnosis map[string]*nodeDiagnosisState
-		filteredNodeStatusMap    framework.NodeToStatusMap
+		filteredNodeStatusMap    *framework.NodeToStatus
 		enablePreemption         bool
 	}
 	tests := []struct {
 		name   string
 		fields fields
 		args   args
-		want   *framework.PostFilterResult
-		want1  *framework.Status
+		want   *fwktype.PostFilterResult
+		want1  *fwktype.Status
 	}{
 		{
 			name: "no reservation filtering",
 			args: args{
 				hasStateData:          false,
-				filteredNodeStatusMap: framework.NodeToStatusMap{},
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{}, nil),
 			},
 			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable),
+			want1: fwktype.NewStatus(fwktype.Unschedulable),
 		},
 		{
 			name: "show reservation reasons without preemption",
@@ -172,14 +173,14 @@ func TestPostFilterWithPreemption(t *testing.T) {
 						affinityUnmatched:        0,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": testFilterReservationStatus,
 					"test-node-1": testFilterReservationStatus1,
-				},
+				}, nil),
 				enablePreemption: false,
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"1 Reservation(s) didn't match affinity rules",
 				"1 Reservation(s) is unschedulable",
 				"1 Reservation(s) for node reason that Insufficient memory",
@@ -215,14 +216,14 @@ func TestPostFilterWithPreemption(t *testing.T) {
 						affinityUnmatched:        0,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": testFilterReservationStatus,
 					"test-node-1": testFilterReservationStatus1,
-				},
+				}, nil),
 				enablePreemption: true,
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"preemption: not eligible due to preemptionPolicy=Never.",
 				"1 Reservation(s) didn't match affinity rules",
 				"1 Reservation(s) is unschedulable",
@@ -380,9 +381,9 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 		reservations []*schedulingv1alpha1.Reservation
 	}
 	type args struct {
-		state    *framework.CycleState
+		state    fwktype.CycleState
 		pod      *corev1.Pod
-		nodeInfo *framework.NodeInfo
+		nodeInfo fwktype.NodeInfo
 		pdbs     []*policy.PodDisruptionBudget
 	}
 	tests := []struct {
@@ -391,7 +392,7 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 		args   args
 		want   []*corev1.Pod
 		want1  int
-		want2  *framework.Status
+		want2  *fwktype.Status
 	}{
 		{
 			name: "reserve pod preempt successfully",
@@ -413,12 +414,12 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 			args: args{
 				state:    framework.NewCycleState(),
 				pod:      testReservePod,
-				nodeInfo: testNodeInfo.Clone(),
+				nodeInfo: testNodeInfo,
 				pdbs:     nil,
 			},
 			want:  nil,
 			want1: 0,
-			want2: framework.NewStatus(framework.Success),
+			want2: fwktype.NewStatus(fwktype.Success),
 		},
 		{
 			name: "compatible to pod preemption",
@@ -433,12 +434,12 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 			args: args{
 				state:    framework.NewCycleState(),
 				pod:      testHPPod,
-				nodeInfo: testNodeInfo1.Clone(),
+				nodeInfo: testNodeInfo1,
 				pdbs:     nil,
 			},
 			want:  nil,
 			want1: 0,
-			want2: framework.NewStatus(framework.Success),
+			want2: fwktype.NewStatus(fwktype.Success),
 		},
 	}
 	for _, tt := range tests {

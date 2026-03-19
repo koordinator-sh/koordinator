@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -38,11 +38,11 @@ var deviceHandlers = map[schedulingv1alpha1.DeviceType]DeviceHandler{}
 var deviceAllocators = map[schedulingv1alpha1.DeviceType]DeviceAllocator{}
 
 type DeviceHandler interface {
-	CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint, state *preFilterState) (corev1.ResourceList, int, *framework.Status)
+	CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint, state *preFilterState) (corev1.ResourceList, int, *fwktype.Status)
 }
 
 type DeviceAllocator interface {
-	Allocate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, preferredPCIEs sets.String) ([]*apiext.DeviceAllocation, *framework.Status)
+	Allocate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, preferredPCIEs sets.String) ([]*apiext.DeviceAllocation, *fwktype.Status)
 }
 
 type requestContext struct {
@@ -73,7 +73,7 @@ type AutopilotAllocator struct {
 	desiredCountPerDeviceType map[schedulingv1alpha1.DeviceType]int
 }
 
-func (a *AutopilotAllocator) Prepare() *framework.Status {
+func (a *AutopilotAllocator) Prepare() *fwktype.Status {
 	if a.requestsPerInstance != nil {
 		return nil
 	}
@@ -86,7 +86,7 @@ func (a *AutopilotAllocator) Prepare() *framework.Status {
 
 	for deviceType := range requestsPerInstance {
 		if mustAllocateVF(a.state.hints[deviceType]) && !hasVirtualFunctions(nodeDevice, deviceType) {
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s VirtualFunctions", deviceType))
+			return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s VirtualFunctions", deviceType))
 		}
 	}
 
@@ -98,7 +98,7 @@ func (a *AutopilotAllocator) Prepare() *framework.Status {
 func (a *AutopilotAllocator) Allocate(
 	required, preferred map[schedulingv1alpha1.DeviceType]sets.Int,
 	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
-) (apiext.DeviceAllocations, *framework.Status) {
+) (apiext.DeviceAllocations, *fwktype.Status) {
 	if status := a.Prepare(); !status.IsSuccess() {
 		return nil, status
 	}
@@ -119,7 +119,7 @@ func (a *AutopilotAllocator) Allocate(
 		designatedVF:              a.state.designatedVF,
 	}
 	var deviceAllocations apiext.DeviceAllocations
-	var status *framework.Status
+	var status *fwktype.Status
 	if len(a.requestsPerInstance) > 1 {
 		deviceAllocations, status = a.tryJointAllocate(requestCtx, a.state.jointAllocate, nodeDevice)
 		if !status.IsSuccess() {
@@ -135,7 +135,7 @@ func (a *AutopilotAllocator) Allocate(
 		for deviceType := range a.requestsPerInstance {
 			reasons = append(reasons, fmt.Sprintf("Insufficient %s devices", deviceType))
 		}
-		return nil, framework.NewStatus(framework.Unschedulable, reasons...)
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, reasons...)
 	}
 	return deviceAllocations, nil
 }
@@ -175,7 +175,7 @@ func (a *AutopilotAllocator) calcRequestsAndCountByDeviceType(
 	podRequests map[schedulingv1alpha1.DeviceType]corev1.ResourceList, nodeDevice *nodeDevice,
 	hints apiext.DeviceAllocateHints, primaryDeviceType schedulingv1alpha1.DeviceType,
 	podFitsSecondaryDeviceWellPlanned bool,
-) (map[schedulingv1alpha1.DeviceType]corev1.ResourceList, map[schedulingv1alpha1.DeviceType]int, *framework.Status) {
+) (map[schedulingv1alpha1.DeviceType]corev1.ResourceList, map[schedulingv1alpha1.DeviceType]int, *fwktype.Status) {
 	requestPerInstance := map[schedulingv1alpha1.DeviceType]corev1.ResourceList{}
 	desiredCountPerDeviceType := map[schedulingv1alpha1.DeviceType]int{}
 	for deviceType, requests := range podRequests {
@@ -194,7 +194,7 @@ func (a *AutopilotAllocator) calcRequestsAndCountByDeviceType(
 
 		requests, desiredCount, status := handler.CalcDesiredRequestsAndCount(a.node, a.pod, requests, nodeDevice, hints[deviceType], a.state)
 		if !status.IsSuccess() {
-			if status.Code() == framework.Skip {
+			if status.Code() == fwktype.Skip {
 				continue
 			}
 			return nil, nil, status
@@ -205,7 +205,7 @@ func (a *AutopilotAllocator) calcRequestsAndCountByDeviceType(
 	return requestPerInstance, desiredCountPerDeviceType, nil
 }
 
-func (a *AutopilotAllocator) tryJointAllocate(requestCtx *requestContext, jointAllocate *apiext.DeviceJointAllocate, nodeDevice *nodeDevice) (apiext.DeviceAllocations, *framework.Status) {
+func (a *AutopilotAllocator) tryJointAllocate(requestCtx *requestContext, jointAllocate *apiext.DeviceJointAllocate, nodeDevice *nodeDevice) (apiext.DeviceAllocations, *fwktype.Status) {
 	if jointAllocate == nil || len(jointAllocate.DeviceTypes) == 0 {
 		return nil, nil
 	}
@@ -223,7 +223,7 @@ func (a *AutopilotAllocator) tryJointAllocate(requestCtx *requestContext, jointA
 	return allocations, nil
 }
 
-func (a *AutopilotAllocator) validateJointAllocation(jointAllocate *apiext.DeviceJointAllocate, nodeDevice *nodeDevice, deviceAllocations apiext.DeviceAllocations) *framework.Status {
+func (a *AutopilotAllocator) validateJointAllocation(jointAllocate *apiext.DeviceJointAllocate, nodeDevice *nodeDevice, deviceAllocations apiext.DeviceAllocations) *fwktype.Status {
 	if jointAllocate == nil || len(jointAllocate.DeviceTypes) == 1 || jointAllocate.RequiredScope != apiext.SamePCIeDeviceJointAllocateScope {
 		return nil
 	}
@@ -248,13 +248,13 @@ func (a *AutopilotAllocator) validateJointAllocation(jointAllocate *apiext.Devic
 	for _, deviceType := range jointAllocate.DeviceTypes[1:] {
 		secondaryPCIes := pcieGetterFn(deviceType)
 		if !secondaryPCIes.Equal(primaryPCIes) {
-			return framework.NewStatus(framework.Unschedulable, "node(s) Device Joint-Allocate rules violation")
+			return fwktype.NewStatus(fwktype.Unschedulable, "node(s) Device Joint-Allocate rules violation")
 		}
 	}
 	return nil
 }
 
-func (a *AutopilotAllocator) jointAllocate(nodeDevice *nodeDevice, requestCtx *requestContext, jointAllocate *apiext.DeviceJointAllocate, primaryDeviceType schedulingv1alpha1.DeviceType, secondaryDeviceTypes []schedulingv1alpha1.DeviceType) (apiext.DeviceAllocations, *framework.Status) {
+func (a *AutopilotAllocator) jointAllocate(nodeDevice *nodeDevice, requestCtx *requestContext, jointAllocate *apiext.DeviceJointAllocate, primaryDeviceType schedulingv1alpha1.DeviceType, secondaryDeviceTypes []schedulingv1alpha1.DeviceType) (apiext.DeviceAllocations, *fwktype.Status) {
 	primaryAllocations, status := allocateDevices(
 		requestCtx,
 		nodeDevice,
@@ -265,7 +265,7 @@ func (a *AutopilotAllocator) jointAllocate(nodeDevice *nodeDevice, requestCtx *r
 		return nil, status
 	}
 	if len(primaryAllocations) == 0 {
-		return nil, framework.NewStatus(framework.Unschedulable, "node(s) Insufficient primary device")
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, "node(s) Insufficient primary device")
 	}
 
 	var secondaryDeviceAllocations apiext.DeviceAllocations
@@ -301,7 +301,7 @@ func (a *AutopilotAllocator) jointAllocate(nodeDevice *nodeDevice, requestCtx *r
 	return result, nil
 }
 
-func (a *AutopilotAllocator) allocateDevices(requestCtx *requestContext, nodeDevice *nodeDevice, deviceAllocations apiext.DeviceAllocations) (apiext.DeviceAllocations, *framework.Status) {
+func (a *AutopilotAllocator) allocateDevices(requestCtx *requestContext, nodeDevice *nodeDevice, deviceAllocations apiext.DeviceAllocations) (apiext.DeviceAllocations, *fwktype.Status) {
 	if deviceAllocations == nil {
 		deviceAllocations = apiext.DeviceAllocations{}
 	}
@@ -320,7 +320,7 @@ func (a *AutopilotAllocator) allocateDevices(requestCtx *requestContext, nodeDev
 	return deviceAllocations, nil
 }
 
-func allocateDevices(requestCtx *requestContext, nodeDevice *nodeDevice, deviceType schedulingv1alpha1.DeviceType, requestPerInstance corev1.ResourceList, desiredCount int, preferredPCIEs sets.String) (allocations []*apiext.DeviceAllocation, status *framework.Status) {
+func allocateDevices(requestCtx *requestContext, nodeDevice *nodeDevice, deviceType schedulingv1alpha1.DeviceType, requestPerInstance corev1.ResourceList, desiredCount int, preferredPCIEs sets.String) (allocations []*apiext.DeviceAllocation, status *fwktype.Status) {
 	maxDesiredCount := desiredCount
 	if len(preferredPCIEs) > maxDesiredCount {
 		maxDesiredCount = len(preferredPCIEs)
@@ -360,7 +360,7 @@ func defaultAllocateDevices(
 	maxDesiredCount int,
 	deviceType schedulingv1alpha1.DeviceType,
 	preferredPCIEs sets.String,
-) ([]*apiext.DeviceAllocation, *framework.Status) {
+) ([]*apiext.DeviceAllocation, *fwktype.Status) {
 	freeDevices := nodeDevice.deviceFree[deviceType]
 	nodeDeviceTotal := nodeDevice.deviceTotal[deviceType]
 	vfAllocation := nodeDevice.vfAllocations[deviceType]
@@ -431,7 +431,7 @@ func defaultAllocateDevices(
 
 	if len(allocations) < desiredCount {
 		klog.V(5).Infof("node resource does not satisfy pod's multiple %v request, expect %v, got %v", deviceType, desiredCount, len(allocations))
-		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient %s devices", deviceType))
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf("Insufficient %s devices", deviceType))
 	}
 	return allocations, nil
 }
@@ -485,7 +485,7 @@ func newPreferredPCIes(nodeDevice *nodeDevice, deviceType schedulingv1alpha1.Dev
 
 func (a *AutopilotAllocator) score(
 	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
-) (int64, *framework.Status) {
+) (int64, *fwktype.Status) {
 	if status := a.Prepare(); !status.IsSuccess() {
 		return 0, status
 	}

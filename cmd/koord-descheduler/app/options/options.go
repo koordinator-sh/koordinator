@@ -98,10 +98,10 @@ func NewOptions() *Options {
 		ComponentConfig: cfg,
 		SecureServing:   apiserveroptions.NewSecureServingOptions().WithLoopback(),
 		CombinedInsecureServing: &CombinedInsecureServingOptions{
-			Healthz: &apiserveroptions.DeprecatedInsecureServingOptions{
+			Healthz: &DeprecatedInsecureServingOptions{
 				BindNetwork: "tcp",
 			},
-			Metrics: &apiserveroptions.DeprecatedInsecureServingOptions{
+			Metrics: &DeprecatedInsecureServingOptions{
 				BindNetwork: "tcp"},
 		},
 		LeaderElection: &componentbaseconfig.LeaderElectionConfiguration{

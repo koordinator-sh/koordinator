@@ -52,7 +52,7 @@ func (b *quotaValidateBuilder) Build() admission.Handler {
 	}
 	err := h.InjectCache(b.mgr.GetCache())
 	if err != nil {
-		klog.Fatal("failed to inject cache for quotaValidateBuilder: %v", err)
+		klog.Fatalf("failed to inject cache for quotaValidateBuilder: %v", err)
 	}
 	return h
 }

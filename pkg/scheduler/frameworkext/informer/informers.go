@@ -88,14 +88,15 @@ func disableCSIStorageCapacityInformer(informerFactory informers.SharedInformerF
 }
 
 func setupCompatibleCSICapacityInformer(informerFactory informers.SharedInformerFactory) {
-	informerFactory.InformerFor(&storagev1.CSIStorageCapacity{}, newCSIStorageCapacityInformer)
+	i := informerFactory.InformerFor(&storagev1.CSIStorageCapacity{}, newCSIStorageCapacityInformer)
+	// set transform funcs after the InformerFor
+	if err := i.SetTransform(storagev1beta1CSIStorageCapacityTransformer); err != nil {
+		klog.Fatalf("Failed to SetTransform with storagev1informer, err: %v", err)
+	}
 }
 
 func newCSIStorageCapacityInformer(client clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
 	storageCapacityInformer := storagev1beta1informers.NewFilteredCSIStorageCapacityInformer(client, metav1.NamespaceAll, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, nil)
-	if err := storageCapacityInformer.SetTransform(storagev1beta1CSIStorageCapacityTransformer); err != nil {
-		klog.Fatalf("Failed to SetTransform with storagev1beta1informer, err: %v", err)
-	}
 	return storageCapacityInformer
 }
 
@@ -142,14 +143,15 @@ func disablePodDisruptionBudgetInformer(informerFactory informers.SharedInformer
 }
 
 func setupCompatiblePodDisruptionBudgetInformer(informerFactory informers.SharedInformerFactory) {
-	informerFactory.InformerFor(&policyv1.PodDisruptionBudget{}, newPodDisruptionBudgetInformer)
+	i := informerFactory.InformerFor(&policyv1.PodDisruptionBudget{}, newPodDisruptionBudgetInformer)
+	// set transform funcs after the InformerFor
+	if err := i.SetTransform(policyv1beta1PodDisruptionBudgetTransformer); err != nil {
+		klog.Fatalf("Failed to SetTransform with policyv1informer, err: %v", err)
+	}
 }
 
 func newPodDisruptionBudgetInformer(client clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
 	pdbInformer := policyv1beta1informers.NewFilteredPodDisruptionBudgetInformer(client, metav1.NamespaceAll, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, nil)
-	if err := pdbInformer.SetTransform(policyv1beta1PodDisruptionBudgetTransformer); err != nil {
-		klog.Fatalf("Failed to SetTransform with policyv1beta1informers, err: %v", err)
-	}
 	return pdbInformer
 }
 

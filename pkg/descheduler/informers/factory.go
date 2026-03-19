@@ -45,6 +45,7 @@ import (
 	"k8s.io/client-go/informers/resource"
 	"k8s.io/client-go/informers/scheduling"
 	"k8s.io/client-go/informers/storage"
+	storagemigration "k8s.io/client-go/informers/storagemigration"
 	"k8s.io/client-go/tools/cache"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -229,4 +230,8 @@ func (f *sharedInformerFactory) Scheduling() scheduling.Interface {
 
 func (f *sharedInformerFactory) Storage() storage.Interface {
 	return storage.New(f, f.namespace, f.tweakListOptions)
+}
+
+func (f *sharedInformerFactory) Storagemigration() storagemigration.Interface {
+	return storagemigration.New(f, f.namespace, f.tweakListOptions)
 }

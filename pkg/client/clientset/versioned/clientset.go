@@ -19,8 +19,8 @@ limitations under the License.
 package versioned
 
 import (
-	"fmt"
-	"net/http"
+	fmt "fmt"
+	http "net/http"
 
 	analysisv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/analysis/v1alpha1"
 	configv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/config/v1alpha1"

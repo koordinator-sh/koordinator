@@ -23,7 +23,6 @@ import (
 	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"k8s.io/apimachinery/pkg/runtime"
-	apiserveroptions "k8s.io/apiserver/pkg/server/options"
 	scheduleroptions "k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 
 	schedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
@@ -44,7 +43,7 @@ func NewOptions() *Options {
 	options := &Options{
 		Options: scheduleroptions.NewOptions(),
 		CombinedInsecureServing: &CombinedInsecureServingOptions{
-			Healthz: &apiserveroptions.DeprecatedInsecureServingOptions{
+			Healthz: &DeprecatedInsecureServingOptions{
 				BindNetwork: "tcp",
 			},
 		},

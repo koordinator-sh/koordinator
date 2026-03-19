@@ -21,13 +21,13 @@ import (
 	"k8s.io/client-go/tools/events"
 	"k8s.io/component-base/logs"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/ptr"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -44,13 +44,13 @@ import (
 type FakeFitPlugin struct {
 }
 
-func (f *FakeFitPlugin) Filter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
-	if insufficientResources := noderesources.Fits(pod, nodeInfo); len(insufficientResources) != 0 {
+func (f *FakeFitPlugin) Filter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) *fwktype.Status {
+	if insufficientResources := noderesources.Fits(pod, nodeInfo, nil, noderesources.ResourceRequestsOptions{}); len(insufficientResources) != 0 {
 		var reasons []string
 		for _, insufficientResource := range insufficientResources {
 			reasons = append(reasons, insufficientResource.Reason)
 		}
-		return framework.NewStatus(framework.Unschedulable, reasons...)
+		return fwktype.NewStatus(fwktype.Unschedulable, reasons...)
 	}
 	return nil
 }
@@ -59,15 +59,32 @@ func (f *FakeFitPlugin) Name() string {
 	return "FakeFitPlugin"
 }
 
-type fakeNodeInfoLister struct {
-	frameworkfake.NodeInfoLister
+// nodeInfoLister implements fwktype.NodeInfoLister for testing.
+type nodeInfoLister []fwktype.NodeInfo
+
+func (n nodeInfoLister) List() ([]fwktype.NodeInfo, error)                     { return n, nil }
+func (n nodeInfoLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) { return n, nil }
+func (n nodeInfoLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
+	return n, nil
+}
+func (n nodeInfoLister) Get(nodeName string) (fwktype.NodeInfo, error) {
+	for _, ni := range n {
+		if ni != nil && ni.Node().Name == nodeName {
+			return ni, nil
+		}
+	}
+	return nil, fmt.Errorf("unable to find node: %s", nodeName)
 }
 
-func (c fakeNodeInfoLister) NodeInfos() framework.NodeInfoLister {
+type fakeNodeInfoLister struct {
+	nodeInfoLister
+}
+
+func (c fakeNodeInfoLister) NodeInfos() fwktype.NodeInfoLister {
 	return c
 }
 
-func (c fakeNodeInfoLister) StorageInfos() framework.StorageInfoLister {
+func (c fakeNodeInfoLister) StorageInfos() fwktype.StorageInfoLister {
 	return c
 }
 
@@ -114,7 +131,7 @@ func NewFakeExtendedFramework(
 	assert.Equal(t, koordClientSet, extenderFactory.KoordinatorClientSet())
 	assert.Equal(t, koordSharedInformerFactory, extenderFactory.KoordinatorSharedInformerFactory())
 	if pluginFunc == nil {
-		pluginFunc = schedulertesting.RegisterFilterPlugin("FakeFitPlugin", func(configuration runtime.Object, f framework.Handle) (framework.Plugin, error) {
+		pluginFunc = schedulertesting.RegisterFilterPlugin("FakeFitPlugin", func(ctx context.Context, configuration runtime.Object, f fwktype.Handle) (fwktype.Plugin, error) {
 			return &FakeFitPlugin{}, nil
 		})
 	}
@@ -124,7 +141,7 @@ func NewFakeExtendedFramework(
 		pluginFunc,
 	}
 
-	var nodeInfos []*framework.NodeInfo
+	var nodeInfos []fwktype.NodeInfo
 	for _, node := range nodes {
 		nodeInfo := framework.NewNodeInfo()
 		nodeInfo.SetNode(node)
@@ -134,11 +151,12 @@ func NewFakeExtendedFramework(
 		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
-		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister(nodeInfos)}),
+		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfoLister(nodeInfos)}),
 		frameworkruntime.WithClientSet(fakeClient),
 		frameworkruntime.WithInformerFactory(sharedInformerFactory),
 		frameworkruntime.WithPodNominator(frameworkext.NewFakePodNominator()),
 		frameworkruntime.WithEventRecorder(events.NewFakeRecorder(1000)),
+		frameworkruntime.WithWaitingPods(frameworkruntime.NewWaitingPodsMap()),
 	)
 	assert.NoError(t, err)
 
@@ -146,7 +164,7 @@ func NewFakeExtendedFramework(
 	for i := range existingPods {
 		existingPod := existingPods[i]
 		nodeInfo, _ := fh.SnapshotSharedLister().NodeInfos().Get(existingPod.Spec.NodeName)
-		nodeInfo.AddPod(existingPod)
+		nodeInfo.(*framework.NodeInfo).AddPod(existingPod)
 		_ = podStore.Add(existingPod)
 		_, _ = fakeClient.CoreV1().Pods(existingPod.Namespace).Create(context.TODO(), existingPod, metav1.CreateOptions{})
 	}
@@ -154,9 +172,9 @@ func NewFakeExtendedFramework(
 	for i := range existingNominatedPods {
 		existingNominatedPod := existingNominatedPods[i]
 		podInfo, _ := framework.NewPodInfo(existingNominatedPod)
-		fh.AddNominatedPod(logger, podInfo, &framework.NominatingInfo{
+		fh.AddNominatedPod(logger, podInfo, &fwktype.NominatingInfo{
+			NominatingMode:    fwktype.ModeOverride,
 			NominatedNodeName: existingNominatedPod.Status.NominatedNodeName,
-			NominatingMode:    framework.ModeOverride,
 		})
 		_ = podStore.Add(existingNominatedPod)
 		_, _ = fakeClient.CoreV1().Pods(existingNominatedPod.Namespace).Create(context.TODO(), existingNominatedPod, metav1.CreateOptions{})
@@ -175,7 +193,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 		name                  string
 		triggerPod            *corev1.Pod
 		gangSchedulingContext *GangSchedulingContext
-		preFilterStatus       *framework.Status
+		preFilterStatus       *fwktype.Status
 		allWaitingPods        []*corev1.Pod
 		allPendingPods        []*corev1.Pod
 		nodes                 []*corev1.Node
@@ -184,8 +202,8 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 		filterPlugin          schedulertesting.RegisterPluginFunc
 		wantPreemptionState   *JobPreemptionState
 		wantPreemptMessage    string
-		wantResult            *framework.PostFilterResult
-		wantStatus            *framework.Status
+		wantResult            *fwktype.PostFilterResult
+		wantStatus            *fwktype.Status
 		wantPossibleVictims   []schedulingv1alpha1.PossibleVictim
 		wantVictims           []schedulingv1alpha1.PossibleVictim
 		wantJobPods           []corev1.Pod
@@ -207,7 +225,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				failedMessage:     "failedMessage",
 				preemptionMessage: "preemption already attempted by default/trigger-pod-1 with message",
 			},
-			preFilterStatus: framework.NewStatus(framework.Unschedulable, "failedMessage"),
+			preFilterStatus: fwktype.NewStatus(fwktype.Unschedulable, "failedMessage"),
 			wantPreemptionState: &JobPreemptionState{
 				TriggerPodKey:                 "default/trigger-pod",
 				Reason:                        ReasonAlreadyPreempted,
@@ -217,7 +235,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/trigger-pod-1 with message",
 			wantResult:         nil,
-			wantStatus:         framework.NewStatus(framework.Unschedulable, "preemption already attempted by default/trigger-pod-1 with message"),
+			wantStatus:         fwktype.NewStatus(fwktype.Unschedulable, "preemption already attempted by default/trigger-pod-1 with message"),
 		},
 		{
 			name: "no pending pods",
@@ -354,7 +372,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/trigger-pod with message no pending pods",
 			wantResult:         nil,
-			wantStatus:         framework.NewStatus(framework.Unschedulable, ReasonNoPendingPods),
+			wantStatus:         fwktype.NewStatus(fwktype.Unschedulable, ReasonNoPendingPods),
 		},
 		{
 			name: "job not eligible due to preemption policy",
@@ -534,7 +552,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message not eligible due to preemptionPolicy=Never.",
 			wantResult:         nil,
-			wantStatus:         framework.NewStatus(framework.Unschedulable, ReasonPreemptionPolicyNever),
+			wantStatus:         fwktype.NewStatus(fwktype.Unschedulable, ReasonPreemptionPolicyNever),
 		},
 		{
 			name: "job not eligible due to terminating pod",
@@ -741,7 +759,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message not eligible due to terminating pod on the nominated node.",
 			wantResult:         nil,
-			wantStatus:         framework.NewStatus(framework.Unschedulable, ReasonTerminatingVictimOnNominatedNode),
+			wantStatus:         fwktype.NewStatus(fwktype.Unschedulable, ReasonTerminatingVictimOnNominatedNode),
 		},
 		{
 			name: "unschedulableAndUnResolvable",
@@ -927,9 +945,9 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				},
 			},
 			filterPlugin: schedulertesting.RegisterFilterPlugin("FakeFilter", schedulertesting.NewFakeFilterPlugin(
-				map[string]framework.Code{
-					"node-1": framework.UnschedulableAndUnresolvable,
-					"node-2": framework.UnschedulableAndUnresolvable,
+				map[string]fwktype.Code{
+					"node-1": fwktype.UnschedulableAndUnresolvable,
+					"node-2": fwktype.UnschedulableAndUnresolvable,
 				},
 			)),
 			wantPreemptionState: &JobPreemptionState{
@@ -942,7 +960,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message 0/2 nodes are available: 2 Preemption is not helpful for scheduling.",
 			wantResult:         framework.NewPostFilterResultWithNominatedNode(""),
-			wantStatus:         framework.NewStatus(framework.Unschedulable, "0/2 nodes are available: 2 Preemption is not helpful for scheduling."),
+			wantStatus:         fwktype.NewStatus(fwktype.Unschedulable, "0/2 nodes are available: 2 Preemption is not helpful for scheduling."),
 		},
 		{
 			name: "no potential victims",
@@ -1137,7 +1155,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message 0/2 nodes are available: 2 no potential victims.",
 			wantResult:         framework.NewPostFilterResultWithNominatedNode(""),
-			wantStatus:         framework.NewStatus(framework.Unschedulable, "0/2 nodes are available: 2 no potential victims."),
+			wantStatus:         fwktype.NewStatus(fwktype.Unschedulable, "0/2 nodes are available: 2 no potential victims."),
 		},
 		{
 			name: "preempt success",
@@ -1333,7 +1351,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				Message:                       "preempt success, alreadyWaitingForBound: 0/2",
 				ClearNominatedNodeFailedMsg:   map[string]string{},
 				TerminatingPodOnNominatedNode: map[string]string{},
-				statusMap:                     map[string]*framework.Status{},
+				statusMap:                     map[string]*fwktype.Status{},
 				PodToNominatedNode: map[string]string{
 					"default/pending-pod-1": "node-1",
 					"default/pending-pod-2": "node-1",
@@ -1342,7 +1360,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message preempt success, alreadyWaitingForBound: 0/2",
 			wantResult:         framework.NewPostFilterResultWithNominatedNode("node-1"),
-			wantStatus:         framework.NewStatus(framework.Success),
+			wantStatus:         fwktype.NewStatus(fwktype.Success),
 			wantPossibleVictims: []schedulingv1alpha1.PossibleVictim{
 				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-1", Namespace: "default"}},
 				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-2", Namespace: "default"}},
@@ -1578,7 +1596,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				Message:                       "preempt success, alreadyWaitingForBound: 1/2",
 				ClearNominatedNodeFailedMsg:   map[string]string{},
 				TerminatingPodOnNominatedNode: map[string]string{},
-				statusMap:                     map[string]*framework.Status{},
+				statusMap:                     map[string]*fwktype.Status{},
 				PodToNominatedNode: map[string]string{
 					"default/pending-pod-1": "node-1",
 				},
@@ -1586,7 +1604,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message preempt success, alreadyWaitingForBound: 1/2",
 			wantResult:         framework.NewPostFilterResultWithNominatedNode("node-1"),
-			wantStatus:         framework.NewStatus(framework.Success),
+			wantStatus:         fwktype.NewStatus(fwktype.Success),
 			wantPossibleVictims: []schedulingv1alpha1.PossibleVictim{
 				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-1", Namespace: "default"}},
 				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-2", Namespace: "default"}},
@@ -1662,8 +1680,8 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				_, _ = extendedFramework.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 				if pod.Status.NominatedNodeName != "" {
 					podInfo, _ := framework.NewPodInfo(pod)
-					extendedFramework.AddNominatedPod(logger, podInfo, &framework.NominatingInfo{
-						NominatingMode:    framework.ModeOverride,
+					extendedFramework.AddNominatedPod(logger, podInfo, &fwktype.NominatingInfo{
+						NominatingMode:    fwktype.ModeOverride,
 						NominatedNodeName: pod.Status.NominatedNodeName,
 					})
 				}
@@ -1674,7 +1692,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				gang := gangCache.getGangFromCacheByGangId(gangName, true)
 				gang.addAssumedPod(pod)
 				nodeInfo, _ := extendedFramework.SnapshotSharedLister().NodeInfos().Get(pod.Spec.NodeName)
-				nodeInfo.AddPod(pod)
+				nodeInfo.(*framework.NodeInfo).AddPod(pod)
 				pod = pod.DeepCopy()
 				pod.Spec.NodeName = ""
 				err := podStore.Add(pod)
@@ -1690,15 +1708,16 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 
 			ctx := context.Background()
 			cycleState := framework.NewCycleState()
-			m := framework.NodeToStatusMap{}
+			nodeToStatusMap := map[string]*fwktype.Status{}
 
 			if tt.preFilterStatus.IsSuccess() {
 				for _, node := range tt.nodes {
 					nodeInfo, _ := extendedFramework.SnapshotSharedLister().NodeInfos().Get(node.Name)
 					status := extendedFramework.RunFilterPluginsWithNominatedPods(ctx, cycleState, tt.triggerPod, nodeInfo)
-					m[node.Name] = status
+					nodeToStatusMap[node.Name] = status
 				}
 			}
+			m := framework.NewNodeToStatus(nodeToStatusMap, nil)
 			if tt.gangSchedulingContext != nil {
 				tt.gangSchedulingContext.triggerPod = tt.triggerPod
 			}
@@ -1731,8 +1750,8 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				for _, victim := range possibleVictims {
 					gotPossibleVictims = append(gotPossibleVictims, schedulingv1alpha1.PossibleVictim{
 						NamespacedName: schedulingv1alpha1.NamespacedName{
-							Name:      victim.Pod.Name,
-							Namespace: victim.Pod.Namespace,
+							Name:      victim.GetPod().Name,
+							Namespace: victim.GetPod().Namespace,
 						},
 					})
 				}
@@ -1770,7 +1789,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			}
 			if len(tt.wantJobPods) > 0 {
 				gotJobPods, _ := extendedFramework.ClientSet().CoreV1().Pods(tt.wantJobPods[0].Namespace).List(context.TODO(), metav1.ListOptions{
-					LabelSelector: fmt.Sprintf(v1alpha1.PodGroupLabel + "=" + gangName),
+					LabelSelector: v1alpha1.PodGroupLabel + "=" + gangName,
 				})
 				sort.Slice(gotJobPods.Items, func(i, j int) bool {
 					return gotJobPods.Items[i].Name < gotJobPods.Items[j].Name
@@ -1835,9 +1854,9 @@ func TestJobPreemptionState_addMoreDetailForStateToMarshal(t *testing.T) {
 				},
 				selectVictimError:           fmt.Errorf("selectVictimError"),
 				ClearNominatedNodeFailedMsg: map[string]string{"node1": "clearNominatedNodeFailedMsg1"},
-				possibleVictims: map[string][]*framework.PodInfo{
+				possibleVictims: map[string][]fwktype.PodInfo{
 					"node1": {
-						{
+						&framework.PodInfo{
 							Pod: &corev1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      "pendingPod1",
@@ -1855,9 +1874,9 @@ func TestJobPreemptionState_addMoreDetailForStateToMarshal(t *testing.T) {
 						},
 					},
 				},
-				statusMap: map[string]*framework.Status{
-					"node2": framework.NewStatus(framework.Unschedulable, "unschedulable"),
-					"node1": framework.NewStatus(framework.Unschedulable, "unschedulable"),
+				statusMap: map[string]*fwktype.Status{
+					"node2": fwktype.NewStatus(fwktype.Unschedulable, "unschedulable"),
+					"node1": fwktype.NewStatus(fwktype.Unschedulable, "unschedulable"),
 				},
 				victims: map[string][]*corev1.Pod{
 					"node1": {

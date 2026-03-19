@@ -22,12 +22,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	clientfeatures "k8s.io/client-go/features"
 	fakeclientset "k8s.io/client-go/kubernetes/fake"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -37,6 +38,20 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 )
+
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	// In k8s v1.35, WatchListClient defaults to true (Beta), but fake clients
+	// don't support sending bookmark events required by watchList mode.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 func Test_statesInformer_GetNode(t *testing.T) {
 	type fields struct {

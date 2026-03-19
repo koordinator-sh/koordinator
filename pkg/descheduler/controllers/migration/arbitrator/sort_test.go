@@ -193,6 +193,7 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
 			fakeClient := newFieldIndexFakeClient(fake.NewClientBuilder().WithScheme(scheme).
+				WithStatusSubresource(&v1alpha1.PodMigrationJob{}).
 				WithIndex(&corev1.Pod{}, "pod.ownerRefUID", func(obj client.Object) []string {
 					pod := obj.(*corev1.Pod)
 					ownerUID := []string{}
@@ -208,7 +209,14 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 				Build())
 
 			creationTime := time.Now()
-			jobs := make([]*batchv1.Job, testCase.jobNum)
+			// jobRefs stores metadata before Create clears TypeMeta on typed objects
+			type ownerMeta struct {
+				APIVersion string
+				Kind       string
+				Name       string
+				UID        types.UID
+			}
+			jobRefs := make([]ownerMeta, testCase.jobNum)
 			podMigrationJobs := make([]*v1alpha1.PodMigrationJob, 0, testCase.podMigrationJobNum)
 			podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
 
@@ -225,7 +233,13 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 						UID:       types.UID("test-job-" + strconv.Itoa(k)),
 					},
 				}
-				jobs[k] = job
+				// Save metadata before Create clears TypeMeta for typed objects
+				jobRefs[k] = ownerMeta{
+					APIVersion: job.APIVersion,
+					Kind:       job.Kind,
+					Name:       job.Name,
+					UID:        job.UID,
+				}
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
 			}
 			// create PodMigrationJobs
@@ -240,10 +254,10 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 					controller := true
 					pod.SetOwnerReferences([]metav1.OwnerReference{
 						{
-							APIVersion:         jobs[idx].APIVersion,
-							Kind:               jobs[idx].Kind,
-							Name:               jobs[idx].Name,
-							UID:                jobs[idx].UID,
+							APIVersion:         jobRefs[idx].APIVersion,
+							Kind:               jobRefs[idx].Kind,
+							Name:               jobRefs[idx].Name,
+							UID:                jobRefs[idx].UID,
 							Controller:         &controller,
 							BlockOwnerDeletion: nil,
 						},
@@ -268,17 +282,22 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 					controller := true
 					pod.SetOwnerReferences([]metav1.OwnerReference{
 						{
-							APIVersion:         jobs[idx].APIVersion,
-							Kind:               jobs[idx].Kind,
-							Name:               jobs[idx].Name,
-							UID:                jobs[idx].UID,
+							APIVersion:         jobRefs[idx].APIVersion,
+							Kind:               jobRefs[idx].Kind,
+							Name:               jobRefs[idx].Name,
+							UID:                jobRefs[idx].UID,
 							Controller:         &controller,
 							BlockOwnerDeletion: nil,
 						},
 					})
 				}
 				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
+				// In controller-runtime v0.23, status is not persisted via Create.
+				// Must use Status().Update() after Create to persist status subresource.
+				jobStatus := job.Status
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
+				job.Status = jobStatus
+				assert.Nil(t, fakeClient.Status().Update(context.TODO(), job))
 			}
 
 			// create Passed Pending PodMigrationJobs
@@ -291,10 +310,10 @@ func TestSortJobsByMigratingNum(t *testing.T) {
 					controller := true
 					pod.SetOwnerReferences([]metav1.OwnerReference{
 						{
-							APIVersion:         jobs[idx].APIVersion,
-							Kind:               jobs[idx].Kind,
-							Name:               jobs[idx].Name,
-							UID:                jobs[idx].UID,
+							APIVersion:         jobRefs[idx].APIVersion,
+							Kind:               jobRefs[idx].Kind,
+							Name:               jobRefs[idx].Name,
+							UID:                jobRefs[idx].UID,
 							Controller:         &controller,
 							BlockOwnerDeletion: nil,
 						},
@@ -354,7 +373,14 @@ func TestSortJobsByController(t *testing.T) {
 			fakeClient := newFieldIndexFakeClient(fake.NewClientBuilder().WithScheme(scheme).Build())
 
 			creationTime := time.Now()
-			jobs := make([]*batchv1.Job, testCase.jobNum)
+			// jobRefs stores metadata before Create clears TypeMeta on typed objects
+			type ownerMeta struct {
+				APIVersion string
+				Kind       string
+				Name       string
+				UID        types.UID
+			}
+			jobRefs := make([]ownerMeta, testCase.jobNum)
 			podMigrationJobs := make([]*v1alpha1.PodMigrationJob, 0, testCase.podMigrationJobNum)
 			podOfJob := map[*v1alpha1.PodMigrationJob]*corev1.Pod{}
 
@@ -371,7 +397,13 @@ func TestSortJobsByController(t *testing.T) {
 						UID:       types.UID("test-job-" + strconv.Itoa(k)),
 					},
 				}
-				jobs[k] = job
+				// Save metadata before Create clears TypeMeta for typed objects
+				jobRefs[k] = ownerMeta{
+					APIVersion: job.APIVersion,
+					Kind:       job.Kind,
+					Name:       job.Name,
+					UID:        job.UID,
+				}
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
 			}
 			// create PodMigrationJobs
@@ -386,10 +418,10 @@ func TestSortJobsByController(t *testing.T) {
 					controller := true
 					pod.SetOwnerReferences([]metav1.OwnerReference{
 						{
-							APIVersion:         jobs[idx].APIVersion,
-							Kind:               jobs[idx].Kind,
-							Name:               jobs[idx].Name,
-							UID:                jobs[idx].UID,
+							APIVersion:         jobRefs[idx].APIVersion,
+							Kind:               jobRefs[idx].Kind,
+							Name:               jobRefs[idx].Name,
+							UID:                jobRefs[idx].UID,
 							Controller:         &controller,
 							BlockOwnerDeletion: nil,
 						},
@@ -437,6 +469,7 @@ func TestGetMigratingJobNum(t *testing.T) {
 			_ = v1alpha1.AddToScheme(scheme)
 			_ = clientgoscheme.AddToScheme(scheme)
 			fakeClient := newFieldIndexFakeClient(fake.NewClientBuilder().WithScheme(scheme).
+				WithStatusSubresource(&v1alpha1.PodMigrationJob{}).
 				WithIndex(&corev1.Pod{}, "pod.ownerRefUID", func(obj client.Object) []string {
 					pod := obj.(*corev1.Pod)
 					ownerUID := []string{}
@@ -452,8 +485,8 @@ func TestGetMigratingJobNum(t *testing.T) {
 				Build())
 			creationTime := time.Now()
 
-			// create job
-			job := &batchv1.Job{
+			// create job - save metadata before Create clears TypeMeta on typed objects
+			bJob := &batchv1.Job{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Job",
 					APIVersion: "batch/v1",
@@ -464,14 +497,15 @@ func TestGetMigratingJobNum(t *testing.T) {
 					UID:       types.UID("test-job"),
 				},
 			}
-			assert.Nil(t, fakeClient.Create(context.TODO(), job))
+			bJobUID := bJob.UID
+			assert.Nil(t, fakeClient.Create(context.TODO(), bJob))
 
 			owner := []metav1.OwnerReference{
 				{
-					APIVersion:         job.APIVersion,
-					Kind:               job.Kind,
-					Name:               job.Name,
-					UID:                job.UID,
+					APIVersion:         "batch/v1",
+					Kind:               "Job",
+					Name:               "test-job",
+					UID:                bJobUID,
 					Controller:         ptr.To[bool](true),
 					BlockOwnerDeletion: nil,
 				},
@@ -501,7 +535,12 @@ func TestGetMigratingJobNum(t *testing.T) {
 				}
 
 				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
+				// In controller-runtime v0.23, status is not persisted via Create.
+				// Must use Status().Update() after Create to persist status subresource.
+				jobStatus := job.Status
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
+				job.Status = jobStatus
+				assert.Nil(t, fakeClient.Status().Update(context.TODO(), job))
 			}
 
 			// create Passed Pending PodMigrationJobs
@@ -515,7 +554,7 @@ func TestGetMigratingJobNum(t *testing.T) {
 				assert.Nil(t, fakeClient.Create(context.TODO(), pod))
 				assert.Nil(t, fakeClient.Create(context.TODO(), job))
 			}
-			assert.Equal(t, testCase.expectNum, getMigratingJobNum(fakeClient, job.UID))
+			assert.Equal(t, testCase.expectNum, getMigratingJobNum(fakeClient, bJobUID))
 		})
 	}
 }
@@ -676,4 +715,8 @@ func (f *fieldIndexFakeClient) Scheme() *runtime.Scheme {
 
 func (f *fieldIndexFakeClient) RESTMapper() meta.RESTMapper {
 	return f.c.RESTMapper()
+}
+
+func (f *fieldIndexFakeClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+	return f.c.Apply(ctx, obj, opts...)
 }

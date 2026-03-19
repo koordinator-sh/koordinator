@@ -132,6 +132,7 @@ func (s *podResourcesInformer) HasSynced() bool {
 }
 
 type podResourcesServer struct {
+	podresourcesapi.UnimplementedPodResourcesListerServer
 	podResourceClient podresourcesapi.PodResourcesListerClient
 	kubeletStub       KubeletStub
 }

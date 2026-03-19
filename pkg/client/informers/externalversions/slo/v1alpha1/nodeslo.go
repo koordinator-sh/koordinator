@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	apisslov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // NodeSLOs.
 type NodeSLOInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.NodeSLOLister
+	Lister() slov1alpha1.NodeSLOLister
 }
 
 type nodeSLOInformer struct {
@@ -56,21 +56,33 @@ func NewNodeSLOInformer(client versioned.Interface, resyncPeriod time.Duration, 
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredNodeSLOInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SloV1alpha1().NodeSLOs().List(context.TODO(), options)
+				return client.SloV1alpha1().NodeSLOs().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SloV1alpha1().NodeSLOs().Watch(context.TODO(), options)
+				return client.SloV1alpha1().NodeSLOs().Watch(context.Background(), options)
 			},
-		},
-		&slov1alpha1.NodeSLO{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SloV1alpha1().NodeSLOs().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SloV1alpha1().NodeSLOs().Watch(ctx, options)
+			},
+		}, client),
+		&apisslov1alpha1.NodeSLO{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *nodeSLOInformer) defaultInformer(client versioned.Interface, resyncPeri
 }
 
 func (f *nodeSLOInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&slov1alpha1.NodeSLO{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisslov1alpha1.NodeSLO{}, f.defaultInformer)
 }
 
-func (f *nodeSLOInformer) Lister() v1alpha1.NodeSLOLister {
-	return v1alpha1.NewNodeSLOLister(f.Informer().GetIndexer())
+func (f *nodeSLOInformer) Lister() slov1alpha1.NodeSLOLister {
+	return slov1alpha1.NewNodeSLOLister(f.Informer().GetIndexer())
 }

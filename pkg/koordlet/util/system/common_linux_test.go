@@ -89,7 +89,7 @@ func Test_ProcCmdLine(t *testing.T) {
 }
 
 func Test_PidOf(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+	if runtime.GOOS != "linux" {
 		t.Skipf("not supported on GOOS=%s", runtime.GOOS)
 	}
 	t.Run("testing process pid should match", func(t *testing.T) {
