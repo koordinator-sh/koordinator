@@ -24,9 +24,9 @@ data:
           disabled:
             - name: "*"
         # disable LowNodeLoad by default
-        # balance:
-        #   enabled:
-        #   - name: LowNodeLoad
+        balance:
+          enabled:
+          - name: LowNodeLoad
         evict:
           disabled:
             - name: "*"

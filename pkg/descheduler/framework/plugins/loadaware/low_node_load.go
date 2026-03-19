@@ -189,6 +189,7 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 	klog.Info("createOrUpdateNodeWaterMark  before")
 	for _, node := range nodes {
 		nt := nodeType(nodeUsages, nodeThresholds, false, node.Name)
+		klog.V(4).Infof("nodeName: %s, type: %s", node.Name, nt)
 		basewm := buildBasicNodeWaterMark(node, nt)
 		if basewm.Spec.LowThresholds == nil {
 			basewm.Spec.LowThresholds = make(schedulingv1alpha1.ResourceThresholds)
@@ -202,6 +203,8 @@ func (pl *LowNodeLoad) processOneNodePool(ctx context.Context, nodePool *desched
 		for k, v := range highThresholds {
 			basewm.Spec.HighThresholds[k] = schedulingv1alpha1.Percentage(v)
 		}
+		// basewmByte, _ := json.Marshal(basewm)
+		// klog.Info(string(basewmByte))
 		if err := createOrUpdateNodeWaterMark(ctx, pl.nodeWaterMarkClient, basewm); err != nil {
 			klog.Error(err)
 			continue
