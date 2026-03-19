@@ -72,6 +72,10 @@ func (e *Exporter) exportToJson(allResults map[string][]prometheus.QueryResult) 
 		}
 	}
 
+	if finalData == nil {
+		return "", fmt.Errorf("no data to export")
+	}
+
 	if err := compressToGz(exportPath, finalData); err != nil {
 		return "", fmt.Errorf("failed to compress prometheus export metrics data: %w", err)
 	}

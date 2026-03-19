@@ -1,0 +1,69 @@
+{{- if .Values.collector.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: collector-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ include "hybrid.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: collector
+data:
+  collector.yaml: |
+    prometheus:
+      url: {{ .Values.collector.prometheus.url | quote }}
+      timeout: {{ .Values.collector.prometheus.timeout | quote }}
+      auth:
+         type: {{ .Values.collector.prometheus.auth.type | quote }}
+         {{- if eq .Values.collector.prometheus.auth.type "basic" }}
+         username: {{ .Values.collector.prometheus.auth.username | quote }}
+         password: {{ .Values.collector.prometheus.auth.password | quote }}
+         {{- else if eq .Values.collector.prometheus.auth.type "bearer" }}
+         token: {{ .Values.collector.prometheus.auth.token | quote }}
+         {{- end }}
+
+    export:
+      mode: {{ .Values.collector.export.mode | quote }}
+      localConfig:
+        outputDir: {{ .Values.collector.export.outputDir | quote }}
+        format: {{ .Values.collector.export.format | quote }}
+      interval: {{ .Values.collector.exportInterval | quote }}
+    
+    queries:
+      - name: "cpu_usage"
+        query: {{ .Values.collector.queries.cpuUsage.query | quote }}
+        range: {{ .Values.collector.queries.cpuUsage.range | quote }}
+        step: {{ .Values.collector.queries.cpuUsage.step | quote }}
+      - name: "memory_usage"
+        query: {{ .Values.collector.queries.memoryUsage.query | quote }}
+        range: {{ .Values.collector.queries.memoryUsage.range | quote }}
+        step: {{ .Values.collector.queries.memoryUsage.step | quote }}
+      - name: "memory_limit"
+        query: {{ .Values.collector.queries.memoryLimit.query | quote }}
+        range: {{ .Values.collector.queries.memoryLimit.range | quote }}
+        step: {{ .Values.collector.queries.memoryLimit.step | quote }}
+      - name: "fs_reads"
+        query: {{ .Values.collector.queries.fsReads.query | quote }}
+        range: {{ .Values.collector.queries.fsReads.range | quote }}
+        step: {{ .Values.collector.queries.fsReads.step | quote }}
+      - name: "fs_writes"
+        query: {{ .Values.collector.queries.fsWrites.query | quote }}
+        range: {{ .Values.collector.queries.fsWrites.range | quote }}
+        step: {{ .Values.collector.queries.fsWrites.step | quote }}
+      - name: "network_receive"
+        query: {{ .Values.collector.queries.networkReceive.query | quote }}
+        range: {{ .Values.collector.queries.networkReceive.range | quote }}
+        step: {{ .Values.collector.queries.networkReceive.step | quote }}
+      - name: "network_transmit"
+        query: {{ .Values.collector.queries.networkTransmit.query | quote }}
+        range: {{ .Values.collector.queries.networkTransmit.range | quote }}
+        step: {{ .Values.collector.queries.networkTransmit.step | quote }}
+      - name: "psi_collector"
+        query: {{ .Values.collector.queries.psiCollector.query | quote }}
+        range: {{ .Values.collector.queries.psiCollector.range | quote }}
+        step: {{ .Values.collector.queries.psiCollector.step | quote }}
+      - name: "cpi_collector"
+        query: {{ .Values.collector.queries.cpiCollector.query | quote }}
+        range: {{ .Values.collector.queries.cpiCollector.range | quote }}
+        step: {{ .Values.collector.queries.cpiCollector.step | quote }}
+{{- end }}

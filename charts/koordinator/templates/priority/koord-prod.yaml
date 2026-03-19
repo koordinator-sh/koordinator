@@ -2,6 +2,9 @@ apiVersion: scheduling.k8s.io/v1
 description: Online production system for applications and businesses.
 kind: PriorityClass
 metadata:
+  annotations:
+    hybrid/alias-name: "最高"
+    hybrid/description: "最高优先级会抢占其他优先级的资源"
   name: koord-prod
 preemptionPolicy: PreemptLowerPriority
 value: 9000
