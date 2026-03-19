@@ -1107,53 +1107,60 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 }
 
 func Test_allocateWithNominated(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
-	assert.NoError(t, err)
-	pl := p.(*Plugin)
+	// Fixed UIDs to avoid non-determinism from uuid.NewUUID()
+	const (
+		reservationUID = types.UID("test-reservation-uid")
+		reservePodUID  = types.UID("test-reserve-pod-uid")
+		ignoredPodUID  = types.UID("test-ignored-pod-uid")
+		normalPodUID   = types.UID("test-normal-pod-uid")
+	)
 
-	// Setup node device
-	device := &schedulingv1alpha1.Device{
-		Spec: schedulingv1alpha1.DeviceSpec{
-			Devices: []schedulingv1alpha1.DeviceInfo{
-				{
-					Type:   schedulingv1alpha1.GPU,
-					Minor:  ptr.To[int32](0),
-					Health: true,
-					Resources: corev1.ResourceList{
-						apiext.ResourceGPUCore:        resource.MustParse("100"),
-						apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
-						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+	// newDevice returns a fresh Device with two healthy GPUs (minor 0 and 1).
+	newDevice := func() *schedulingv1alpha1.Device {
+		return &schedulingv1alpha1.Device{
+			Spec: schedulingv1alpha1.DeviceSpec{
+				Devices: []schedulingv1alpha1.DeviceInfo{
+					{
+						Type:   schedulingv1alpha1.GPU,
+						Minor:  ptr.To[int32](0),
+						Health: true,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("100"),
+							apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+						},
 					},
-				},
-				{
-					Type:   schedulingv1alpha1.GPU,
-					Minor:  ptr.To[int32](1),
-					Health: true,
-					Resources: corev1.ResourceList{
-						apiext.ResourceGPUCore:        resource.MustParse("100"),
-						apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
-						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+					{
+						Type:   schedulingv1alpha1.GPU,
+						Minor:  ptr.To[int32](1),
+						Health: true,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:        resource.MustParse("100"),
+							apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+							apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+						},
 					},
 				},
 			},
-		},
+		}
 	}
-	pl.nodeDeviceCache.updateNodeDevice("test-node", device)
 
-	reservation := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{
-			UID:  uuid.NewUUID(),
-			Name: "test-reservation",
-		},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Template: &corev1.PodTemplateSpec{},
-		},
-		Status: schedulingv1alpha1.ReservationStatus{
-			NodeName: "test-node",
-		},
+	// newReservationInfo returns a fresh ReservationInfo with a fixed UID.
+	newReservationInfo := func() *frameworkext.ReservationInfo {
+		reservation := &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:  reservationUID,
+				Name: "test-reservation",
+			},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template: &corev1.PodTemplateSpec{},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{
+				NodeName: "test-node",
+			},
+		}
+		return frameworkext.NewReservationInfo(reservation)
 	}
-	rInfo := frameworkext.NewReservationInfo(reservation)
 
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1162,62 +1169,66 @@ func Test_allocateWithNominated(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		pod          *corev1.Pod
-		restoreState *nodeReservationRestoreStateData
-		wantNil      bool
-		wantSuccess  bool
+		name              string
+		pod               *corev1.Pod
+		buildRestoreState func(rInfo *frameworkext.ReservationInfo) *nodeReservationRestoreStateData
+		wantNil           bool
+		wantSuccess       bool
 	}{
 		{
 			name: "reserve pod without pre-allocation",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "reserve-pod",
-					UID:  uuid.NewUUID(),
+					UID:  reservePodUID,
 					Annotations: map[string]string{
 						reservationutil.AnnotationReservePod: "true",
 					},
 				},
 			},
-			restoreState: &nodeReservationRestoreStateData{},
-			wantNil:      true,
-			wantSuccess:  true,
+			buildRestoreState: func(_ *frameworkext.ReservationInfo) *nodeReservationRestoreStateData {
+				return &nodeReservationRestoreStateData{}
+			},
+			wantNil:     true,
+			wantSuccess: true,
 		},
 		{
 			name: "reservation-ignored pod",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "ignored-pod",
-					UID:  uuid.NewUUID(),
+					UID:  ignoredPodUID,
 					Labels: map[string]string{
 						apiext.LabelReservationIgnored: "true",
 					},
 				},
 			},
-			restoreState: &nodeReservationRestoreStateData{
-				matched: []reusableAlloc{
-					{
-						rInfo: rInfo,
-						allocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
-							schedulingv1alpha1.GPU: {
-								0: {
-									apiext.ResourceGPUCore:        resource.MustParse("50"),
-									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
-									apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+			buildRestoreState: func(rInfo *frameworkext.ReservationInfo) *nodeReservationRestoreStateData {
+				return &nodeReservationRestoreStateData{
+					matched: []reusableAlloc{
+						{
+							rInfo: rInfo,
+							allocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: {
+										apiext.ResourceGPUCore:        resource.MustParse("50"),
+										apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+									},
 								},
 							},
-						},
-						remained: map[schedulingv1alpha1.DeviceType]deviceResources{
-							schedulingv1alpha1.GPU: {
-								0: {
-									apiext.ResourceGPUCore:        resource.MustParse("50"),
-									apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
-									apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+							remained: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: {
+										apiext.ResourceGPUCore:        resource.MustParse("50"),
+										apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+									},
 								},
 							},
 						},
 					},
-				},
+				}
 			},
 			wantNil:     false,
 			wantSuccess: true,
@@ -1227,17 +1238,32 @@ func Test_allocateWithNominated(t *testing.T) {
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "normal-pod",
-					UID:  uuid.NewUUID(),
+					UID:  normalPodUID,
 				},
 			},
-			restoreState: &nodeReservationRestoreStateData{},
-			wantNil:      true,
-			wantSuccess:  true,
+			buildRestoreState: func(_ *frameworkext.ReservationInfo) *nodeReservationRestoreStateData {
+				return &nodeReservationRestoreStateData{}
+			},
+			wantNil:     true,
+			wantSuccess: true,
 		},
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			// Each subtest gets its own isolated plugin instance, device cache, and rInfo
+			// to avoid any shared-state races between subtests or background goroutines.
+			suit := newPluginTestSuit(t, nil)
+			p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+
+			pl.nodeDeviceCache.updateNodeDevice("test-node", newDevice())
+
+			rInfo := newReservationInfo()
+			restoreState := tt.buildRestoreState(rInfo)
+
 			state := &preFilterState{
 				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
 					schedulingv1alpha1.GPU: {
@@ -1245,9 +1271,10 @@ func Test_allocateWithNominated(t *testing.T) {
 						apiext.ResourceGPUMemory: resource.MustParse("4Gi"),
 					},
 				},
-				preemptibleInRRs: map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
+				preemptibleInRRs: map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{
+					"test-node": {},
+				},
 			}
-			state.preemptibleInRRs["test-node"] = map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{}
 			state.gpuRequirements, _ = parseGPURequirements(tt.pod, state.podRequests, nil, nil, nil)
 
 			nodeDeviceInfo := pl.nodeDeviceCache.getNodeDevice("test-node", false)
@@ -1261,7 +1288,7 @@ func Test_allocateWithNominated(t *testing.T) {
 			result, status := pl.allocateWithNominated(
 				allocator,
 				state,
-				tt.restoreState,
+				restoreState,
 				node,
 				tt.pod,
 				nil,

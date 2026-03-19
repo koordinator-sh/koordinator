@@ -210,6 +210,9 @@ type ReservationArgs struct {
 	// DisableGarbageCollection indicates whether to disable garbage collection.
 	// Default to false if unspecified.
 	DisableGarbageCollection bool
+	// ResyncIntervalSeconds is the duration in seconds between each turns of resync.
+	// Defaults to 60 seconds if unspecified.
+	ResyncIntervalSeconds int64
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
