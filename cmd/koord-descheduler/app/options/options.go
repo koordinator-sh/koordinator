@@ -265,10 +265,10 @@ func (o *Options) Config() (*deschedulerappconfig.Config, error) {
 		}
 	}
 
-	mgrKubeConfig := *kubeConfig
+	mgrKubeConfig := restclient.CopyConfig(kubeConfig)
 	mgrKubeConfig.ContentType = ""
 	mgrKubeConfig.AcceptContentTypes = ""
-	mgr, err := ctrl.NewManager(&mgrKubeConfig, ctrl.Options{
+	mgr, err := ctrl.NewManager(mgrKubeConfig, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "0",
@@ -284,7 +284,7 @@ func (o *Options) Config() (*deschedulerappconfig.Config, error) {
 	c.Client = client
 	c.KubeConfig = kubeConfig
 	c.InformerFactory = informers.NewSharedInformerFactory(mgr, 0)
-	dynClient := dynamic.NewForConfigOrDie(kubeConfig)
+	dynClient := dynamic.NewForConfigOrDie(mgrKubeConfig)
 	c.DynInformerFactory = dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 0, corev1.NamespaceAll, nil)
 	c.LeaderElection = leaderElectionConfig
 
