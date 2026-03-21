@@ -790,10 +790,10 @@ func Test_cpusetPlugin_SetContainerCPUSetMems(t *testing.T) {
 		proto    protocol.HooksProtocol
 	}
 	tests := []struct {
-		name         string
-		args         args
-		wantErr      bool
-		wantCPUMems  *string
+		name        string
+		args        args
+		wantErr     bool
+		wantCPUMems *string
 	}{
 		{
 			name: "nil protocol returns error",
@@ -893,7 +893,35 @@ func Test_cpusetPlugin_SetContainerCPUSetMems(t *testing.T) {
 				},
 			},
 			wantErr:     false,
-			wantCPUMems: ptr.To[string]("0,1"),
+			wantCPUMems: ptr.To[string]("0-1"),
+		},
+		{
+			name: "unordered duplicate NUMA nodes are canonicalized",
+			args: args{
+				podAlloc: &ext.ResourceStatus{
+					NUMANodeResources: []ext.NUMANodeResource{
+						{
+							Node: 3,
+						},
+						{
+							Node: 1,
+						},
+						{
+							Node: 2,
+						},
+						{
+							Node: 2,
+						},
+					},
+				},
+				proto: &protocol.ContainerContext{
+					Request: protocol.ContainerRequest{
+						CgroupParent: "kubepods/test-pod/test-container/",
+					},
+				},
+			},
+			wantErr:     false,
+			wantCPUMems: ptr.To[string]("1-3"),
 		},
 		{
 			name: "NUMANodeResources with no resources still sets mems",

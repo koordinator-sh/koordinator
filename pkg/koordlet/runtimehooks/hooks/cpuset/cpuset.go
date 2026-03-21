@@ -18,8 +18,6 @@ package cpuset
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 
 	"k8s.io/klog/v2"
@@ -35,6 +33,7 @@ import (
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilcpuset "github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 const (
@@ -205,15 +204,19 @@ func (p *cpusetPlugin) SetContainerCPUSetMems(proto protocol.HooksProtocol) erro
 		return nil
 	}
 
-	numaNodes := make([]string, 0, len(podAlloc.NUMANodeResources))
-	for _, numaNode := range podAlloc.NUMANodeResources {
-		numaNodes = append(numaNodes, strconv.FormatInt(int64(numaNode.Node), 10))
-	}
-	memsValue := strings.Join(numaNodes, ",")
+	memsValue := buildCPUSetMemsValue(podAlloc.NUMANodeResources)
 	containerCtx.Response.Resources.CPUSetMems = ptr.To(memsValue)
 	klog.V(5).Infof("set cpuset.mems %v for container %v/%v",
 		memsValue, containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
 	return nil
+}
+
+func buildCPUSetMemsValue(numaNodeResources []apiext.NUMANodeResource) string {
+	builder := utilcpuset.NewCPUSetBuilder()
+	for _, numaNode := range numaNodeResources {
+		builder.Add(int(numaNode.Node))
+	}
+	return builder.Result().String()
 }
 
 func (p *cpusetPlugin) UnsetPodCPUQuota(proto protocol.HooksProtocol) error {
