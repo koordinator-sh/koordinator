@@ -37,7 +37,12 @@ import (
 )
 
 func Test_Plugin_ReservationRestore(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+		},
+	}
+	suit := newPluginTestSuit(t, []*corev1.Node{testNode})
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
@@ -224,7 +229,12 @@ func Test_Plugin_ReservationRestore(t *testing.T) {
 }
 
 func Test_Plugin_RestoreReservationPreAllocation(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-1",
+		},
+	}
+	suit := newPluginTestSuit(t, []*corev1.Node{testNode})
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
@@ -1107,7 +1117,12 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 }
 
 func Test_allocateWithNominated(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+	suit := newPluginTestSuit(t, []*corev1.Node{testNode})
 	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
