@@ -2,6 +2,9 @@ apiVersion: scheduling.k8s.io/v1
 description: Nearline computation jobs whose SLO weaker than koord-prod.
 kind: PriorityClass
 metadata:
+  annotations:
+    hybrid/alias-name: "高"
+    hybrid/description: "高优先级，在资源抢占时，会抢占中、低优先级的资源"
   name: koord-mid
 preemptionPolicy: PreemptLowerPriority
 value: 7000
