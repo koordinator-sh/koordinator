@@ -58,6 +58,7 @@ var (
 	defaultReservationControllerWorkers = ptr.To[int32](1)
 	defaultGCDurationSeconds            = ptr.To[int64](86400)
 	defaultGCIntervalSeconds            = ptr.To[int64](60)
+	defaultResyncIntervalSeconds        = ptr.To[int64](60)
 
 	defaultDelayEvictTime       = 120 * time.Second
 	defaultRevokePodInterval    = 1 * time.Second
@@ -179,6 +180,9 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	}
 	if obj.GCIntervalSeconds == 0 {
 		obj.GCIntervalSeconds = *defaultGCIntervalSeconds
+	}
+	if obj.ResyncIntervalSeconds == 0 {
+		obj.ResyncIntervalSeconds = *defaultResyncIntervalSeconds
 	}
 }
 
