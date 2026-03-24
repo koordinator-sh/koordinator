@@ -1,10 +1,12 @@
-apiVersion: scheduling.k8s.io/v1
+japiVersion: scheduling.k8s.io/v1
 description: Run lowest-priority offline batch jobs, generally refers to not making resource budgets.
 kind: PriorityClass
 metadata:
   annotations:
     hybrid/alias-name: "低"
     hybrid/description: "不会保证资源的配额，不会抢占任何资源，只有存在空闲资源时才会被调度"
+  labels:
+    priorityclass-for: hybrid
   name: koord-free
 preemptionPolicy: PreemptLowerPriority
 value: 3000

@@ -5,6 +5,8 @@ metadata:
   annotations:
     hybrid/alias-name: "中"
     hybrid/description: "中优先级，在资源抢占时，只会抢占低优先级的资源"
+  labels:
+    priorityclass-for: hybrid
   name: koord-batch
 preemptionPolicy: PreemptLowerPriority
 value: 5000

@@ -5,6 +5,8 @@ metadata:
   annotations:
     hybrid/alias-name: "最高"
     hybrid/description: "最高优先级会抢占其他优先级的资源"
+  labels:
+    priorityclass-for: hybrid
   name: koord-prod
 preemptionPolicy: PreemptLowerPriority
 value: 9000
