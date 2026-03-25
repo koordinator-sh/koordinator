@@ -13,10 +13,18 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
-// reservation stores nodeName and podType for a reserved pod UID
+// reservation stores nodeName and podTypes for a reserved pod UID
 type reservation struct {
 	NodeName string
-	PodType  string
+	PodTypes []string
+}
+
+type TypeVector struct {
+	// CPU/Mem/IO/Net are count-based short-term vector components.
+	CPU float64
+	Mem float64
+	IO  float64
+	Net float64
 }
 
 // PodTypeCache tracks pod type distribution across nodes
@@ -29,48 +37,39 @@ type PodTypeCache struct {
 	reservedBy map[types.UID]reservation
 	// confirmedBy[podUID] tracks which node a pod with type is bound
 	confirmedBy map[types.UID]reservation
-	// ownerAnnotations[ownerUID] = podType, it tracks owner to pod type mapping
-	ownerAnnotations map[string]string
+	// ownerAnnotations[ownerUID] = podTypes, it tracks owner to pod types mapping
+	ownerAnnotations map[string][]string
+	// enableVectorScoring indicates whether vector scoring is enabled
+	enableVectorScoring bool
 	// mutex for thread safety
 	mutex sync.RWMutex
 }
 
-// NewPodTypeCache creates a new PodTypeCache and registers informers:
-func NewPodTypeCache(handle frameworkext.ExtendedHandle) *PodTypeCache {
+func NewPodTypeCache(handle frameworkext.ExtendedHandle, enableVectorScoring bool) *PodTypeCache {
 	ptCache := &PodTypeCache{
-		confirmedCounts:  make(map[string]map[string]int),
-		reservedCounts:   make(map[string]map[string]int),
-		reservedBy:       make(map[types.UID]reservation),
-		confirmedBy:      make(map[types.UID]reservation),
-		ownerAnnotations: make(map[string]string),
+		confirmedCounts:     make(map[string]map[string]int),
+		reservedCounts:      make(map[string]map[string]int),
+		reservedBy:          make(map[types.UID]reservation),
+		confirmedBy:         make(map[types.UID]reservation),
+		ownerAnnotations:    make(map[string][]string),
+		enableVectorScoring: enableVectorScoring,
 	}
-
-	// Register pod event handlers and keep informer reference
 	podInformer := handle.SharedInformerFactory().Core().V1().Pods().Informer()
 	podInformer.AddEventHandler(ptCache.ResourceEventHandlerFuncs())
-
-	// Register deployment informer to capture annotations on owner resources.
 	deployInformer := handle.SharedInformerFactory().Apps().V1().Deployments().Informer()
 	deployInformer.AddEventHandler(ptCache.ownerResourceEventHandlerFuncs())
-
-	// Register replicaset informer too (deployments create ReplicaSets)
 	rsInformer := handle.SharedInformerFactory().Apps().V1().ReplicaSets().Informer()
 	rsInformer.AddEventHandler(ptCache.ownerResourceEventHandlerFuncs())
-
 	return ptCache
 }
 
-// ResourceEventHandlerFuncs returns event handlers for pod events
+// ResourceEventHandlerFuncs returns event handlers for pod events.
 func (c *PodTypeCache) ResourceEventHandlerFuncs() cache.ResourceEventHandlerFuncs {
-	return cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.handlePodAdd,
-		UpdateFunc: c.handlePodUpdate,
-		DeleteFunc: c.handlePodDelete,
-	}
+	return cache.ResourceEventHandlerFuncs{AddFunc: c.handlePodAdd, UpdateFunc: c.handlePodUpdate, DeleteFunc: c.handlePodDelete}
 }
 
-// ownerResourceEventHandlerFuncs returns handlers for owner resources (Deployment/ReplicaSet/...)
-// so we can capture annotations placed on owner objects.
+// ownerResourceEventHandlerFuncs returns handlers for owner resources
+// (Deployment/ReplicaSet/...) so we can capture annotations on owner objects.
 func (c *PodTypeCache) ownerResourceEventHandlerFuncs() cache.ResourceEventHandlerFuncs {
 	return cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(obj interface{}) { c.handleOwnerAdd(obj) },
@@ -79,13 +78,10 @@ func (c *PodTypeCache) ownerResourceEventHandlerFuncs() cache.ResourceEventHandl
 	}
 }
 
-// handleOwnerAdd handles adding an owner resource (Deployment/ReplicaSet/...)
-// It extracts annotation and updates ownerAnnotations map; if the resource lacks annotation,
-// it will attempt to inherit podType from its owners (e.g. ReplicaSet inherits from Deployment).
+// handleOwnerAdd handles adding an owner resource and updates ownerAnnotations map.
 func (c *PodTypeCache) handleOwnerAdd(obj interface{}) {
 	accessor, ok := obj.(metav1.Object)
 	if !ok {
-		// try tombstone handling
 		tomb, ok := obj.(cache.DeletedFinalStateUnknown)
 		if ok {
 			accessor, _ = tomb.Obj.(metav1.Object)
@@ -99,8 +95,7 @@ func (c *PodTypeCache) handleOwnerAdd(obj interface{}) {
 	c.determineAndSetOwnerAnnotationLocked(accessor)
 }
 
-// handleOwnerUpdate updates ownerAnnotations when owner resource's annotation changes.
-// It also attempts to inherit from its owners if it lacks its own annotation.
+// handleOwnerUpdate updates ownerAnnotations when owner resource changes.
 func (c *PodTypeCache) handleOwnerUpdate(oldObj, newObj interface{}) {
 	accessor, ok := newObj.(metav1.Object)
 	if !ok {
@@ -111,7 +106,7 @@ func (c *PodTypeCache) handleOwnerUpdate(oldObj, newObj interface{}) {
 	c.determineAndSetOwnerAnnotationLocked(accessor)
 }
 
-// handleOwnerDelete deletes ownerAnnotations mapping so future pods won't pick stale mapping.
+// handleOwnerDelete deletes ownerAnnotations mapping on owner deletion.
 func (c *PodTypeCache) handleOwnerDelete(obj interface{}) {
 	accessor, ok := obj.(metav1.Object)
 	if !ok {
@@ -129,59 +124,39 @@ func (c *PodTypeCache) handleOwnerDelete(obj interface{}) {
 	if uid == "" {
 		return
 	}
-	if _, ok := c.ownerAnnotations[uid]; ok {
-		delete(c.ownerAnnotations, uid)
-		klog.V(4).InfoS("podtype: owner annotation mapping removed on owner delete", "ownerUID", uid)
-	}
-	// Note: we DO NOT force-delete child mappings here.
-	// ReplicaSet->Pod mapping should be deleted when ReplicaSet itself is deleted (its own delete event will be handled).
+	delete(c.ownerAnnotations, uid)
 }
 
-// determineAndSetOwnerAnnotationLocked determines the podType for an owner object (deployment/rs/etc) and sets ownerAnnotations[uid] accordingly. Caller MUST hold write lock.
+// determineAndSetOwnerAnnotationLocked determines pod types for owner object and
+// sets ownerAnnotations[uid] accordingly. Caller MUST hold c.mutex.
 func (c *PodTypeCache) determineAndSetOwnerAnnotationLocked(accessor metav1.Object) {
 	uid := string(accessor.GetUID())
 	if uid == "" {
 		return
 	}
-	// Check object's own annotations first
-	ann := ""
 	if accessor.GetAnnotations() != nil {
 		if raw, ok := accessor.GetAnnotations()[PodTypeAnnotationKey]; ok {
-			ann = strings.TrimSpace(strings.ToLower(raw))
+			types := parsePodTypes(raw)
+			if len(types) > 0 {
+				c.ownerAnnotations[uid] = types
+				return
+			}
 		}
 	}
-	if IsValidPodType(ann) {
-		c.ownerAnnotations[uid] = ann
-		klog.V(4).InfoS("podtype: owner annotation set from self", "ownerUID", uid, "podType", ann)
-		return
-	}
-	// Otherwise, try to inherit from its owners (one level)
 	for _, ownerRef := range accessor.GetOwnerReferences() {
-		if ownerRef.UID == "" {
-			continue
-		}
-		if parentType, ok := c.ownerAnnotations[string(ownerRef.UID)]; ok && parentType != "" {
-			// Inherit parent's podType
-			c.ownerAnnotations[uid] = parentType
-			klog.V(4).InfoS("podtype: owner annotation inherited from parent", "ownerUID", uid, "parentUID", ownerRef.UID, "podType", parentType)
+		if ownerTypes, ok := c.ownerAnnotations[string(ownerRef.UID)]; ok && len(ownerTypes) > 0 {
+			c.ownerAnnotations[uid] = append([]string(nil), ownerTypes...)
 			return
 		}
 	}
-	// else: no annotation and no owner mapping found -> ensure no stale mapping
-	if _, ok := c.ownerAnnotations[uid]; ok {
-		delete(c.ownerAnnotations, uid)
-		klog.V(4).InfoS("podtype: owner annotation removed (no annotation and no parent mapping)", "ownerUID", uid)
-	}
+	delete(c.ownerAnnotations, uid)
 }
 
 // decrementReservedCountLocked decrements reservedCounts[nodeName][podType] by 1.
-// Caller MUST hold c.mutex (write lock).
+// Caller MUST hold c.mutex.
 func (c *PodTypeCache) decrementReservedCountLocked(nodeName, podType string) {
-	if nodeName == "" || podType == "" {
-		return
-	}
 	if counts, ok := c.reservedCounts[nodeName]; ok {
-		if cnt, ok := counts[podType]; ok && cnt > 0 {
+		if cnt := counts[podType]; cnt > 0 {
 			counts[podType]--
 			if counts[podType] == 0 {
 				delete(counts, podType)
@@ -193,172 +168,116 @@ func (c *PodTypeCache) decrementReservedCountLocked(nodeName, podType string) {
 	}
 }
 
-// cleanupReservationByUIDLocked removes any reservation record for the provided podUID,
-// and decrements the corresponding reservedCounts. Caller MUST hold c.mutex (write lock).
+// cleanupReservationByUIDLocked removes reservation record for podUID and rolls
+// back corresponding reserved counts. Caller MUST hold c.mutex.
 func (c *PodTypeCache) cleanupReservationByUIDLocked(podUID types.UID) {
 	res, ok := c.reservedBy[podUID]
 	if !ok {
 		return
 	}
-	// Rollback reservedCounts for the recorded reservation
-	c.decrementReservedCountLocked(res.NodeName, res.PodType)
-	// Remove tracking entry
-	delete(c.reservedBy, podUID)
-	klog.V(4).InfoS("podtype: cleaned reservation (generic)", "podUID", podUID, "node", res.NodeName, "podType", res.PodType)
-}
-
-// cleanupReservationOnBindLocked is called when a pod becomes bound, ensure reservedCounts removed for that podUID.
-// It always rolls back any prior reservation for that podUID (matching or not) and removes reservedBy entry.
-// Caller MUST hold c.mutex (write lock).
-func (c *PodTypeCache) cleanupReservationOnBindLocked(podUID types.UID) {
-	res, ok := c.reservedBy[podUID]
-	if !ok {
-		return
+	for _, t := range res.PodTypes {
+		c.decrementReservedCountLocked(res.NodeName, t)
 	}
-	// always decrement reservedCounts for the recorded reservation and remove mapping
-	c.decrementReservedCountLocked(res.NodeName, res.PodType)
 	delete(c.reservedBy, podUID)
-	klog.V(4).InfoS("podtype: rolled back reservation on bind (defensive)", "podUID", podUID, "node", res.NodeName, "podType", res.PodType)
 }
 
-// handlePodAdd handles pod add events
+// cleanupReservationOnBindLocked ensures reservation is removed when pod binds.
+// Caller MUST hold c.mutex.
+func (c *PodTypeCache) cleanupReservationOnBindLocked(podUID types.UID) {
+	c.cleanupReservationByUIDLocked(podUID)
+}
+
+// handlePodAdd handles pod add events.
 func (c *PodTypeCache) handlePodAdd(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
-		klog.V(4).InfoS("podtype: expected pod, got", "obj", obj)
 		return
 	}
-
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-
-	// If pod carries its own annotation, update ownerAnnotations mapping for its owners.
 	c.updateOwnerAnnotationsLocked(pod)
-
-	// Only count pods that are bound to node and not terminating
 	if pod.Spec.NodeName == "" || pod.DeletionTimestamp != nil {
-		// If pod is not bound but there is a leftover reservation, do nothing here.
-		// Reservation will be cleaned on pod delete or when pod becomes bound.
 		return
 	}
-
-	podType := c.resolvePodTypeForPodLocked(pod)
-	// If no podType resolved -> nothing to increment for confirmedCounts (we still might have a reservation)
-	if podType == "" {
-		// Still clean reservation if any (defensive)
+	podTypes := c.resolvePodTypesForPodLocked(pod)
+	if len(podTypes) == 0 {
 		c.cleanupReservationOnBindLocked(pod.UID)
 		return
 	}
-
-	// If we already recorded this pod as confirmed, ensure it's not double counted.
 	if rec, ok := c.confirmedBy[pod.UID]; ok {
-		// already counted
-		if rec.NodeName == pod.Spec.NodeName && rec.PodType == podType {
-			// nothing to do
+		if rec.NodeName == pod.Spec.NodeName && samePodTypes(rec.PodTypes, podTypes) {
 			return
 		}
-		// If previously recorded but node/type differ, rollback previous then add new
-		c.removeConfirmedLocked(rec.NodeName, rec.PodType)
+		c.removeConfirmedLocked(rec.NodeName, rec.PodTypes)
 		delete(c.confirmedBy, pod.UID)
 	}
-	// Always rollback any reservation for this podUID (defensive)
 	c.cleanupReservationOnBindLocked(pod.UID)
-
-	// add confirmed count and record mapping
-	c.addConfirmedLocked(pod.Spec.NodeName, podType)
-	c.confirmedBy[pod.UID] = reservation{NodeName: pod.Spec.NodeName, PodType: podType}
-	klog.V(4).InfoS("podtype: pod added to confirmedCounts", "podUID", pod.UID, "node", pod.Spec.NodeName, "podType", podType)
+	c.addConfirmedLocked(pod.Spec.NodeName, podTypes)
+	c.confirmedBy[pod.UID] = reservation{NodeName: pod.Spec.NodeName, PodTypes: append([]string(nil), podTypes...)}
 }
 
-// handlePodUpdate handles pod update events
+// handlePodUpdate handles pod update events.
 func (c *PodTypeCache) handlePodUpdate(oldObj, newObj interface{}) {
 	oldPod, ok1 := oldObj.(*corev1.Pod)
 	newPod, ok2 := newObj.(*corev1.Pod)
 	if !ok1 || !ok2 {
-		klog.V(4).InfoS("podtype: expected pod in update", "old", oldObj, "new", newObj)
 		return
 	}
-
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-
-	// Update ownerAnnotations if newPod has direct annotation
 	c.updateOwnerAnnotationsLocked(newPod)
-
 	oldBound := oldPod.Spec.NodeName != "" && oldPod.DeletionTimestamp == nil
 	newBound := newPod.Spec.NodeName != "" && newPod.DeletionTimestamp == nil
-
 	oldRec, oldRecOk := c.confirmedBy[oldPod.UID]
-	// compute resolved types (using current ownerAnnotations state)
-	oldType := c.resolvePodTypeForPodLocked(oldPod)
-	newType := c.resolvePodTypeForPodLocked(newPod)
+	oldTypes := c.resolvePodTypesForPodLocked(oldPod)
+	newTypes := c.resolvePodTypesForPodLocked(newPod)
 
-	// Case A: pod just became bound (oldBound=false, newBound=true)
 	if newBound && !oldBound {
-		// rollback any reservation and record confirmed
 		c.cleanupReservationOnBindLocked(newPod.UID)
-		// if already confirmed (somehow), avoid double counting
 		if rec, ok := c.confirmedBy[newPod.UID]; ok {
-			// if rec.NodeName/type matches new state, nothing to do
-			if rec.NodeName == newPod.Spec.NodeName && rec.PodType == newType {
+			if rec.NodeName == newPod.Spec.NodeName && samePodTypes(rec.PodTypes, newTypes) {
 				return
 			}
-			// else rollback old rec
-			c.removeConfirmedLocked(rec.NodeName, rec.PodType)
+			c.removeConfirmedLocked(rec.NodeName, rec.PodTypes)
 			delete(c.confirmedBy, newPod.UID)
 		}
-		if newType != "" {
-			c.addConfirmedLocked(newPod.Spec.NodeName, newType)
-			c.confirmedBy[newPod.UID] = reservation{NodeName: newPod.Spec.NodeName, PodType: newType}
+		if len(newTypes) > 0 {
+			c.addConfirmedLocked(newPod.Spec.NodeName, newTypes)
+			c.confirmedBy[newPod.UID] = reservation{NodeName: newPod.Spec.NodeName, PodTypes: append([]string(nil), newTypes...)}
 		}
 		return
 	}
-
-	// Case B: node changed (move)
 	if oldPod.Spec.NodeName != newPod.Spec.NodeName {
-		// remove old confirmed record if it existed
 		if oldRecOk {
-			// use previously recorded node/type (most accurate)
-			c.removeConfirmedLocked(oldRec.NodeName, oldRec.PodType)
+			c.removeConfirmedLocked(oldRec.NodeName, oldRec.PodTypes)
 			delete(c.confirmedBy, newPod.UID)
-		} else if oldType != "" {
-			// best-effort fallback (if somehow confirmedBy missing)
-			c.removeConfirmedLocked(oldPod.Spec.NodeName, oldType)
+		} else {
+			c.removeConfirmedLocked(oldPod.Spec.NodeName, oldTypes)
 		}
-		// add record for new node if still bound and type known
-		if newBound && newType != "" {
-			c.addConfirmedLocked(newPod.Spec.NodeName, newType)
-			c.confirmedBy[newPod.UID] = reservation{NodeName: newPod.Spec.NodeName, PodType: newType}
+		if newBound && len(newTypes) > 0 {
+			c.addConfirmedLocked(newPod.Spec.NodeName, newTypes)
+			c.confirmedBy[newPod.UID] = reservation{NodeName: newPod.Spec.NodeName, PodTypes: append([]string(nil), newTypes...)}
 		}
 		return
 	}
-
-	// Case C: same node, type changed (or ownerMapping changed)
-	if oldBound && newBound && oldType != newType && newPod.Spec.NodeName != "" {
-		// If we have recorded the old mapping, remove using confirmedBy data
+	if oldBound && newBound && !samePodTypes(oldTypes, newTypes) && newPod.Spec.NodeName != "" {
 		if rec, ok := c.confirmedBy[newPod.UID]; ok {
-			// if rec.PodType equals oldType (or not), remove the recorded one
-			c.removeConfirmedLocked(rec.NodeName, rec.PodType)
+			c.removeConfirmedLocked(rec.NodeName, rec.PodTypes)
 			delete(c.confirmedBy, newPod.UID)
-		} else if oldType != "" {
-			// fallback
-			c.removeConfirmedLocked(newPod.Spec.NodeName, oldType)
+		} else {
+			c.removeConfirmedLocked(newPod.Spec.NodeName, oldTypes)
 		}
-		// add new confirmed if newType present
-		if newType != "" {
-			c.addConfirmedLocked(newPod.Spec.NodeName, newType)
-			c.confirmedBy[newPod.UID] = reservation{NodeName: newPod.Spec.NodeName, PodType: newType}
+		if len(newTypes) > 0 {
+			c.addConfirmedLocked(newPod.Spec.NodeName, newTypes)
+			c.confirmedBy[newPod.UID] = reservation{NodeName: newPod.Spec.NodeName, PodTypes: append([]string(nil), newTypes...)}
 		}
-		return
 	}
-	// other updates -> no op
 }
 
-// handlePodDelete handles pod delete events
+// handlePodDelete handles pod delete events.
 func (c *PodTypeCache) handlePodDelete(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
-		// Handle tombstone
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
 			return
@@ -370,137 +289,116 @@ func (c *PodTypeCache) handlePodDelete(obj interface{}) {
 	}
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-
-	// If this pod was counted as confirmed earlier, use recorded mapping to rollback (most reliable)
 	if rec, ok := c.confirmedBy[pod.UID]; ok {
-		c.removeConfirmedLocked(rec.NodeName, rec.PodType)
+		c.removeConfirmedLocked(rec.NodeName, rec.PodTypes)
 		delete(c.confirmedBy, pod.UID)
-		// remove any lingering reservation too
 		c.cleanupReservationByUIDLocked(pod.UID)
-		klog.V(4).InfoS("podtype: removed confirmed count via confirmedBy on delete", "podUID", pod.UID, "node", rec.NodeName, "podType", rec.PodType)
 		return
 	}
-
-	// Not found in confirmedBy: fallback best-effort using annotations/owner mapping
 	if pod.Spec.NodeName != "" {
-		pt := c.resolvePodTypeForPodLocked(pod)
-		if pt != "" {
-			c.removeConfirmedLocked(pod.Spec.NodeName, pt)
-		}
+		c.removeConfirmedLocked(pod.Spec.NodeName, c.resolvePodTypesForPodLocked(pod))
 	}
-	// cleanup reservation if any
 	c.cleanupReservationByUIDLocked(pod.UID)
 }
 
-// Reserve reserves a pod on a node (idempotent and safe on repeated calls)
-func (c *PodTypeCache) Reserve(nodeName, podType string, podUID types.UID) {
+// Reserve reserves pod types on a node (idempotent for same podUID).
+func (c *PodTypeCache) Reserve(nodeName string, podTypes []string, podUID types.UID) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-
-	// If an old reservation for this podUID exists, rollback it first.
 	if _, ok := c.reservedBy[podUID]; ok {
 		c.cleanupReservationByUIDLocked(podUID)
 	}
-
-	// Apply new reservation
 	c.ensureNodeReservedCountsLocked(nodeName)
-	c.reservedCounts[nodeName][podType]++
-	c.reservedBy[podUID] = reservation{NodeName: nodeName, PodType: podType}
-	klog.V(4).InfoS("podtype: reserved pod", "podUID", podUID, "nodeName", nodeName, "podType", podType)
+	for _, t := range podTypes {
+		if !IsValidPodType(t) {
+			continue
+		}
+		c.reservedCounts[nodeName][t]++
+	}
+	c.reservedBy[podUID] = reservation{NodeName: nodeName, PodTypes: append([]string(nil), podTypes...)}
 }
 
-// Unreserve unreserves a pod using stored reservation info (idempotent)
+// Unreserve unreserves a pod using stored reservation info (idempotent).
 func (c *PodTypeCache) Unreserve(podUID types.UID) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	// Use the central cleanup function (it will no-op if not present)
 	c.cleanupReservationByUIDLocked(podUID)
 }
 
-// GetMergedCounts returns merged confirmed and reserved counts (deep copy)
+// GetMergedCounts returns merged confirmed and reserved counts (deep copy).
 func (c *PodTypeCache) GetMergedCounts() map[string]map[string]int {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-
-	merged := make(map[string]map[string]int)
-
-	// Start with confirmed counts
-	for nodeName, counts := range c.confirmedCounts {
-		merged[nodeName] = make(map[string]int)
-		for podType, count := range counts {
-			merged[nodeName][podType] = count
+	merged := map[string]map[string]int{}
+	for n, cs := range c.confirmedCounts {
+		merged[n] = map[string]int{}
+		for t, v := range cs {
+			merged[n][t] = v
 		}
 	}
-
-	// Add reserved counts
-	for nodeName, counts := range c.reservedCounts {
-		if _, ok := merged[nodeName]; !ok {
-			merged[nodeName] = make(map[string]int)
+	for n, cs := range c.reservedCounts {
+		if _, ok := merged[n]; !ok {
+			merged[n] = map[string]int{}
 		}
-		for podType, count := range counts {
-			merged[nodeName][podType] += count
+		for t, v := range cs {
+			merged[n][t] += v
 		}
 	}
-
 	return merged
 }
 
-// GetConfirmedCounts returns a deep copy of confirmedCounts
+// GetConfirmedCounts returns a deep copy of confirmed counts.
 func (c *PodTypeCache) GetConfirmedCounts() map[string]map[string]int {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	res := make(map[string]map[string]int)
-	for nodeName, counts := range c.confirmedCounts {
-		res[nodeName] = make(map[string]int)
-		for podType, count := range counts {
-			res[nodeName][podType] = count
+	res := map[string]map[string]int{}
+	for n, cs := range c.confirmedCounts {
+		res[n] = map[string]int{}
+		for t, v := range cs {
+			res[n][t] = v
 		}
 	}
 	return res
 }
 
-// GetReservedCounts returns a deep copy of reservedCounts
+// GetReservedCounts returns a deep copy of reserved counts.
 func (c *PodTypeCache) GetReservedCounts() map[string]map[string]int {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	res := make(map[string]map[string]int)
-	for nodeName, counts := range c.reservedCounts {
-		res[nodeName] = make(map[string]int)
-		for podType, count := range counts {
-			res[nodeName][podType] = count
+	res := map[string]map[string]int{}
+	for n, cs := range c.reservedCounts {
+		res[n] = map[string]int{}
+		for t, v := range cs {
+			res[n][t] = v
 		}
 	}
 	return res
 }
 
-// resolvePodTypeForPodLocked returns pod type for the given pod for cache bookkeeping.
-// It first checks pod annotation, if empty it will look up ownerAnnotations map (thread-safe read).
-// Caller MUST hold c.mutex (write lock).
-func (c *PodTypeCache) resolvePodTypeForPodLocked(pod *corev1.Pod) string {
+// resolvePodTypesForPodLocked returns pod types for cache bookkeeping.
+// It checks pod annotation first; if empty, it looks up ownerAnnotations map.
+// Caller MUST hold c.mutex.
+func (c *PodTypeCache) resolvePodTypesForPodLocked(pod *corev1.Pod) []string {
 	if pod == nil {
-		return ""
+		return nil
 	}
-	// first, check pod annotation (no lock needed since reading pod)
-	if t := getPodTypeFromPod(pod); t != "" {
+	if t := getPodTypesFromPod(pod); len(t) > 0 {
 		return t
 	}
-	// fallback to ownerAnnotations map (caller already locked)
 	for _, owner := range pod.OwnerReferences {
-		if owner.UID == "" {
-			continue
-		}
-		if t := c.ownerAnnotations[string(owner.UID)]; t != "" {
-			return strings.TrimSpace(strings.ToLower(t))
+		if t := c.ownerAnnotations[string(owner.UID)]; len(t) > 0 {
+			return append([]string(nil), t...)
 		}
 	}
-	return ""
+	return nil
 }
 
-// GetOwnerPodTypeByUID returns the pod type for an owner by UID
-func (c *PodTypeCache) GetOwnerPodTypeByUID(uid string) string {
+// GetOwnerPodTypesByUID returns owner pod types by UID.
+func (c *PodTypeCache) GetOwnerPodTypesByUID(uid string) []string {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	return c.ownerAnnotations[uid]
+	t := c.ownerAnnotations[uid]
+	return append([]string(nil), t...)
 }
 
 // add/remove helpers (locked variants used by event handlers)
@@ -509,57 +407,75 @@ func (c *PodTypeCache) ensureNodeCountsLocked(nodeName string) {
 		c.confirmedCounts[nodeName] = make(map[string]int)
 	}
 }
-
 func (c *PodTypeCache) ensureNodeReservedCountsLocked(nodeName string) {
 	if _, ok := c.reservedCounts[nodeName]; !ok {
 		c.reservedCounts[nodeName] = make(map[string]int)
 	}
 }
-
-func (c *PodTypeCache) addConfirmedLocked(nodeName, podType string) {
-	if nodeName == "" || podType == "" {
+func (c *PodTypeCache) addConfirmedLocked(nodeName string, podTypes []string) {
+	if nodeName == "" {
 		return
 	}
 	c.ensureNodeCountsLocked(nodeName)
-	c.confirmedCounts[nodeName][podType]++
+	for _, t := range podTypes {
+		if !IsValidPodType(t) {
+			continue
+		}
+		c.confirmedCounts[nodeName][t]++
+	}
 }
-
-func (c *PodTypeCache) removeConfirmedLocked(nodeName, podType string) {
-	if nodeName == "" || podType == "" {
+func (c *PodTypeCache) removeConfirmedLocked(nodeName string, podTypes []string) {
+	if nodeName == "" {
 		return
 	}
 	if counts, ok := c.confirmedCounts[nodeName]; ok {
-		if count, ok := counts[podType]; ok && count > 0 {
-			counts[podType]--
-			if counts[podType] == 0 {
-				delete(counts, podType)
+		for _, t := range podTypes {
+			if count := counts[t]; count > 0 {
+				counts[t]--
+				if counts[t] == 0 {
+					delete(counts, t)
+				}
 			}
-			if len(counts) == 0 {
-				delete(c.confirmedCounts, nodeName)
-			}
+		}
+		if len(counts) == 0 {
+			delete(c.confirmedCounts, nodeName)
 		}
 	}
 }
 
-// updateOwnerAnnotations updates owner to pod type mapping (locked)
-func (c *PodTypeCache) updateOwnerAnnotations(pod *corev1.Pod) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	c.updateOwnerAnnotationsLocked(pod)
-}
-
+// updateOwnerAnnotationsLocked updates owner to pod-types mapping.
+// Caller MUST hold c.mutex.
 func (c *PodTypeCache) updateOwnerAnnotationsLocked(pod *corev1.Pod) {
 	if pod == nil {
 		return
 	}
-	podType := getPodTypeFromPod(pod)
-	if podType == "" {
+	podTypes := getPodTypesFromPod(pod)
+	if len(podTypes) == 0 {
 		return
 	}
 	for _, owner := range pod.OwnerReferences {
 		if owner.UID != "" {
-			c.ownerAnnotations[string(owner.UID)] = strings.TrimSpace(strings.ToLower(podType))
-			klog.V(4).InfoS("podtype: updated owner annotation mapping (from pod)", "ownerUID", owner.UID, "podType", podType)
+			c.ownerAnnotations[string(owner.UID)] = append([]string(nil), podTypes...)
+			klog.V(4).InfoS("podtype: updated owner annotation mapping (from pod)", "ownerUID", owner.UID, "podTypes", strings.Join(podTypes, ","))
 		}
 	}
+}
+
+func samePodTypes(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := map[string]int{}
+	for _, t := range a {
+		m[t]++
+	}
+	for _, t := range b {
+		m[t]--
+	}
+	for _, v := range m {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
 }

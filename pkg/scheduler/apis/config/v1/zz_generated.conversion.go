@@ -522,6 +522,8 @@ func Convert_config_NodeResourcesFitPlusArgs_To_v1_NodeResourcesFitPlusArgs(in *
 
 func autoConvert_v1_PodTypeArgs_To_config_PodTypeArgs(in *PodTypeArgs, out *config.PodTypeArgs, s conversion.Scope) error {
 	out.EnablePodType = (*bool)(unsafe.Pointer(in.EnablePodType))
+	out.EnableVectorScoring = (*bool)(unsafe.Pointer(in.EnableVectorScoring))
+	out.VectorScoreK = (*float64)(unsafe.Pointer(in.VectorScoreK))
 	return nil
 }
 
@@ -532,6 +534,8 @@ func Convert_v1_PodTypeArgs_To_config_PodTypeArgs(in *PodTypeArgs, out *config.P
 
 func autoConvert_config_PodTypeArgs_To_v1_PodTypeArgs(in *config.PodTypeArgs, out *PodTypeArgs, s conversion.Scope) error {
 	out.EnablePodType = (*bool)(unsafe.Pointer(in.EnablePodType))
+	out.EnableVectorScoring = (*bool)(unsafe.Pointer(in.EnableVectorScoring))
+	out.VectorScoreK = (*float64)(unsafe.Pointer(in.VectorScoreK))
 	return nil
 }
 

@@ -6,43 +6,102 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+var validPodTypes = map[string]struct{}{
+	PodTypeCPUIntensive:     {},
+	PodTypeMemoryIntensive:  {},
+	PodTypeIOIntensive:      {},
+	PodTypeNetworkIntensive: {},
+}
+
 // IsValidPodType checks if a pod type is valid
 func IsValidPodType(podType string) bool {
-	switch strings.TrimSpace(strings.ToLower(podType)) {
-	case PodTypeCPUIntensive, PodTypeMemoryIntensive, PodTypeIOIntensive, PodTypeNetworkIntensive:
-		return true
-	default:
-		return false
-	}
+	_, ok := validPodTypes[strings.TrimSpace(strings.ToLower(podType))]
+	return ok
 }
 
-// getPodTypeFromPod gets the pod type from a pod
-func getPodTypeFromPod(pod *corev1.Pod) string {
-	if pod == nil || pod.Annotations == nil {
-		return ""
+func parsePodTypes(raw string) []string {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if raw == "" {
+		return nil
 	}
-	if raw, ok := pod.Annotations[PodTypeAnnotationKey]; ok {
-		raw = strings.TrimSpace(strings.ToLower(raw))
-		if IsValidPodType(raw) {
-			return raw
+
+	seen := map[string]struct{}{}
+	var result []string
+	appendType := func(t string) {
+		if !IsValidPodType(t) {
+			return
+		}
+		if _, ok := seen[t]; ok {
+			return
+		}
+		seen[t] = struct{}{}
+		result = append(result, t)
+	}
+
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == '+' || r == ';' }) {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if IsValidPodType(part) {
+			appendType(part)
+			continue
+		}
+		if strings.HasSuffix(part, "-intensive") {
+			base := strings.TrimSuffix(part, "-intensive")
+			for _, token := range strings.Split(base, "-") {
+				token = strings.TrimSpace(token)
+				if token == "" {
+					continue
+				}
+				appendType(token + "-intensive")
+			}
 		}
 	}
-	return ""
+	return result
 }
 
-// getPodTypeFromOwners resolves pod type by checking ownerReferences mapping in cache.
-// It returns the first matched pod type or empty string if none found.
-func getPodTypeFromOwners(pod *corev1.Pod, cache *PodTypeCache) string {
+// getPodTypesFromPod gets the pod types from a pod annotation.
+func getPodTypesFromPod(pod *corev1.Pod) []string {
+	if pod == nil || pod.Annotations == nil {
+		return nil
+	}
+	raw, ok := pod.Annotations[PodTypeAnnotationKey]
+	if !ok {
+		return nil
+	}
+	return parsePodTypes(raw)
+}
+
+// getPodTypesFromOwners resolves pod types by checking ownerReferences mapping in cache.
+func getPodTypesFromOwners(pod *corev1.Pod, cache *PodTypeCache) []string {
 	if pod == nil || cache == nil {
-		return ""
+		return nil
 	}
 	for _, owner := range pod.OwnerReferences {
 		if owner.UID == "" {
 			continue
 		}
-		if t := cache.GetOwnerPodTypeByUID(string(owner.UID)); t != "" {
-			return strings.TrimSpace(strings.ToLower(t))
+		if t := cache.GetOwnerPodTypesByUID(string(owner.UID)); len(t) > 0 {
+			return t
 		}
 	}
-	return ""
+	return nil
+}
+
+// compatibility helper
+func getPodTypeFromPod(pod *corev1.Pod) string {
+	types := getPodTypesFromPod(pod)
+	if len(types) == 0 {
+		return ""
+	}
+	return types[0]
+}
+
+func getPodTypeFromOwners(pod *corev1.Pod, cache *PodTypeCache) string {
+	types := getPodTypesFromOwners(pod, cache)
+	if len(types) == 0 {
+		return ""
+	}
+	return types[0]
 }

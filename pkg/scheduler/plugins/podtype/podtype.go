@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"time"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -41,9 +41,10 @@ var (
 )
 
 type Plugin struct {
-	handle framework.Handle
-	cache  *PodTypeCache
-	args   *config.PodTypeArgs
+	handle       framework.Handle
+	cache        *PodTypeCache
+	args         *config.PodTypeArgs
+	vectorScoreK float64
 }
 
 func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
@@ -62,12 +63,25 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		return nil, fmt.Errorf("want handle to be of type frameworkext.ExtendedHandle, got %T", handle)
 	}
 
-	cache := NewPodTypeCache(extendedHandle)
+	enableVectorScoring := true
+	if pluginArgs.EnableVectorScoring != nil {
+		enableVectorScoring = *pluginArgs.EnableVectorScoring
+	}
+	vectorScoreK := 2.0
+	if pluginArgs.VectorScoreK != nil {
+		vectorScoreK = *pluginArgs.VectorScoreK
+	}
+	if vectorScoreK <= 0 {
+		klog.V(4).InfoS("podtype: invalid VectorScoreK, fallback to default", "k", vectorScoreK, "default", 2.0)
+		vectorScoreK = 2.0
+	}
+	cache := NewPodTypeCache(extendedHandle, enableVectorScoring)
 
 	return &Plugin{
-		handle: handle,
-		cache:  cache,
-		args:   pluginArgs,
+		handle:       handle,
+		cache:        cache,
+		args:         pluginArgs,
+		vectorScoreK: vectorScoreK,
 	}, nil
 }
 
@@ -85,6 +99,7 @@ func (p *Plugin) EventsToRegister() []framework.ClusterEvent {
 // PodTypePreFilterState typed object stored in cycleState
 type PodTypePreFilterState struct {
 	MergedCounts map[string]map[string]int
+	TypeVectors  map[string]TypeVector
 }
 
 // Clone implements framework.StateData.Clone
@@ -99,7 +114,11 @@ func (s *PodTypePreFilterState) Clone() framework.StateData {
 			copied[n][pt] = v
 		}
 	}
-	return &PodTypePreFilterState{MergedCounts: copied}
+	vectors := make(map[string]TypeVector, len(s.TypeVectors))
+	for n, v := range s.TypeVectors {
+		vectors[n] = v
+	}
+	return &PodTypePreFilterState{MergedCounts: copied, TypeVectors: vectors}
 }
 
 // helper to read typed state and return proper status on error
@@ -123,36 +142,34 @@ func getPreFilterState(state *framework.CycleState) (*PodTypePreFilterState, *fr
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
-	// debug
-	start := time.Now()
-	klog.InfoS("podtype: entering PreFilter", "pod", klog.KObj(pod))
-	defer func() {
-		klog.InfoS("podtype: leaving PreFilter", "pod", klog.KObj(pod), "duration", time.Since(start))
-	}()
 	// We prefer to make this plugin best-effort: if pod lacks type -> skip plugin.
 	// If internal error occurs (e.g. failed to write state), we skip rather than failing scheduling.
 
 	// If pod has no type and owner has no type -> skip
-	podType := getPodTypeFromPod(pod)
-	if podType == "" {
-		podType = getPodTypeFromOwners(pod, p.cache)
+	podTypes := getPodTypesFromPod(pod)
+	if len(podTypes) == 0 {
+		podTypes = getPodTypesFromOwners(pod, p.cache)
 	}
-	if podType == "" {
+	if len(podTypes) == 0 {
 		klog.V(4).InfoS("podtype preFilter: pod has no type annotation, skipping plugin", "pod", klog.KObj(pod))
 		return nil, framework.NewStatus(framework.Skip, ErrReasonPodTypeNotFound)
 	}
 	// debug
-	klog.V(4).InfoS("got podtype in PreFilter", "pod", klog.KObj(pod), "podType", podType)
+	klog.V(4).InfoS("got podtype in PreFilter", "pod", klog.KObj(pod), "podTypes", strings.Join(podTypes, ","))
 
 	// Get merged counts (confirmed + reserved)
 	mergedCounts := p.cache.GetMergedCounts()
+	nodeVectors := make(map[string]TypeVector, len(mergedCounts))
+	for nodeName, counts := range mergedCounts {
+		nodeVectors[nodeName] = buildTypeVectorFromCounts(counts)
+	}
 	// debug
 	confirmed := p.cache.GetConfirmedCounts()
 	reserved := p.cache.GetReservedCounts()
 	klog.V(4).InfoS("got podtype counts in PreFilter", "mergedCounts", mergedCounts, "confirmedCounts", confirmed, "reservedCounts", reserved)
 
 	// Wrap mergedCounts into a typed struct for cycleState
-	stateObj := &PodTypePreFilterState{MergedCounts: mergedCounts}
+	stateObj := &PodTypePreFilterState{MergedCounts: mergedCounts, TypeVectors: nodeVectors}
 
 	state.Write(stateKey, stateObj)
 	klog.V(4).InfoS("podtype: wrote cycle state", "pod", klog.KObj(pod), "stateKey", stateKey)
@@ -164,34 +181,43 @@ func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
 }
 
 func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
-	// debug
-	start := time.Now()
-	klog.InfoS("podtype: entering Score", "pod", klog.KObj(pod))
-	defer func() {
-		klog.InfoS("podtype: leaving Score", "pod", klog.KObj(pod), "duration", time.Since(start))
-	}()
 	// Read typed state
 	stateObj, status := getPreFilterState(state)
 	if status != nil {
 		return 0, status
 	}
-	mergedCounts := stateObj.MergedCounts
-	// Get pod type (pod annotation preferred; if missing, try owner)
-	podType := getPodTypeFromPod(pod)
-	if podType == "" {
-		podType = getPodTypeFromOwners(pod, p.cache)
+	if stateObj == nil {
+		return 0, framework.NewStatus(framework.Skip, "podtype state not found")
 	}
-	if podType == "" {
+	mergedCounts := stateObj.MergedCounts
+	podTypes := getPodTypesFromPod(pod)
+	if len(podTypes) == 0 {
+		podTypes = getPodTypesFromOwners(pod, p.cache)
+	}
+	if len(podTypes) == 0 {
 		klog.V(4).InfoS("podtype: pod type not found, skipping scoring", "pod", klog.KObj(pod))
 		return 0, framework.NewStatus(framework.Skip, ErrReasonPodTypeNotFound)
 	}
-	klog.V(4).InfoS("got podtype in Score", "pod", klog.KObj(pod), "podType", podType)
+	klog.V(4).InfoS("got podtype in Score", "pod", klog.KObj(pod), "podTypes", strings.Join(podTypes, ","))
+
+	if p.cache.enableVectorScoring {
+		podVec := buildPodVectorFromTypes(podTypes)
+		nodeVec := stateObj.TypeVectors[nodeName]
+		pressure := computePressure(nodeVec, podVec)
+		finalScore := int64(pressureToScore(pressure, p.vectorScoreK))
+		klog.V(4).InfoS("podtype vector scoring", "pod", klog.KObj(pod), "podTypes", strings.Join(podTypes, ","), "node", nodeName, "nodeVector", nodeVec, "podVector", podVec, "pressure", pressure, "score", finalScore)
+		return finalScore, nil
+	}
 
 	// Score based on pod type
 	var (
 		score int64
 		st    *framework.Status
 	)
+	if len(podTypes) != 1 {
+		return 0, framework.NewStatus(framework.Skip, "multi-type pod requires vector scoring")
+	}
+	podType := podTypes[0]
 	switch podType {
 	case PodTypeCPUIntensive:
 		score, st = p.scoreCPUMemoryIntensive(ctx, pod, nodeName, mergedCounts, corev1.ResourceCPU)
@@ -223,24 +249,17 @@ func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
 }
 
 func (p *Plugin) Reserve(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
-	// debug
-	start := time.Now()
-	klog.InfoS("podtype: entering Reserve", "pod", klog.KObj(pod))
-	defer func() {
-		klog.InfoS("podtype: leaving Reserve", "pod", klog.KObj(pod), "duration", time.Since(start))
-	}()
 	// Try to determine pod type for reservation; if not found, we skip reserve
-	podType := getPodTypeFromPod(pod)
-	if podType == "" {
-		podType = getPodTypeFromOwners(pod, p.cache)
+	podTypes := getPodTypesFromPod(pod)
+	if len(podTypes) == 0 {
+		podTypes = getPodTypesFromOwners(pod, p.cache)
 	}
-	if podType == "" {
+	if len(podTypes) == 0 {
 		klog.V(4).InfoS("podtype: pod type not found; skipping reserve", "pod", klog.KObj(pod))
 		return nil
 	}
 
-	// Record reservation with podType
-	p.cache.Reserve(nodeName, podType, pod.UID)
+	p.cache.Reserve(nodeName, podTypes, pod.UID)
 	return nil
 }
 
@@ -327,6 +346,50 @@ func (p *Plugin) calculateResourceRequest(podInfos []*framework.PodInfo, resourc
 		total += getPodResourceRequest(pi.Pod, resource)
 	}
 	return total
+}
+
+func buildTypeVectorFromCounts(counts map[string]int) (v TypeVector) {
+	v.CPU = float64(counts[PodTypeCPUIntensive])
+	v.Mem = float64(counts[PodTypeMemoryIntensive])
+	v.IO = float64(counts[PodTypeIOIntensive])
+	v.Net = float64(counts[PodTypeNetworkIntensive])
+	return
+}
+
+func buildPodVectorFromTypes(types []string) (p TypeVector) {
+	for _, t := range types {
+		switch t {
+		case PodTypeCPUIntensive:
+			p.CPU += 1
+		case PodTypeMemoryIntensive:
+			p.Mem += 1
+		case PodTypeIOIntensive:
+			p.IO += 1
+		case PodTypeNetworkIntensive:
+			p.Net += 1
+		}
+	}
+	return
+}
+
+func computePressure(node TypeVector, pod TypeVector) float64 {
+	// same-type pressure: weighted occupancy of dimensions that this pod cares about.
+	samePressure := pod.CPU*node.CPU + pod.Mem*node.Mem + pod.IO*node.IO + pod.Net*node.Net
+	// global pressure: average occupancy over all dimensions.
+	globalPressure := (node.CPU + node.Mem + node.IO + node.Net) / 4.0
+	// Final pressure = 0.9 * same + 0.1 * global.
+	return 0.9*samePressure + 0.1*globalPressure
+}
+
+func pressureToScore(pressure, k float64) int {
+	if pressure < 0 {
+		pressure = 0
+	}
+	if k <= 0 {
+		k = 2.0
+	}
+	s := 100.0 - k*pressure
+	return int(math.Round(math.Max(0, math.Min(100, s))))
 }
 
 func getNodeResourceCapacity(node *corev1.Node, resource corev1.ResourceName) int64 {
