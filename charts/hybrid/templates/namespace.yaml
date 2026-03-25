@@ -1,0 +1,9 @@
+{{- if .Values.namespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ include "hybrid.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

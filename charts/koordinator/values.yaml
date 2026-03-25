@@ -34,7 +34,7 @@ imagePullSecrets: {}
 
 koordlet:
   image:
-    repository: koordinator-sh/koordlet
+    repository: hybrid-system/koordlet
     tag: "v1.7.0"
   resources:
     limits:
@@ -72,7 +72,7 @@ manager:
 
   replicas: 2
   image:
-    repository: koordinator-sh/koord-manager
+    repository: hybrid-system/koord-manager
     tag: "v1.7.0"
   webhook:
     port: 9876
@@ -120,7 +120,7 @@ scheduler:
 
   replicas: 2
   image:
-    repository: koordinator-sh/koord-scheduler
+    repository: hybrid-system/koord-scheduler
     tag: "v1.7.0"
   port: 10251
 
@@ -155,7 +155,7 @@ descheduler:
 
   replicas: 2
   image:
-    repository: koordinator-sh/koord-descheduler
+    repository: hybrid-system/koord-descheduler
     tag: "v1.7.0"
   port: 10251
 
@@ -177,8 +177,9 @@ descheduler:
   tolerations: []
 
 deviceDaemon:
+  enabled: false
   image:
-    repository: koordinator-sh/koord-device-daemon
+    repository: hybrid-system/koord-device-daemon
     tag: "v1.7.0"
   resources:
     limits:

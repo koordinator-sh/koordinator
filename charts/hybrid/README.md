@@ -69,7 +69,7 @@ To use a specific storage class:
 ```yaml
 persistence:
   enabled: true
-  storageClass: "" # Storage class name
+  storageClass: ""  # Storage class name
   size: 10Gi
 ```
 

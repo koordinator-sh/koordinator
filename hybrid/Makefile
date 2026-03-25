@@ -31,7 +31,7 @@ all-images: binary collector-image manager-image
 container: all-images
 
 collector-image:
-	docker build -f ./build/hybrid-collector/Dockerfile -t koordinator/hybrid-collector:$(TAG) .
+	docker build -f ./build/hybrid-collector/Dockerfile -t hybrid-system/hybrid-collector:$(TAG) .
 
 manager-image:
-	docker build -f ./build/hybrid-manager/Dockerfile -t koordinator/hybrid-manager:$(TAG) .
+	docker build -f ./build/hybrid-manager/Dockerfile -t hybrid-system/hybrid-manager:$(TAG) .

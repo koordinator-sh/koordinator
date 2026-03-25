@@ -438,9 +438,17 @@ func balancePods(ctx context.Context,
 		} else {
 			allPods = srcNode.allPods
 		}
+
+		allPodNames := make([]string, 0)
+		for _, p := range allPods {
+			allPodNames = append(allPodNames, fmt.Sprintf("%s/%s", p.Name, p.Namespace))
+
+		}
+		klog.V(4).InfoS("nodeName", srcNode.node.Name, "srcNode.allPods", allPodNames)
 		nonRemovablePods, removablePods := classifyPods(
 			allPods,
 			podutil.WrapFilterFuncs(podFilter, func(pod *corev1.Pod) bool {
+				klog.V(4).Infof(" nodeName: %s, podInfo: %s/%s ", srcNode.node.Name, pod.Name, pod.Namespace)
 				if !nodeFit {
 					return true
 				}
@@ -462,11 +470,11 @@ func balancePods(ctx context.Context,
 			basewm.Spec.WillEvictedPods = append(basewm.Spec.WillEvictedPods, schedulingv1alpha1.WillEvictedPod{
 				Name: pod.Name, Namespace: pod.Namespace})
 		}
-		klog.Info("createOrUpdateNodeWaterMark  before")
+		klog.V(4).Info("createOrUpdateNodeWaterMark  before")
 		if err := createOrUpdateNodeWaterMark(ctx, nodeWaterMarkClient, basewm); err != nil {
 			klog.Error(err)
 		}
-		klog.Info("createOrUpdateNodeWaterMark  after")
+		klog.V(4).Info("createOrUpdateNodeWaterMark  after")
 
 		if len(removablePods) == 0 {
 			klog.V(4).InfoS("No removable pods on node, try next node", "node", klog.KObj(srcNode.node), "nodePool", nodePoolName)
@@ -493,10 +501,20 @@ func createOrUpdateNodeWaterMark(ctx context.Context, cli koordclientset.Interfa
 		}
 		return err
 	}
-	tmp.Spec.WillEvictedPods = wm.Spec.WillEvictedPods
-	tmp.Spec.HighThresholds = wm.Spec.HighThresholds
-	tmp.Spec.LowThresholds = wm.Spec.LowThresholds
-	tmp.Spec.Type = wm.Spec.Type
+	if wm.Spec.WillEvictedPods != nil {
+
+		tmp.Spec.WillEvictedPods = wm.Spec.WillEvictedPods
+	}
+	if wm.Spec.HighThresholds != nil {
+
+		tmp.Spec.HighThresholds = wm.Spec.HighThresholds
+	}
+	if wm.Spec.LowThresholds != nil {
+		tmp.Spec.LowThresholds = wm.Spec.LowThresholds
+	}
+	if wm.Spec.Type != "" {
+		tmp.Spec.Type = wm.Spec.Type
+	}
 	if _, err := cli.SchedulingV1alpha1().NodeWatermarks().Update(ctx, tmp, metav1.UpdateOptions{}); err != nil {
 		return err
 	}
@@ -710,6 +728,7 @@ func classifyPods(pods []*corev1.Pod, filter func(pod *corev1.Pod) bool) ([]*cor
 	var nonRemovablePods, removablePods []*corev1.Pod
 
 	for _, pod := range pods {
+		klog.Infof("PodName: %s/%s, filter result: %v", pod.Name, pod.Namespace, filter(pod))
 		if !filter(pod) {
 			nonRemovablePods = append(nonRemovablePods, pod)
 		} else {
@@ -795,6 +814,7 @@ func sortPodsOnOneOverloadedNode(srcNode NodeInfo, removablePods []*corev1.Pod, 
 // utilization will exceed the threshold after this pod was scheduled on it.
 func podFitsAnyNodeWithThreshold(nodeIndexer podutil.GetPodsAssignedToNodeFunc, pod *corev1.Pod, nodes []*corev1.Node,
 	nodeUsages map[string]*NodeUsage, nodeThresholds map[string]NodeThresholds, prod bool, podMetric *slov1alpha1.ResourceMap) bool {
+	klog.V(4).Info("podFitsAnyNodeWithThreshold checking")
 	for _, node := range nodes {
 		errors := nodeutil.NodeFit(nodeIndexer, pod, node)
 		if len(errors) == 0 {
@@ -858,6 +878,7 @@ func nodeType(nodeUsages map[string]*NodeUsage, nodeThresholds map[string]NodeTh
 			highThresholds = nodeThreshold.highResourceThreshold
 			lowThresholds = nodeThreshold.lowResourceThreshold
 		}
+		klog.V(4).InfoS("nodeType deternating: ", node, "nodeUsage", usage, "nodelowThreshold", lowThresholds, "nodehighThreshold", highThresholds)
 
 		for resourceName, threshold := range highThresholds {
 			if used := usage[resourceName]; used != nil {
