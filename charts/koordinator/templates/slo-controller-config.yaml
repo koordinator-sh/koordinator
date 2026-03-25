@@ -6,7 +6,11 @@ metadata:
 data:
   colocation-config: |
     {
-      "enable": true
+      "enable": true,
+      "metricAggregateDurationSeconds": 180,
+      "cpuReclaimThresholdPercent": 60,
+      "memoryReclaimThresholdPercent": 40,
+      "memoryCalculatePolicy": "usage"
     }
   resource-threshold-config: |
     {

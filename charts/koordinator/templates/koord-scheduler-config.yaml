@@ -41,6 +41,8 @@ data:
             usageThresholds:
               cpu: 65
               memory: 95
+            aggregated:
+              usageAggregationType: "avg"
             # disable by default
             # prodUsageThresholds indicates the resource utilization threshold of Prod Pods compared to the whole machine.
             # prodUsageThresholds:
