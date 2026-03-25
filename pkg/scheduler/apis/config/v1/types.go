@@ -333,4 +333,11 @@ type PodTypeArgs struct {
 	// EnablePodType indicates whether the podtype plugin is enabled.
 	// Default is true. Use pointer so we can distinguish "not set".
 	EnablePodType *bool `json:"enablePodType,omitempty"`
+	// EnableVectorScoring toggles vector-based pressure scoring.
+	// Default is true.
+	EnableVectorScoring *bool `json:"enableVectorScoring,omitempty"`
+	// VectorScoreK controls linear mapping from pressure to score:
+	// score = max(0, 100 - k * pressure). Larger k means a steeper score decrease.
+	// Must be > 0. Default is 4.0.
+	VectorScoreK *float64 `json:"vectorScoreK,omitempty"`
 }

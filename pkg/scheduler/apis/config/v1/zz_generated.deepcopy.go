@@ -436,6 +436,16 @@ func (in *PodTypeArgs) DeepCopyInto(out *PodTypeArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EnableVectorScoring != nil {
+		in, out := &in.EnableVectorScoring, &out.EnableVectorScoring
+		*out = new(bool)
+		**out = **in
+	}
+	if in.VectorScoreK != nil {
+		in, out := &in.VectorScoreK, &out.VectorScoreK
+		*out = new(float64)
+		**out = **in
+	}
 	return
 }
 

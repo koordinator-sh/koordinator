@@ -266,4 +266,12 @@ func SetDefaults_PodTypeArgs(obj *PodTypeArgs) {
 		b := true
 		obj.EnablePodType = &b
 	}
+	if obj.EnableVectorScoring == nil {
+		b := true
+		obj.EnableVectorScoring = &b
+	}
+	if obj.VectorScoreK == nil {
+		k := 2.0
+		obj.VectorScoreK = &k
+	}
 }
