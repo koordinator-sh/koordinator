@@ -41,6 +41,9 @@ type NodeWatermarkStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:printcolumn:name="nodeType",type=string,JSONPath=`.spec.type`
+// +kubebuilder:printcolumn:name="nodeHighThresholds",type=string,JSONPath=`.spec.highThresholds`
+// +kubebuilder:printcolumn:name="nodeLowThresholds",type=string,JSONPath=`.spec.lowThresholds`
 
 // NodeWatermark is the Schema for the nodewatermarks API
 type NodeWatermark struct {

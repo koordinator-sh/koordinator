@@ -14,7 +14,17 @@ spec:
     singular: nodewatermark
   scope: Cluster
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: nodeType
+      type: string
+    - jsonPath: .spec.highThresholds
+      name: nodeHighThresholds
+      type: string
+    - jsonPath: .spec.lowThresholds
+      name: nodeLowThresholds
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: NodeWatermark is the Schema for the nodewatermarks API
