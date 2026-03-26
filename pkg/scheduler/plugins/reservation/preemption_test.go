@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
@@ -56,10 +57,10 @@ func Test_newPreemptionMgr(t *testing.T) {
 
 func TestPostFilterWithPreemption(t *testing.T) {
 	preemptionPolicyNever := corev1.PreemptNever
-	testFilterReservationStatus := framework.NewStatus(framework.Unschedulable,
+	testFilterReservationStatus := fwktype.NewStatus(fwktype.Unschedulable,
 		reservationutil.NewReservationReason("Insufficient nvidia.com/gpu"),
 		reservationutil.NewReservationReason("Insufficient koordinator.sh/gpu-mem-ratio"))
-	testFilterReservationStatus1 := framework.NewStatus(framework.Unschedulable,
+	testFilterReservationStatus1 := fwktype.NewStatus(fwktype.Unschedulable,
 		reservationutil.NewReservationReason("Insufficient cpu"),
 		"Insufficient memory")
 	testNode := &corev1.Node{
@@ -137,24 +138,24 @@ func TestPostFilterWithPreemption(t *testing.T) {
 		hasStateData             bool
 		hasAffinity              bool
 		nodeReservationDiagnosis map[string]*nodeDiagnosisState
-		filteredNodeStatusMap    framework.NodeToStatusMap
+		filteredNodeStatusMap    *framework.NodeToStatus
 		enablePreemption         bool
 	}
 	tests := []struct {
 		name   string
 		fields fields
 		args   args
-		want   *framework.PostFilterResult
-		want1  *framework.Status
+		want   *fwktype.PostFilterResult
+		want1  *fwktype.Status
 	}{
 		{
 			name: "no reservation filtering",
 			args: args{
 				hasStateData:          false,
-				filteredNodeStatusMap: framework.NodeToStatusMap{},
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{}, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable)),
 			},
 			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable),
+			want1: fwktype.NewStatus(fwktype.Unschedulable),
 		},
 		{
 			name: "show reservation reasons without preemption",
@@ -172,14 +173,14 @@ func TestPostFilterWithPreemption(t *testing.T) {
 						affinityUnmatched:        0,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": testFilterReservationStatus,
 					"test-node-1": testFilterReservationStatus1,
-				},
+				}, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable)),
 				enablePreemption: false,
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"1 Reservation(s) didn't match affinity rules",
 				"1 Reservation(s) is unschedulable",
 				"1 Reservation(s) for node reason that Insufficient memory",
@@ -215,14 +216,14 @@ func TestPostFilterWithPreemption(t *testing.T) {
 						affinityUnmatched:        0,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": testFilterReservationStatus,
 					"test-node-1": testFilterReservationStatus1,
-				},
+				}, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable)),
 				enablePreemption: true,
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"preemption: not eligible due to preemptionPolicy=Never.",
 				"1 Reservation(s) didn't match affinity rules",
 				"1 Reservation(s) is unschedulable",
@@ -380,9 +381,9 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 		reservations []*schedulingv1alpha1.Reservation
 	}
 	type args struct {
-		state    *framework.CycleState
+		state    fwktype.CycleState
 		pod      *corev1.Pod
-		nodeInfo *framework.NodeInfo
+		nodeInfo fwktype.NodeInfo
 		pdbs     []*policy.PodDisruptionBudget
 	}
 	tests := []struct {
@@ -391,7 +392,7 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 		args   args
 		want   []*corev1.Pod
 		want1  int
-		want2  *framework.Status
+		want2  *fwktype.Status
 	}{
 		{
 			name: "reserve pod preempt successfully",
@@ -413,12 +414,12 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 			args: args{
 				state:    framework.NewCycleState(),
 				pod:      testReservePod,
-				nodeInfo: testNodeInfo.Clone(),
+				nodeInfo: testNodeInfo,
 				pdbs:     nil,
 			},
 			want:  nil,
 			want1: 0,
-			want2: framework.NewStatus(framework.Success),
+			want2: fwktype.NewStatus(fwktype.Success),
 		},
 		{
 			name: "compatible to pod preemption",
@@ -433,12 +434,12 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 			args: args{
 				state:    framework.NewCycleState(),
 				pod:      testHPPod,
-				nodeInfo: testNodeInfo1.Clone(),
+				nodeInfo: testNodeInfo1,
 				pdbs:     nil,
 			},
 			want:  nil,
 			want1: 0,
-			want2: framework.NewStatus(framework.Success),
+			want2: fwktype.NewStatus(fwktype.Success),
 		},
 	}
 	for _, tt := range tests {
@@ -474,4 +475,282 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 			assert.Equal(t, tt.want2, got2)
 		})
 	}
+}
+
+func TestFilterPodsWithPDBViolation(t *testing.T) {
+	tests := []struct {
+		name                  string
+		podInfos              []fwktype.PodInfo
+		pdbs                  []*policy.PodDisruptionBudget
+		wantViolatingCount    int
+		wantNonViolatingCount int
+	}{
+		{
+			name: "no PDBs",
+			podInfos: func() []fwktype.PodInfo {
+				pi, _ := framework.NewPodInfo(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod1",
+						Namespace: "default",
+						Labels:    map[string]string{"app": "test"},
+					},
+				})
+				return []fwktype.PodInfo{pi}
+			}(),
+			pdbs:                  nil,
+			wantViolatingCount:    0,
+			wantNonViolatingCount: 1,
+		},
+		{
+			name: "PDB not violated",
+			podInfos: func() []fwktype.PodInfo {
+				pi, _ := framework.NewPodInfo(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod1",
+						Namespace: "default",
+						Labels:    map[string]string{"app": "test"},
+					},
+				})
+				return []fwktype.PodInfo{pi}
+			}(),
+			pdbs: []*policy.PodDisruptionBudget{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pdb1",
+						Namespace: "default",
+					},
+					Spec: policy.PodDisruptionBudgetSpec{
+						Selector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "test"},
+						},
+					},
+					Status: policy.PodDisruptionBudgetStatus{
+						DisruptionsAllowed: 1,
+					},
+				},
+			},
+			wantViolatingCount:    0,
+			wantNonViolatingCount: 1,
+		},
+		{
+			name: "PDB violated",
+			podInfos: func() []fwktype.PodInfo {
+				pi1, _ := framework.NewPodInfo(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod1",
+						Namespace: "default",
+						Labels:    map[string]string{"app": "test"},
+					},
+				})
+				pi2, _ := framework.NewPodInfo(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod2",
+						Namespace: "default",
+						Labels:    map[string]string{"app": "test"},
+					},
+				})
+				return []fwktype.PodInfo{pi1, pi2}
+			}(),
+			pdbs: []*policy.PodDisruptionBudget{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pdb1",
+						Namespace: "default",
+					},
+					Spec: policy.PodDisruptionBudgetSpec{
+						Selector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "test"},
+						},
+					},
+					Status: policy.PodDisruptionBudgetStatus{
+						DisruptionsAllowed: 0,
+					},
+				},
+			},
+			wantViolatingCount:    2,
+			wantNonViolatingCount: 0,
+		},
+		{
+			name: "pod with no labels",
+			podInfos: func() []fwktype.PodInfo {
+				pi, _ := framework.NewPodInfo(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod1",
+						Namespace: "default",
+					},
+				})
+				return []fwktype.PodInfo{pi}
+			}(),
+			pdbs: []*policy.PodDisruptionBudget{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pdb1",
+						Namespace: "default",
+					},
+					Spec: policy.PodDisruptionBudgetSpec{
+						Selector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "test"},
+						},
+					},
+					Status: policy.PodDisruptionBudgetStatus{
+						DisruptionsAllowed: 0,
+					},
+				},
+			},
+			wantViolatingCount:    0,
+			wantNonViolatingCount: 1,
+		},
+		{
+			name: "PDB with invalid selector",
+			podInfos: func() []fwktype.PodInfo {
+				pi, _ := framework.NewPodInfo(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod1",
+						Namespace: "default",
+						Labels:    map[string]string{"app": "test"},
+					},
+				})
+				return []fwktype.PodInfo{pi}
+			}(),
+			pdbs: []*policy.PodDisruptionBudget{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pdb1",
+						Namespace: "default",
+					},
+					Spec: policy.PodDisruptionBudgetSpec{
+						Selector: &metav1.LabelSelector{
+							MatchExpressions: []metav1.LabelSelectorRequirement{
+								{
+									Key:      "app",
+									Operator: metav1.LabelSelectorOperator("InvalidOperator"),
+									Values:   []string{"test"},
+								},
+							},
+						},
+					},
+					Status: policy.PodDisruptionBudgetStatus{
+						DisruptionsAllowed: 0,
+					},
+				},
+			},
+			wantViolatingCount:    0,
+			wantNonViolatingCount: 1,
+		},
+		{
+			name: "PDB with empty selector",
+			podInfos: func() []fwktype.PodInfo {
+				pi, _ := framework.NewPodInfo(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod1",
+						Namespace: "default",
+						Labels:    map[string]string{"app": "test"},
+					},
+				})
+				return []fwktype.PodInfo{pi}
+			}(),
+			pdbs: []*policy.PodDisruptionBudget{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pdb1",
+						Namespace: "default",
+					},
+					Spec: policy.PodDisruptionBudgetSpec{
+						Selector: &metav1.LabelSelector{},
+					},
+					Status: policy.PodDisruptionBudgetStatus{
+						DisruptionsAllowed: 0,
+					},
+				},
+			},
+			wantViolatingCount:    0,
+			wantNonViolatingCount: 1,
+		},
+		{
+			name: "pod in DisruptedPods",
+			podInfos: func() []fwktype.PodInfo {
+				pi, _ := framework.NewPodInfo(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod1",
+						Namespace: "default",
+						Labels:    map[string]string{"app": "test"},
+					},
+				})
+				return []fwktype.PodInfo{pi}
+			}(),
+			pdbs: []*policy.PodDisruptionBudget{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pdb1",
+						Namespace: "default",
+					},
+					Spec: policy.PodDisruptionBudgetSpec{
+						Selector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "test"},
+						},
+					},
+					Status: policy.PodDisruptionBudgetStatus{
+						DisruptionsAllowed: 0,
+						DisruptedPods: map[string]metav1.Time{
+							"pod1": {},
+						},
+					},
+				},
+			},
+			wantViolatingCount:    0,
+			wantNonViolatingCount: 1,
+		},
+		{
+			name: "PDB namespace mismatch",
+			podInfos: func() []fwktype.PodInfo {
+				pi, _ := framework.NewPodInfo(&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod1",
+						Namespace: "other-ns",
+						Labels:    map[string]string{"app": "test"},
+					},
+				})
+				return []fwktype.PodInfo{pi}
+			}(),
+			pdbs: []*policy.PodDisruptionBudget{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pdb1",
+						Namespace: "default",
+					},
+					Spec: policy.PodDisruptionBudgetSpec{
+						Selector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"app": "test"},
+						},
+					},
+					Status: policy.PodDisruptionBudgetStatus{
+						DisruptionsAllowed: 0,
+					},
+				},
+			},
+			wantViolatingCount:    0,
+			wantNonViolatingCount: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			violating, nonViolating := filterPodsWithPDBViolation(tt.podInfos, tt.pdbs)
+			assert.Equal(t, tt.wantViolatingCount, len(violating))
+			assert.Equal(t, tt.wantNonViolatingCount, len(nonViolating))
+		})
+	}
+}
+
+func TestOrderedScoreFuncs(t *testing.T) {
+	suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+		args.EnablePreemption = true
+	})
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl, ok := p.(*Plugin)
+	assert.True(t, ok)
+
+	// OrderedScoreFuncs should always return nil
+	result := pl.preemptionMgr.OrderedScoreFuncs(context.TODO(), nil)
+	assert.Nil(t, result)
 }

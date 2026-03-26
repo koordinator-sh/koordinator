@@ -30,6 +30,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -42,7 +43,7 @@ import (
 
 type ResourceManager interface {
 	GetTopologyHints(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions, policy apiext.NUMATopologyPolicy, restoreState *nodeReservationRestoreStateData) (map[string][]topologymanager.NUMATopologyHint, error)
-	Allocate(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (*PodAllocation, *framework.Status)
+	Allocate(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (*PodAllocation, *fwktype.Status)
 
 	Update(nodeName string, allocation *PodAllocation)
 	Release(nodeName string, podUID types.UID)
@@ -81,7 +82,7 @@ type resourceManager struct {
 }
 
 func NewResourceManager(
-	handle framework.Handle,
+	handle fwktype.Handle,
 	defaultNUMAAllocateStrategy schedulingconfig.NUMAAllocateStrategy,
 	topologyOptionsManager TopologyOptionsManager,
 ) ResourceManager {
@@ -193,7 +194,7 @@ func (c *resourceManager) trimNUMANodeResources(nodeName string, totalAvailable 
 }
 
 // Allocate NUMA resources and CPUSet for the normal pod or reserve pod.
-func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (*PodAllocation, *framework.Status) {
+func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) (*PodAllocation, *fwktype.Status) {
 	allocation := &PodAllocation{
 		UID:                pod.UID,
 		Namespace:          pod.Namespace,
@@ -217,7 +218,7 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 		cpus, err := c.allocateCPUSet(node, pod, allocation.NUMANodeResources, options)
 		if err != nil {
 			klog.V(4).Infof("allocateCPUSet for pod %s on node %s, allocation.NUMANodeResources %+v, failed: %v", klog.KObj(pod), node.Name, allocation.NUMANodeResources, err)
-			return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+			return nil, fwktype.NewStatus(fwktype.Unschedulable, err.Error())
 		}
 		if cpus.IsEmpty() {
 			klog.Warningf("succeed allocateCPUSet but allocatedCPUs empty, options: %+v, allocation.NUMANodeResources: %+v", options, allocation.NUMANodeResources)
@@ -227,9 +228,9 @@ func (c *resourceManager) Allocate(node *corev1.Node, pod *corev1.Pod, options *
 	return allocation, nil
 }
 
-func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) ([]NUMANodeResource, *framework.Status) {
+func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions) ([]NUMANodeResource, *fwktype.Status) {
 	if len(options.topologyOptions.NUMANodeResources) == 0 {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, "insufficient resources on NUMA Node")
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "insufficient resources on NUMA Node")
 	}
 	if klog.V(6).Enabled() {
 		logStruct(reflect.ValueOf(options), fmt.Sprintf("options for pod pod %s on node %s", klog.KObj(pod), node.Name), 6)
@@ -239,11 +240,11 @@ func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1
 		var err error
 		totalAvailable, _, err = c.getAvailableNUMANodeResources(node.Name, options.topologyOptions, options.reusableResources)
 		if err != nil {
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 		}
 	}
 	if err := c.trimNUMANodeResources(node.Name, totalAvailable, options); err != nil {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 
 	var requests corev1.ResourceList
@@ -255,7 +256,7 @@ func (c *resourceManager) allocateResourcesByHint(node *corev1.Node, pod *corev1
 
 	result, reasons := tryBestToDistributeEvenly(requests, totalAvailable, options)
 	if len(reasons) > 0 {
-		return nil, framework.NewStatus(framework.Unschedulable, reasons...)
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, reasons...)
 	}
 	return result, nil
 }
@@ -381,7 +382,7 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, all
 			"pod", klog.KObj(pod), "node", node.Name, "numCPUsNeeded", options.numCPUsNeeded,
 			"preferredCPUs", options.preferredCPUs, "preemptibleCPUs", options.preemptibleCPUs,
 			"availableCPUs", availableCPUs, "cpuBindPolicy", options.cpuBindPolicy)
-		return empty, fmt.Errorf(ErrNotEnoughCPUs)
+		return empty, errors.New(ErrNotEnoughCPUs)
 	}
 
 	result := cpuset.CPUSet{}
@@ -423,7 +424,7 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, all
 			klog.V(5).InfoS("failed to allocateCPUSet for pod, CPUs taken not enough on NUMA nodes",
 				"pod", klog.KObj(pod), "node", node.Name,
 				"result", result.String(), "needed CPUs remain", numCPUsNeeded)
-			return empty, fmt.Errorf(ErrNotEnoughCPUs)
+			return empty, errors.New(ErrNotEnoughCPUs)
 		}
 	}
 

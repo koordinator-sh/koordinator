@@ -24,7 +24,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -118,7 +118,7 @@ func getCPUBindPolicy(topologyOptions *TopologyOptions, node *corev1.Node, requi
 	return cpuBindPolicy, required, nil
 }
 
-func requestCPUBind(state *preFilterState, nodeCPUBindPolicy extension.NodeCPUBindPolicy) (bool, *framework.Status) {
+func requestCPUBind(state *preFilterState, nodeCPUBindPolicy extension.NodeCPUBindPolicy) (bool, *fwktype.Status) {
 	if state.requestCPUBind {
 		return true, nil
 	}
@@ -130,7 +130,7 @@ func requestCPUBind(state *preFilterState, nodeCPUBindPolicy extension.NodeCPUBi
 
 	if nodeCPUBindPolicy != "" && nodeCPUBindPolicy != extension.NodeCPUBindPolicyNone {
 		if requestedCPU%1000 != 0 {
-			return false, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidRequestedCPUs)
+			return false, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidRequestedCPUs)
 		}
 		return true, nil
 	}

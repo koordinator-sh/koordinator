@@ -28,14 +28,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler"
-
-	"github.com/docker/docker/api/types"
+	dockertypessystem "github.com/docker/docker/api/types/system"
 	dclient "github.com/docker/docker/client"
 	"github.com/prashantv/gostub"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/runtime/handler"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -188,7 +187,7 @@ func Test_GetRuntimeHandler(t *testing.T) {
 func dockerStub() *gostub.Stubs {
 	return gostub.Stub(&handler.GetDockerClient, func(httpClient *http.Client, endPoint string) (*dclient.Client, error) {
 		info := func(req *http.Request) (*http.Response, error) {
-			b, err := json.Marshal(types.Info{})
+			b, err := json.Marshal(dockertypessystem.Info{})
 			if err != nil {
 				return nil, err
 			}

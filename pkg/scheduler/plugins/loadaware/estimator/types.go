@@ -18,12 +18,12 @@ package estimator
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
-type FactoryFn func(args *config.LoadAwareSchedulingArgs, handle framework.Handle) (Estimator, error)
+type FactoryFn func(args *config.LoadAwareSchedulingArgs, handle fwktype.Handle) (Estimator, error)
 
 var Estimators = map[string]FactoryFn{
 	defaultEstimatorName: NewDefaultEstimator,
@@ -35,7 +35,7 @@ type Estimator interface {
 	EstimateNode(node *corev1.Node) (corev1.ResourceList, error)
 }
 
-func NewEstimator(args *config.LoadAwareSchedulingArgs, handle framework.Handle) (Estimator, error) {
+func NewEstimator(args *config.LoadAwareSchedulingArgs, handle fwktype.Handle) (Estimator, error) {
 	factoryFn := Estimators[args.Estimator]
 	if factoryFn == nil {
 		factoryFn = NewDefaultEstimator

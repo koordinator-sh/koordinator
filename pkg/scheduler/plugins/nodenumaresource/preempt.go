@@ -22,7 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
@@ -108,7 +108,7 @@ func (ns *preemptibleNodeState) Clone() *preemptibleNodeState {
 	return stateCopy
 }
 
-func (p *Plugin) AddPod(_ context.Context, cycleState *framework.CycleState, preemptor *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (p *Plugin) AddPod(_ context.Context, cycleState fwktype.CycleState, preemptor *corev1.Pod, podInfoToAdd fwktype.PodInfo, nodeInfo fwktype.NodeInfo) *fwktype.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -116,11 +116,11 @@ func (p *Plugin) AddPod(_ context.Context, cycleState *framework.CycleState, pre
 	if state.skip {
 		return nil
 	}
-	if podInfoToAdd == nil || podInfoToAdd.Pod == nil {
+	if podInfoToAdd == nil || podInfoToAdd.GetPod() == nil {
 		return nil
 	}
 
-	pod := podInfoToAdd.Pod
+	pod := podInfoToAdd.GetPod()
 	nodeName := nodeInfo.Node().Name
 	podAllocatedCPUs, podAllocatedNUMAResources := p.getPodAllocated(pod, nodeName)
 	if podAllocatedCPUs.IsEmpty() && len(podAllocatedNUMAResources) == 0 {
@@ -164,7 +164,7 @@ func (p *Plugin) AddPod(_ context.Context, cycleState *framework.CycleState, pre
 	return nil
 }
 
-func (p *Plugin) RemovePod(_ context.Context, cycleState *framework.CycleState, preemptor *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (p *Plugin) RemovePod(_ context.Context, cycleState fwktype.CycleState, preemptor *corev1.Pod, podInfoToRemove fwktype.PodInfo, nodeInfo fwktype.NodeInfo) *fwktype.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -172,11 +172,11 @@ func (p *Plugin) RemovePod(_ context.Context, cycleState *framework.CycleState, 
 	if state.skip {
 		return nil
 	}
-	if podInfoToRemove == nil || podInfoToRemove.Pod == nil {
+	if podInfoToRemove == nil || podInfoToRemove.GetPod() == nil {
 		return nil
 	}
 
-	pod := podInfoToRemove.Pod
+	pod := podInfoToRemove.GetPod()
 	nodeName := nodeInfo.Node().Name
 	podAllocatedCPUs, podAllocatedNUMAResources := p.getPodAllocated(pod, nodeName)
 	if podAllocatedCPUs.IsEmpty() && len(podAllocatedNUMAResources) == 0 {

@@ -16,11 +16,11 @@ limitations under the License.
 
 package hinter
 
-import "k8s.io/kubernetes/pkg/scheduler/framework"
+import fwktype "k8s.io/kube-scheduler/framework"
 
 const SchedulingHintStateKey = "SchedulingHintState"
 
-var _ framework.StateData = &SchedulingHintStateData{}
+var _ fwktype.StateData = &SchedulingHintStateData{}
 
 type SchedulingHintStateData struct {
 	PreFilterNodes []string // hint to preFilter node
@@ -28,7 +28,7 @@ type SchedulingHintStateData struct {
 	Extensions     map[string]interface{}
 }
 
-func (a *SchedulingHintStateData) Clone() framework.StateData {
+func (a *SchedulingHintStateData) Clone() fwktype.StateData {
 	return &SchedulingHintStateData{
 		PreFilterNodes: a.PreFilterNodes,
 		PreferredNodes: a.PreferredNodes,
@@ -36,7 +36,7 @@ func (a *SchedulingHintStateData) Clone() framework.StateData {
 	}
 }
 
-func GetSchedulingHintState(cycleState *framework.CycleState) *SchedulingHintStateData {
+func GetSchedulingHintState(cycleState fwktype.CycleState) *SchedulingHintStateData {
 	stateData, err := cycleState.Read(SchedulingHintStateKey)
 	if err != nil {
 		return nil
@@ -44,6 +44,6 @@ func GetSchedulingHintState(cycleState *framework.CycleState) *SchedulingHintSta
 	return stateData.(*SchedulingHintStateData)
 }
 
-func SetSchedulingHintState(cycleState *framework.CycleState, data *SchedulingHintStateData) {
+func SetSchedulingHintState(cycleState fwktype.CycleState, data *SchedulingHintStateData) {
 	cycleState.Write(SchedulingHintStateKey, data)
 }

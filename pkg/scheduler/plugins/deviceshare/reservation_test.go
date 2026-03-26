@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
@@ -38,7 +39,7 @@ import (
 
 func Test_Plugin_ReservationRestore(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
@@ -61,7 +62,7 @@ func Test_Plugin_ReservationRestore(t *testing.T) {
 			},
 		},
 	}
-	_, status := pl.PreFilter(context.TODO(), cycleState, pod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 	assert.True(t, status.IsSuccess())
 
 	pl.nodeDeviceCache.updateNodeDevice("test-node-1", &schedulingv1alpha1.Device{
@@ -225,7 +226,7 @@ func Test_Plugin_ReservationRestore(t *testing.T) {
 
 func Test_Plugin_RestoreReservationPreAllocation(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
@@ -512,7 +513,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 		requiredFromReservation bool
 		pod                     *corev1.Pod
 		wantResult              apiext.DeviceAllocations
-		wantStatus              *framework.Status
+		wantStatus              *fwktype.Status
 	}{
 		{
 			name: "no matched reservations",
@@ -733,7 +734,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			},
 			requiredFromReservation: true,
 			wantResult:              nil,
-			wantStatus:              framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"),
+			wantStatus:              fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient gpu devices"),
 		},
 		{
 			name: "failed to allocate from Aligned policy reservation that remaining little not fits request",
@@ -776,7 +777,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			},
 			requiredFromReservation: true,
 			wantResult:              nil,
-			wantStatus:              framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"),
+			wantStatus:              fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient gpu devices"),
 		},
 		{
 			name: "allocate from Restricted policy reservation",
@@ -860,7 +861,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			},
 			requiredFromReservation: true,
 			wantResult:              nil,
-			wantStatus:              framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient gpu devices"),
+			wantStatus:              fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient gpu devices"),
 		},
 		{
 			name: "allocate from Restricted policy reservation with reservation-ignored pods",
@@ -1005,7 +1006,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 				},
 			},
 			wantResult: nil,
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient gpu devices"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient gpu devices"),
 		},
 		{
 			name: "allocate from restricted reservation with pre-allocatable pod - success",
@@ -1255,7 +1256,7 @@ func Test_allocateWithNominated(t *testing.T) {
 			// Each subtest gets its own isolated plugin instance, device cache, and rInfo
 			// to avoid any shared-state races between subtests or background goroutines.
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 

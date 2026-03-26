@@ -22,7 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -41,10 +41,10 @@ type DefaultDeviceHandler struct {
 	resourceName corev1.ResourceName
 }
 
-func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint, state *preFilterState) (corev1.ResourceList, int, *framework.Status) {
+func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint, state *preFilterState) (corev1.ResourceList, int, *fwktype.Status) {
 	totalDevices := nodeDevice.deviceTotal[h.deviceType]
 	if len(totalDevices) == 0 {
-		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
+		return nil, 0, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
 	}
 
 	requests := podRequests
@@ -64,7 +64,7 @@ func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(node *corev1.Node, po
 			if hint.Selector != nil {
 				selector, err := util.GetFastLabelSelector(hint.Selector)
 				if err != nil {
-					return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("invalid Selector of DeviceHint, deviceType: %s, err: %s", h.deviceType, err.Error()))
+					return nil, 0, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("invalid Selector of DeviceHint, deviceType: %s, err: %s", h.deviceType, err.Error()))
 				}
 
 				matched := 0
@@ -76,7 +76,7 @@ func (h *DefaultDeviceHandler) CalcDesiredRequestsAndCount(node *corev1.Node, po
 				desiredCount = int64(matched)
 			}
 			if desiredCount == 0 {
-				return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
+				return nil, 0, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", h.deviceType))
 			}
 		case apiext.RequestsAsCountAllocateStrategy:
 			desiredCount = quantity.Value()

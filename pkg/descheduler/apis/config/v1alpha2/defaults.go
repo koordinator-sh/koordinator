@@ -17,7 +17,6 @@ limitations under the License.
 package v1alpha2
 
 import (
-	"k8s.io/utils/pointer"
 	"net"
 	"strconv"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	componentbaseconfigv1alpha1 "k8s.io/component-base/config/v1alpha1"
+	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"

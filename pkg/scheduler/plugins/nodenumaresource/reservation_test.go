@@ -129,7 +129,7 @@ func TestPlugin_RestoreReservationPreAllocation(t *testing.T) {
 				},
 			}
 			suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NoError(t, err)
 			assert.NotNil(t, p)
 
@@ -280,7 +280,7 @@ func TestPlugin_AllocateReservationPreAllocationFromPreAllocatablePods(t *testin
 	}
 
 	suit := newPluginTestSuit(t, []*corev1.Pod{preAllocatablePod}, []*corev1.Node{node})
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
 	assert.NotNil(t, p)
 
@@ -376,7 +376,7 @@ func TestPlugin_AllocateReservationPreAllocationFromPreAllocatablePods(t *testin
 	cycleState := framework.NewCycleState()
 
 	// Step 1: PreFilter for reservation
-	_, status := pl.PreFilter(context.TODO(), cycleState, reservePod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, reservePod, nil)
 	assert.True(t, status.IsSuccess(), "PreFilter should succeed")
 
 	// Step 2: PreRestoreReservationPreAllocation
@@ -502,7 +502,7 @@ func TestPlugin_PreAllocationWithMultiplePreAllocatablePods(t *testing.T) {
 	}
 
 	suit := newPluginTestSuit(t, []*corev1.Pod{pod1, pod2}, []*corev1.Node{node})
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
 	assert.NotNil(t, p)
 
@@ -655,7 +655,7 @@ func TestPlugin_FilterNominateReservationPreAllocation(t *testing.T) {
 	}
 
 	suit := newPluginTestSuit(t, []*corev1.Pod{preAllocatablePod}, []*corev1.Node{node})
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
 	assert.NotNil(t, p)
 
@@ -743,7 +743,7 @@ func TestPlugin_FilterNominateReservationPreAllocation(t *testing.T) {
 	cycleState := framework.NewCycleState()
 
 	// Step 1: PreFilter for reservation
-	_, status := pl.PreFilter(context.TODO(), cycleState, reservePod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, reservePod, nil)
 	assert.True(t, status.IsSuccess(), "PreFilter should succeed")
 
 	// Step 2: Restore pre-allocatable pods
@@ -797,7 +797,7 @@ func TestPlugin_GetNominatedReusableAlloc(t *testing.T) {
 	}
 
 	suit := newPluginTestSuit(t, []*corev1.Pod{preAllocatablePod}, []*corev1.Node{node})
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
 	assert.NotNil(t, p)
 

@@ -39,10 +39,10 @@ const (
 
 type SLOControllerPlugin struct {
 	client  ctrlclient.Client
-	decoder *ctrladmission.Decoder
+	decoder ctrladmission.Decoder
 }
 
-func NewPlugin(decoder *ctrladmission.Decoder, client ctrlclient.Client) *SLOControllerPlugin {
+func NewPlugin(decoder ctrladmission.Decoder, client ctrlclient.Client) *SLOControllerPlugin {
 	return &SLOControllerPlugin{client: client, decoder: decoder}
 }
 

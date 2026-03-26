@@ -17,6 +17,7 @@ limitations under the License.
 package elasticquota
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -36,7 +37,7 @@ func TestPlugin_OnPodAddAndDeleteWhenDisableDefault(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisableDefaultQuota, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 
@@ -75,7 +76,7 @@ func TestPlugin_OnPodUpdateWhenDisableDefault(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisableDefaultQuota, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 
@@ -118,7 +119,7 @@ func TestPlugin_OnPodUpdateWhenDisableDefaultAndRootTree(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 
@@ -179,7 +180,7 @@ func TestPlugin_OnPodDelete(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisableDefaultQuota, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 

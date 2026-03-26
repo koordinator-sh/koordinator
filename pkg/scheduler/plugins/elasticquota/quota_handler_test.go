@@ -17,6 +17,7 @@ limitations under the License.
 package elasticquota
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestPlugin_OnQuotaAddWithTreeID(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 
@@ -73,7 +74,7 @@ func TestPlugin_OnQuotaUpdateAndDeleteWithTreeID(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 
@@ -237,7 +238,7 @@ func TestPlugin_OnRootQuotaAddAndUpdate(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 
@@ -305,7 +306,7 @@ func TestPlugin_HandlerQuotaWhenRoot(t *testing.T) {
 
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 
@@ -342,7 +343,7 @@ func TestPlugin_ReplaceQuotas(t *testing.T) {
 	}
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 

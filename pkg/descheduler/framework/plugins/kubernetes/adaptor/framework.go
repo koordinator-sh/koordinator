@@ -20,8 +20,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
+	metricscollector "sigs.k8s.io/descheduler/pkg/descheduler/metricscollector"
 	podutil "sigs.k8s.io/descheduler/pkg/descheduler/pod"
 	k8sdeschedulerframework "sigs.k8s.io/descheduler/pkg/framework/types"
+
+	promapi "github.com/prometheus/client_golang/api"
 
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 )
@@ -60,4 +63,19 @@ func (a *frameworkHandleAdaptor) GetPodsAssignedToNodeFunc() podutil.GetPodsAssi
 
 func (a *frameworkHandleAdaptor) SharedInformerFactory() informers.SharedInformerFactory {
 	return a.handle.SharedInformerFactory()
+}
+
+// MetricsCollector returns nil as this adaptor does not support metrics collection.
+func (a *frameworkHandleAdaptor) MetricsCollector() *metricscollector.MetricsCollector {
+	return nil
+}
+
+// PluginInstanceID returns a unique identifier for this plugin instance.
+func (a *frameworkHandleAdaptor) PluginInstanceID() string {
+	return ""
+}
+
+// PrometheusClient returns nil as this adaptor does not support prometheus.
+func (a *frameworkHandleAdaptor) PrometheusClient() promapi.Client {
+	return nil
 }
