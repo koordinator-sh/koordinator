@@ -22,7 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -57,7 +57,7 @@ type reusableAlloc struct {
 	remained       map[schedulingv1alpha1.DeviceType]deviceResources
 }
 
-func getReservationRestoreState(cycleState *framework.CycleState) *reservationRestoreStateData {
+func getReservationRestoreState(cycleState fwktype.CycleState) *reservationRestoreStateData {
 	var state *reservationRestoreStateData
 	value, err := cycleState.Read(reservationRestoreStateKey)
 	if err == nil {
@@ -72,11 +72,11 @@ func getReservationRestoreState(cycleState *framework.CycleState) *reservationRe
 	return state
 }
 
-func cleanReservationRestoreState(cycleState *framework.CycleState) {
+func cleanReservationRestoreState(cycleState fwktype.CycleState) {
 	cycleState.Delete(reservationRestoreStateKey)
 }
 
-func (s *reservationRestoreStateData) Clone() framework.StateData {
+func (s *reservationRestoreStateData) Clone() fwktype.StateData {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s
@@ -125,10 +125,10 @@ func (rs *nodeReservationRestoreStateData) mergeReservationAllocations() {
 	return
 }
 
-func (p *Plugin) PreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (p *Plugin) PreRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status {
 	requests, err := GetPodDeviceRequests(pod)
 	if err != nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 	state := getReservationRestoreState(cycleState)
 	state.skip = len(requests) == 0
@@ -136,7 +136,7 @@ func (p *Plugin) PreRestoreReservation(ctx context.Context, cycleState *framewor
 	return nil
 }
 
-func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*frameworkext.ReservationInfo, unmatched []*frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status) {
+func (p *Plugin) RestoreReservation(ctx context.Context, cycleState fwktype.CycleState, podToSchedule *corev1.Pod, matched []*frameworkext.ReservationInfo, unmatched []*frameworkext.ReservationInfo, nodeInfo fwktype.NodeInfo) (interface{}, *fwktype.Status) {
 	state := getReservationRestoreState(cycleState)
 	if state.skip {
 		return nil, nil
@@ -197,10 +197,10 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 	return s, nil
 }
 
-func (p *Plugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *frameworkext.ReservationInfo) *framework.Status {
+func (p *Plugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, r *frameworkext.ReservationInfo) *fwktype.Status {
 	requests, err := GetPodDeviceRequests(r.GetReservePod())
 	if err != nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 	state := getReservationRestoreState(cycleState)
 	state.skip = len(requests) == 0
@@ -208,7 +208,7 @@ func (p *Plugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleSt
 	return nil
 }
 
-func (p *Plugin) RestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *frameworkext.ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status) {
+func (p *Plugin) RestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, r *frameworkext.ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo fwktype.NodeInfo) (interface{}, *fwktype.Status) {
 	// retrieve reusable for pre-allocatable pods
 	state := getReservationRestoreState(cycleState)
 	if state.skip {
@@ -266,7 +266,7 @@ func (p *Plugin) RestoreReservationPreAllocation(ctx context.Context, cycleState
 }
 
 // DEPRECATED
-func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeToStates frameworkext.NodeReservationRestoreStates) *framework.Status {
+func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeToStates frameworkext.NodeReservationRestoreStates) *fwktype.Status {
 	state := getReservationRestoreState(cycleState)
 	if state.skip {
 		return nil
@@ -284,7 +284,7 @@ func (p *Plugin) tryAllocateFromReusable(
 	node *corev1.Node,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
 	requiredFromReservation bool,
-) (apiext.DeviceAllocations, *framework.Status) {
+) (apiext.DeviceAllocations, *fwktype.Status) {
 	if len(matchedReusableAllocs) == 0 {
 		return nil, nil
 	}
@@ -295,13 +295,13 @@ func (p *Plugin) tryAllocateFromReusable(
 
 	var hasSatisfiedReservation bool
 	var result apiext.DeviceAllocations
-	var status *framework.Status
+	var status *fwktype.Status
 
 	basicPreemptible = appendAllocated(nil, basicPreemptible, restoreState.mergedMatchedAllocated)
 
 	isPreAllocation := restoreState.preAllocationRInfo != nil // use the cycle state to avoid misunderstanding
 
-	var reservationReasons []*framework.Status
+	var reservationReasons []*fwktype.Status
 	for _, alloc := range matchedReusableAllocs {
 		rInfo := alloc.rInfo
 		preemptibleInRR := state.preemptibleInRRs[node.Name][rInfo.UID()]
@@ -356,7 +356,7 @@ func (p *Plugin) tryAllocateFromReusable(
 			// For pre-allocation, validate that the allocated devices include all devices from the pre-allocatable pod
 			if isPreAllocation {
 				if !isDeviceAllocationsInclude(result, alloc.allocatable) {
-					reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, ErrInsufficientGPUDevices))
+					reservationReasons = append(reservationReasons, fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientGPUDevices))
 					if klog.V(5).Enabled() {
 						klog.InfoS("failed to pre-allocate from pod, allocated devices are not a superset of pre-allocatable pod's devices",
 							"reservation", rInfo.GetName(), "pod", klog.KObj(pod), "pre-allocatable", klog.KObj(alloc.preAllocatable),
@@ -371,7 +371,7 @@ func (p *Plugin) tryAllocateFromReusable(
 		}
 	}
 	if !hasSatisfiedReservation && requiredFromReservation {
-		return nil, framework.NewStatus(framework.Unschedulable, p.makeReasonsByReservation(reservationReasons)...)
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, p.makeReasonsByReservation(reservationReasons)...)
 	}
 	return result, nil
 }
@@ -384,7 +384,7 @@ func (p *Plugin) tryAllocateIgnoreReservation(
 	ignoredReservations []reusableAlloc,
 	node *corev1.Node,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
-) (apiext.DeviceAllocations, *framework.Status) {
+) (apiext.DeviceAllocations, *fwktype.Status) {
 	preemptibleFromIgnored := map[schedulingv1alpha1.DeviceType]deviceResources{}
 
 	// accumulate all ignored reserved resources which are not allocated to any owner pods
@@ -398,7 +398,7 @@ func (p *Plugin) tryAllocateIgnoreReservation(
 	return allocator.Allocate(nil, nil, nil, preemptibleFromIgnored)
 }
 
-func (p *Plugin) makeReasonsByReservation(reservationReasons []*framework.Status) []string {
+func (p *Plugin) makeReasonsByReservation(reservationReasons []*fwktype.Status) []string {
 	var reasons []string
 	for _, status := range reservationReasons {
 		for _, r := range status.Reasons() {
@@ -416,7 +416,7 @@ func (p *Plugin) scoreWithReservation(
 	alloc *reusableAlloc,
 	nodeName string,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
-) (int64, *framework.Status) {
+) (int64, *fwktype.Status) {
 	if alloc == nil {
 		return 0, nil
 	}
@@ -461,7 +461,7 @@ func (p *Plugin) allocateWithNominated(
 	node *corev1.Node,
 	pod *corev1.Pod,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
-) (apiext.DeviceAllocations, *framework.Status) {
+) (apiext.DeviceAllocations, *fwktype.Status) {
 	if reservationutil.IsReservePod(pod) && !reservationutil.IsReservePodPreAllocation(pod) {
 		return nil, nil
 	}
@@ -498,7 +498,7 @@ func (p *Plugin) scoreWithNominatedReservation(
 	pod *corev1.Pod,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
 	reservationInfo *frameworkext.ReservationInfo,
-) (int64, *framework.Status) {
+) (int64, *fwktype.Status) {
 	if reservationutil.IsReservePod(pod) || reservationInfo == nil {
 		return 0, nil
 	}
@@ -525,7 +525,7 @@ func (p *Plugin) scoreWithNominatedReservation(
 	return score, status
 }
 
-func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreStateData, pod *corev1.Pod, node *corev1.Node) ([]reusableAlloc, *framework.Status) {
+func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreStateData, pod *corev1.Pod, node *corev1.Node) ([]reusableAlloc, *fwktype.Status) {
 	if !reservationutil.IsReservePod(pod) {
 		reservation := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
 		if reservation == nil {

@@ -531,7 +531,7 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 
 		pciInfo, ret := e.Device.GetPciInfo()
 		if ret != nvml.SUCCESS {
-			klog.Errorf("failed to get pci info of device %s, err: %v", e.ComputeInstanceId, nvml.ErrorString(ret))
+			klog.Errorf("failed to get pci info of device %v, err: %v", e.ComputeInstanceId, nvml.ErrorString(ret))
 			continue
 		}
 		busIDBuilder := &strings.Builder{}
@@ -544,7 +544,7 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 
 		uuid, ret := e.Device.GetUUID()
 		if ret != nvml.SUCCESS {
-			klog.Errorf("failed to get uuid of device %s, err: %v", e.ComputeInstanceId, nvml.ErrorString(ret))
+			klog.Errorf("failed to get uuid of device %v, err: %v", e.ComputeInstanceId, nvml.ErrorString(ret))
 			continue
 		}
 

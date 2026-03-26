@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -219,7 +220,7 @@ func TestPlugin_GetPodTopologyHints(t *testing.T) {
 			_, err := suit.koordClientSet.SchedulingV1alpha1().Devices().Create(context.TODO(), deviceCR, metav1.CreateOptions{})
 			assert.NoError(t, err)
 
-			p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 
 			suit.koordinatorSharedInformerFactory.Start(nil)
@@ -385,7 +386,7 @@ func TestPlugin_Allocate(t *testing.T) {
 			deviceCR.ResourceVersion = "1"
 			_, err := suit.koordClientSet.SchedulingV1alpha1().Devices().Create(context.TODO(), deviceCR, metav1.CreateOptions{})
 			assert.NoError(t, err)
-			p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 
 			suit.koordinatorSharedInformerFactory.Start(nil)
@@ -427,7 +428,7 @@ func Test_generateDesignatedHints(t *testing.T) {
 		name  string
 		args  args
 		want  map[string][]topologymanager.NUMATopologyHint
-		want1 *framework.Status
+		want1 *fwktype.Status
 	}{
 		{
 			name: "generate hints",

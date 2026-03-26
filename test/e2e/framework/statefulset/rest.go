@@ -51,11 +51,11 @@ func CreateStatefulSet(c clientset.Interface, manifestPath, ns string) *appsv1.S
 	svc, err := e2emanifest.SvcFromManifest(mkpath("service.yaml"))
 	framework.ExpectNoError(err)
 
-	framework.Logf(fmt.Sprintf("creating " + ss.Name + " service"))
+	framework.Logf("creating %s service", ss.Name)
 	_, err = c.CoreV1().Services(ns).Create(context.TODO(), svc, metav1.CreateOptions{})
 	framework.ExpectNoError(err)
 
-	framework.Logf(fmt.Sprintf("creating statefulset %v/%v with %d replicas and selector %+v", ss.Namespace, ss.Name, *(ss.Spec.Replicas), ss.Spec.Selector))
+	framework.Logf("creating statefulset %v/%v with %d replicas and selector %+v", ss.Namespace, ss.Name, *(ss.Spec.Replicas), ss.Spec.Selector)
 	_, err = c.AppsV1().StatefulSets(ns).Create(context.TODO(), ss, metav1.CreateOptions{})
 	framework.ExpectNoError(err)
 	WaitForRunningAndReady(c, *ss.Spec.Replicas, ss)

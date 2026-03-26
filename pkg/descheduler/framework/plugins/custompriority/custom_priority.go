@@ -51,7 +51,7 @@ type CustomPriority struct {
 }
 
 // NewCustomPriority builds plugin from its arguments while passing a handle
-func NewCustomPriority(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func NewCustomPriority(_ context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	customPriorityArgs, ok := args.(*deschedulerconfig.CustomPriorityArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type CustomPriorityArgs, got %T", args)

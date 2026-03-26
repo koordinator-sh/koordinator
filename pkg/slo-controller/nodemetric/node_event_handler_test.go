@@ -47,13 +47,13 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 
 	testCases := []struct {
 		name      string
-		fn        func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface)
+		fn        func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request])
 		hasEvent  bool
 		eventName string
 	}{
 		{
 			name: "create node event",
-			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
@@ -67,7 +67,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		},
 		{
 			name: "create event not node",
-			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -80,7 +80,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		},
 		{
 			name: "delete node event",
-			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
@@ -94,7 +94,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		},
 		{
 			name: "delete event not node",
-			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -107,7 +107,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		},
 		{
 			name: "update node event",
-			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
@@ -131,7 +131,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		},
 		{
 			name: "update node event ignore",
-			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
@@ -149,14 +149,14 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		},
 		{
 			name: "generic node event ignore",
-			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Generic(context.TODO(), event.GenericEvent{}, q)
 			},
 			hasEvent: false,
 		},
 		{
 			name: "update node labels",
-			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
@@ -181,7 +181,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 		},
 		{
 			name: "allocatable and labels not updated",
-			fn: func(handler *EnqueueRequestForNode, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNode, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
@@ -217,7 +217,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+			queue := workqueue.NewTypedRateLimitingQueue[reconcile.Request](workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 			handler := &EnqueueRequestForNode{}
 			tc.fn(handler, queue)
 			if tc.hasEvent {
@@ -225,7 +225,7 @@ func Test_EnqueueRequestForNode(t *testing.T) {
 					t.Error("expected event but queue is empty")
 				}
 				e, _ := queue.Get()
-				assert.Equal(tc.eventName, e.(reconcile.Request).Name)
+				assert.Equal(tc.eventName, e.Name)
 			}
 			if !tc.hasEvent && queue.Len() > 0 {
 				e, _ := queue.Get()

@@ -18,7 +18,7 @@ package frameworkext
 
 import (
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 )
 
 var (
@@ -68,7 +68,7 @@ func NewControllersMap() *ControllersMap {
 	}
 }
 
-func (cm *ControllersMap) RegisterControllers(plugin framework.Plugin, profileName string) {
+func (cm *ControllersMap) RegisterControllers(plugin fwktype.Plugin, profileName string) {
 	controllerProvider, ok := plugin.(ControllerProvider)
 	if !ok {
 		return

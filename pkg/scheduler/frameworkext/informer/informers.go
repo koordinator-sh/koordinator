@@ -21,6 +21,8 @@ import (
 
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	resourcev1 "k8s.io/api/resource/v1"
+	resourcev1alpha3 "k8s.io/api/resource/v1alpha3"
 	storagev1 "k8s.io/api/storage/v1"
 	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +30,8 @@ import (
 	"k8s.io/client-go/informers"
 	policyv1informers "k8s.io/client-go/informers/policy/v1"
 	policyv1beta1informers "k8s.io/client-go/informers/policy/v1beta1"
+	resourcev1informers "k8s.io/client-go/informers/resource/v1"
+	resourcev1alpha3informers "k8s.io/client-go/informers/resource/v1alpha3"
 	storagev1informers "k8s.io/client-go/informers/storage/v1"
 	storagev1beta1informers "k8s.io/client-go/informers/storage/v1beta1"
 	clientset "k8s.io/client-go/kubernetes"
@@ -57,6 +61,14 @@ func SetupCustomInformers(informerFactory informers.SharedInformerFactory) {
 }
 
 func setupCompatibleInformers(informerFactory informers.SharedInformerFactory) {
+	if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.DisableDynamicResourceAllocationInformer) {
+		// Clusters below k8s v1.32 do not have resource.k8s.io/v1 APIs (ResourceClaims,
+		// ResourceSlices, DeviceClasses, DeviceTaintRules). When DynamicResourceAllocation
+		// is locked to true in k8s 1.35, we must stub these informers with a fake client
+		// to prevent watch errors like "resourceclaims.resource.k8s.io is forbidden".
+		disableDynamicResourceAllocationInformer(informerFactory)
+	}
+
 	if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.DisableCSIStorageCapacityInformer) {
 		// Versions below k8s v1.22 need to disable CSIStorageCapacity
 		disableCSIStorageCapacityInformer(informerFactory)
@@ -75,6 +87,28 @@ func setupCompatibleInformers(informerFactory informers.SharedInformerFactory) {
 	}
 }
 
+// disableDynamicResourceAllocationInformer stubs out all DRA informers with a fake client
+// so they never connect to the real API server. This is needed for clusters running
+// Kubernetes < 1.32 that do not have the resource.k8s.io/v1 API group.
+func disableDynamicResourceAllocationInformer(informerFactory informers.SharedInformerFactory) {
+	fakeClient := kubefake.NewSimpleClientset()
+	informerFactory.InformerFor(&resourcev1.ResourceClaim{}, func(_ clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+		return resourcev1informers.NewFilteredResourceClaimInformer(fakeClient, metav1.NamespaceAll, resyncPeriod, nil, nil)
+	})
+	informerFactory.InformerFor(&resourcev1.ResourceClaimTemplate{}, func(_ clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+		return resourcev1informers.NewFilteredResourceClaimTemplateInformer(fakeClient, metav1.NamespaceAll, resyncPeriod, nil, nil)
+	})
+	informerFactory.InformerFor(&resourcev1.ResourceSlice{}, func(_ clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+		return resourcev1informers.NewFilteredResourceSliceInformer(fakeClient, resyncPeriod, nil, nil)
+	})
+	informerFactory.InformerFor(&resourcev1.DeviceClass{}, func(_ clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+		return resourcev1informers.NewFilteredDeviceClassInformer(fakeClient, resyncPeriod, nil, nil)
+	})
+	informerFactory.InformerFor(&resourcev1alpha3.DeviceTaintRule{}, func(_ clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+		return resourcev1alpha3informers.NewFilteredDeviceTaintRuleInformer(fakeClient, resyncPeriod, nil, nil)
+	})
+}
+
 func disableCSIStorageCapacityInformer(informerFactory informers.SharedInformerFactory) {
 	informerFactory.InformerFor(&storagev1beta1.CSIStorageCapacity{}, func(k clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
 		fakeClient := kubefake.NewSimpleClientset()
@@ -88,14 +122,15 @@ func disableCSIStorageCapacityInformer(informerFactory informers.SharedInformerF
 }
 
 func setupCompatibleCSICapacityInformer(informerFactory informers.SharedInformerFactory) {
-	informerFactory.InformerFor(&storagev1.CSIStorageCapacity{}, newCSIStorageCapacityInformer)
+	i := informerFactory.InformerFor(&storagev1.CSIStorageCapacity{}, newCSIStorageCapacityInformer)
+	// set transform funcs after the InformerFor
+	if err := i.SetTransform(storagev1beta1CSIStorageCapacityTransformer); err != nil {
+		klog.Fatalf("Failed to SetTransform with storagev1informer, err: %v", err)
+	}
 }
 
 func newCSIStorageCapacityInformer(client clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
 	storageCapacityInformer := storagev1beta1informers.NewFilteredCSIStorageCapacityInformer(client, metav1.NamespaceAll, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, nil)
-	if err := storageCapacityInformer.SetTransform(storagev1beta1CSIStorageCapacityTransformer); err != nil {
-		klog.Fatalf("Failed to SetTransform with storagev1beta1informer, err: %v", err)
-	}
 	return storageCapacityInformer
 }
 
@@ -142,14 +177,15 @@ func disablePodDisruptionBudgetInformer(informerFactory informers.SharedInformer
 }
 
 func setupCompatiblePodDisruptionBudgetInformer(informerFactory informers.SharedInformerFactory) {
-	informerFactory.InformerFor(&policyv1.PodDisruptionBudget{}, newPodDisruptionBudgetInformer)
+	i := informerFactory.InformerFor(&policyv1.PodDisruptionBudget{}, newPodDisruptionBudgetInformer)
+	// set transform funcs after the InformerFor
+	if err := i.SetTransform(policyv1beta1PodDisruptionBudgetTransformer); err != nil {
+		klog.Fatalf("Failed to SetTransform with policyv1informer, err: %v", err)
+	}
 }
 
 func newPodDisruptionBudgetInformer(client clientset.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
 	pdbInformer := policyv1beta1informers.NewFilteredPodDisruptionBudgetInformer(client, metav1.NamespaceAll, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, nil)
-	if err := pdbInformer.SetTransform(policyv1beta1PodDisruptionBudgetTransformer); err != nil {
-		klog.Fatalf("Failed to SetTransform with policyv1beta1informers, err: %v", err)
-	}
 	return pdbInformer
 }
 

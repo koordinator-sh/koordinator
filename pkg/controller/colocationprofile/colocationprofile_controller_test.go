@@ -193,10 +193,6 @@ func TestReconciler_Reconcile(t *testing.T) {
 		},
 	}
 	wantPod := &corev1.Pod{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "Pod",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "default",
 			Name:      "test-pod-1",
@@ -240,10 +236,6 @@ func TestReconciler_Reconcile(t *testing.T) {
 		},
 	}
 	wantPod1 := &corev1.Pod{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "Pod",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "default",
 			Name:      "test-pod-1",

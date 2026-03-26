@@ -22,7 +22,7 @@ import (
 	"github.com/containerd/nri/pkg/api"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
+	"k8s.io/component-helpers/resource"
 
 	runtimeapi "github.com/koordinator-sh/koordinator/apis/runtime/v1alpha1"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"

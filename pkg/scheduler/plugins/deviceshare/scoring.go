@@ -22,8 +22,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -31,18 +31,18 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 )
 
-func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+func (p *Plugin) PreScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) *fwktype.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
 	}
 	if state.skip {
-		return framework.NewStatus(framework.Skip)
+		return fwktype.NewStatus(fwktype.Skip)
 	}
 	return nil
 }
 
-func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+func (p *Plugin) Score(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (int64, *fwktype.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return 0, status
@@ -51,9 +51,10 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, nil
 	}
 
-	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+	nodeName := nodeInfo.Node().Name
+	nodeInfoSnapshot, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
-		return 0, framework.AsStatus(err)
+		return 0, fwktype.AsStatus(err)
 	}
 
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
@@ -67,7 +68,7 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nodeDeviceInfo,
-		node:       nodeInfo.Node(),
+		node:       nodeInfoSnapshot.Node(),
 		pod:        pod,
 		scorer:     p.scorer,
 		numaNodes:  affinity.NUMANodeAffinity,
@@ -102,15 +103,15 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	return score, nil
 }
 
-func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
+func (p *Plugin) ScoreExtensions() fwktype.ScoreExtensions {
 	return p
 }
 
-func (p *Plugin) NormalizeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, scores framework.NodeScoreList) *framework.Status {
-	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, false, scores)
+func (p *Plugin) NormalizeScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, scores fwktype.NodeScoreList) *fwktype.Status {
+	return pluginhelper.DefaultNormalizeScore(fwktype.MaxNodeScore, false, scores)
 }
 
-func (p *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) (int64, *framework.Status) {
+func (p *Plugin) ScoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) (int64, *fwktype.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return 0, status
@@ -121,7 +122,7 @@ func (p *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cyc
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
-		return 0, framework.AsStatus(err)
+		return 0, fwktype.AsStatus(err)
 	}
 
 	reservationRestoreState := getReservationRestoreState(cycleState)
@@ -156,7 +157,7 @@ func (p *Plugin) ReservationScoreExtensions() frameworkext.ReservationScoreExten
 	return p
 }
 
-func (p *Plugin) NormalizeReservationScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, scores frameworkext.ReservationScoreList) *framework.Status {
+func (p *Plugin) NormalizeReservationScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, scores frameworkext.ReservationScoreList) *fwktype.Status {
 	return frameworkext.DefaultReservationNormalizeScore(frameworkext.MaxReservationScore, false, scores)
 }
 
@@ -289,7 +290,7 @@ func leastRequestedScore(requested, capacity int64) int64 {
 		return 0
 	}
 
-	return ((capacity - requested) * framework.MaxNodeScore) / capacity
+	return ((capacity - requested) * fwktype.MaxNodeScore) / capacity
 }
 
 func mostResourceScorer(resToWeightMap resourceToWeightMap) func(requested, allocable resourceToValueMap) int64 {
@@ -318,5 +319,5 @@ func mostRequestedScore(requested, capacity int64) int64 {
 		requested = capacity
 	}
 
-	return (requested * framework.MaxNodeScore) / capacity
+	return (requested * fwktype.MaxNodeScore) / capacity
 }

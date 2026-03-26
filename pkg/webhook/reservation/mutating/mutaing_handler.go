@@ -41,7 +41,7 @@ type ReservationMutatingHandler struct {
 	Client client.Client
 
 	// Decoder decodes objects
-	Decoder *admission.Decoder
+	Decoder admission.Decoder
 }
 
 var _ admission.Handler = &ReservationMutatingHandler{}
@@ -119,7 +119,7 @@ func (h *ReservationMutatingHandler) InjectClient(c client.Client) error {
 // var _ admission.DecoderInjector = &ReservationMutatingHandler{}
 
 // InjectDecoder injects the decoder into the ReservationMutatingHandler
-func (h *ReservationMutatingHandler) InjectDecoder(d *admission.Decoder) error {
+func (h *ReservationMutatingHandler) InjectDecoder(d admission.Decoder) error {
 	h.Decoder = d
 	return nil
 }

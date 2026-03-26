@@ -178,7 +178,7 @@ func TestController_Run(t *testing.T) {
 			for _, p := range c.pods {
 				suit.Handle.ClientSet().CoreV1().Pods(p.Namespace).Create(ctx, p, metav1.CreateOptions{})
 			}
-			plugin, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			plugin, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			p := plugin.(*Plugin)
 			ctrl := NewElasticQuotaController(p)

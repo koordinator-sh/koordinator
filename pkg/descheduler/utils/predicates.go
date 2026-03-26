@@ -195,7 +195,7 @@ func NodeSelectorsEqual(n1, n2 *corev1.NodeSelector) bool {
 // TolerationsTolerateTaint checks if taint is tolerated by any of the tolerations.
 func TolerationsTolerateTaint(tolerations []corev1.Toleration, taint *corev1.Taint) bool {
 	for i := range tolerations {
-		if tolerations[i].ToleratesTaint(taint) {
+		if tolerations[i].ToleratesTaint(klog.Background(), taint, false) {
 			return true
 		}
 	}

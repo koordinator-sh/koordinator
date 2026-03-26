@@ -120,7 +120,7 @@ func WithEvictionLimiter(limiter EvictionLimiter) Option {
 	}
 }
 
-func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opts ...Option) (framework.Handle, error) {
+func NewFramework(ctx context.Context, r Registry, profile *deschedulerconfig.DeschedulerProfile, opts ...Option) (framework.Handle, error) {
 	options := &frameworkOptions{}
 	for _, optFnc := range opts {
 		optFnc(options)
@@ -159,7 +159,7 @@ func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opt
 	pluginsMap := make(map[string]framework.Plugin)
 
 	extensionPoints := f.getExtensionPoints(profile.Plugins)
-	outputPluginConfig, err := f.initPlugins(r, pluginConfig, extensionPoints, pluginsMap)
+	outputPluginConfig, err := f.initPlugins(ctx, r, pluginConfig, extensionPoints, pluginsMap)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +186,7 @@ func NewFramework(r Registry, profile *deschedulerconfig.DeschedulerProfile, opt
 	return f, nil
 }
 
-func (f *frameworkImpl) initPlugins(r Registry, pluginConfig map[string]runtime.Object, extensionPoints []extensionPoint, pluginsMap map[string]framework.Plugin) ([]deschedulerconfig.PluginConfig, error) {
+func (f *frameworkImpl) initPlugins(ctx context.Context, r Registry, pluginConfig map[string]runtime.Object, extensionPoints []extensionPoint, pluginsMap map[string]framework.Plugin) ([]deschedulerconfig.PluginConfig, error) {
 	pg := sets.NewString()
 	pluginsNeeded(pg, extensionPoints)
 
@@ -209,7 +209,7 @@ func (f *frameworkImpl) initPlugins(r Registry, pluginConfig map[string]runtime.
 				Args: args,
 			})
 		}
-		p, err := factory(args, f)
+		p, err := factory(ctx, args, f)
 		if err != nil {
 			return nil, fmt.Errorf("initializing plugin %q: %w", name, err)
 		}

@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -36,7 +37,7 @@ func TestDumpDiagnosis(t *testing.T) {
 	tests := []struct {
 		name             string
 		pod              *corev1.Pod
-		setDiagnosisFunc func(state *framework.CycleState)
+		setDiagnosisFunc func(state fwktype.CycleState)
 		wantDumpMessage  string
 	}{
 		{
@@ -53,14 +54,14 @@ func TestDumpDiagnosis(t *testing.T) {
 					NominatedNodeName: "nominatedNode",
 				},
 			},
-			setDiagnosisFunc: func(state *framework.CycleState) {
+			setDiagnosisFunc: func(state fwktype.CycleState) {
 				diagnosis := GetDiagnosis(state)
 				diagnosis.PreFilterMessage = "preFilterMessage"
 				diagnosis.TopologyKeyToExplain = "topologyKeyToExplain"
 				diagnosis.ScheduleDiagnosis = &ScheduleDiagnosis{}
-				diagnosis.ScheduleDiagnosis.NodeToStatusMap = framework.NodeToStatusMap{
-					"node1": framework.NewStatus(framework.Success),
-					"node2": framework.NewStatus(framework.Unschedulable, "node2-reason"),
+				diagnosis.ScheduleDiagnosis.NodeToStatusMap = map[string]*fwktype.Status{
+					"node1": fwktype.NewStatus(fwktype.Success),
+					"node2": fwktype.NewStatus(fwktype.Unschedulable, "node2-reason"),
 				}
 				diagnosis.ScheduleDiagnosis.AlreadyWaitForBound = 2
 				diagnosis.ScheduleDiagnosis.AlreadyWaitForBoundPods = []*corev1.Pod{
@@ -90,9 +91,9 @@ func TestDumpDiagnosis(t *testing.T) {
 							"node1": 1,
 							"node2": 2,
 						},
-						NodeToStatusMap: map[string]*framework.Status{
-							"node1": framework.NewStatus(framework.Success),
-							"node2": framework.NewStatus(framework.Unschedulable, "node2-reason"),
+						NodeToStatusMap: map[string]*fwktype.Status{
+							"node1": fwktype.NewStatus(fwktype.Success),
+							"node2": fwktype.NewStatus(fwktype.Unschedulable, "node2-reason"),
 						},
 					},
 					OtherDiagnosis: struct {
@@ -138,12 +139,12 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 
 	// Create large datasets
 	nodeCount := 5000
-	nodeToStatusMap := make(framework.NodeToStatusMap, nodeCount)
+	nodeToStatusMap := make(map[string]*fwktype.Status, nodeCount)
 	nodeOfferSlot := make(map[string]int, nodeCount)
 
 	for i := 0; i < nodeCount; i++ {
 		nodeName := "node" + string(rune(i))
-		nodeToStatusMap[nodeName] = framework.NewStatus(framework.Unschedulable, "insufficient resources")
+		nodeToStatusMap[nodeName] = fwktype.NewStatus(fwktype.Unschedulable, "insufficient resources")
 		nodeOfferSlot[nodeName] = i
 	}
 
@@ -243,12 +244,12 @@ func BenchmarkDumpDiagnosisWorkerCount(b *testing.B) {
 
 	// Create datasets
 	nodeCount := 5000
-	nodeToStatusMap := make(framework.NodeToStatusMap, nodeCount)
+	nodeToStatusMap := make(map[string]*fwktype.Status, nodeCount)
 	nodeOfferSlot := make(map[string]int, nodeCount)
 
 	for i := 0; i < nodeCount; i++ {
 		nodeName := "node" + string(rune(i))
-		nodeToStatusMap[nodeName] = framework.NewStatus(framework.Unschedulable, "insufficient resources")
+		nodeToStatusMap[nodeName] = fwktype.NewStatus(fwktype.Unschedulable, "insufficient resources")
 		nodeOfferSlot[nodeName] = i
 	}
 

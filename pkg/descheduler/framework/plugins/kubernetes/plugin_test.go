@@ -69,7 +69,7 @@ type TestPlugin struct {
 }
 
 func newDeschedulePluginFactory(descheduleCount, balanceCount *int) PluginFactory {
-	return func(obj runtime.Object, handle k8sdeschedulerframework.Handle) (k8sdeschedulerframework.Plugin, error) {
+	return func(ctx context.Context, obj runtime.Object, handle k8sdeschedulerframework.Handle) (k8sdeschedulerframework.Plugin, error) {
 		args := obj.(*TestPluginArgs)
 		return &TestPlugin{name: testPluginName, args: *args, descheduleCount: descheduleCount, balanceCount: balanceCount}, nil
 	}
@@ -107,7 +107,7 @@ type TestEvictorPlugin struct {
 	handle framework.Handle
 }
 
-func newTestEvictorPlugin(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func newTestEvictorPlugin(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	return &TestEvictorPlugin{
 		handle: handle,
 	}, nil

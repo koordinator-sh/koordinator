@@ -68,9 +68,7 @@ func irresponsibleUnscheduledPodEventHandler(sched *scheduler.Scheduler, schedAd
 				return
 			}
 			klog.V(3).InfoS("Delete event for irresponsible unscheduled pod", "pod", klog.KObj(pod))
-			if err := schedAdapter.GetSchedulingQueue().Delete(pod); err != nil {
-				klog.Errorf("failed to dequeue irresponsible pod %s, err: %s", klog.KObj(pod), err)
-			}
+			schedAdapter.GetSchedulingQueue().Delete(pod)
 			// FIXME: proactively reject waiting pod if it has handled by a responsible profile
 		},
 	}

@@ -19,7 +19,7 @@ package core
 import (
 	corev1 "k8s.io/api/core/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
-	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
+	apiresource "k8s.io/component-helpers/resource"
 
 	"github.com/koordinator-sh/koordinator/pkg/features"
 )

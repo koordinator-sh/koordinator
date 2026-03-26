@@ -22,7 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -37,10 +37,10 @@ var _ DeviceHandler = &GPUHandler{}
 type GPUHandler struct {
 }
 
-func (h *GPUHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint, state *preFilterState) (corev1.ResourceList, int, *framework.Status) {
+func (h *GPUHandler) CalcDesiredRequestsAndCount(node *corev1.Node, pod *corev1.Pod, podRequests corev1.ResourceList, nodeDevice *nodeDevice, hint *apiext.DeviceHint, state *preFilterState) (corev1.ResourceList, int, *fwktype.Status) {
 	totalDevice := nodeDevice.deviceTotal[schedulingv1alpha1.GPU]
 	if len(totalDevice) == 0 {
-		return nil, 0, framework.NewStatus(framework.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", schedulingv1alpha1.GPU))
+		return nil, 0, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("Insufficient %s devices", schedulingv1alpha1.GPU))
 	}
 	if state == nil || state.gpuRequirements == nil {
 		// just for test

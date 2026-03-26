@@ -56,6 +56,21 @@ type fakeFrameworkHandle struct {
 	koordinatorclientset.Interface
 }
 
+// IsWatchListSemanticsUnSupported signals to informer reflectors that WatchList
+// semantics are not supported by the underlying fake clientset.
+// Without this, type-asserting fakeFrameworkHandle to koordinatorclientset.Interface
+// loses the IsWatchListSemanticsUnSupported method on the concrete fake clientset,
+// causing informers to use watchList and block waiting for bookmark events.
+func (h *fakeFrameworkHandle) IsWatchListSemanticsUnSupported() bool {
+	type unsupportedWatchList interface {
+		IsWatchListSemanticsUnSupported() bool
+	}
+	if c, ok := h.Interface.(unsupportedWatchList); ok {
+		return c.IsWatchListSemanticsUnSupported()
+	}
+	return false
+}
+
 func setupFakeDiscoveryWithPolicyResource(fake *coretesting.Fake) {
 	fake.AddReactor("get", "group", func(action coretesting.Action) (handled bool, ret runtime.Object, err error) {
 		fake.Resources = []*metav1.APIResourceList{
@@ -1411,8 +1426,8 @@ func TestLowNodeLoad(t *testing.T) {
 						})
 					},
 					func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
-						reg.Register(LowNodeLoadName, func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-							return NewLowNodeLoad(args, &fakeFrameworkHandle{
+						reg.Register(LowNodeLoadName, func(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+							return NewLowNodeLoad(ctx, args, &fakeFrameworkHandle{
 								Handle:    handle,
 								Interface: koordClientSet,
 							})
@@ -1579,8 +1594,8 @@ func TestMaxEvictionTotal(t *testing.T) {
 						})
 					},
 					func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
-						reg.Register(LowNodeLoadName, func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-							return NewLowNodeLoad(args, &fakeFrameworkHandle{
+						reg.Register(LowNodeLoadName, func(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+							return NewLowNodeLoad(ctx, args, &fakeFrameworkHandle{
 								Handle:    handle,
 								Interface: koordClientSet,
 							})

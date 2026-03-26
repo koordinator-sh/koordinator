@@ -151,7 +151,10 @@ func NewFakeTreeManager(clusterNetworkTopology *schedulingv1alpha1.ClusterNetwor
 	_, _ = koordClientSet.SchedulingV1alpha1().ClusterNetworkTopologies().Create(context.TODO(), clusterNetworkTopology, metav1.CreateOptions{})
 	store := koordInformerFactory.Scheduling().V1alpha1().ClusterNetworkTopologies().Informer().GetStore()
 	_ = store.Add(clusterNetworkTopology)
-	return NewTreeManager(koordInformerFactory, informerFactory, koordClientSet), FakeTools{
+	tm := NewTreeManager(koordInformerFactory, informerFactory, koordClientSet).(*treeManager)
+	// Pre-initialize lister and tree so tests can call Run in a goroutine without waiting for sync
+	tm.topologyLister = koordInformerFactory.Scheduling().V1alpha1().ClusterNetworkTopologies().Lister()
+	return tm, FakeTools{
 		InformerFactory:      informerFactory,
 		KoordInformerFactory: koordInformerFactory,
 		KoordClient:          koordClientSet,

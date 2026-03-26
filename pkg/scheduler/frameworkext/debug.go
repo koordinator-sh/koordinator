@@ -24,7 +24,7 @@ import (
 	prettytable "github.com/jedib0t/go-pretty/v6/table"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 )
 
 var (
@@ -52,7 +52,7 @@ func DebugFiltersSetter(val string) (string, error) {
 	return fmt.Sprintf("successfully set debugFilterFailure to %s", val), nil
 }
 
-func debugScores(topN int, pod *corev1.Pod, allNodePluginScores []framework.NodePluginScores, nodes []*corev1.Node) prettytable.Writer {
+func debugScores(topN int, pod *corev1.Pod, allNodePluginScores []fwktype.NodePluginScores, nodeInfos []fwktype.NodeInfo) prettytable.Writer {
 	if len(allNodePluginScores) == 0 {
 		return nil
 	}
@@ -85,6 +85,6 @@ func debugScores(topN int, pod *corev1.Pod, allNodePluginScores []framework.Node
 		}
 		w.AppendRow(row)
 	}
-	klog.Infof("Top%d scores for Pod: %v, feasibleNodes: %v, plugins:%v\n%v", topN, podRef, len(nodes), pluginNames, w.RenderMarkdown())
+	klog.Infof("Top%d scores for Pod: %v, feasibleNodes: %v, plugins:%v\n%v", topN, podRef, len(nodeInfos), pluginNames, w.RenderMarkdown())
 	return w // return writer for UT
 }

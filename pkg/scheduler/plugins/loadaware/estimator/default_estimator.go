@@ -22,8 +22,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	resourceapi "k8s.io/component-helpers/resource"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -43,7 +43,7 @@ type DefaultEstimator struct {
 	allowCustomize bool
 }
 
-func NewDefaultEstimator(args *config.LoadAwareSchedulingArgs, handle framework.Handle) (Estimator, error) {
+func NewDefaultEstimator(args *config.LoadAwareSchedulingArgs, handle fwktype.Handle) (Estimator, error) {
 	return &DefaultEstimator{
 		scalingFactors: args.EstimatedScalingFactors,
 		allowCustomize: args.AllowCustomizeEstimation,
