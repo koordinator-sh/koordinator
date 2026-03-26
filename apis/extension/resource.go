@@ -53,6 +53,12 @@ var (
 			corev1.ResourceMemory: MidMemory,
 		},
 	}
+	ReverseResourceNameMap = map[corev1.ResourceName]PriorityClass{
+		BatchCPU:    PriorityBatch,
+		BatchMemory: PriorityBatch,
+		MidCPU:      PriorityMid,
+		MidMemory:   PriorityMid,
+	}
 )
 
 // TranslateResourceNameByPriorityClass translates defaultResourceName to extend resourceName by PriorityClass
