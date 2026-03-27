@@ -312,6 +312,10 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		}
 	}
 
+	if pod.Status.NominatedNodeName != "" && !result.AllNodes() && !result.NodeNames.Has(pod.Status.NominatedNodeName) {
+		klog.Warningf("Pod %s/%s is nominated to node %s, but it is not in the pre-filter result", pod.Namespace, pod.Name, pod.Status.NominatedNodeName)
+	}
+
 	// FindOneNode
 	nodeName, status := ext.RunFindOneNodePlugin(ctx, cycleState, pod, result)
 	if status.IsSuccess() {

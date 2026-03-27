@@ -39,6 +39,15 @@ var (
 	diagnosisWorkerCount  = 10 // Default number of workers
 )
 
+var customDiagnosisProcessor map[string]func(diagnosis *Diagnosis)
+
+func RegisterCustomDiagnosisProcessor(name string, processor func(diagnosis *Diagnosis)) {
+	if customDiagnosisProcessor == nil {
+		customDiagnosisProcessor = make(map[string]func(diagnosis *Diagnosis))
+	}
+	customDiagnosisProcessor[name] = processor
+}
+
 // DumpDiagnosisSetter set dumpDiagnosis
 func DumpDiagnosisSetter(val string) (string, error) {
 	toDumpDiagnosis, err := strconv.ParseBool(val)
@@ -214,6 +223,12 @@ func (dq *DiagnosisQueue) processDiagnosis(diagnosis *Diagnosis) string {
 	}
 	dumpMessage := util.DumpJSON(diagnosis)
 	klog.Infof("dump diagnosis for %s, targetPod: %s/%s/%s: $%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
+	for _, f := range customDiagnosisProcessor {
+		if f != nil {
+			f(diagnosis)
+			klog.Infof("custom diagnosis processor for %s, targetPod: %s/%s/%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID)
+		}
+	}
 	return dumpMessage
 }
 
