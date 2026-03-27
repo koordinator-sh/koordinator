@@ -54,8 +54,8 @@ data:
               - {{ .Values.installation.namespace }}
           useDeviationThresholds: false
           lowThresholds:
-            cpu: 45
-            memory: 55
+            cpu: 30
+            memory: 30
           highThresholds:
-            cpu: 75
+            cpu: 80
             memory: 80
