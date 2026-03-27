@@ -140,6 +140,7 @@ const (
 
 	CPUSetCPUSName          = "cpuset.cpus"
 	CPUSetCPUSEffectiveName = "cpuset.cpus.effective"
+	CPUSetMemsName          = "cpuset.mems"
 
 	CPUAcctStatName           = "cpuacct.stat"
 	CPUAcctUsageName          = "cpuacct.usage"
@@ -201,6 +202,7 @@ var (
 	NetClsClassIdValidator = &NetClsRangeValidator{resource: NetClsClassIdName}
 
 	CPUSetCPUSValidator = &CPUSetStrValidator{}
+	CPUSetMemsValidator = &CPUSetStrValidator{}
 )
 
 // for cgroup resources, we use the corresponding cgroups-v1 filename as its resource type
@@ -217,7 +219,8 @@ var (
 	CPUTasks     = DefaultFactory.New(CPUTasksName, CgroupCPUDir)
 	CPUProcs     = DefaultFactory.New(CPUProcsName, CgroupCPUDir)
 
-	CPUSet = DefaultFactory.New(CPUSetCPUSName, CgroupCPUSetDir).WithValidator(CPUSetCPUSValidator)
+	CPUSet     = DefaultFactory.New(CPUSetCPUSName, CgroupCPUSetDir).WithValidator(CPUSetCPUSValidator)
+	CPUSetMems = DefaultFactory.New(CPUSetMemsName, CgroupCPUSetDir).WithValidator(CPUSetMemsValidator)
 
 	CPUAcctStat           = DefaultFactory.New(CPUAcctStatName, CgroupCPUAcctDir)
 	CPUAcctUsage          = DefaultFactory.New(CPUAcctUsageName, CgroupCPUAcctDir)
@@ -260,6 +263,7 @@ var (
 		CPUBVTWarpNs,
 		CPUIdle,
 		CPUSet,
+		CPUSetMems,
 		CPUAcctStat,
 		CPUAcctUsage,
 		CPUAcctCPUPressure,
@@ -306,6 +310,7 @@ var (
 
 	CPUSetV2                 = DefaultFactory.NewV2(CPUSetCPUSName, CPUSetCPUSName).WithValidator(CPUSetCPUSValidator)
 	CPUSetEffectiveV2        = DefaultFactory.NewV2(CPUSetCPUSEffectiveName, CPUSetCPUSEffectiveName) // TODO: unify the R/W
+	CPUSetMemsV2             = DefaultFactory.NewV2(CPUSetMemsName, CPUSetMemsName).WithValidator(CPUSetMemsValidator)
 	CPUTasksV2               = DefaultFactory.NewV2(CPUTasksName, CPUThreadsName)
 	CPUProcsV2               = DefaultFactory.NewV2(CPUProcsName, CPUProcsName)
 	MemoryLimitV2            = DefaultFactory.NewV2(MemoryLimitName, MemoryMaxName)
@@ -337,6 +342,7 @@ var (
 		CPUAcctIOPressureV2,
 		CPUSetV2,
 		CPUSetEffectiveV2,
+		CPUSetMemsV2,
 		CPUTasksV2,
 		CPUProcsV2,
 		MemoryLimitV2,
