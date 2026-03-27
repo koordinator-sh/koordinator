@@ -124,6 +124,13 @@ func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState *fram
 		return framework.AsStatus(fmt.Errorf("missing PreAllocation Reservation"))
 	}
 
+	if state.rInfo.IsMultiplePAPodsEnabled() {
+		// For multiple pre-allocatable pods mode, skip the nomination in PreScore phase.
+		// The selectedPreAllocatablePods are already determined during Filter phase,
+		// and Score phase will use them directly without needing a single nominated pod.
+		return framework.NewStatus(framework.Skip)
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -135,7 +142,7 @@ func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState *fram
 		node := nodes[piece]
 		var preAllocatable []*corev1.Pod
 		if nodeRState := state.nodeReservationStates[node.Name]; nodeRState != nil {
-			preAllocatable = nodeRState.preAllocatablePods
+			preAllocatable = nodeRState.selectedPreAllocatablePods
 		}
 		if len(preAllocatable) == 0 {
 			return
@@ -206,11 +213,21 @@ func (pl *Plugin) scoreForPreAllocation(ctx context.Context, cycleState *framewo
 		return mostPreferredScore, nil
 	}
 
+	if state.rInfo.IsMultiplePAPodsEnabled() {
+		// If there is no pre-allocatable pod nominated on this node, give it the highest priority.
+		nodeRState := state.nodeReservationStates[nodeName]
+		if nodeRState == nil || len(nodeRState.selectedPreAllocatablePods) == 0 {
+			return framework.MaxNodeScore, nil
+		}
+		// The more pre-allocatable pods are selected on this node, the lower priority it will get.
+		return framework.MaxNodeScore / int64(1+len(nodeRState.selectedPreAllocatablePods)), nil
+	}
+
 	preAllocatable := pl.handle.GetReservationNominator().GetNominatedPreAllocation(state.rInfo, nodeName)
 	if preAllocatable == nil {
 		return framework.MinNodeScore, nil
 	}
-	for _, v := range state.nodeReservationStates[nodeName].preAllocatablePods {
+	for _, v := range state.nodeReservationStates[nodeName].selectedPreAllocatablePods {
 		if v.GetUID() == preAllocatable.GetUID() {
 			preAllocatable = v
 			break
