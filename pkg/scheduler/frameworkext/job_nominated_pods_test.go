@@ -30,13 +30,13 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
@@ -46,13 +46,13 @@ import (
 type FakeFitPlugin struct {
 }
 
-func (f *FakeFitPlugin) Filter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
-	if insufficientResources := noderesources.Fits(pod, nodeInfo); len(insufficientResources) != 0 {
+func (f *FakeFitPlugin) Filter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) *fwktype.Status {
+	if insufficientResources := noderesources.Fits(pod, nodeInfo, nil, noderesources.ResourceRequestsOptions{}); len(insufficientResources) != 0 {
 		var reasons []string
 		for _, insufficientResource := range insufficientResources {
 			reasons = append(reasons, insufficientResource.Reason)
 		}
-		return framework.NewStatus(framework.Unschedulable, reasons...)
+		return fwktype.NewStatus(fwktype.Unschedulable, reasons...)
 	}
 	return nil
 }
@@ -68,7 +68,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedIgnoreSameJob(t *te
 		nominatedPods         []*corev1.Pod
 		node                  *corev1.Node
 		nominatedPodsToRemove sets.Set[string]
-		want                  *framework.Status
+		want                  *fwktype.Status
 	}{
 		{
 			name: "insufficient resource cause nominated pod",
@@ -123,7 +123,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedIgnoreSameJob(t *te
 					},
 				},
 			},
-			want: framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+			want: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
 		},
 		{
 			name: "ignore nominated pod",
@@ -256,7 +256,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedIgnoreSameJob(t *te
 					},
 				},
 			},
-			want: framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+			want: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
 		},
 	}
 	for _, tt := range tests {
@@ -275,7 +275,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedIgnoreSameJob(t *te
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterFilterPlugin("FakeFitPlugin", func(configuration runtime.Object, f framework.Handle) (framework.Plugin, error) {
+				schedulertesting.RegisterFilterPlugin("FakeFitPlugin", func(ctx context.Context, configuration runtime.Object, f fwktype.Handle) (fwktype.Plugin, error) {
 					return &FakeFitPlugin{}, nil
 				}),
 			}
@@ -288,7 +288,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedIgnoreSameJob(t *te
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
-				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{nodeInfo}}),
+				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfoLister{nodeInfo}}),
 				frameworkruntime.WithClientSet(fakeClient),
 				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 				frameworkruntime.WithPodNominator(NewFakePodNominator()),
@@ -297,9 +297,9 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedIgnoreSameJob(t *te
 			logger := klog.FromContext(ctx)
 			for i := range tt.nominatedPods {
 				nominatedPodInfo, _ := framework.NewPodInfo(tt.nominatedPods[i])
-				fh.AddNominatedPod(logger, nominatedPodInfo, &framework.NominatingInfo{
+				fh.AddNominatedPod(logger, nominatedPodInfo, &fwktype.NominatingInfo{
 					NominatedNodeName: tt.nominatedPods[i].Status.NominatedNodeName,
-					NominatingMode:    framework.ModeOverride,
+					NominatingMode:    fwktype.ModeOverride,
 				})
 			}
 			assert.NoError(t, err)

@@ -26,19 +26,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
-	scheduledconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -48,11 +50,24 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
+
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 // gang test used
 type PodGroupClientSetAndHandle struct {
@@ -66,8 +81,8 @@ func (h *PodGroupClientSetAndHandle) KoordinatorSharedInformerFactory() koordina
 	return h.koordInformerFactory
 }
 
-func GangPluginFactoryProxy(clientSet pgclientset.Interface, factoryFn frameworkruntime.PluginFactory, plugin *framework.Plugin) frameworkruntime.PluginFactory {
-	return func(args apiruntime.Object, handle framework.Handle) (framework.Plugin, error) {
+func GangPluginFactoryProxy(clientSet pgclientset.Interface, factoryFn frameworkruntime.PluginFactory, plugin *fwktype.Plugin) frameworkruntime.PluginFactory {
+	return func(_ context.Context, args apiruntime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 		koordClient := koordfake.NewSimpleClientset()
 		koordInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClient, 0)
 		extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
@@ -77,7 +92,7 @@ func GangPluginFactoryProxy(clientSet pgclientset.Interface, factoryFn framework
 			return nil, err
 		}
 		extender := extenderFactory.NewFrameworkExtender(handle.(framework.Framework))
-		*plugin, err = factoryFn(args, &PodGroupClientSetAndHandle{
+		*plugin, err = factoryFn(context.Background(), args, &PodGroupClientSetAndHandle{
 			ExtendedHandle:       extender,
 			Interface:            clientSet,
 			koordInformerFactory: koordInformerFactory,
@@ -86,17 +101,17 @@ func GangPluginFactoryProxy(clientSet pgclientset.Interface, factoryFn framework
 	}
 }
 
-var _ framework.SharedLister = &testSharedLister{}
+var _ fwktype.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*corev1.Node
-	nodeInfos   []*framework.NodeInfo
+	nodeInfos   []fwktype.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
 }
 
 func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLister {
 	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	nodeInfos := make([]*framework.NodeInfo, 0)
+	nodeInfos := make([]fwktype.NodeInfo, 0)
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
@@ -137,11 +152,11 @@ func makePg(name, namespace string, min int32, creationTime *time.Time, minResou
 	return pg
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwktype.NodeInfoLister {
 	return f
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwktype.StorageInfoLister {
 	return f
 }
 
@@ -149,57 +164,43 @@ func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
 	return false
 }
 
-func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) List() ([]fwktype.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
 
-func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
 type pluginTestSuit struct {
-	framework.Handle
+	fwktype.Handle
 	proxyNew           runtime.PluginFactory
 	gangSchedulingArgs *config.CoschedulingArgs
-	plugin             framework.Plugin
+	plugin             fwktype.Plugin
 }
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclientset.Interface, cs kubernetes.Interface) *pluginTestSuit {
-	var v1beta3args v1beta3.CoschedulingArgs
-	v1beta3.SetDefaults_CoschedulingArgs(&v1beta3args)
+	var v1args v1.CoschedulingArgs
+	v1.SetDefaults_CoschedulingArgs(&v1args)
 	var gangSchedulingArgs config.CoschedulingArgs
-	err := v1beta3.Convert_v1beta3_CoschedulingArgs_To_config_CoschedulingArgs(&v1beta3args, &gangSchedulingArgs, nil)
+	err := v1.Convert_v1_CoschedulingArgs_To_config_CoschedulingArgs(&v1args, &gangSchedulingArgs, nil)
 	assert.NoError(t, err)
 
-	gangSchedulingPluginConfig := scheduledconfig.PluginConfig{
-		Name: "Coscheduling",
-		Args: &gangSchedulingArgs,
-	}
-
-	var plugin framework.Plugin
+	var plugin fwktype.Plugin
 	proxyNew := GangPluginFactoryProxy(pgClientSet, New, &plugin)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
-		func(reg *runtime.Registry, profile *scheduledconfig.KubeSchedulerProfile) {
-			profile.PluginConfig = []scheduledconfig.PluginConfig{
-				gangSchedulingPluginConfig,
-			}
-		},
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		schedulertesting.RegisterPreFilterPlugin(Name, proxyNew),
-		schedulertesting.RegisterReservePlugin(Name, proxyNew),
-		schedulertesting.RegisterPermitPlugin(Name, proxyNew),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterPluginAsExtensions(Name, proxyNew, "PostBind"),
-		schedulertesting.RegisterPluginAsExtensions(Name, proxyNew, "PreEnqueue"),
+		schedulertesting.RegisterPluginAsExtensions(Name, proxyNew, "PreEnqueue", "PreFilter", "Reserve", "Permit", "PostBind"),
 	}
 	fakeRecorder := record.NewFakeRecorder(1024)
 	eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
@@ -214,6 +215,7 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclients
 		runtime.WithInformerFactory(informerFactory),
 		runtime.WithSnapshotSharedLister(snapshot),
 		runtime.WithEventRecorder(eventRecorder),
+		runtime.WithWaitingPods(runtime.NewWaitingPodsMap()),
 	)
 	assert.Nil(t, err)
 	return &pluginTestSuit{
@@ -338,7 +340,7 @@ func TestPostFilter(t *testing.T) {
 			if tt.pod.Name == "pod3" {
 				totalWaitingPods := 0
 				suit.Handle.IterateOverWaitingPods(
-					func(waitingPod framework.WaitingPod) {
+					func(waitingPod fwktype.WaitingPod) {
 						waitingGangId := util.GetId(waitingPod.GetPod().Namespace,
 							util.GetGangNameByPod(waitingPod.GetPod()))
 						if waitingGangId == gangId {
@@ -383,7 +385,7 @@ func TestPermit(t *testing.T) {
 		name                  string
 		pod                   *corev1.Pod
 		pods                  []*corev1.Pod
-		want                  framework.Code
+		want                  fwktype.Code
 		toActivePodsKeys      []string
 		needInWaitingPods     bool
 		shouldWait            bool
@@ -393,12 +395,12 @@ func TestPermit(t *testing.T) {
 		{
 			name: "pod1 does not belong to any pg, allow",
 			pod:  st.MakePod().Name("pod1").UID("pod1").Namespace("ns1").Obj(),
-			want: framework.Success,
+			want: fwktype.Success,
 		},
 		{
 			name: "pod2 belongs to a non-existing pg",
 			pod:  st.MakePod().Name("pod2").UID("pod2").Namespace("ns1").Label(v1alpha1.PodGroupLabel, "gangnonexist").Obj(),
-			want: framework.Wait,
+			want: fwktype.Wait,
 		},
 		{
 			name: "pod3 belongs to gangA that doesn't have enough assumed pods",
@@ -406,7 +408,7 @@ func TestPermit(t *testing.T) {
 			pods: []*corev1.Pod{
 				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("gangA_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
 			},
-			want:             framework.Wait,
+			want:             fwktype.Wait,
 			shouldWait:       true,
 			toActivePodsKeys: nil,
 		},
@@ -421,7 +423,7 @@ func TestPermit(t *testing.T) {
 			waitingGangMap: map[string]bool{
 				"gangA_ns/ganga": true,
 			},
-			want: framework.Success,
+			want: fwktype.Success,
 		},
 		{
 			name: "pod4 belongs to gangA that gangA has resourceSatisfied, but gangA matchPolicy is not once-satisfied",
@@ -434,7 +436,7 @@ func TestPermit(t *testing.T) {
 			waitingGangMap: map[string]bool{
 				"gangA_ns/ganga": true,
 			},
-			want: framework.Success,
+			want: fwktype.Success,
 		},
 		{
 			name: "pod5 belongs to gangB that gangB has resourceSatisfied, but gangA has not satisfied",
@@ -445,7 +447,7 @@ func TestPermit(t *testing.T) {
 			},
 			toActivePodsKeys: nil,
 			shouldWait:       true,
-			want:             framework.Wait,
+			want:             fwktype.Wait,
 		},
 		{
 			name: "pod6 belongs to gangD that gangD has resourceSatisfied, and gangC is waiting for gangD ",
@@ -461,7 +463,7 @@ func TestPermit(t *testing.T) {
 				"gangD_ns/gangd": true,
 				"gangC_ns/gangc": true,
 			},
-			want: framework.Success,
+			want: fwktype.Success,
 		},
 	}
 	for _, tt := range tests {
@@ -513,7 +515,7 @@ func TestPermit(t *testing.T) {
 				}
 				totalWaitingPods := 0
 				suit.Handle.IterateOverWaitingPods(
-					func(waitingPod framework.WaitingPod) {
+					func(waitingPod fwktype.WaitingPod) {
 						waitingGangId := util.GetId(waitingPod.GetPod().Namespace,
 							util.GetGangNameByPod(waitingPod.GetPod()))
 						if !tt.waitingGangMap[waitingGangId] {
@@ -608,7 +610,7 @@ func TestUnreserve(t *testing.T) {
 				// assert waitingPods
 				totalWaitingPods := 0
 				suit.Handle.IterateOverWaitingPods(
-					func(waitingPod framework.WaitingPod) {
+					func(waitingPod fwktype.WaitingPod) {
 						waitingGangId := util.GetId(waitingPod.GetPod().Namespace,
 							util.GetGangNameByPod(waitingPod.GetPod()))
 						if waitingGangId == gangId {
@@ -734,12 +736,12 @@ func TestPreBind(t *testing.T) {
 					// For OnceSatisfied case: simulate first round gang scheduling completed
 					// First pod enters Permit and waits
 					status1, _ := gp.Permit(ctx, cycleState, tt.pod, "")
-					assert.Equal(t, framework.Wait, status1.Code())
+					assert.Equal(t, fwktype.Wait, status1.Code())
 
 					// Other pods enter Permit and gang becomes satisfied
 					for _, pod := range tt.pods {
 						status2, _ := gp.Permit(ctx, cycleState, pod, "")
-						assert.Equal(t, framework.Success, status2.Code())
+						assert.Equal(t, fwktype.Success, status2.Code())
 					}
 
 					// Simulate first pod bound, triggering OnceSatisfied
@@ -747,16 +749,16 @@ func TestPreBind(t *testing.T) {
 
 					// Now the retry pod (tt.pod) enters Permit directly (OnceSatisfied path)
 					retryStatus, _ := gp.Permit(ctx, cycleState, tt.pod, "")
-					assert.Equal(t, framework.Success, retryStatus.Code())
+					assert.Equal(t, fwktype.Success, retryStatus.Code())
 				} else {
 					// Normal gang scheduling: Let first pod enter Permit and be assumed
 					status1, _ := gp.Permit(ctx, cycleState, tt.pod, "")
-					assert.Equal(t, framework.Wait, status1.Code())
+					assert.Equal(t, fwktype.Wait, status1.Code())
 
 					// Let second pod enter Permit and satisfy the gang requirements
 					for _, pod := range tt.pods {
 						status2, _ := gp.Permit(ctx, cycleState, pod, "")
-						assert.Equal(t, framework.Success, status2.Code())
+						assert.Equal(t, fwktype.Success, status2.Code())
 					}
 				}
 			}
@@ -908,12 +910,12 @@ func TestPreBindReservation(t *testing.T) {
 
 				// Let reserve pod enter Permit and be assumed
 				status1, _ := gp.Permit(ctx, cycleState, reservePod, "")
-				assert.Equal(t, framework.Wait, status1.Code())
+				assert.Equal(t, fwktype.Wait, status1.Code())
 
 				// Let other pods enter Permit to satisfy the gang
 				for _, pod := range tt.pods {
 					status2, _ := gp.Permit(ctx, cycleState, pod, "")
-					assert.Equal(t, framework.Success, status2.Code())
+					assert.Equal(t, fwktype.Success, status2.Code())
 				}
 			}
 

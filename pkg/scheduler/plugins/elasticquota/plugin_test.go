@@ -39,16 +39,19 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
-	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
+	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	imageutils "k8s.io/kubernetes/test/utils/image"
 	"k8s.io/utils/ptr"
 
@@ -61,11 +64,24 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
+
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 type ElasticQuotaSetAndHandle struct {
 	frameworkext.ExtendedHandle
@@ -121,19 +137,14 @@ type PluginTestOption func(elasticQuotaArgs *config.ElasticQuotaArgs)
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pluginTestOpts ...PluginTestOption) *pluginTestSuit {
 	setLoglevel("5")
-	var v1beta3args v1beta3.ElasticQuotaArgs
-	v1beta3.SetDefaults_ElasticQuotaArgs(&v1beta3args)
+	var v1args v1.ElasticQuotaArgs
+	v1.SetDefaults_ElasticQuotaArgs(&v1args)
 	var elasticQuotaArgs config.ElasticQuotaArgs
-	err := v1beta3.Convert_v1beta3_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta3args, &elasticQuotaArgs, nil)
+	err := v1.Convert_v1_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1args, &elasticQuotaArgs, nil)
 	assert.NoError(t, err)
 
 	for _, pluginTestOpt := range pluginTestOpts {
 		pluginTestOpt(&elasticQuotaArgs)
-	}
-
-	elasticQuotaPluginConfig := schedulerconfig.PluginConfig{
-		Name: Name,
-		Args: &elasticQuotaArgs,
 	}
 
 	koordClientSet := fake.NewSimpleClientset()
@@ -144,19 +155,14 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pluginTestOpts ...Plu
 	)
 	assert.Nil(t, err)
 	pgClientSet := pgfake.NewSimpleClientset()
-	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
-		return New(configuration, &ElasticQuotaSetAndHandle{
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(_ context.Context, configuration apiruntime.Object, f fwktype.Handle) (fwktype.Plugin, error) {
+		return New(context.Background(), configuration, &ElasticQuotaSetAndHandle{
 			ExtendedHandle: f.(frameworkext.ExtendedHandle),
 			Interface:      pgClientSet,
 		})
 	})
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
-		func(reg *runtime.Registry, profile *schedulerconfig.KubeSchedulerProfile) {
-			profile.PluginConfig = []schedulerconfig.PluginConfig{
-				elasticQuotaPluginConfig,
-			}
-		},
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 		schedulertesting.RegisterPreFilterPlugin(Name, proxyNew),
@@ -205,16 +211,11 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pluginTestOpts ...Plu
 
 func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1.Pod) *pluginTestSuit {
 	setLoglevel("5")
-	var v1beta3args v1beta3.ElasticQuotaArgs
-	v1beta3.SetDefaults_ElasticQuotaArgs(&v1beta3args)
+	var v1args v1.ElasticQuotaArgs
+	v1.SetDefaults_ElasticQuotaArgs(&v1args)
 	var elasticQuotaArgs config.ElasticQuotaArgs
-	err := v1beta3.Convert_v1beta3_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1beta3args, &elasticQuotaArgs, nil)
+	err := v1.Convert_v1_ElasticQuotaArgs_To_config_ElasticQuotaArgs(&v1args, &elasticQuotaArgs, nil)
 	assert.NoError(t, err)
-
-	elasticQuotaPluginConfig := schedulerconfig.PluginConfig{
-		Name: Name,
-		Args: &elasticQuotaArgs,
-	}
 
 	koordClientSet := fake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
@@ -226,19 +227,14 @@ func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
 	)
 	assert.Nil(t, err)
-	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
-		return New(configuration, &ElasticQuotaSetAndHandle{
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(_ context.Context, configuration apiruntime.Object, f fwktype.Handle) (fwktype.Plugin, error) {
+		return New(context.Background(), configuration, &ElasticQuotaSetAndHandle{
 			ExtendedHandle: f.(frameworkext.ExtendedHandle),
 			Interface:      pgClientSet,
 		})
 	})
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
-		func(reg *runtime.Registry, profile *schedulerconfig.KubeSchedulerProfile) {
-			profile.PluginConfig = []schedulerconfig.PluginConfig{
-				elasticQuotaPluginConfig,
-			}
-		},
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 		schedulertesting.RegisterPreFilterPlugin(Name, proxyNew),
@@ -287,15 +283,15 @@ func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1
 	}
 }
 
-var _ framework.SharedLister = &testSharedLister{}
+var _ fwktype.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*corev1.Node
-	nodeInfos   []*framework.NodeInfo
+	nodeInfos   []fwktype.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwktype.StorageInfoLister {
 	return f
 }
 
@@ -303,29 +299,29 @@ func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
 	return false
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwktype.NodeInfoLister {
 	return f
 }
 
-func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) List() ([]fwktype.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
 
-func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
 func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLister {
 	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	nodeInfos := make([]*framework.NodeInfo, 0)
+	nodeInfos := make([]fwktype.NodeInfo, 0)
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
@@ -352,7 +348,7 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 }
 
 type pluginTestSuit struct {
-	framework.Handle
+	fwktype.Handle
 	framework.Framework
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	proxyNew                         runtime.PluginFactory
@@ -362,7 +358,7 @@ type pluginTestSuit struct {
 
 func TestNew(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 	assert.Equal(t, Name, p.Name())
@@ -402,7 +398,7 @@ func createResourceList(cpu, mem int64) corev1.ResourceList {
 
 func TestPlugin_OnQuotaAdd(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	pl := p.(*Plugin)
 	pl.groupQuotaManager.UpdateClusterTotalResource(createResourceList(501952056, 0))
@@ -478,7 +474,7 @@ func CreateQuota2(name string, parentName string, maxCpu, maxMem int64, minCpu, 
 
 func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
@@ -574,7 +570,7 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 
 func TestPlugin_OnPodAdd_Update_Delete(t *testing.T) {
 	suit := newPluginTestSuitWithPod(t, nil, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
@@ -625,7 +621,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 		name                string
 		pod                 *corev1.Pod
 		quotaInfo           *core.QuotaInfo
-		expectedStatus      *framework.Status
+		expectedStatus      *fwktype.Status
 		checkParent         bool
 		disableRuntimeQuota bool
 	}{
@@ -639,7 +635,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(0).Mem(20).Obj(),
 				},
 			},
-			expectedStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
+			expectedStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 				"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
 				extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(0).Mem(20).Obj()),
 				printResourceList(corev1.ResourceList{}), printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()))),
@@ -654,7 +650,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(10).Mem(20).Obj(),
 				},
 			},
-			expectedStatus: framework.NewStatus(framework.Success, ""),
+			expectedStatus: fwktype.NewStatus(fwktype.Success, ""),
 		},
 		{
 			name: "value not enough",
@@ -667,7 +663,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(1).Mem(2).Obj(),
 				},
 			},
-			expectedStatus: framework.NewStatus(framework.Unschedulable,
+			expectedStatus: fwktype.NewStatus(fwktype.Unschedulable,
 				fmt.Sprintf("Insufficient quotas, "+
 					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
 					extension.DefaultQuotaName, printResourceList(MakeResourceList().CPU(1).Mem(2).Obj()),
@@ -683,7 +679,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					Runtime: MakeResourceList().CPU(10).Mem(20).Obj(),
 				},
 			},
-			expectedStatus: framework.NewStatus(framework.Success, ""),
+			expectedStatus: fwktype.NewStatus(fwktype.Success, ""),
 		},
 		{
 			name: "runtime not enough, but disable runtime",
@@ -696,13 +692,13 @@ func TestPlugin_PreFilter(t *testing.T) {
 				},
 			},
 			disableRuntimeQuota: true,
-			expectedStatus:      framework.NewStatus(framework.Success, ""),
+			expectedStatus:      fwktype.NewStatus(fwktype.Success, ""),
 		},
 	}
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			gp.pluginArgs.EnableRuntimeQuota = !tt.disableRuntimeQuota
@@ -712,7 +708,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			qi.UnLock()
 			state := framework.NewCycleState()
 			ctx := context.TODO()
-			_, status := gp.PreFilter(ctx, state, tt.pod)
+			_, status := gp.PreFilter(ctx, state, tt.pod, nil)
 			assert.Equal(t, status, tt.expectedStatus)
 		})
 	}
@@ -726,7 +722,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 		childRuntime   corev1.ResourceList
 		parQuotaInfo   *v1alpha1.ElasticQuota
 		parentRuntime  corev1.ResourceList
-		expectedStatus framework.Status
+		expectedStatus fwktype.Status
 	}{
 		{
 			name: "parent reject",
@@ -755,7 +751,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 					Min: MakeResourceList().CPU(0).Mem(0).GPU(0).Obj(),
 				},
 			},
-			expectedStatus: *framework.NewStatus(framework.Unschedulable,
+			expectedStatus: *fwktype.NewStatus(fwktype.Unschedulable,
 				fmt.Sprintf("Insufficient quotas, "+
 					"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [memory]",
 					[]string{"test", "test-child"}, printResourceList(MakeResourceList().CPU(1).Mem(2).GPU(1).Obj()),
@@ -765,7 +761,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			gp.pluginArgs.EnableCheckParentQuota = true
@@ -793,7 +789,7 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 		initPods       []*corev1.Pod
 		quotaInfos     []*v1alpha1.ElasticQuota
 		totalResource  corev1.ResourceList
-		expectedStatus *framework.Status
+		expectedStatus *fwktype.Status
 	}{
 		{
 			name: "default",
@@ -815,7 +811,7 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 				},
 			},
 			totalResource:  createResourceList(10, 10),
-			expectedStatus: framework.NewStatus(framework.Success, ""),
+			expectedStatus: fwktype.NewStatus(fwktype.Success, ""),
 		},
 		{
 			name: "non-preemptible pod used larger than min",
@@ -837,7 +833,7 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 				},
 			},
 			totalResource: createResourceList(8, 5),
-			expectedStatus: framework.NewStatus(framework.Unschedulable,
+			expectedStatus: fwktype.NewStatus(fwktype.Unschedulable,
 				fmt.Sprintf("Insufficient non-preemptible quotas, "+
 					"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: [cpu]",
 					"test1", printResourceList(MakeResourceList().CPU(5).Mem(5).Obj()),
@@ -863,7 +859,7 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 				},
 			},
 			totalResource: createResourceList(7, 5),
-			expectedStatus: framework.NewStatus(framework.Unschedulable,
+			expectedStatus: fwktype.NewStatus(fwktype.Unschedulable,
 				fmt.Sprintf("Insufficient quotas, "+
 					"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: [cpu]",
 					"test1", printResourceList(MakeResourceList().CPU(7).Mem(5).Obj()),
@@ -873,7 +869,7 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, _ := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, _ := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			gp := p.(*Plugin)
 			gp.groupQuotaManager.UpdateClusterTotalResource(tt.totalResource)
 			for _, qis := range tt.quotaInfos {
@@ -888,7 +884,7 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 
 			state := framework.NewCycleState()
 			ctx := context.TODO()
-			_, status := gp.PreFilter(ctx, state, tt.pod)
+			_, status := gp.PreFilter(ctx, state, tt.pod, nil)
 			assert.Equal(t, status, tt.expectedStatus)
 		})
 	}
@@ -917,7 +913,7 @@ func TestPlugin_Reserve(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
@@ -954,7 +950,7 @@ func TestPlugin_Unreserve(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			ctx := context.TODO()
@@ -998,7 +994,7 @@ func TestPlugin_AddPod(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			pod := makePod2("test", tt.quotaInfo.CalculateInfo.Used)
@@ -1049,7 +1045,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
@@ -1088,7 +1084,7 @@ func TestPlugin_createSystemQuotaIfNotPresent(t *testing.T) {
 
 func makePod2(podName string, request corev1.ResourceList) *corev1.Pod {
 	pause := imageutils.GetPauseImageName()
-	pod := schedulertesting.MakePod().Namespace(extension.DefaultQuotaName).Name(podName).Container(pause).ZeroTerminationGracePeriod().Obj()
+	pod := st.MakePod().Namespace(extension.DefaultQuotaName).Name(podName).Container(pause).ZeroTerminationGracePeriod().Obj()
 	pod.Spec.Containers[0].Resources = corev1.ResourceRequirements{
 		Requests: request,
 	}
@@ -1154,7 +1150,7 @@ func (npm *nominatedPodMap) delete(p *corev1.Pod) {
 }
 
 // UpdateNominatedPod updates the <oldPod> with <newPod>.
-func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.Pod, newPodInfo *framework.PodInfo) {
+func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.Pod, newPodInfo fwktype.PodInfo) {
 	npm.Lock()
 	defer npm.Unlock()
 	// In some cases, an Update event with no "NominatedNode" present is received right
@@ -1165,7 +1161,7 @@ func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.
 	// (1) NominatedNode info is added
 	// (2) NominatedNode info is updated
 	// (3) NominatedNode info is removed
-	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPodInfo.Pod) == "" {
+	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPodInfo.GetPod()) == "" {
 		if nnn, ok := npm.nominatedPodToNode[oldPod.UID]; ok {
 			// This is the only case we should continue reserving the NominatedNode
 			nodeName = nnn
@@ -1174,11 +1170,11 @@ func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.
 	// We update irrespective of the nominatedNodeName changed or not, to ensure
 	// that pod pointer is updated.
 	npm.delete(oldPod)
-	npm.add(newPodInfo, nodeName)
+	npm.add(&framework.PodInfo{Pod: newPodInfo.GetPod()}, nodeName)
 }
 
-// NewPodNominator creates a nominatedPodMap as a backing of framework.PodNominator.
-func NewPodNominator() framework.PodNominator {
+// NewPodNominator creates a nominatedPodMap as a backing of fwktype.PodNominator.
+func NewPodNominator() fwktype.PodNominator {
 	return &nominatedPodMap{
 		nominatedPods:      make(map[string][]*framework.PodInfo),
 		nominatedPodToNode: make(map[types.UID]string),
@@ -1201,20 +1197,26 @@ func (npm *nominatedPodMap) DeleteNominatedPodIfExists(pod *corev1.Pod) {
 // This is called during the preemption process after a node is nominated to run
 // the pod. We update the structure before sending a request to update the pod
 // object to avoid races with the following scheduling cycles.
-func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
+func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi fwktype.PodInfo, nominatingInfo *fwktype.NominatingInfo) {
 	npm.Lock()
-	npm.add(pi, nominatingInfo.NominatedNodeName)
+	podInfo := &framework.PodInfo{Pod: pi.GetPod()}
+	npm.add(podInfo, nominatingInfo.NominatedNodeName)
 	npm.Unlock()
 }
 
 // NominatedPodsForNode returns pods that are nominated to run on the given node,
 // but they are waiting for other pods to be removed from the node.
-func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []*framework.PodInfo {
+func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []fwktype.PodInfo {
 	npm.RLock()
 	defer npm.RUnlock()
 	// TODO: we may need to return a copy of []*Pods to avoid modification
 	// on the caller side.
-	return npm.nominatedPods[nodeName]
+	pods := npm.nominatedPods[nodeName]
+	result := make([]fwktype.PodInfo, len(pods))
+	for i, p := range pods {
+		result[i] = p
+	}
+	return result
 }
 
 func TestPlugin_Recover(t *testing.T) {
@@ -1254,7 +1256,7 @@ func TestPlugin_Recover(t *testing.T) {
 		suit.Handle.ClientSet().CoreV1().Pods("").Create(context.TODO(), pod, metav1.CreateOptions{})
 	}
 	time.Sleep(100 * time.Millisecond)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	pl := p.(*Plugin)
 	time.Sleep(100 * time.Millisecond)
@@ -1266,7 +1268,7 @@ func TestPlugin_Recover(t *testing.T) {
 
 func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	assert.Nil(t, err)
 	plugin := p.(*Plugin)
 	gqm := plugin.groupQuotaManager
@@ -1382,7 +1384,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 		modifiedQuota        *v1alpha1.ElasticQuota
 		quotaInfos           []*v1alpha1.ElasticQuota
 		enableCheckParent    bool
-		expectedQueueingHint framework.QueueingHint
+		expectedQueueingHint fwktype.QueueingHint
 	}{
 		{
 			name: "quota changed (max increased) - should queue after backoff",
@@ -1435,7 +1437,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueAfterBackoff,
+			expectedQueueingHint: fwktype.Queue,
 		},
 		{
 			name: "quota changed (min increased) - should queue after backoff",
@@ -1488,7 +1490,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueAfterBackoff,
+			expectedQueueingHint: fwktype.Queue,
 		},
 		{
 			name: "quota changed (shared weight changed) - should queue after backoff",
@@ -1541,7 +1543,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueAfterBackoff,
+			expectedQueueingHint: fwktype.Queue,
 		},
 		{
 			name: "pod has no quota - should skip",
@@ -1571,7 +1573,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 				},
 			},
 			quotaInfos:           []*v1alpha1.ElasticQuota{},
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "different tree - should skip",
@@ -1615,7 +1617,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "ancestor quota changed with parent check enabled - should queue after backoff",
@@ -1685,7 +1687,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 				},
 			},
 			enableCheckParent:    true,
-			expectedQueueingHint: framework.QueueAfterBackoff,
+			expectedQueueingHint: fwktype.Queue,
 		},
 		{
 			name: "ancestor quota changed with parent check disabled - should skip",
@@ -1743,7 +1745,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 				},
 			},
 			enableCheckParent:    false,
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "quota not in pod path - should skip",
@@ -1814,7 +1816,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 				},
 			},
 			enableCheckParent:    true,
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "quota not changed (IsQuotaChange and IsQuotaUpdated both false) - should skip",
@@ -1867,7 +1869,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "invalid oldObj or newObj - should queue after backoff",
@@ -1900,7 +1902,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueAfterBackoff,
+			expectedQueueingHint: fwktype.Queue,
 		},
 	}
 	for _, tt := range test {
@@ -1908,7 +1910,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
 
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			gp.pluginArgs.EnableCheckParentQuota = tt.enableCheckParent
@@ -1936,7 +1938,8 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 			if tt.originalQuota == nil {
 				oldObj = "invalid"
 			}
-			result := gp.isSchedulableAfterQuotaChanged(klog.Background(), tt.pod, oldObj, newObj)
+			result, err := gp.isSchedulableAfterQuotaChanged(klog.Background(), tt.pod, oldObj, newObj)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedQueueingHint, result)
 		})
 	}
@@ -1968,23 +1971,24 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 			suit := newPluginTestSuit(t, nil, func(args *config.ElasticQuotaArgs) {
 				args.EnableQueueHint = tt.enableQueueHint
 			})
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 
-			events := gp.EventsToRegister()
+			events, err := gp.EventsToRegister(context.TODO())
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedEventCount, len(events))
 
 			expectedGVK := fmt.Sprintf("elasticquotas.v1alpha1.%v", scheduling.GroupName)
 
 			// Find Pod Delete event and ElasticQuota event
-			var podDeleteEvent *framework.ClusterEventWithHint
-			var quotaEvent *framework.ClusterEventWithHint
+			var podDeleteEvent *fwktype.ClusterEventWithHint
+			var quotaEvent *fwktype.ClusterEventWithHint
 			for i := range events {
-				if events[i].Event.Resource == framework.Pod && events[i].Event.ActionType == framework.Delete {
+				if events[i].Event.Resource == fwktype.Pod && events[i].Event.ActionType == fwktype.Delete {
 					podDeleteEvent = &events[i]
 				}
-				if events[i].Event.Resource == framework.GVK(expectedGVK) {
+				if events[i].Event.Resource == fwktype.EventResource(expectedGVK) {
 					quotaEvent = &events[i]
 				}
 			}
@@ -1994,12 +1998,12 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 
 			if tt.checkQueueingHint {
 				// When EnableQueueHint is true, quota event should be Update
-				assert.Equal(t, framework.Update, quotaEvent.Event.ActionType, "ElasticQuota event should be Update when EnableQueueHint is true")
+				assert.Equal(t, fwktype.Update, quotaEvent.Event.ActionType, "ElasticQuota event should be Update when EnableQueueHint is true")
 				assert.NotNil(t, podDeleteEvent.QueueingHintFn, "Pod Delete event should have QueueingHintFn when EnableQueueHint is true")
 				assert.NotNil(t, quotaEvent.QueueingHintFn, "ElasticQuota event should have QueueingHintFn when EnableQueueHint is true")
 			} else {
 				// When EnableQueueHint is false, quota event should be All
-				assert.Equal(t, framework.All, quotaEvent.Event.ActionType, "ElasticQuota event should be All when EnableQueueHint is false")
+				assert.Equal(t, fwktype.All, quotaEvent.Event.ActionType, "ElasticQuota event should be All when EnableQueueHint is false")
 				assert.Nil(t, podDeleteEvent.QueueingHintFn, "Pod Delete event should not have QueueingHintFn when EnableQueueHint is false")
 				assert.Nil(t, quotaEvent.QueueingHintFn, "ElasticQuota event should not have QueueingHintFn when EnableQueueHint is false")
 			}
@@ -2014,7 +2018,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 		deletedPod           *corev1.Pod
 		quotaInfos           []*v1alpha1.ElasticQuota
 		enableCheckParent    bool
-		expectedQueueingHint framework.QueueingHint
+		expectedQueueingHint fwktype.QueueingHint
 	}{
 		{
 			name: "deleted pod in same quota - should queue after backoff",
@@ -2036,7 +2040,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueAfterBackoff,
+			expectedQueueingHint: fwktype.Queue,
 		},
 		{
 			name: "deleted pod not assigned - should skip",
@@ -2058,7 +2062,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "deleted pod in parent quota with EnableCheckParentQuota - should queue after backoff",
@@ -2094,7 +2098,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 				},
 			},
 			enableCheckParent:    true,
-			expectedQueueingHint: framework.QueueAfterBackoff,
+			expectedQueueingHint: fwktype.Queue,
 		},
 		{
 			name: "deleted pod in parent quota without EnableCheckParentQuota - should skip",
@@ -2130,7 +2134,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 				},
 			},
 			enableCheckParent:    false,
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "deleted pod in different tree - should skip",
@@ -2164,7 +2168,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "deleted pod has no quota - should skip",
@@ -2185,7 +2189,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "unschedulable pod has no quota - should skip",
@@ -2206,7 +2210,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "deleted pod in sibling quota - should skip",
@@ -2240,7 +2244,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueSkip,
+			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
 			name: "invalid oldObj - should queue after backoff",
@@ -2261,7 +2265,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 					},
 				},
 			},
-			expectedQueueingHint: framework.QueueAfterBackoff,
+			expectedQueueingHint: fwktype.Queue,
 		},
 	}
 
@@ -2270,7 +2274,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
 
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 			gp.pluginArgs.EnableCheckParentQuota = tt.enableCheckParent
@@ -2295,7 +2299,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 
 			// For test cases expecting QueueAfterBackoff, ensure the deleted pod is assigned
 			// For test cases expecting QueueSkip when pod is not assigned, don't assign the pod
-			if tt.deletedPod != nil && tt.expectedQueueingHint == framework.QueueAfterBackoff {
+			if tt.deletedPod != nil && tt.expectedQueueingHint == fwktype.Queue {
 				// Set NodeName to make the pod assignable
 				if tt.deletedPod.Spec.NodeName == "" {
 					tt.deletedPod.Spec.NodeName = "test-node"
@@ -2319,7 +2323,8 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			if tt.deletedPod == nil {
 				oldObj = "invalid"
 			}
-			result := gp.isSchedulableAfterPodDeletion(klog.Background(), tt.pod, oldObj, nil)
+			result, err := gp.isSchedulableAfterPodDeletion(klog.Background(), tt.pod, oldObj, nil)
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedQueueingHint, result)
 		})
 	}
@@ -2368,7 +2373,7 @@ func TestPlugin_updateQuotaSnapshot(t *testing.T) {
 			suit := newPluginTestSuit(t, nil, func(args *config.ElasticQuotaArgs) {
 				args.EnableQueueHint = true
 			})
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			gp := p.(*Plugin)
 

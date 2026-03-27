@@ -52,6 +52,14 @@ const (
 	// DisablePodDisruptionBudgetInformer is used to disable PodDisruptionBudget informer
 	DisablePodDisruptionBudgetInformer featuregate.Feature = "DisablePodDisruptionBudgetInformer"
 
+	// owner: @saintube
+	// alpha: v1.8
+	//
+	// DisableDynamicResourceAllocationInformer is used to disable DynamicResourceAllocation
+	// (DRA) informers (ResourceClaims, ResourceSlices, DeviceClasses, DeviceTaintRules) for
+	// clusters that do not support resource.k8s.io/v1 (i.e., Kubernetes < 1.32).
+	DisableDynamicResourceAllocationInformer featuregate.Feature = "DisableDynamicResourceAllocationInformer"
+
 	// owner: @joseph
 	// alpha: v0.1
 	//
@@ -116,6 +124,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	DisableCSIStorageCapacityInformer:         {Default: false, PreRelease: featuregate.Alpha},
 	CompatiblePodDisruptionBudget:             {Default: false, PreRelease: featuregate.Alpha},
 	DisablePodDisruptionBudgetInformer:        {Default: false, PreRelease: featuregate.Alpha},
+	DisableDynamicResourceAllocationInformer:  {Default: false, PreRelease: featuregate.Alpha},
 	ResizePod:                                 {Default: false, PreRelease: featuregate.Alpha},
 	MultiQuotaTree:                            {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaIgnorePodOverhead:             {Default: false, PreRelease: featuregate.Alpha},

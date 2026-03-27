@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -68,7 +68,7 @@ type reusableAlloc struct {
 	remained    map[int]corev1.ResourceList
 }
 
-func getReservationRestoreState(cycleState *framework.CycleState) *reservationRestoreStateData {
+func getReservationRestoreState(cycleState fwktype.CycleState) *reservationRestoreStateData {
 	var state *reservationRestoreStateData
 	value, err := cycleState.Read(reservationRestoreStateKey)
 	if err == nil {
@@ -82,7 +82,7 @@ func getReservationRestoreState(cycleState *framework.CycleState) *reservationRe
 	return state
 }
 
-func (s *reservationRestoreStateData) Clone() framework.StateData {
+func (s *reservationRestoreStateData) Clone() fwktype.StateData {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s
@@ -178,14 +178,14 @@ func appendAllocated(m map[int]corev1.ResourceList, allocatedList ...map[int]cor
 	return m
 }
 
-func (p *Plugin) PreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (p *Plugin) PreRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status {
 	state := getReservationRestoreState(cycleState)
 	cycleState.Write(reservationRestoreStateKey, state)
 	return nil
 }
 
 // RestoreReservation restores the fine-grained resources (CPUSet, NUMA) held by matched reservations and unmatched allocated reservations.
-func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*frameworkext.ReservationInfo, unmatched []*frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status) {
+func (p *Plugin) RestoreReservation(ctx context.Context, cycleState fwktype.CycleState, podToSchedule *corev1.Pod, matched []*frameworkext.ReservationInfo, unmatched []*frameworkext.ReservationInfo, nodeInfo fwktype.NodeInfo) (interface{}, *fwktype.Status) {
 	nodeName := nodeInfo.Node().Name
 	filterFn := func(reservations []*frameworkext.ReservationInfo) map[types.UID]reusableAlloc {
 		if len(reservations) == 0 {
@@ -262,7 +262,7 @@ func (p *Plugin) RestoreReservation(ctx context.Context, cycleState *framework.C
 }
 
 // PreRestoreReservationPreAllocation is called before RestoreReservationPreAllocation to prepare state
-func (p *Plugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *frameworkext.ReservationInfo) *framework.Status {
+func (p *Plugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, r *frameworkext.ReservationInfo) *fwktype.Status {
 	// PreAllocation restore uses the same state as normal reservation restore
 	state := getReservationRestoreState(cycleState)
 	cycleState.Write(reservationRestoreStateKey, state)
@@ -270,7 +270,7 @@ func (p *Plugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleSt
 }
 
 // RestoreReservationPreAllocation restores the fine-grained resources (CPUSet, NUMA) held by pre-allocatable pods.
-func (p *Plugin) RestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *frameworkext.ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status) {
+func (p *Plugin) RestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, r *frameworkext.ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo fwktype.NodeInfo) (interface{}, *fwktype.Status) {
 	if len(preAllocatable) == 0 {
 		return nil, nil
 	}
@@ -339,7 +339,7 @@ func (p *Plugin) RestoreReservationPreAllocation(ctx context.Context, cycleState
 }
 
 // DEPRECATED
-func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeToStates frameworkext.NodeReservationRestoreStates) *framework.Status {
+func (p *Plugin) FinalRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeToStates frameworkext.NodeReservationRestoreStates) *fwktype.Status {
 	state := &reservationRestoreStateData{
 		nodeToState: nodeToStates,
 	}
@@ -354,7 +354,7 @@ func tryAllocateFromReusable(
 	matchedReusableAllocs map[types.UID]reusableAlloc, // reusable allocations from matched reservations or pre-allocatable pods
 	pod *corev1.Pod, // normal pod or pre-allocatabing reserve pod
 	node *corev1.Node,
-) (*PodAllocation, *framework.Status) {
+) (*PodAllocation, *fwktype.Status) {
 	if len(matchedReusableAllocs) == 0 {
 		return nil, nil
 	}
@@ -365,7 +365,7 @@ func tryAllocateFromReusable(
 
 	var hasSatisfiedReservation bool
 	var result *PodAllocation
-	var status *framework.Status
+	var status *fwktype.Status
 
 	reusableResource := appendAllocated(nil, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocated)
 	preferredCPUs := restoreState.mergedMatchedAllocatedCPUs
@@ -381,7 +381,7 @@ func tryAllocateFromReusable(
 
 	isPreAllocation := restoreState.preAllocationRInfo != nil // use the cycle state to avoid misunderstanding
 
-	var reservationReasons []*framework.Status
+	var reservationReasons []*fwktype.Status
 	for _, alloc := range matchedReusableAllocs {
 		rInfo := alloc.rInfo
 
@@ -465,7 +465,7 @@ func tryAllocateFromReusable(
 			}
 
 			if resourceOptions.requestCPUBind && resourceOptions.numCPUsNeeded > reservedCPUs.Size() {
-				reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, ErrNotEnoughCPUs))
+				reservationReasons = append(reservationReasons, fwktype.NewStatus(fwktype.Unschedulable, ErrNotEnoughCPUs))
 				klog.V(5).InfoS("failed to allocated from reservation, not enough cpus available to satisfy request",
 					"reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name,
 					"policy", allocatePolicy, "numCPUsNeeded", resourceOptions.numCPUsNeeded,
@@ -490,14 +490,14 @@ func tryAllocateFromReusable(
 			}
 
 			if !isPreAllocation && result.CPUSet.Size() > reservedCPUs.Size() { // normal pod should allocate no more cpus than the reservation remained
-				reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, ErrNotEnoughCPUs))
+				reservationReasons = append(reservationReasons, fwktype.NewStatus(fwktype.Unschedulable, ErrNotEnoughCPUs))
 				klog.V(5).InfoS("failed to allocated from reservation, not enough cpus available to satisfy request",
 					"reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name,
 					"policy", allocatePolicy, "allocateCPUs", result.CPUSet.String(),
 					"reservedCPUs", reservedCPUs.String(), "remainedCPUs", alloc.remainedCPUs.String())
 				continue
 			} else if isPreAllocation && !reservedCPUs.IsSubsetOf(result.CPUSet) { // reserve pod should pre-allocate a superset of the pod requested cpus
-				reservationReasons = append(reservationReasons, framework.NewStatus(framework.Unschedulable, ErrNotEnoughCPUs))
+				reservationReasons = append(reservationReasons, fwktype.NewStatus(fwktype.Unschedulable, ErrNotEnoughCPUs))
 				klog.V(5).InfoS("failed to pre-allocated from pod, not enough cpus available to satisfy request",
 					"reservation", rInfo.Reservation.Name, "pod", pod.Name, "pre-allocatable", klog.KObj(alloc.preAllocatable), "node", node.Name,
 					"policy", allocatePolicy, "allocateCPUs", result.CPUSet.String(),
@@ -510,12 +510,12 @@ func tryAllocateFromReusable(
 		}
 	}
 	if !hasSatisfiedReservation && (resourceOptions.requiredFromReservation || resourceOptions.requiredPreAllocation) {
-		return nil, framework.NewStatus(framework.Unschedulable, makeReasonsByReservation(reservationReasons)...)
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, makeReasonsByReservation(reservationReasons)...)
 	}
 	return result, nil
 }
 
-func makeReasonsByReservation(reservationReasons []*framework.Status) []string {
+func makeReasonsByReservation(reservationReasons []*fwktype.Status) []string {
 	var reasons []string
 	for _, status := range reservationReasons {
 		for _, r := range status.Reasons() {
@@ -532,7 +532,7 @@ func tryAllocateIgnoreReservation(manager ResourceManager,
 	ignoredReservations map[types.UID]reusableAlloc,
 	pod *corev1.Pod,
 	node *corev1.Node,
-) (*PodAllocation, *framework.Status) {
+) (*PodAllocation, *fwktype.Status) {
 	reusableResourcesFromIgnored := appendAllocated(nil, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocated)
 	reservedCPUsFromIgnored := restoreState.mergedMatchedAllocatedCPUs.Clone()
 	preemptibleCPUs := cpuset.NewCPUSet()
@@ -587,7 +587,7 @@ func (p *Plugin) allocateWithNominated(
 	resourceOptions *ResourceOptions,
 	pod *corev1.Pod,
 	node *corev1.Node,
-) (*PodAllocation, *framework.Status) {
+) (*PodAllocation, *fwktype.Status) {
 	if reservationutil.IsReservePod(pod) && !reservationutil.IsReservePodPreAllocation(pod) {
 		return nil, nil
 	}
@@ -628,12 +628,12 @@ func (p *Plugin) getPodNominatedReservationInfo(pod *corev1.Pod, nodeName string
 	return nil
 }
 
-func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreStateData, resourceOptions *ResourceOptions, pod *corev1.Pod, node *corev1.Node) (map[types.UID]reusableAlloc, *framework.Status) {
+func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreStateData, resourceOptions *ResourceOptions, pod *corev1.Pod, node *corev1.Node) (map[types.UID]reusableAlloc, *fwktype.Status) {
 	if !reservationutil.IsReservePod(pod) { // for a normal pod, return the reusable alloc of the nominated reservation
 		rInfo := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
 		if rInfo == nil {
 			if resourceOptions.requiredFromReservation {
-				return nil, framework.NewStatus(framework.Unschedulable, "no nominated reservation")
+				return nil, fwktype.NewStatus(fwktype.Unschedulable, "no nominated reservation")
 			}
 			return nil, nil
 		}
@@ -651,7 +651,7 @@ func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreS
 
 	if restoreState.preAllocationRInfo == nil {
 		if resourceOptions.requiredPreAllocation {
-			return nil, framework.NewStatus(framework.Unschedulable, "no nominated pre-allocatable pod")
+			return nil, fwktype.NewStatus(fwktype.Unschedulable, "no nominated pre-allocatable pod")
 		}
 		klog.V(5).Infof("node has no pre-allocatable any numa resource, pod %s, node %v", klog.KObj(pod), node.Name)
 		return nil, nil
@@ -659,7 +659,7 @@ func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreS
 	preAllocatable := p.handle.GetReservationNominator().GetNominatedPreAllocation(restoreState.preAllocationRInfo, node.Name)
 	if preAllocatable == nil {
 		if resourceOptions.requiredPreAllocation {
-			return nil, framework.NewStatus(framework.Unschedulable, "no nominated pre-allocatable pod")
+			return nil, fwktype.NewStatus(fwktype.Unschedulable, "no nominated pre-allocatable pod")
 		}
 		return nil, nil
 	}

@@ -26,9 +26,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/ptr"
 
@@ -43,6 +46,21 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
+
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	// In k8s v1.35, WatchListClient defaults to true (Beta), but fake clients
+	// don't support bookmark events required by WatchList, causing WaitForCacheSync to hang.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 type Mgr struct {
 	pgMgr      *PodGroupManager
@@ -474,20 +492,20 @@ func TestPermit(t *testing.T) {
 }
 
 type fakeEvaluator struct {
-	result *framework.PostFilterResult
-	status *framework.Status
+	result *fwktype.PostFilterResult
+	status *fwktype.Status
 }
 
-func (f *fakeEvaluator) Preempt(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (f *fakeEvaluator) Preempt(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, m fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status) {
 	return f.result, f.status
 }
 
 func TestPodGroupManager_PostFilter(t *testing.T) {
 	type args struct {
 		ctx   context.Context
-		state *framework.CycleState
+		state fwktype.CycleState
 		pod   *corev1.Pod
-		m     framework.NodeToStatusMap
+		m     fwktype.NodeToStatusReader
 	}
 	tests := []struct {
 		name                  string
@@ -495,8 +513,8 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 		enablePreemption      bool
 		preemptionEvaluator   PreemptionEvaluator
 		gangSchedulingContext *GangSchedulingContext
-		wantPostFilterResult  *framework.PostFilterResult
-		wantStatus            *framework.Status
+		wantPostFilterResult  *fwktype.PostFilterResult
+		wantStatus            *fwktype.Status
 		wantFailedMessage     string
 	}{
 		{
@@ -505,8 +523,8 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 				state: framework.NewCycleState(),
 				pod:   st.MakePod().Name("pod").UID("pod").Obj(),
 			},
-			wantPostFilterResult: &framework.PostFilterResult{},
-			wantStatus:           framework.NewStatus(framework.Unschedulable),
+			wantPostFilterResult: &fwktype.PostFilterResult{},
+			wantStatus:           fwktype.NewStatus(fwktype.Unschedulable),
 		},
 		{
 			name: "bare pod",
@@ -516,11 +534,11 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 			},
 			enablePreemption: true,
 			preemptionEvaluator: &fakeEvaluator{
-				result: &framework.PostFilterResult{},
-				status: framework.NewStatus(framework.Unschedulable),
+				result: &fwktype.PostFilterResult{},
+				status: fwktype.NewStatus(fwktype.Unschedulable),
 			},
-			wantPostFilterResult: &framework.PostFilterResult{},
-			wantStatus:           framework.NewStatus(framework.Unschedulable),
+			wantPostFilterResult: &fwktype.PostFilterResult{},
+			wantStatus:           fwktype.NewStatus(fwktype.Unschedulable),
 		},
 		{
 			name: "gang pod",
@@ -542,11 +560,11 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 				gangGroup:   sets.New[string]("default/gangA"),
 			},
 			preemptionEvaluator: &fakeEvaluator{
-				result: &framework.PostFilterResult{},
-				status: framework.NewStatus(framework.Unschedulable, "some message"),
+				result: &fwktype.PostFilterResult{},
+				status: fwktype.NewStatus(fwktype.Unschedulable, "some message"),
 			},
-			wantPostFilterResult: &framework.PostFilterResult{},
-			wantStatus:           framework.NewStatus(framework.Unschedulable, "preemption: some message"),
+			wantPostFilterResult: &fwktype.PostFilterResult{},
+			wantStatus:           fwktype.NewStatus(fwktype.Unschedulable, "preemption: some message"),
 			wantFailedMessage:    `GangGroup "default/gangA" gets rejected due to member Pod "default/pod1" is unschedulable with reason "0/0 nodes are available:", alreadyWaitForBound: 0`,
 		},
 	}

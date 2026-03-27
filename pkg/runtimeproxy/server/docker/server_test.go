@@ -22,6 +22,7 @@ import (
 
 	dockertypes "github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	dockersystem "github.com/docker/docker/api/types/system"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/koordinator-sh/koordinator/pkg/runtimeproxy/server/types"
@@ -31,16 +32,16 @@ import (
 var _ proxyDockerClient = &fakeDockerClient{}
 
 type fakeDockerClient struct {
-	Information    dockertypes.Info
+	Information    dockersystem.Info
 	ContatinerJson map[string]dockertypes.ContainerJSON
-	Containers     []dockertypes.Container
+	Containers     []container.Summary
 }
 
-func (f *fakeDockerClient) Info(ctx context.Context) (dockertypes.Info, error) {
+func (f *fakeDockerClient) Info(ctx context.Context) (dockersystem.Info, error) {
 	return f.Information, nil
 }
 
-func (f *fakeDockerClient) ContainerList(ctx context.Context, options dockertypes.ContainerListOptions) ([]dockertypes.Container, error) {
+func (f *fakeDockerClient) ContainerList(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
 	return f.Containers, nil
 }
 
@@ -50,7 +51,7 @@ func (f *fakeDockerClient) ContainerInspect(ctx context.Context, containerID str
 
 func Test_failover(t *testing.T) {
 	fakeClient := &fakeDockerClient{
-		Information: dockertypes.Info{
+		Information: dockersystem.Info{
 			CgroupDriver: "systemd",
 		},
 		ContatinerJson: map[string]dockertypes.ContainerJSON{
@@ -67,7 +68,7 @@ func Test_failover(t *testing.T) {
 				},
 			},
 		},
-		Containers: []dockertypes.Container{
+		Containers: []container.Summary{
 			{
 				ID: "id1",
 				Labels: map[string]string{

@@ -592,7 +592,7 @@ func (g *ContainerResourceGatherer) StopAndSummarize(percentiles []int, constrai
 		}
 	}
 	if len(violatedConstraints) > 0 {
-		return &summary, fmt.Errorf(strings.Join(violatedConstraints, "\n"))
+		return &summary, fmt.Errorf("%s", strings.Join(violatedConstraints, "\n"))
 	}
 	return &summary, nil
 }

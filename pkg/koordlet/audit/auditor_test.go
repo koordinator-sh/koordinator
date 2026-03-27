@@ -45,7 +45,7 @@ func TestAuditorLogger(t *testing.T) {
 	blocks := make([][]byte, 26)
 	for i := 0; i < len(blocks); i++ {
 		blocks[i] = makeBlock(63, 'a'+byte(i%26))
-		logger.V(0).Node().Message(string(blocks[i])).Do()
+		logger.V(0).Node().Message("%s", string(blocks[i])).Do()
 	}
 	logger.Flush()
 
@@ -131,7 +131,7 @@ func TestAuditorLoggerTxtOutput(t *testing.T) {
 	blocks := make([][]byte, 26)
 	for i := 0; i < len(blocks); i++ {
 		blocks[i] = makeBlock(63, 'a'+byte(i%26))
-		logger.V(0).Node().Message(string(blocks[i])).Do()
+		logger.V(0).Node().Message("%s", string(blocks[i])).Do()
 	}
 	logger.Flush()
 
@@ -169,7 +169,7 @@ func TestAuditorLoggerReaderInvalidPageToken(t *testing.T) {
 	blocks := make([][]byte, 26)
 	for i := 0; i < len(blocks); i++ {
 		blocks[i] = makeBlock(63, 'a'+byte(i%26))
-		logger.V(0).Node().Message(string(blocks[i])).Do()
+		logger.V(0).Node().Message("%s", string(blocks[i])).Do()
 	}
 	logger.Flush()
 
@@ -231,7 +231,7 @@ func TestAuditorLoggerMaxActiveReaders(t *testing.T) {
 	blocks := make([][]byte, 26)
 	for i := 0; i < len(blocks); i++ {
 		blocks[i] = makeBlock(63, 'a'+byte(i%26))
-		logger.V(0).Node().Message(string(blocks[i])).Do()
+		logger.V(0).Node().Message("%s", string(blocks[i])).Do()
 	}
 	logger.Flush()
 

@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	analysisv1alpha1 "github.com/koordinator-sh/koordinator/apis/analysis/v1alpha1"
+	apisanalysisv1alpha1 "github.com/koordinator-sh/koordinator/apis/analysis/v1alpha1"
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/analysis/v1alpha1"
+	analysisv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/analysis/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // Recommendations.
 type RecommendationInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.RecommendationLister
+	Lister() analysisv1alpha1.RecommendationLister
 }
 
 type recommendationInformer struct {
@@ -57,21 +57,33 @@ func NewRecommendationInformer(client versioned.Interface, namespace string, res
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredRecommendationInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AnalysisV1alpha1().Recommendations(namespace).List(context.TODO(), options)
+				return client.AnalysisV1alpha1().Recommendations(namespace).List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AnalysisV1alpha1().Recommendations(namespace).Watch(context.TODO(), options)
+				return client.AnalysisV1alpha1().Recommendations(namespace).Watch(context.Background(), options)
 			},
-		},
-		&analysisv1alpha1.Recommendation{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.AnalysisV1alpha1().Recommendations(namespace).List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.AnalysisV1alpha1().Recommendations(namespace).Watch(ctx, options)
+			},
+		}, client),
+		&apisanalysisv1alpha1.Recommendation{},
 		resyncPeriod,
 		indexers,
 	)
@@ -82,9 +94,9 @@ func (f *recommendationInformer) defaultInformer(client versioned.Interface, res
 }
 
 func (f *recommendationInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&analysisv1alpha1.Recommendation{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisanalysisv1alpha1.Recommendation{}, f.defaultInformer)
 }
 
-func (f *recommendationInformer) Lister() v1alpha1.RecommendationLister {
-	return v1alpha1.NewRecommendationLister(f.Informer().GetIndexer())
+func (f *recommendationInformer) Lister() analysisv1alpha1.RecommendationLister {
+	return analysisv1alpha1.NewRecommendationLister(f.Informer().GetIndexer())
 }

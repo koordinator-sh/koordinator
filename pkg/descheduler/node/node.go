@@ -28,8 +28,8 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	clientset "k8s.io/client-go/kubernetes"
+	resourcehelper "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	resourcehelper "k8s.io/kubernetes/pkg/api/v1/resource"
 
 	podutil "github.com/koordinator-sh/koordinator/pkg/descheduler/pod"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/utils"

@@ -150,13 +150,13 @@ func (p *ColocationHandlerForConfigMapEvent) updateCacheIfChanged(newCfg *config
 	return changed
 }
 
-func (p *ColocationHandlerForConfigMapEvent) triggerAllNodeEnqueue(q *workqueue.RateLimitingInterface) {
+func (p *ColocationHandlerForConfigMapEvent) triggerAllNodeEnqueue(q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	nodeList := &corev1.NodeList{}
 	if err := p.Client.List(context.TODO(), nodeList); err != nil {
 		return
 	}
 	for _, node := range nodeList.Items {
-		(*q).Add(reconcile.Request{
+		q.Add(reconcile.Request{
 			NamespacedName: types.NamespacedName{
 				Name: node.Name,
 			},

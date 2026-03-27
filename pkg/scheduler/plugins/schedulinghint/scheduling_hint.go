@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -39,7 +39,7 @@ const (
 )
 
 var (
-	_ framework.PreFilterPlugin              = &Plugin{}
+	_ fwktype.PreFilterPlugin                = &Plugin{}
 	_ frameworkext.PreFilterTransformer      = &Plugin{}
 	_ frameworkext.PreferNodesPluginProvider = &Plugin{}
 	_ frameworkext.PreferNodesPlugin         = &Plugin{}
@@ -50,7 +50,7 @@ type Plugin struct {
 	maxHintNodes int32
 }
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 	extendedHandle, ok := handle.(frameworkext.ExtendedHandle)
 	if !ok {
 		return nil, fmt.Errorf("handle is not a frameworkext.ExtendedHandle")
@@ -72,24 +72,24 @@ func (p *Plugin) Name() string {
 	return Name
 }
 
-func (p *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+func (p *Plugin) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
 	hintState := hinter.GetSchedulingHintState(state)
 	if hintState == nil || len(hintState.PreFilterNodes) <= 0 {
 		return nil, nil
 	}
-	return &framework.PreFilterResult{
+	return &fwktype.PreFilterResult{
 		NodeNames: sets.New(hintState.PreFilterNodes...),
 	}, nil
 }
 
-func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
+func (p *Plugin) PreFilterExtensions() fwktype.PreFilterExtensions {
 	return nil
 }
 
-func (p *Plugin) BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status) {
+func (p *Plugin) BeforePreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *fwktype.Status) {
 	hint, err := extension.GetSchedulingHint(pod)
 	if err != nil {
-		return nil, false, framework.NewStatus(framework.Error, err.Error())
+		return nil, false, fwktype.NewStatus(fwktype.Error, err.Error())
 	}
 	if hint == nil {
 		return nil, false, nil
@@ -103,7 +103,7 @@ func (p *Plugin) BeforePreFilter(ctx context.Context, cycleState *framework.Cycl
 	return nil, false, nil
 }
 
-func (p *Plugin) AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, preRes *framework.PreFilterResult) *framework.Status {
+func (p *Plugin) AfterPreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, preRes *fwktype.PreFilterResult) *fwktype.Status {
 	return nil
 }
 
@@ -111,10 +111,10 @@ func (p *Plugin) PreferNodesPlugin() frameworkext.PreferNodesPlugin {
 	return p
 }
 
-func (p *Plugin) PreferNodes(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) ([]string, *framework.Status) {
+func (p *Plugin) PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status) {
 	hintState := hinter.GetSchedulingHintState(cycleState)
 	if hintState == nil || len(hintState.PreferredNodes) <= 0 {
-		return nil, framework.NewStatus(framework.Skip, "")
+		return nil, fwktype.NewStatus(fwktype.Skip, "")
 	}
 
 	preferredNodes := hintState.PreferredNodes
@@ -134,7 +134,7 @@ func (p *Plugin) PreferNodes(ctx context.Context, cycleState *framework.CycleSta
 		}
 		if len(filteredPreferNodes) <= 0 {
 			klog.V(4).InfoS("Preferred nodes are filtered out by PreFilter, skip", "pod", klog.KObj(pod), "preferredNodes", hintState.PreferredNodes)
-			return nil, framework.NewStatus(framework.Skip, "")
+			return nil, fwktype.NewStatus(fwktype.Skip, "")
 		}
 		klog.V(5).InfoS("Use the filtered preferred nodes", "pod", klog.KObj(pod), "filteredPreferNodes", filteredPreferNodes)
 		return filteredPreferNodes, nil

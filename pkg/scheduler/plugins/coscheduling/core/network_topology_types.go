@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -14,7 +14,7 @@ import (
 type TopologyState struct {
 	JobTopologyRequirements  *JobTopologyRequirements
 	NodeOfferSlot            map[string]int
-	NodeToStatusMap          framework.NodeToStatusMap
+	NodeToStatusMap          map[string]*fwktype.Status
 	MustGatheredTopologyNode []*networktopology.TreeNode
 }
 

@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -30,11 +31,11 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
-var _ handler.EventHandler = &nrtHandler{}
+var _ handler.TypedEventHandler[ctrlclient.Object, reconcile.Request] = &nrtHandler{}
 
 type nrtHandler struct{}
 
-func (h *nrtHandler) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (h *nrtHandler) Create(ctx context.Context, evt event.TypedCreateEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	nrt, ok := evt.Object.(*topologyv1alpha1.NodeResourceTopology)
 	if !ok {
 		return
@@ -51,7 +52,7 @@ func (h *nrtHandler) Create(ctx context.Context, evt event.CreateEvent, q workqu
 	})
 }
 
-func (h *nrtHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (h *nrtHandler) Update(ctx context.Context, evt event.TypedUpdateEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	nrtOld, okOld := evt.ObjectOld.(*topologyv1alpha1.NodeResourceTopology)
 	nrtNew, okNew := evt.ObjectNew.(*topologyv1alpha1.NodeResourceTopology)
 	if !okOld || !okNew {
@@ -73,10 +74,10 @@ func (h *nrtHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqu
 	})
 }
 
-func (h *nrtHandler) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (h *nrtHandler) Delete(ctx context.Context, evt event.TypedDeleteEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
-func (h *nrtHandler) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (h *nrtHandler) Generic(ctx context.Context, evt event.TypedGenericEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
 func isNRTCPUBasicInfoCreated(nrt *topologyv1alpha1.NodeResourceTopology) bool {

@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	corev1helper "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -36,17 +37,17 @@ type NominatedPodsOfTheSameJob struct {
 	UIDs sets.Set[string]
 }
 
-func (s *NominatedPodsOfTheSameJob) Clone() framework.StateData {
+func (s *NominatedPodsOfTheSameJob) Clone() fwktype.StateData {
 	return s
 }
 
-func MakeNominatedPodsOfTheSameJob(cycleState *framework.CycleState, uids []string) {
+func MakeNominatedPodsOfTheSameJob(cycleState fwktype.CycleState, uids []string) {
 	cycleState.Write(nominatedPodsOfTheSameJob, &NominatedPodsOfTheSameJob{
 		UIDs: sets.New[string](uids...),
 	})
 }
 
-func getNominatedPodsOfTheSameJob(cycleState *framework.CycleState) sets.Set[string] {
+func getNominatedPodsOfTheSameJob(cycleState fwktype.CycleState) sets.Set[string] {
 	s, err := cycleState.Read(nominatedPodsOfTheSameJob)
 	if err != nil || s == nil {
 		return nil
@@ -55,8 +56,8 @@ func getNominatedPodsOfTheSameJob(cycleState *framework.CycleState) sets.Set[str
 
 }
 
-func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPodsIgnoreSameJob(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, info *framework.NodeInfo, podsOfSameJob sets.Set[string]) *framework.Status {
-	var status *framework.Status
+func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPodsIgnoreSameJob(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, info fwktype.NodeInfo, podsOfSameJob sets.Set[string]) *fwktype.Status {
+	var status *fwktype.Status
 
 	podsAdded := false
 	// We run filters twice in some cases. If the node has greater or equal priority
@@ -88,7 +89,7 @@ func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPodsIgnoreSameJob
 			var err error
 			podsAdded, stateToUse, nodeInfoToUse, err, addedPods = addNominatedPods(ctx, ext, pod, state, info, podsOfSameJob)
 			if err != nil {
-				return framework.AsStatus(err)
+				return fwktype.AsStatus(err)
 			}
 		} else if !podsAdded || !status.IsSuccess() {
 			break
@@ -96,17 +97,17 @@ func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPodsIgnoreSameJob
 
 		status = ext.RunFilterPlugins(ctx, stateToUse, pod, nodeInfoToUse)
 		if !status.IsSuccess() && pod.Status.NominatedNodeName == nodeInfoToUse.Node().Name && klog.V(4).Enabled() {
-			existingPods := make([]string, 0, len(nodeInfoToUse.Pods))
-			for _, podInfo := range nodeInfoToUse.Pods {
-				if len(podInfo.Pod.OwnerReferences) != 0 && podInfo.Pod.OwnerReferences[0].Kind == "DaemonSet" {
+			existingPods := make([]string, 0, len(nodeInfoToUse.GetPods()))
+			for _, podInfo := range nodeInfoToUse.GetPods() {
+				if len(podInfo.GetPod().OwnerReferences) != 0 && podInfo.GetPod().OwnerReferences[0].Kind == "DaemonSet" {
 					// Normally, the daemonset on the node does not occupy resources, so when collecting the existing Pods, the daemonset Pods are ignored to reduce the number of logs.
 					continue
 				}
-				existingPods = append(existingPods, framework.GetNamespacedName(podInfo.Pod.Namespace, podInfo.Pod.Name))
+				existingPods = append(existingPods, framework.GetNamespacedName(podInfo.GetPod().Namespace, podInfo.GetPod().Name))
 			}
 			klog.V(4).Infof("Pod %s/%s is nominated to run on node %q, but failed to scheduling cause some existingPods: %+v, addedPods: %+v, status: %+v", pod.Namespace, pod.Name, nodeInfoToUse.Node().Name, existingPods, addedPods, status)
 		}
-		if !status.IsSuccess() && !status.IsUnschedulable() {
+		if !status.IsSuccess() && !(status.Code() == fwktype.Unschedulable || status.Code() == fwktype.UnschedulableAndUnresolvable) {
 			return status
 		}
 
@@ -118,7 +119,7 @@ func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPodsIgnoreSameJob
 // addNominatedPods adds pods with equal or greater priority which are nominated
 // to run on the node. It returns 1) whether any pod was added, 2) augmented cycleState,
 // 3) augmented nodeInfo.
-func addNominatedPods(ctx context.Context, fh framework.Handle, pod *corev1.Pod, state *framework.CycleState, nodeInfo *framework.NodeInfo, podsOfSameJob sets.Set[string]) (bool, *framework.CycleState, *framework.NodeInfo, error, []string) {
+func addNominatedPods(ctx context.Context, fh fwktype.Handle, pod *corev1.Pod, state fwktype.CycleState, nodeInfo fwktype.NodeInfo, podsOfSameJob sets.Set[string]) (bool, fwktype.CycleState, fwktype.NodeInfo, error, []string) {
 	if fh == nil {
 		// This may happen only in tests.
 		return false, state, nodeInfo, nil, nil
@@ -127,16 +128,16 @@ func addNominatedPods(ctx context.Context, fh framework.Handle, pod *corev1.Pod,
 	if len(nominatedPodInfos) == 0 {
 		return false, state, nodeInfo, nil, nil
 	}
-	nodeInfoOut := nodeInfo.Clone()
+	nodeInfoOut := nodeInfo.Snapshot()
 	stateOut := state.Clone()
 	podsAdded := false
 	var addedPods []string
 
 	for _, pi := range nominatedPodInfos {
-		if corev1helper.PodPriority(pi.Pod) >= corev1helper.PodPriority(pod) && pi.Pod.UID != pod.UID && !podsOfSameJob.Has(string(pi.Pod.UID)) {
+		if corev1helper.PodPriority(pi.GetPod()) >= corev1helper.PodPriority(pod) && pi.GetPod().UID != pod.UID && !podsOfSameJob.Has(string(pi.GetPod().UID)) {
 			nodeInfoOut.AddPodInfo(pi)
 			if klog.V(5).Enabled() || pod.Status.NominatedNodeName == nodeInfo.Node().Name {
-				addedPods = append(addedPods, framework.GetNamespacedName(pi.Pod.Namespace, pi.Pod.Name))
+				addedPods = append(addedPods, framework.GetNamespacedName(pi.GetPod().Namespace, pi.GetPod().Name))
 			}
 			status := fh.RunPreFilterExtensionAddPod(ctx, stateOut, pod, pi, nodeInfoOut)
 			if !status.IsSuccess() {

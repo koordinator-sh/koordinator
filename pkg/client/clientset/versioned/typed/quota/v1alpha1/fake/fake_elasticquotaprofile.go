@@ -19,123 +19,34 @@ limitations under the License.
 package fake
 
 import (
-	"context"
-
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	quotav1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/quota/v1alpha1"
+	gentype "k8s.io/client-go/gentype"
 )
 
-// FakeElasticQuotaProfiles implements ElasticQuotaProfileInterface
-type FakeElasticQuotaProfiles struct {
+// fakeElasticQuotaProfiles implements ElasticQuotaProfileInterface
+type fakeElasticQuotaProfiles struct {
+	*gentype.FakeClientWithList[*v1alpha1.ElasticQuotaProfile, *v1alpha1.ElasticQuotaProfileList]
 	Fake *FakeQuotaV1alpha1
-	ns   string
 }
 
-var elasticquotaprofilesResource = v1alpha1.SchemeGroupVersion.WithResource("elasticquotaprofiles")
-
-var elasticquotaprofilesKind = v1alpha1.SchemeGroupVersion.WithKind("ElasticQuotaProfile")
-
-// Get takes name of the elasticQuotaProfile, and returns the corresponding elasticQuotaProfile object, and an error if there is any.
-func (c *FakeElasticQuotaProfiles) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ElasticQuotaProfile, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(elasticquotaprofilesResource, c.ns, name), &v1alpha1.ElasticQuotaProfile{})
-
-	if obj == nil {
-		return nil, err
+func newFakeElasticQuotaProfiles(fake *FakeQuotaV1alpha1, namespace string) quotav1alpha1.ElasticQuotaProfileInterface {
+	return &fakeElasticQuotaProfiles{
+		gentype.NewFakeClientWithList[*v1alpha1.ElasticQuotaProfile, *v1alpha1.ElasticQuotaProfileList](
+			fake.Fake,
+			namespace,
+			v1alpha1.SchemeGroupVersion.WithResource("elasticquotaprofiles"),
+			v1alpha1.SchemeGroupVersion.WithKind("ElasticQuotaProfile"),
+			func() *v1alpha1.ElasticQuotaProfile { return &v1alpha1.ElasticQuotaProfile{} },
+			func() *v1alpha1.ElasticQuotaProfileList { return &v1alpha1.ElasticQuotaProfileList{} },
+			func(dst, src *v1alpha1.ElasticQuotaProfileList) { dst.ListMeta = src.ListMeta },
+			func(list *v1alpha1.ElasticQuotaProfileList) []*v1alpha1.ElasticQuotaProfile {
+				return gentype.ToPointerSlice(list.Items)
+			},
+			func(list *v1alpha1.ElasticQuotaProfileList, items []*v1alpha1.ElasticQuotaProfile) {
+				list.Items = gentype.FromPointerSlice(items)
+			},
+		),
+		fake,
 	}
-	return obj.(*v1alpha1.ElasticQuotaProfile), err
-}
-
-// List takes label and field selectors, and returns the list of ElasticQuotaProfiles that match those selectors.
-func (c *FakeElasticQuotaProfiles) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ElasticQuotaProfileList, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewListAction(elasticquotaprofilesResource, elasticquotaprofilesKind, c.ns, opts), &v1alpha1.ElasticQuotaProfileList{})
-
-	if obj == nil {
-		return nil, err
-	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &v1alpha1.ElasticQuotaProfileList{ListMeta: obj.(*v1alpha1.ElasticQuotaProfileList).ListMeta}
-	for _, item := range obj.(*v1alpha1.ElasticQuotaProfileList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
-}
-
-// Watch returns a watch.Interface that watches the requested elasticQuotaProfiles.
-func (c *FakeElasticQuotaProfiles) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(elasticquotaprofilesResource, c.ns, opts))
-
-}
-
-// Create takes the representation of a elasticQuotaProfile and creates it.  Returns the server's representation of the elasticQuotaProfile, and an error, if there is any.
-func (c *FakeElasticQuotaProfiles) Create(ctx context.Context, elasticQuotaProfile *v1alpha1.ElasticQuotaProfile, opts v1.CreateOptions) (result *v1alpha1.ElasticQuotaProfile, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(elasticquotaprofilesResource, c.ns, elasticQuotaProfile), &v1alpha1.ElasticQuotaProfile{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.ElasticQuotaProfile), err
-}
-
-// Update takes the representation of a elasticQuotaProfile and updates it. Returns the server's representation of the elasticQuotaProfile, and an error, if there is any.
-func (c *FakeElasticQuotaProfiles) Update(ctx context.Context, elasticQuotaProfile *v1alpha1.ElasticQuotaProfile, opts v1.UpdateOptions) (result *v1alpha1.ElasticQuotaProfile, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(elasticquotaprofilesResource, c.ns, elasticQuotaProfile), &v1alpha1.ElasticQuotaProfile{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.ElasticQuotaProfile), err
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeElasticQuotaProfiles) UpdateStatus(ctx context.Context, elasticQuotaProfile *v1alpha1.ElasticQuotaProfile, opts v1.UpdateOptions) (*v1alpha1.ElasticQuotaProfile, error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(elasticquotaprofilesResource, "status", c.ns, elasticQuotaProfile), &v1alpha1.ElasticQuotaProfile{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.ElasticQuotaProfile), err
-}
-
-// Delete takes name of the elasticQuotaProfile and deletes it. Returns an error if one occurs.
-func (c *FakeElasticQuotaProfiles) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	_, err := c.Fake.
-		Invokes(testing.NewDeleteActionWithOptions(elasticquotaprofilesResource, c.ns, name, opts), &v1alpha1.ElasticQuotaProfile{})
-
-	return err
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *FakeElasticQuotaProfiles) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(elasticquotaprofilesResource, c.ns, listOpts)
-
-	_, err := c.Fake.Invokes(action, &v1alpha1.ElasticQuotaProfileList{})
-	return err
-}
-
-// Patch applies the patch and returns the patched elasticQuotaProfile.
-func (c *FakeElasticQuotaProfiles) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ElasticQuotaProfile, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(elasticquotaprofilesResource, c.ns, name, pt, data, subresources...), &v1alpha1.ElasticQuotaProfile{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.ElasticQuotaProfile), err
 }
