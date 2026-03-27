@@ -78,6 +78,8 @@ data:
             apiVersion: kubescheduler.config.k8s.io/v1
             kind: PodTypeArgs
             enablePodType: true
+            enableVectorScoring: true
+            vectorScoreK: 2.0
         plugins:
           preEnqueue:
             enabled:

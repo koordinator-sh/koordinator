@@ -22,7 +22,7 @@ const (
 	stateKey = Name
 
 	// PodTypeAnnotationKey is the annotation key for pod type
-	PodTypeAnnotationKey = "koordinator.sh/pod-type"
+	PodTypeAnnotationKey = "predictor.hybrid.sh/type"
 
 	// PodType values
 	PodTypeCPUIntensive     = "cpu-intensive"
