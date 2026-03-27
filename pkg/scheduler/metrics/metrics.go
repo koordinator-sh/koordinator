@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-
 	"k8s.io/component-base/metrics"
 	"k8s.io/component-base/metrics/legacyregistry"
 	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
@@ -42,12 +41,12 @@ var (
 			Help:           "The currently scheduled Pod exceeds the maximum acceptable time interval",
 			StabilityLevel: metrics.STABLE,
 		}, []string{"profile"})
-	ReservationStatusPhase = utilmetrics.NewGCGaugeVec("reservation_status_phase", prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	ReservationStatusPhase = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
 			Name:      "reservation_status_phase",
 			Help:      `The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)`,
-		}, []string{"name", "phase"}))
+		}, []string{"name", "phase"})
 	ReservationResource = utilmetrics.NewGCGaugeVec(
 		"reservation_resource",
 		prometheus.NewGaugeVec(
@@ -127,6 +126,7 @@ var (
 
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
+		ReservationStatusPhase,
 		PodSchedulingEvaluatedNodes,
 		PodSchedulingFeasibleNodes,
 		ElasticQuotaProcessLatency,
@@ -137,7 +137,6 @@ var (
 	}
 
 	gcMetricsList = []prometheus.Collector{
-		ReservationStatusPhase.GetGaugeVec(),
 		ReservationResource.GetGaugeVec(),
 		JobPreemptionDuration.GetHistogramVec(),
 	}
@@ -164,27 +163,6 @@ const (
 	TypeUtilization = "utilization"
 )
 
-// RecordReservationPhase records the phase of a reservation as a metric.
-// It uses the provided name, phase, and value to set the metric with specific labels.
-func RecordReservationPhase(name string, phase string, value float64) {
-	labels := prometheus.Labels{
-		reservationNameKey:  name,
-		reservationPhaseKey: phase,
-	}
-	ReservationStatusPhase.WithSet(labels, value)
-}
-
-// RecordReservationResourceByTypeWithUnit records the resource record of a reservation as a metric.
-func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, value float64) {
-	labels := prometheus.Labels{
-		reservationResourceTypeKey: typ,
-		reservationNameKey:         name,
-		reservationResourceKey:     resource,
-		reservationResourceUnitKey: unit,
-	}
-	ReservationResource.WithSet(labels, value)
-}
-
 var registerMetrics sync.Once
 
 // Register all metrics.
@@ -209,6 +187,31 @@ func RegisterGCMetrics(gcMetrics ...prometheus.Collector) {
 	for _, metric := range gcMetrics {
 		legacyregistry.RawMustRegister(metric)
 	}
+}
+
+// RecordReservationPhase records the phase of a reservation as a metric.
+// It uses the provided name, phase, and value to set the metric with specific labels.
+func RecordReservationPhase(name string, phase string, value float64) {
+	labels := prometheus.Labels{
+		reservationNameKey:  name,
+		reservationPhaseKey: phase,
+	}
+	ReservationStatusPhase.With(labels).Set(value)
+}
+
+func ResetReservationPhase() {
+	ReservationStatusPhase.Reset()
+}
+
+// RecordReservationResourceByTypeWithUnit records the resource record of a reservation as a metric.
+func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, value float64) {
+	labels := prometheus.Labels{
+		reservationResourceTypeKey: typ,
+		reservationNameKey:         name,
+		reservationResourceKey:     resource,
+		reservationResourceUnitKey: unit,
+	}
+	ReservationResource.WithSet(labels, value)
 }
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {

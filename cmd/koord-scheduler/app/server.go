@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
@@ -116,6 +115,7 @@ for cost reduction and efficiency enhancement.
 
 	nfs := opts.Flags
 	verflag.AddFlags(nfs.FlagSet("global"))
+	AddSyncBarrierFlags(nfs.FlagSet("global"))
 	globalflag.AddGlobalFlags(nfs.FlagSet("global"), cmd.Name(), logs.SkipLoggingConfigurationFlags())
 	frameworkext.AddFlags(nfs.FlagSet("extend"))
 	fs := cmd.Flags()
@@ -237,6 +237,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 			cc.DynInformerFactory.Start(ctx.Done())
 		}
 		cc.KoordinatorSharedInformerFactory.Start(ctx.Done())
+		cc.NodeResourceTopologyInformerFactory.Start(ctx.Done())
 
 		// Wait for all caches to sync before scheduling.
 		cc.InformerFactory.WaitForCacheSync(ctx.Done())
@@ -245,6 +246,7 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 			cc.DynInformerFactory.WaitForCacheSync(ctx.Done())
 		}
 		cc.KoordinatorSharedInformerFactory.WaitForCacheSync(ctx.Done())
+		cc.NodeResourceTopologyInformerFactory.WaitForCacheSync(ctx.Done())
 
 		// Wait for all handlers to sync (all items in the initial list delivered) before scheduling.
 		if err := sched.WaitForHandlersSync(ctx); err != nil {
@@ -265,6 +267,8 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 					logger.Info("Starting informers and waiting for sync...")
 					startInformersAndWaitForSync(ctx)
 					logger.Info("Sync completed")
+				} else {
+					waitForLatestSynced(ctx, cc, sched)
 				}
 				extenderFactory.Run(ctx)
 				RunWorkflow(ctx, sched, customWorkflow)
@@ -392,7 +396,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	defaultprofile.AppendDefaultPlugins(cc.ComponentConfig.Profiles)
 
 	informer.SetupCustomInformers(cc.InformerFactory)
-	transformer.SetupTransformers(cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
+	transformer.SetupTransformers(cc.InformerFactory, cc.KoordinatorSharedInformerFactory, cc.NodeResourceTopologyInformerFactory)
 
 	metrics.Register()
 
@@ -404,6 +408,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		frameworkext.WithServicesEngine(cc.ServicesEngine),
 		frameworkext.WithKoordinatorClientSet(cc.KoordinatorClient),
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
+		frameworkext.WithNodeResourceTopologySharedInformerFactory(cc.NodeResourceTopologyInformerFactory),
 		frameworkext.WithNetworkTopologyManager(networkTopologyManager),
 	)
 	if err != nil {

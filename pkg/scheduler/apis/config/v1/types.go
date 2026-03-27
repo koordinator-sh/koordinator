@@ -205,6 +205,9 @@ type ReservationArgs struct {
 	// DisableGarbageCollection indicates whether to disable garbage collection.
 	// Default to false if unspecified.
 	DisableGarbageCollection bool `json:"disableGarbageCollection,omitempty"`
+	// ResyncIntervalSeconds is the duration in seconds between each turns of resync.
+	// Defaults to 60 seconds if unspecified.
+	ResyncIntervalSeconds int64 `json:"resyncIntervalSeconds,omitempty"`
 	// PreAllocationConfig defines the configuration for pre-allocation feature.
 	// +optional
 	PreAllocationConfig *PreAllocationConfig `json:"preAllocationConfig,omitempty"`
@@ -365,4 +368,15 @@ type NodeResourcesFitPlusArgs struct {
 type ResourcesType struct {
 	Type   config.ScoringStrategyType `json:"type"`
 	Weight int64                      `json:"weight"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// SchedulingHintArgs holds arguments used to configure the SchedulingHint plugin.
+type SchedulingHintArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// MaxHintNodes is the maximum number of hinted preferred nodes.
+	// Defaults to 100 if unspecified.
+	MaxHintNodes *int32 `json:"maxHintNodes,omitempty"`
 }

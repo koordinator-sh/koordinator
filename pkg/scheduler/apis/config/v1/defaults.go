@@ -58,6 +58,7 @@ var (
 	defaultReservationControllerWorkers = ptr.To[int32](1)
 	defaultGCDurationSeconds            = ptr.To[int64](86400)
 	defaultGCIntervalSeconds            = ptr.To[int64](60)
+	defaultResyncIntervalSeconds        = ptr.To[int64](60)
 
 	defaultDelayEvictTime       = 120 * time.Second
 	defaultRevokePodInterval    = 1 * time.Second
@@ -91,6 +92,8 @@ var (
 			extension.ResourceHuaweiNPUCore,
 		},
 	}
+
+	defaultMaxHintNodes = ptr.To[int32](100)
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -177,6 +180,9 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	}
 	if obj.GCIntervalSeconds == 0 {
 		obj.GCIntervalSeconds = *defaultGCIntervalSeconds
+	}
+	if obj.ResyncIntervalSeconds == 0 {
+		obj.ResyncIntervalSeconds = *defaultResyncIntervalSeconds
 	}
 }
 
@@ -272,5 +278,12 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 	}
 	if obj.GPUSharedResourceTemplatesConfig == nil {
 		obj.GPUSharedResourceTemplatesConfig = defaultGPUSharedResourceTemplatesConfig
+	}
+}
+
+// SetDefaults_SchedulingHintArgs sets the default parameters for SchedulingHint plugin.
+func SetDefaults_SchedulingHintArgs(obj *SchedulingHintArgs) {
+	if obj.MaxHintNodes == nil {
+		obj.MaxHintNodes = defaultMaxHintNodes
 	}
 }

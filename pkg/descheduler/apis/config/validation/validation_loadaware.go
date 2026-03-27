@@ -85,9 +85,13 @@ func ValidateLowLoadUtilizationArgs(path *field.Path, args *deschedulerconfig.Lo
 			}
 		}
 
-		if nodePool.AnomalyCondition.ConsecutiveAbnormalities <= 0 {
+		if nodePool.AnomalyCondition != nil && nodePool.AnomalyCondition.ConsecutiveAbnormalities <= 0 {
 			fieldPath := nodePoolPath.Child("anomalyDetectionThresholds").Child("consecutiveAbnormalities")
 			allErrs = append(allErrs, field.Invalid(fieldPath, nodePool.AnomalyCondition.ConsecutiveAbnormalities, "consecutiveAbnormalities must be greater than 0"))
+		}
+		if nodePool.AnomalyCondition != nil && nodePool.AnomalyCondition.ConsecutiveNormalities <= 0 {
+			fieldPath := nodePoolPath.Child("anomalyDetectionThresholds").Child("consecutiveNormalities")
+			allErrs = append(allErrs, field.Invalid(fieldPath, nodePool.AnomalyCondition.ConsecutiveNormalities, "consecutiveNormalities must be greater than 0"))
 		}
 	}
 

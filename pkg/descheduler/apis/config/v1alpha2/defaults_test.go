@@ -126,3 +126,285 @@ func TestSetDefaults_LowNodeLoadArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestSetDefaults_NodePoolsUseDefaultArgsFromLowNodeLoadArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     *LowNodeLoadArgs
+		expected *LowNodeLoadArgs
+	}{
+		{
+			name: "nodePools inherit all fields from top-level config",
+			args: &LowNodeLoadArgs{
+				HighThresholds: ResourceThresholds{
+					corev1.ResourceCPU:    80,
+					corev1.ResourceMemory: 80,
+				},
+				LowThresholds: ResourceThresholds{
+					corev1.ResourceCPU:    20,
+					corev1.ResourceMemory: 20,
+				},
+				ProdHighThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 90,
+				},
+				ProdLowThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 10,
+				},
+				ResourceWeights: map[corev1.ResourceName]int64{
+					corev1.ResourceCPU: 2,
+				},
+				AnomalyCondition: &LoadAnomalyCondition{
+					Timeout:                  &metav1.Duration{Duration: 2 * time.Minute},
+					ConsecutiveAbnormalities: 10,
+					ConsecutiveNormalities:   5,
+				},
+				NodePools: []LowNodeLoadNodePool{
+					{
+						Name: "test-pool",
+					},
+				},
+			},
+			expected: &LowNodeLoadArgs{
+				NodeFit:                     ptr.To[bool](true),
+				NodeMetricExpirationSeconds: ptr.To[int64](defaultNodeMetricExpirationSeconds),
+				DetectorCacheTimeout:        &metav1.Duration{Duration: 5 * time.Minute},
+				ResourceWeights: map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    2,
+					corev1.ResourceMemory: 1,
+				},
+				HighThresholds: ResourceThresholds{
+					corev1.ResourceCPU:    80,
+					corev1.ResourceMemory: 80,
+				},
+				LowThresholds: ResourceThresholds{
+					corev1.ResourceCPU:    20,
+					corev1.ResourceMemory: 20,
+				},
+				ProdHighThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 90,
+				},
+				ProdLowThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 10,
+				},
+				AnomalyCondition: &LoadAnomalyCondition{
+					Timeout:                  &metav1.Duration{Duration: 2 * time.Minute},
+					ConsecutiveAbnormalities: 10,
+					ConsecutiveNormalities:   5,
+				},
+				NodePools: []LowNodeLoadNodePool{
+					{
+						Name: "test-pool",
+						HighThresholds: ResourceThresholds{
+							corev1.ResourceCPU:    80,
+							corev1.ResourceMemory: 80,
+						},
+						LowThresholds: ResourceThresholds{
+							corev1.ResourceCPU:    20,
+							corev1.ResourceMemory: 20,
+						},
+						ProdHighThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 90,
+						},
+						ProdLowThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 10,
+						},
+						ResourceWeights: map[corev1.ResourceName]int64{
+							corev1.ResourceCPU:    2,
+							corev1.ResourceMemory: 1,
+						},
+						AnomalyCondition: &LoadAnomalyCondition{
+							Timeout:                  &metav1.Duration{Duration: 2 * time.Minute},
+							ConsecutiveAbnormalities: 10,
+							ConsecutiveNormalities:   5,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "multiple nodePools inherit from top-level config",
+			args: &LowNodeLoadArgs{
+				HighThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 80,
+				},
+				LowThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 20,
+				},
+				NodePools: []LowNodeLoadNodePool{
+					{
+						Name: "pool-1",
+					},
+					{
+						Name: "pool-2",
+						HighThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 70,
+						},
+					},
+				},
+			},
+			expected: &LowNodeLoadArgs{
+				NodeFit:                     ptr.To[bool](true),
+				NodeMetricExpirationSeconds: ptr.To[int64](defaultNodeMetricExpirationSeconds),
+				DetectorCacheTimeout:        &metav1.Duration{Duration: 5 * time.Minute},
+				ResourceWeights: map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    1,
+					corev1.ResourceMemory: 1,
+				},
+				HighThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 80,
+				},
+				LowThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 20,
+				},
+				AnomalyCondition: defaultLoadAnomalyCondition,
+				NodePools: []LowNodeLoadNodePool{
+					{
+						Name: "pool-1",
+						HighThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 80,
+						},
+						LowThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 20,
+						},
+						ResourceWeights: map[corev1.ResourceName]int64{
+							corev1.ResourceCPU:    1,
+							corev1.ResourceMemory: 1,
+						},
+						AnomalyCondition: defaultLoadAnomalyCondition,
+					},
+					{
+						Name: "pool-2",
+						HighThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 70,
+						},
+						LowThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 20,
+						},
+						ResourceWeights: map[corev1.ResourceName]int64{
+							corev1.ResourceCPU:    1,
+							corev1.ResourceMemory: 1,
+						},
+						AnomalyCondition: defaultLoadAnomalyCondition,
+					},
+				},
+			},
+		},
+		{
+			name: "nodePools with partial zero values inherit from top-level",
+			args: &LowNodeLoadArgs{
+				AnomalyCondition: &LoadAnomalyCondition{
+					Timeout:                  &metav1.Duration{Duration: 2 * time.Minute},
+					ConsecutiveAbnormalities: 10,
+					ConsecutiveNormalities:   5,
+				},
+				NodePools: []LowNodeLoadNodePool{
+					{
+						Name: "test-pool",
+						AnomalyCondition: &LoadAnomalyCondition{
+							Timeout:                  &metav1.Duration{Duration: 1 * time.Minute},
+							ConsecutiveAbnormalities: 0,
+							ConsecutiveNormalities:   0,
+						},
+					},
+				},
+			},
+			expected: &LowNodeLoadArgs{
+				NodeFit:                     ptr.To[bool](true),
+				NodeMetricExpirationSeconds: ptr.To[int64](defaultNodeMetricExpirationSeconds),
+				DetectorCacheTimeout:        &metav1.Duration{Duration: 5 * time.Minute},
+				ResourceWeights: map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    1,
+					corev1.ResourceMemory: 1,
+				},
+				AnomalyCondition: &LoadAnomalyCondition{
+					Timeout:                  &metav1.Duration{Duration: 2 * time.Minute},
+					ConsecutiveAbnormalities: 10,
+					ConsecutiveNormalities:   5,
+				},
+				NodePools: []LowNodeLoadNodePool{
+					{
+						Name: "test-pool",
+						AnomalyCondition: &LoadAnomalyCondition{
+							Timeout:                  &metav1.Duration{Duration: 1 * time.Minute},
+							ConsecutiveAbnormalities: 10,
+							ConsecutiveNormalities:   5,
+						},
+						ResourceWeights: map[corev1.ResourceName]int64{
+							corev1.ResourceCPU:    1,
+							corev1.ResourceMemory: 1,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "nodePools keep own config when specified",
+			args: &LowNodeLoadArgs{
+				HighThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 80,
+				},
+				LowThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 20,
+				},
+				AnomalyCondition: defaultLoadAnomalyCondition,
+				NodePools: []LowNodeLoadNodePool{
+					{
+						Name: "custom-pool",
+						HighThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 70,
+						},
+						LowThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 30,
+						},
+						AnomalyCondition: &LoadAnomalyCondition{
+							ConsecutiveAbnormalities: 3,
+							ConsecutiveNormalities:   2,
+						},
+					},
+				},
+			},
+			expected: &LowNodeLoadArgs{
+				NodeFit:                     ptr.To[bool](true),
+				NodeMetricExpirationSeconds: ptr.To[int64](defaultNodeMetricExpirationSeconds),
+				DetectorCacheTimeout:        &metav1.Duration{Duration: 5 * time.Minute},
+				ResourceWeights: map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    1,
+					corev1.ResourceMemory: 1,
+				},
+				HighThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 80,
+				},
+				LowThresholds: ResourceThresholds{
+					corev1.ResourceCPU: 20,
+				},
+				AnomalyCondition: defaultLoadAnomalyCondition,
+				NodePools: []LowNodeLoadNodePool{
+					{
+						Name: "custom-pool",
+						HighThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 70,
+						},
+						LowThresholds: ResourceThresholds{
+							corev1.ResourceCPU: 30,
+						},
+						AnomalyCondition: &LoadAnomalyCondition{
+							ConsecutiveAbnormalities: 3,
+							ConsecutiveNormalities:   2,
+						},
+						ResourceWeights: map[corev1.ResourceName]int64{
+							corev1.ResourceCPU:    1,
+							corev1.ResourceMemory: 1,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetDefaults_LowNodeLoadArgs(tt.args)
+			assert.Equal(t, tt.expected, tt.args)
+		})
+	}
+}

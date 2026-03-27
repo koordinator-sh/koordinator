@@ -24,6 +24,8 @@ const (
 	ResourceDomainPrefix = corev1.ResourceDefaultNamespacePrefix
 	// SchedulingDomainPrefix represents the scheduling domain prefix
 	SchedulingDomainPrefix = "scheduling.koordinator.sh"
+	// InternalSchedulingDomainPrefix represents the internal scheduling domain prefix
+	InternalSchedulingDomainPrefix = "internal.scheduling.koordinator.sh"
 	// NodeDomainPrefix represents the node domain prefix
 	NodeDomainPrefix = "node.koordinator.sh"
 	PodDomainPrefix  = "pod.koordinator.sh"
@@ -48,6 +50,10 @@ const (
 	// LabelPodEvictEnabled is a label key that pods with `koordinator.sh/eviction-disabled` will
 	// be able to evict.
 	LabelPodEvictEnabled = DomainPrefix + "eviction-enabled"
+
+	// AnnotationPodEvictPolicy are used to set restricted eviction policies for Pod.
+	// When this annotation is missing, there are no policy restrictions
+	AnnotationPodEvictPolicy = DomainPrefix + "eviction-policy"
 
 	// LabelPodSkipEnhancedValidation is the pod label key used to opt out a pod from enhanced validation.
 	LabelPodSkipEnhancedValidation = PodDomainPrefix + "/skip-enhanced-validation"

@@ -253,6 +253,14 @@ func ValidateReservationArgs(path *field.Path, args *config.ReservationArgs) err
 		))
 	}
 
+	if args.ResyncIntervalSeconds < 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("ResyncIntervalSeconds"),
+			args.ResyncIntervalSeconds,
+			"must be non-negative",
+		))
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}
@@ -279,6 +287,22 @@ func ValidateNodeNUMAResourceArgs(path *field.Path, args *config.NodeNUMAResourc
 		allErrs = append(allErrs, validateResources(args.NUMAScoringStrategy.Resources, path.Child("resources"))...)
 	}
 
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
+}
+
+// ValidateSchedulingHintArgs validates that SchedulingHintArgs are correct.
+func ValidateSchedulingHintArgs(path *field.Path, args *config.SchedulingHintArgs) error {
+	var allErrs field.ErrorList
+	if args.MaxHintNodes <= 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("maxHintNodes"),
+			args.MaxHintNodes,
+			"must be a positive value",
+		))
+	}
 	if len(allErrs) == 0 {
 		return nil
 	}
