@@ -157,6 +157,7 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 
 	if len(obj.ClientConnection.ContentType) == 0 {
 		obj.ClientConnection.ContentType = "application/vnd.kubernetes.protobuf"
+		obj.ClientConnection.AcceptContentTypes = "application/vnd.kubernetes.protobuf,application/json"
 	}
 	// Scheduler has an opinion about QPS/Burst, setting specific defaults for itself, instead of generic settings.
 	if obj.ClientConnection.QPS == 0.0 {
