@@ -564,3 +564,11 @@ func (ri *ReservationInfo) IsMatchable() bool {
 
 	return true
 }
+
+// IsMultiplePAPodsEnabled checks if multiple pre-allocated pods are enabled for the reservation.
+func (ri *ReservationInfo) IsMultiplePAPodsEnabled() bool {
+	if ri == nil {
+		return false
+	}
+	return reservationutil.IsMultiplePAPodsEnabled(ri.Reservation)
+}

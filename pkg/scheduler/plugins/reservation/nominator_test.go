@@ -576,7 +576,7 @@ func TestNominatePreAllocation(t *testing.T) {
 					nodeRState = &nodeReservationState{}
 				}
 				nodeRState.nodeName = pod.Spec.NodeName
-				nodeRState.preAllocatablePods = append(nodeRState.preAllocatablePods, pod)
+				nodeRState.selectedPreAllocatablePods = append(nodeRState.selectedPreAllocatablePods, pod)
 				state.nodeReservationStates[pod.Spec.NodeName] = nodeRState
 			}
 			cycleState.Write(stateKey, state)

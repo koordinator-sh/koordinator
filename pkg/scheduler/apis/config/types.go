@@ -213,6 +213,28 @@ type ReservationArgs struct {
 	// ResyncIntervalSeconds is the duration in seconds between each turns of resync.
 	// Defaults to 60 seconds if unspecified.
 	ResyncIntervalSeconds int64
+	// PreAllocationConfig defines the configuration for pre-allocation feature.
+	// +optional
+	PreAllocationConfig *PreAllocationConfig
+}
+
+// PreAllocationConfig defines the configuration for pre-allocation feature.
+type PreAllocationConfig struct {
+	// EnableClusterMode indicates whether to enable cluster mode for pre-allocation.
+	// When enabled, the scheduler will use cluster-wide label/annotation selectors
+	// to select and sort pre-allocatable pods.
+	EnableClusterMode bool
+	// ClusterLabelKey is the label key used to identify pre-allocatable pods in cluster mode.
+	// Defaults to "pod.koordinator.sh/is-pre-allocatable".
+	ClusterLabelKey string
+	// ClusterPriorityAnnotationKey is the annotation key used to prioritize pre-allocatable pods in cluster mode.
+	// Defaults to "pod.koordinator.sh/pre-allocatable-priority".
+	ClusterPriorityAnnotationKey string
+	// PreferNoPreAllocatedPods controls whether to prefer placing reservation
+	// without using pre-allocatable pods when pre-allocation is not required,
+	// in both single and multiple pre-allocation modes.
+	// Defaults to false.
+	PreferNoPreAllocatedPods bool
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
