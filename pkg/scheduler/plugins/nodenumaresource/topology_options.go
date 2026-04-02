@@ -54,7 +54,7 @@ type NUMANodeResource struct {
 }
 
 type topologyManager struct {
-	lock            sync.Mutex
+	lock            sync.RWMutex
 	topologyOptions map[string]TopologyOptions
 }
 
@@ -66,8 +66,8 @@ func NewTopologyOptionsManager() TopologyOptionsManager {
 }
 
 func (m *topologyManager) GetTopologyOptions(nodeName string) TopologyOptions {
-	m.lock.Lock()
-	defer m.lock.Unlock()
+	m.lock.RLock()
+	defer m.lock.RUnlock()
 	return m.topologyOptions[nodeName]
 }
 
