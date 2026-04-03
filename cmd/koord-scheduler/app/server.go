@@ -483,6 +483,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 				KoordSharedInformerFactory: cc.KoordinatorSharedInformerFactory,
 				KoordClient:                cc.KoordinatorClient,
 				RecorderFactory:            recorderFactory,
+				KubeConfig:                 cc.KubeConfig,
 			})
 			if err != nil {
 				return nil, nil, nil, nil, err
