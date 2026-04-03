@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/client-go/informers"
 	kubeclientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
@@ -47,6 +48,7 @@ type CustomWorkflowOptions struct {
 	KoordSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	KoordClient                koordclientset.Interface
 	RecorderFactory            func(name string) events.EventRecorder
+	KubeConfig                 *rest.Config
 }
 
 func RunWorkflow(
