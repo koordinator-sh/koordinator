@@ -26,6 +26,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
@@ -86,9 +87,15 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	klog.Infof("kernel version INFO: %+v", system.HostSystemInfo)
 
 	kubeClient := clientset.NewForConfigOrDie(config.KubeRestConf)
-	crdClient := clientsetbeta1.NewForConfigOrDie(config.KubeRestConf)
-	topologyClient := topologyclientset.NewForConfigOrDie(config.KubeRestConf)
-	schedulingClient := v1alpha1.NewForConfigOrDie(config.KubeRestConf)
+
+	// use json for CRD clients
+	crdRestConf := rest.CopyConfig(config.KubeRestConf)
+	crdRestConf.ContentType = apiruntime.ContentTypeJSON
+	crdRestConf.AcceptContentTypes = apiruntime.ContentTypeJSON
+
+	crdClient := clientsetbeta1.NewForConfigOrDie(crdRestConf)
+	topologyClient := topologyclientset.NewForConfigOrDie(crdRestConf)
+	schedulingClient := v1alpha1.NewForConfigOrDie(crdRestConf)
 
 	metricCache, err := metriccache.NewMetricCache(config.MetricCacheConf)
 	if err != nil {
