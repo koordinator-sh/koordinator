@@ -343,7 +343,15 @@ Adding explicit penalties for mismatched dimensions. Better pairwise decisions b
 
 ### Configurable Weights
 
-Replace fixed 0.6/0.2/0.1 with user-configurable parameters. Deferred -- grid search shows the top 10 weight combinations all cluster near 0.6/0.2/0.1, suggesting the optimum is broad and stable.
+Replace fixed 0.6/0.2/0.1 with user-configurable parameters. Deferred -- grid search shows the top 10 weight combinations all cluster near 0.6/0.2/0.1, suggesting the optimum is broad and stable. A lightweight adaptation strategy (suggested by community in [#2837](https://github.com/koordinator-sh/koordinator/issues/2837)): run the grid search weekly on last 7 days of scheduling decisions and update weights only if the new optimum diverges by more than 10% from current. This gives adaptation without instability.
+
+### Continuous Strand Penalty
+
+Replace the threshold-based strand penalty (80%/20% binary trigger) with a continuous function: `strand_penalty = max(0, max(utilization) - min(utilization) - 0.6)`. This penalizes proportionally to the imbalance beyond a 60% gap, providing a smoother gradient. Candidate improvement for a follow-up iteration pending benchmark validation.
+
+### Residual Usability Scoring
+
+Replace or supplement the strand penalty with an explicit residual usability metric (suggested by community in [#2837](https://github.com/koordinator-sh/koordinator/issues/2837)): after simulating placement, compute `usability = max over centroids of min(residual[i] / centroid[i])`, where centroids are maintained via exponentially-weighted k-means (k=3-5) on recent pod request shapes. This directly measures "can another real pod fit the leftover?" rather than relying on utilization gap heuristics. Candidate for a follow-up iteration.
 
 ### Extend LoadAwareScheduling with balance scoring
 
@@ -398,7 +406,8 @@ All tests implemented in `lambda_g_test.go`.
 - [x] 2026-03-29: Proposed idea in [issue #2837](https://github.com/koordinator-sh/koordinator/issues/2837)
 - [x] 2026-04-02: Open proposal PR with V1 scoring (cosine + entropy + phi)
 - [x] 2026-04-03: Update to V3 hybrid scoring (variance + alignment)
-- [ ] First round of feedback from community
+- [x] 2026-04-04: Community feedback: residual usability, continuous strand penalty, weight adaptation (incorporated as future phases)
+- [ ] Present proposal at community meeting
 - [ ] Present proposal at community meeting
 - [ ] Open implementation PR with plugin code and tests
 
