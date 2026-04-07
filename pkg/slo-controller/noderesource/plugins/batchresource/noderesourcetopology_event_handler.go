@@ -34,7 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-var checkedNRTResourceSet = sets.NewString(string(corev1.ResourceCPU), string(corev1.ResourceMemory))
+var checkedNRTResourceSet = sets.New[corev1.ResourceName](corev1.ResourceCPU, corev1.ResourceMemory)
 
 var _ handler.EventHandler = &NRTHandler{}
 
@@ -103,7 +103,7 @@ func isNRTResourcesCreated(nrt *topologyv1alpha1.NodeResourceTopology) bool {
 	// check if any zone has the target resource allocatable
 	for _, zone := range nrt.Zones {
 		for _, resourceInfo := range zone.Resources {
-			if checkedNRTResourceSet.Has(resourceInfo.Name) {
+			if checkedNRTResourceSet.Has(corev1.ResourceName(resourceInfo.Name)) {
 				return true
 			}
 		}
@@ -114,7 +114,7 @@ func isNRTResourcesCreated(nrt *topologyv1alpha1.NodeResourceTopology) bool {
 
 func isNRTResourcesChanged(nrtOld, nrtNew *topologyv1alpha1.NodeResourceTopology) bool {
 	// check if target resources not equal
-	return !util.IsZoneListResourceEqual(nrtOld.Zones, nrtNew.Zones, checkedNRTResourceSet.List()...)
+	return !util.IsZoneListResourceEqual(nrtOld.Zones, nrtNew.Zones, checkedNRTResourceSet.UnsortedList()...)
 }
 
 func cleanupContextForNRT(syncContext *framework.SyncContext, nrt *topologyv1alpha1.NodeResourceTopology) error {

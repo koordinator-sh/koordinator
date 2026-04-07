@@ -474,12 +474,12 @@ Node 1 HugePages_Surp:        0`
 	assert.NoError(t, err)
 	assert.Equal(t, expected, got)
 
-	// test partial failure
+	// test tolerated failure
 	numaMemInfoPath2 := system.GetNUMAMemInfoPath("node2")
 	helper.MkDirAll(filepath.Dir(numaMemInfoPath2))
 	got, err = GetNodeNUMAInfo()
-	assert.Error(t, err)
-	assert.Nil(t, got)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, got)
 
 	// test path not exist
 	helper.Cleanup()

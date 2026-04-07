@@ -299,8 +299,9 @@ func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
 	}
 
 	if len(nodeDirs) != len(result.NUMAInfos)+giNUMANodes.Len() {
-		return nil, fmt.Errorf("invalid number of NUMA meminfo, dir %v, parsed %v",
-			len(nodeDirs), len(result.NUMAInfos))
+		// numa devices might be corrupted after unplug, but we can tolerate it
+		klog.Warningf("failed to get matched NUMA meminfo, dir %v, parsed %v, GI %v",
+			len(nodeDirs), len(result.NUMAInfos), giNUMANodes.Len())
 	}
 	if len(result.NUMAInfos) != int(maxNodeID+1) {
 		return nil, fmt.Errorf("unexpected number of NUMA node, max ID %v, parsed %v",
