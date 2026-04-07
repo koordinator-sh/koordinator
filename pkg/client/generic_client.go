@@ -36,6 +36,7 @@ type GenericClientset struct {
 func newForConfig(c *rest.Config) (*GenericClientset, error) {
 	cWithProtobuf := rest.CopyConfig(c)
 	cWithProtobuf.ContentType = runtime.ContentTypeProtobuf
+	cWithProtobuf.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cWithProtobuf)
 	if err != nil {
 		return nil, err

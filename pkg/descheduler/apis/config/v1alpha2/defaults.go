@@ -156,7 +156,8 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 	componentbaseconfigv1alpha1.RecommendedDefaultLeaderElectionConfiguration(&obj.LeaderElection)
 
 	if len(obj.ClientConnection.ContentType) == 0 {
-		obj.ClientConnection.ContentType = "application/vnd.kubernetes.protobuf"
+		obj.ClientConnection.ContentType = runtime.ContentTypeProtobuf
+		obj.ClientConnection.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
 	}
 	// Scheduler has an opinion about QPS/Burst, setting specific defaults for itself, instead of generic settings.
 	if obj.ClientConnection.QPS == 0.0 {
