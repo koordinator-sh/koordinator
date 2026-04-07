@@ -773,6 +773,94 @@ func TestFilter(t *testing.T) {
 			want:     nil,
 		},
 		{
+			name: "reservation-ignored pod should skip reservation filter and let NodeResourceFit handle validation",
+			pod:  testReservationIgnoredPod,
+			reservations: []*schedulingv1alpha1.Reservation{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-reservation-with-available",
+						UID:  uuid.NewUUID(),
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								NodeName: testNode.Name,
+								Containers: []corev1.Container{
+									{
+										Resources: corev1.ResourceRequirements{
+											Requests: corev1.ResourceList{
+												corev1.ResourceCPU:    resource.MustParse("8"),
+												corev1.ResourceMemory: resource.MustParse("16Gi"),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Status: schedulingv1alpha1.ReservationStatus{
+						Phase:    schedulingv1alpha1.ReservationAvailable,
+						NodeName: testNode.Name,
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("8"),
+							corev1.ResourceMemory: resource.MustParse("16Gi"),
+						},
+						Allocated: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("8Gi"),
+						},
+					},
+				},
+			},
+			nodeInfo: testNodeInfo,
+			stateData: &stateData{
+				schedulingStateData: schedulingStateData{
+					podRequests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+					podRequestsResources: &framework.Resource{
+						MilliCPU: 4000,
+					},
+					podResourceNames: []corev1.ResourceName{corev1.ResourceCPU},
+					nodeReservationStates: map[string]*nodeReservationState{
+						testNode.Name: {
+							nodeName: testNode.Name,
+							podRequested: &framework.Resource{
+								MilliCPU: 28000, // 32 - 4 (node unallocated)
+							},
+							rAllocated: &framework.Resource{
+								MilliCPU: 4000, // reservation allocated 4
+							},
+							matchedOrIgnored: []*frameworkext.ReservationInfo{
+								frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+									ObjectMeta: metav1.ObjectMeta{
+										Name: "test-reservation-with-available",
+										UID:  uuid.NewUUID(),
+									},
+									Spec: schedulingv1alpha1.ReservationSpec{
+										Template: &corev1.PodTemplateSpec{},
+									},
+									Status: schedulingv1alpha1.ReservationStatus{
+										Phase:    schedulingv1alpha1.ReservationAvailable,
+										NodeName: testNode.Name,
+										Allocatable: corev1.ResourceList{
+											corev1.ResourceCPU: resource.MustParse("8"),
+										},
+										Allocated: corev1.ResourceList{
+											corev1.ResourceCPU: resource.MustParse("4"),
+										},
+									},
+								}),
+							},
+						},
+					},
+				},
+			},
+			// Should succeed: reservation plugin skips validation for reservation-ignored pods
+			// NodeResourceFit will handle the actual resource validation
+			want: nil,
+		},
+		{
 			name: "filter pre-allocation reservation",
 			pod:  reservationutil.NewReservePod(preAllocationReservation),
 			reservations: []*schedulingv1alpha1.Reservation{
