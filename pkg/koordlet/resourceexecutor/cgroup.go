@@ -17,6 +17,7 @@ limitations under the License.
 package resourceexecutor
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -101,7 +102,7 @@ func cgroupFileReadInt(cgroupTaskDir string, r sysutil.Resource) (*int64, error)
 		return nil, err
 	}
 	if dataStr == "" {
-		return nil, fmt.Errorf(EmptyValueError)
+		return nil, errors.New(EmptyValueError)
 	}
 	if dataStr == CgroupMaxSymbolStr {
 		// compatible with cgroup valued "max"

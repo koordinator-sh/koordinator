@@ -29,7 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
+	apiresource "k8s.io/component-helpers/resource"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -131,12 +132,12 @@ func TestScore(t *testing.T) {
 					},
 				},
 			},
-			wantScore: framework.MinNodeScore,
+			wantScore: fwktype.MinNodeScore,
 		},
 		{
 			name:      "no reservation matched on the node",
 			pod:       &corev1.Pod{},
-			wantScore: framework.MinNodeScore,
+			wantScore: fwktype.MinNodeScore,
 		},
 		{
 			// TODO: should optimize the case
@@ -145,7 +146,7 @@ func TestScore(t *testing.T) {
 			reservations: []*schedulingv1alpha1.Reservation{
 				reservation2C4G.DeepCopy(),
 			},
-			wantScore: framework.MinNodeScore,
+			wantScore: fwktype.MinNodeScore,
 		},
 		{
 			name: "reservation matched and pod has part empty resource requests",
@@ -201,7 +202,7 @@ func TestScore(t *testing.T) {
 					corev1.ResourceMemory: resource.MustParse("3Gi"),
 				},
 			},
-			wantScore: framework.MinNodeScore,
+			wantScore: fwktype.MinNodeScore,
 		},
 		{
 			name: "multi reservations matched and pod has part empty resource requests",
@@ -227,7 +228,7 @@ func TestScore(t *testing.T) {
 				reservation4C8G.DeepCopy(),
 				reservation2C4G.DeepCopy(),
 			},
-			wantScore: framework.MaxNodeScore,
+			wantScore: fwktype.MaxNodeScore,
 		},
 	}
 	for _, tt := range tests {
@@ -275,10 +276,12 @@ func TestScore(t *testing.T) {
 			// the usage of the lister requires the informers started
 			suit.start()
 
-			status := pl.PreScore(context.TODO(), cycleState, tt.pod, []*corev1.Node{node})
+			nodeInfoForScore := framework.NewNodeInfo()
+			nodeInfoForScore.SetNode(node)
+			status := pl.PreScore(context.TODO(), cycleState, tt.pod, []fwktype.NodeInfo{nodeInfoForScore})
 			assert.True(t, status.IsSuccess() || status.IsSkip())
 
-			score, status := pl.Score(context.TODO(), cycleState, tt.pod, node.Name)
+			score, status := pl.Score(context.TODO(), cycleState, tt.pod, nodeInfoForScore)
 			assert.True(t, status.IsSuccess())
 			assert.Equal(t, tt.wantScore, score)
 		})
@@ -424,24 +427,32 @@ func TestScoreWithOrder(t *testing.T) {
 			assert.NotNil(t, got)
 		}
 
-		status := pl.PreScore(context.TODO(), cycleState, normalPod, nodes)
+		nodeInfos := make([]fwktype.NodeInfo, 0, len(nodes))
+		for _, n := range nodes {
+			ni := framework.NewNodeInfo()
+			ni.SetNode(n)
+			nodeInfos = append(nodeInfos, ni)
+		}
+		status := pl.PreScore(context.TODO(), cycleState, normalPod, nodeInfos)
 		assert.True(t, status.IsSuccess())
 		assert.Equal(t, "test-node-4", state.preferredNode)
 
-		var scoreList framework.NodeScoreList
+		var scoreList fwktype.NodeScoreList
 		for _, v := range nodes {
-			score, status := pl.Score(context.TODO(), cycleState, normalPod, v.Name)
+			ni := framework.NewNodeInfo()
+			ni.SetNode(v)
+			score, status := pl.Score(context.TODO(), cycleState, normalPod, ni)
 			assert.True(t, status.IsSuccess())
-			scoreList = append(scoreList, framework.NodeScore{
+			scoreList = append(scoreList, fwktype.NodeScore{
 				Name:  v.Name,
 				Score: score,
 			})
 		}
 
-		expectedNodeScoreList := framework.NodeScoreList{
-			{Name: "test-node-1", Score: framework.MaxNodeScore},
-			{Name: "test-node-2", Score: framework.MaxNodeScore},
-			{Name: "test-node-3", Score: framework.MaxNodeScore},
+		expectedNodeScoreList := fwktype.NodeScoreList{
+			{Name: "test-node-1", Score: fwktype.MaxNodeScore},
+			{Name: "test-node-2", Score: fwktype.MaxNodeScore},
+			{Name: "test-node-3", Score: fwktype.MaxNodeScore},
 			{Name: "test-node-4", Score: mostPreferredScore},
 		}
 		sort.Slice(scoreList, func(i, j int) bool {
@@ -452,11 +463,11 @@ func TestScoreWithOrder(t *testing.T) {
 		status = pl.ScoreExtensions().NormalizeScore(context.TODO(), cycleState, normalPod, scoreList)
 		assert.True(t, status.IsSuccess())
 
-		expectedNodeScoreList = framework.NodeScoreList{
+		expectedNodeScoreList = fwktype.NodeScoreList{
 			{Name: "test-node-1", Score: 10},
 			{Name: "test-node-2", Score: 10},
 			{Name: "test-node-3", Score: 10},
-			{Name: "test-node-4", Score: framework.MaxNodeScore},
+			{Name: "test-node-4", Score: fwktype.MaxNodeScore},
 		}
 		assert.Equal(t, expectedNodeScoreList, scoreList)
 	})
@@ -858,7 +869,13 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 			// the usage of the lister requires the informers started
 			suit.start()
 
-			status := pl.PreScore(context.TODO(), cycleState, tt.pod, nodes)
+			nodeInfos := make([]fwktype.NodeInfo, 0, len(nodes))
+			for _, n := range nodes {
+				ni := framework.NewNodeInfo()
+				ni.SetNode(n)
+				nodeInfos = append(nodeInfos, ni)
+			}
+			status := pl.PreScore(context.TODO(), cycleState, tt.pod, nodeInfos)
 			assert.Equal(t, tt.wantStatus, status.IsSuccess() || status.IsSkip())
 
 			for nodeName, wantReservationInfo := range tt.wantReservation {

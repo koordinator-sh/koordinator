@@ -26,6 +26,8 @@ import (
 	"regexp"
 
 	dockertypes "github.com/docker/docker/api/types"
+	dockercontainer "github.com/docker/docker/api/types/container"
+	dockersystem "github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
 	"k8s.io/klog/v2"
 
@@ -46,8 +48,8 @@ type RuntimeManagerDockerServer struct {
 }
 
 type proxyDockerClient interface {
-	Info(ctx context.Context) (dockertypes.Info, error)
-	ContainerList(ctx context.Context, options dockertypes.ContainerListOptions) ([]dockertypes.Container, error)
+	Info(ctx context.Context) (dockersystem.Info, error)
+	ContainerList(ctx context.Context, options dockercontainer.ListOptions) ([]dockercontainer.Summary, error)
 	ContainerInspect(ctx context.Context, containerID string) (dockertypes.ContainerJSON, error)
 }
 
@@ -91,14 +93,13 @@ func (d *RuntimeManagerDockerServer) ServeHTTP(wr http.ResponseWriter, req *http
 }
 
 func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) error {
-
 	type dockerWrapper struct {
-		dockertypes.ContainerJSON
-		dockertypes.Container
+		ContainerJSON dockercontainer.InspectResponse
+		Summary       dockercontainer.Summary
 	}
 	sandboxes := []dockerWrapper{}
 	containers := []dockerWrapper{}
-	cs, err := dockerClient.ContainerList(context.TODO(), dockertypes.ContainerListOptions{All: true})
+	cs, err := dockerClient.ContainerList(context.TODO(), dockercontainer.ListOptions{All: true})
 	if err != nil {
 		klog.Errorf("Failed to get container list in failover, err: %v", err)
 		return err
@@ -113,27 +114,27 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 		if runtimeResourceType == resource_executor.RuntimeContainerResource {
 			containers = append(containers, dockerWrapper{
 				ContainerJSON: containerJson,
-				Container:     c,
+				Summary:       c,
 			})
 		} else {
 			sandboxes = append(sandboxes, dockerWrapper{
 				ContainerJSON: containerJson,
-				Container:     c,
+				Summary:       c,
 			})
 		}
 	}
 
 	// need to backup pod meta first
 	for _, s := range sandboxes {
-		labels, annos := splitLabelsAndAnnotations(s.Labels)
-		store.WritePodSandboxInfo(s.ID, &store.PodSandboxInfo{
+		labels, annos := splitLabelsAndAnnotations(s.Summary.Labels)
+		store.WritePodSandboxInfo(s.ContainerJSON.ID, &store.PodSandboxInfo{
 			PodSandboxHookRequest: &v1alpha1.PodSandboxHookRequest{
 				Labels:       labels,
 				Annotations:  annos,
 				CgroupParent: s.ContainerJSON.HostConfig.CgroupParent,
 				PodMeta: &v1alpha1.PodSandboxMetadata{
-					Name: s.Name,
-					Uid:  s.ID,
+					Name: s.ContainerJSON.Name,
+					Uid:  s.ContainerJSON.ID,
 				},
 				RuntimeHandler: "Docker",
 				Resources:      HostConfigToResource(s.ContainerJSON.HostConfig),
@@ -142,27 +143,27 @@ func (d *RuntimeManagerDockerServer) failOver(dockerClient proxyDockerClient) er
 	}
 
 	for _, c := range containers {
-		_, annos := splitLabelsAndAnnotations(c.Labels)
+		_, annos := splitLabelsAndAnnotations(c.Summary.Labels)
 		cInfo := &store.ContainerInfo{
 			ContainerResourceHookRequest: &v1alpha1.ContainerResourceHookRequest{
 				ContainerResources:   HostConfigToResource(c.ContainerJSON.HostConfig),
 				ContainerAnnotations: annos,
 				ContainerMeta: &v1alpha1.ContainerMetadata{
-					Name: c.Name,
-					Id:   c.ID,
+					Name: c.ContainerJSON.Name,
+					Id:   c.ContainerJSON.ID,
 				},
 			},
 		}
-		podID := c.Labels[types.SandboxIDLabelKey]
+		podID := c.Summary.Labels[types.SandboxIDLabelKey]
 		podCheckPoint := store.GetPodSandboxInfo(podID)
 		if podCheckPoint != nil {
 			cInfo.ContainerResourceHookRequest.PodMeta = podCheckPoint.PodMeta
 			cInfo.ContainerResourceHookRequest.PodResources = podCheckPoint.Resources
 		}
-		if c.Config != nil {
-			cInfo.ContainerResourceHookRequest.ContainerEnvs = splitDockerEnv(c.Config.Env)
+		if c.ContainerJSON.Config != nil {
+			cInfo.ContainerResourceHookRequest.ContainerEnvs = splitDockerEnv(c.ContainerJSON.Config.Env)
 		}
-		store.WriteContainerInfo(c.ID, cInfo)
+		store.WriteContainerInfo(c.ContainerJSON.ID, cInfo)
 	}
 	info, err := dockerClient.Info(context.TODO())
 	if err != nil {
@@ -201,7 +202,7 @@ func (d *RuntimeManagerDockerServer) Run() error {
 
 	lis, err := net.Listen("unix", options.RuntimeProxyEndpoint)
 	if err != nil {
-		klog.Fatal("Failed to create the lis %v", err)
+		klog.Fatalf("Failed to create the lis %v", err)
 	}
 	if err := http.Serve(lis, d); err != nil {
 		klog.Fatal("ListenAndServe:", err)

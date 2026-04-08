@@ -105,7 +105,7 @@ func (r *qosManager) Run(stopCh <-chan struct{}) error {
 
 	err := r.context.Evictor.Start(stopCh)
 	if err != nil {
-		klog.Fatal("start evictor failed %v", err)
+		klog.Fatalf("start evictor failed %v", err)
 	}
 
 	go framework.RunQOSGreyCtrlPlugins(r.options.KubeClient, stopCh)

@@ -35,18 +35,23 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
+	apiresource "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
+	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodename"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
+	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -55,23 +60,38 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-var _ framework.SharedLister = &fakeSharedLister{}
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	// In k8s v1.35, WatchListClient defaults to true (Beta), but fake clients
+	// don't support bookmark events required by WatchList, causing WaitForCacheSync to hang.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
+
+var _ fwktype.SharedLister = &fakeSharedLister{}
 
 type fakeSharedLister struct {
 	nodes       []*corev1.Node
-	nodeInfos   []*framework.NodeInfo
+	nodeInfos   []fwktype.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
 	listErr     bool
 }
 
 func newFakeSharedLister(pods []*corev1.Pod, nodes []*corev1.Node, listErr bool) *fakeSharedLister {
 	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	nodeInfos := make([]*framework.NodeInfo, 0)
+	nodeInfos := make([]fwktype.NodeInfo, 0)
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
@@ -98,11 +118,11 @@ func newFakeSharedLister(pods []*corev1.Pod, nodes []*corev1.Node, listErr bool)
 	}
 }
 
-func (f *fakeSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *fakeSharedLister) NodeInfos() fwktype.NodeInfoLister {
 	return f
 }
 
-func (f *fakeSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *fakeSharedLister) StorageInfos() fwktype.StorageInfoLister {
 	return f
 }
 
@@ -110,36 +130,36 @@ func (f *fakeSharedLister) IsPVCUsedByPods(key string) bool {
 	return false
 }
 
-func (f *fakeSharedLister) List() ([]*framework.NodeInfo, error) {
+func (f *fakeSharedLister) List() ([]fwktype.NodeInfo, error) {
 	if f.listErr {
 		return nil, fmt.Errorf("list error")
 	}
 	return f.nodeInfos, nil
 }
 
-func (f *fakeSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *fakeSharedLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *fakeSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *fakeSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *fakeSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *fakeSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
 type pluginTestSuit struct {
 	fw              framework.Framework
-	pluginFactory   func() (framework.Plugin, error)
+	pluginFactory   func() (fwktype.Plugin, error)
 	extenderFactory *frameworkext.FrameworkExtenderFactory
 }
 
 func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node, setArgs ...func(*config.ReservationArgs)) *pluginTestSuit {
-	var v1beta3args v1beta3.ReservationArgs
-	v1beta3.SetDefaults_ReservationArgs(&v1beta3args)
+	var v1args v1.ReservationArgs
+	v1.SetDefaults_ReservationArgs(&v1args)
 	var reservationArgs config.ReservationArgs
-	err := v1beta3.Convert_v1beta3_ReservationArgs_To_config_ReservationArgs(&v1beta3args, &reservationArgs, nil)
+	err := v1.Convert_v1_ReservationArgs_To_config_ReservationArgs(&v1args, &reservationArgs, nil)
 	assert.NoError(t, err)
 	for _, fn := range setArgs {
 		fn(&reservationArgs)
@@ -155,8 +175,8 @@ func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Nod
 	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
 
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
-		schedulertesting.RegisterPreFilterPlugin(nodeaffinity.Name, nodeaffinity.New),
-		schedulertesting.RegisterFilterPlugin(nodename.Name, nodename.New),
+		schedulertesting.RegisterPreFilterPlugin(nodeaffinity.Name, frameworkruntime.FactoryAdapter(plfeature.Features{}, nodeaffinity.New)),
+		schedulertesting.RegisterFilterPlugin(nodename.Name, frameworkruntime.FactoryAdapter(plfeature.Features{}, nodename.New)),
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 	}
@@ -183,8 +203,8 @@ func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Nod
 	fwExt.SetConfiguredPlugins(fw.ListPlugins())
 	fwExt.SetPodNominator(NewPodNominator())
 
-	factory := func() (framework.Plugin, error) {
-		return proxyNew(&reservationArgs, fw)
+	factory := func() (fwktype.Plugin, error) {
+		return proxyNew(context.TODO(), &reservationArgs, fw)
 	}
 
 	return &pluginTestSuit{
@@ -253,8 +273,8 @@ func TestPreFilter(t *testing.T) {
 		isPreAllocationRequired bool
 		rInfo                   *frameworkext.ReservationInfo // ready-only
 		nodeReservationStates   map[string]*nodeReservationState
-		wantStatus              *framework.Status
-		wantPreRes              *framework.PreFilterResult
+		wantStatus              *fwktype.Status
+		wantPreRes              *fwktype.PreFilterResult
 	}{
 		{
 			name: "skip for non-reserve pod",
@@ -263,13 +283,13 @@ func TestPreFilter(t *testing.T) {
 					Name: "not-reserve",
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Skip),
+			wantStatus: fwktype.NewStatus(fwktype.Skip),
 			wantPreRes: nil,
 		},
 		{
 			name: "get reservation error",
 			pod:  reservePod,
-			wantStatus: framework.NewStatus(framework.Error, fmt.Sprintf("cannot get reservation, err: %v",
+			wantStatus: fwktype.NewStatus(fwktype.Error, fmt.Sprintf("cannot get reservation, err: %v",
 				apierrors.NewNotFound(schedulingv1alpha1.Resource("reservation"), reservePod.Name))),
 			wantPreRes: nil,
 		},
@@ -278,7 +298,7 @@ func TestPreFilter(t *testing.T) {
 			pod:         reservePod,
 			rInfo:       rInfo,
 			reservation: missTemplateReservation,
-			wantStatus:  framework.NewStatus(framework.Error, "the reservation misses the template spec"),
+			wantStatus:  fwktype.NewStatus(fwktype.Error, "the reservation misses the template spec"),
 			wantPreRes:  nil,
 		},
 		{
@@ -298,7 +318,7 @@ func TestPreFilter(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity),
+			wantStatus: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrReasonReservationAffinity),
 			wantPreRes: nil,
 		},
 		{
@@ -314,7 +334,7 @@ func TestPreFilter(t *testing.T) {
 				"test-node-1": {},
 			},
 			wantStatus: nil,
-			wantPreRes: &framework.PreFilterResult{
+			wantPreRes: &fwktype.PreFilterResult{
 				NodeNames: sets.New("test-node-1"),
 			},
 		},
@@ -356,7 +376,7 @@ func TestPreFilter(t *testing.T) {
 				"test-node-1": {},
 			},
 			wantStatus: nil,
-			wantPreRes: &framework.PreFilterResult{
+			wantPreRes: &fwktype.PreFilterResult{
 				NodeNames: sets.New("test-node-1"),
 			},
 		},
@@ -376,7 +396,7 @@ func TestPreFilter(t *testing.T) {
 			reservation:             r,
 			isPreAllocationRequired: true,
 			rInfo:                   rInfo,
-			wantStatus:              framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationPreAllocationRequired),
+			wantStatus:              fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrReasonReservationPreAllocationRequired),
 			wantPreRes:              nil,
 		},
 	}
@@ -404,7 +424,7 @@ func TestPreFilter(t *testing.T) {
 				},
 				rInfo: tt.rInfo,
 			})
-			preRes, got := pl.PreFilter(context.TODO(), cycleState, tt.pod)
+			preRes, got := pl.PreFilter(context.TODO(), cycleState, tt.pod, nil)
 			assert.Equal(t, tt.wantStatus, got)
 			assert.Equal(t, tt.wantPreRes, preRes)
 		})
@@ -605,9 +625,9 @@ func TestFilter(t *testing.T) {
 		name         string
 		pod          *corev1.Pod
 		reservations []*schedulingv1alpha1.Reservation
-		nodeInfo     *framework.NodeInfo
+		nodeInfo     fwktype.NodeInfo
 		stateData    *stateData
-		want         *framework.Status
+		want         *fwktype.Status
 	}{
 		{
 			name: "skip for non-reserve pod",
@@ -627,7 +647,7 @@ func TestFilter(t *testing.T) {
 				},
 			},
 			nodeInfo: nil,
-			want:     framework.NewStatus(framework.Error, "node not found"),
+			want:     fwktype.NewStatus(fwktype.Error, "node not found"),
 		},
 		{
 			name:         "skip for pod not set node",
@@ -648,7 +668,7 @@ func TestFilter(t *testing.T) {
 			pod:          reservationutil.NewReservePod(reservationNotMatchedNode),
 			reservations: []*schedulingv1alpha1.Reservation{reservationNotMatchedNode},
 			nodeInfo:     testNodeInfo,
-			want:         framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonNodeNotMatchReservation),
+			want:         fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrReasonNodeNotMatchReservation),
 		},
 		{
 			name: "ReservationAllocatePolicyDefault cannot coexist with Aligned policy",
@@ -658,7 +678,7 @@ func TestFilter(t *testing.T) {
 				alignedReservation,
 			},
 			nodeInfo: testNodeInfo,
-			want:     framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict),
+			want:     fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict),
 		},
 		{
 			name: "ReservationAllocatePolicyDefault cannot coexist with Restricted policy",
@@ -668,7 +688,7 @@ func TestFilter(t *testing.T) {
 				restrictedReservation,
 			},
 			nodeInfo: testNodeInfo,
-			want:     framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict),
+			want:     fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrReasonReservationAllocatePolicyConflict),
 		},
 		{
 			name: "Aligned policy can coexist with Restricted policy",
@@ -699,7 +719,7 @@ func TestFilter(t *testing.T) {
 					hasAffinity: true,
 				},
 			},
-			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonReservationAffinity),
+			want: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrReasonReservationAffinity),
 		},
 		{
 			name: "normal pod has reservation affinity and filter successfully",
@@ -716,7 +736,7 @@ func TestFilter(t *testing.T) {
 					},
 				},
 			},
-			nodeInfo: testNodeInfo.Clone(),
+			nodeInfo: func() *framework.NodeInfo { ni := framework.NewNodeInfo(); ni.SetNode(testNode); return ni }(),
 			stateData: &stateData{
 				schedulingStateData: schedulingStateData{
 					hasAffinity: true,
@@ -916,7 +936,7 @@ func TestFilter(t *testing.T) {
 				rInfo: frameworkext.NewReservationInfo(preAllocationReservation),
 			},
 			nodeInfo: testNodeInfo,
-			want:     framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			want:     fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 		},
 	}
 	for _, tt := range tests {
@@ -963,7 +983,7 @@ func TestFilterWithPreemption(t *testing.T) {
 	tests := []struct {
 		name       string
 		stateData  *stateData
-		wantStatus *framework.Status
+		wantStatus *fwktype.Status
 	}{
 		{
 			name: "successfully filter non-reservations with preemption",
@@ -1009,7 +1029,10 @@ func TestFilterWithPreemption(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrReasonPreemptionFailed),
+			// Return Unschedulable so that k8s 1.35's findCandidates (NodesForStatusCode) can find this node
+			// as a potential preemption candidate. The preemption evaluator will then call SelectVictimsOnNode
+			// to determine if preemption is actually possible.
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, ErrReasonPreemptionFailed),
 		},
 		{
 			name: "filter non-reservations with preemption but no preemptible resources",
@@ -1137,7 +1160,7 @@ func Test_filterWithReservations(t *testing.T) {
 		name                          string
 		stateData                     *stateData
 		enableSkipReservationFitsNode bool
-		wantStatus                    *framework.Status
+		wantStatus                    *fwktype.Status
 	}{
 		{
 			name: "filter aligned reservation with nodeInfo",
@@ -1231,7 +1254,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "filter restricted reservation with nodeInfo",
@@ -1422,7 +1445,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "failed to filter restricted reservation since exceeding max pods",
@@ -1448,7 +1471,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Too many pods"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Too many pods"),
 		},
 		{
 			name: "failed to filter restricted reservation since unmatched resources are insufficient",
@@ -1499,7 +1522,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable,
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable,
 				"Insufficient kubernetes.io/batch-cpu by node"),
 		},
 		{
@@ -1551,7 +1574,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable,
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable,
 				"Insufficient kubernetes.io/batch-cpu by node"),
 		},
 		{
@@ -1602,7 +1625,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter default reservations with preemption",
@@ -1787,7 +1810,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "failed to filter default reservations with preempt from node",
@@ -1837,7 +1860,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "filter restricted reservations with preempt from reservation",
@@ -1952,7 +1975,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "failed to filter multiple restricted reservations with preempt from node",
@@ -2021,7 +2044,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "failed to filter restricted reservations with preempt from reservation and node",
@@ -2080,7 +2103,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter restricted reservations with reservation name and preempt from reservation",
@@ -2268,7 +2291,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Too many pods, "+
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Too many pods, "+
 				"requested: 1, used: 2, capacity: 2"),
 		},
 		{
@@ -2304,7 +2327,7 @@ func Test_filterWithReservations(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu, "+
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu, "+
 				"requested: 6000, used: 1000, capacity: 6000"),
 		},
 		{
@@ -2357,7 +2380,7 @@ func Test_filterWithReservations(t *testing.T) {
 				},
 			},
 			enableSkipReservationFitsNode: true,
-			wantStatus:                    framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus:                    fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "skipped to filter aligned reservations with preempt from node",
@@ -2478,7 +2501,7 @@ func Test_filterWithReservations(t *testing.T) {
 				},
 			},
 			enableSkipReservationFitsNode: true,
-			wantStatus:                    framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
+			wantStatus:                    fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
 		},
 	}
 	for _, tt := range tests {
@@ -2521,7 +2544,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 	tests := []struct {
 		name       string
 		stateData  *stateData
-		wantStatus *framework.Status
+		wantStatus *fwktype.Status
 	}{
 		{
 			name: "filter with pre allocation not required",
@@ -2564,7 +2587,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 						Template: &corev1.PodTemplateSpec{
 							Spec: corev1.PodSpec{
 								Containers: []corev1.Container{
-									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+									st.MakeContainer().Resources(map[corev1.ResourceName]string{
 										corev1.ResourceCPU:    "4",
 										corev1.ResourceMemory: "16Gi",
 									}).Obj(),
@@ -2618,7 +2641,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 						Template: &corev1.PodTemplateSpec{
 							Spec: corev1.PodSpec{
 								Containers: []corev1.Container{
-									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+									st.MakeContainer().Resources(map[corev1.ResourceName]string{
 										corev1.ResourceCPU:    "4",
 										corev1.ResourceMemory: "16Gi",
 									}).Obj(),
@@ -2628,7 +2651,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 					},
 				}),
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoPodsMeetPreAllocationRequirements),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, ErrReasonNoPodsMeetPreAllocationRequirements),
 		},
 		{
 			name: "filter with pre allocation not required: without pre-allocatable pods",
@@ -2672,7 +2695,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 						Template: &corev1.PodTemplateSpec{
 							Spec: corev1.PodSpec{
 								Containers: []corev1.Container{
-									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+									st.MakeContainer().Resources(map[corev1.ResourceName]string{
 										corev1.ResourceCPU:    "4",
 										corev1.ResourceMemory: "16Gi",
 									}).Obj(),
@@ -2729,7 +2752,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 						Template: &corev1.PodTemplateSpec{
 							Spec: corev1.PodSpec{
 								Containers: []corev1.Container{
-									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+									st.MakeContainer().Resources(map[corev1.ResourceName]string{
 										corev1.ResourceCPU:    "4",
 										corev1.ResourceMemory: "16Gi",
 									}).Obj(),
@@ -2739,7 +2762,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 					},
 				}),
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "filter with pre allocation pods",
@@ -2772,7 +2795,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 									},
 									Spec: corev1.PodSpec{
 										Containers: []corev1.Container{
-											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+											st.MakeContainer().Resources(map[corev1.ResourceName]string{
 												corev1.ResourceCPU:    "8",
 												corev1.ResourceMemory: "32Gi",
 											}).Obj(),
@@ -2790,7 +2813,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 									},
 									Spec: corev1.PodSpec{
 										Containers: []corev1.Container{
-											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+											st.MakeContainer().Resources(map[corev1.ResourceName]string{
 												corev1.ResourceCPU:    "4",
 												corev1.ResourceMemory: "16Gi",
 											}).Obj(),
@@ -2821,7 +2844,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 						Template: &corev1.PodTemplateSpec{
 							Spec: corev1.PodSpec{
 								Containers: []corev1.Container{
-									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+									st.MakeContainer().Resources(map[corev1.ResourceName]string{
 										corev1.ResourceCPU:    "4",
 										corev1.ResourceMemory: "16Gi",
 									}).Obj(),
@@ -2864,7 +2887,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 									},
 									Spec: corev1.PodSpec{
 										Containers: []corev1.Container{
-											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+											st.MakeContainer().Resources(map[corev1.ResourceName]string{
 												corev1.ResourceCPU:    "8",
 												corev1.ResourceMemory: "8Gi",
 											}).Obj(),
@@ -2882,7 +2905,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 									},
 									Spec: corev1.PodSpec{
 										Containers: []corev1.Container{
-											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+											st.MakeContainer().Resources(map[corev1.ResourceName]string{
 												corev1.ResourceCPU:    "2",
 												corev1.ResourceMemory: "8Gi",
 											}).Obj(),
@@ -2919,7 +2942,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 						Template: &corev1.PodTemplateSpec{
 							Spec: corev1.PodSpec{
 								Containers: []corev1.Container{
-									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+									st.MakeContainer().Resources(map[corev1.ResourceName]string{
 										corev1.ResourceCPU:    "4",
 										corev1.ResourceMemory: "16Gi",
 									}).Obj(),
@@ -2962,7 +2985,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 									},
 									Spec: corev1.PodSpec{
 										Containers: []corev1.Container{
-											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+											st.MakeContainer().Resources(map[corev1.ResourceName]string{
 												corev1.ResourceCPU:    "8",
 												corev1.ResourceMemory: "8Gi",
 											}).Obj(),
@@ -2980,7 +3003,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 									},
 									Spec: corev1.PodSpec{
 										Containers: []corev1.Container{
-											schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+											st.MakeContainer().Resources(map[corev1.ResourceName]string{
 												corev1.ResourceCPU:    "4",
 												corev1.ResourceMemory: "8Gi",
 											}).Obj(),
@@ -3017,7 +3040,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 						Template: &corev1.PodTemplateSpec{
 							Spec: corev1.PodSpec{
 								Containers: []corev1.Container{
-									schedulertesting.MakeContainer().Resources(map[corev1.ResourceName]string{
+									st.MakeContainer().Resources(map[corev1.ResourceName]string{
 										corev1.ResourceCPU:    "4",
 										corev1.ResourceMemory: "16Gi",
 									}).Obj(),
@@ -3027,7 +3050,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 					},
 				}),
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node", "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node", "Reservation(s) Insufficient cpu"),
 		},
 	}
 	for _, tt := range tests {
@@ -3429,7 +3452,7 @@ func TestFilterNominateReservation(t *testing.T) {
 		podRequests       corev1.ResourceList
 		reservations      []*schedulingv1alpha1.Reservation
 		targetReservation *schedulingv1alpha1.Reservation
-		wantStatus        *framework.Status
+		wantStatus        *fwktype.Status
 	}{
 		{
 			name: "satisfied reservation",
@@ -3466,7 +3489,7 @@ func TestFilterNominateReservation(t *testing.T) {
 				reservation4C8G,
 			},
 			targetReservation: reservation2C4G,
-			wantStatus:        framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements),
+			wantStatus:        fwktype.NewStatus(fwktype.Unschedulable, ErrReasonNoReservationsMeetRequirements),
 		},
 		{
 			name: "failed with allocateOnce and allocated reservation",
@@ -3478,7 +3501,7 @@ func TestFilterNominateReservation(t *testing.T) {
 				allocateOnceAndAllocatedReservation,
 			},
 			targetReservation: allocateOnceAndAllocatedReservation,
-			wantStatus:        framework.NewStatus(framework.Unschedulable, "reservation has allocateOnce enabled and has already been allocated"),
+			wantStatus:        fwktype.NewStatus(fwktype.Unschedulable, "reservation has allocateOnce enabled and has already been allocated"),
 		},
 	}
 	for _, tt := range tests {
@@ -3546,33 +3569,34 @@ func TestFilterNominateReservation(t *testing.T) {
 }
 
 func TestPostFilter(t *testing.T) {
-	testFilterStatus := framework.NewStatus(framework.Unschedulable, "node(s) didn't match the requested node name")
-	testFilterReservationStatus := framework.NewStatus(framework.Unschedulable,
+	testFilterStatus := fwktype.NewStatus(fwktype.Unschedulable, "node(s) didn't match the requested node name")
+	testFilterReservationStatus := fwktype.NewStatus(fwktype.Unschedulable,
 		reservationutil.NewReservationReason("Insufficient nvidia.com/gpu"),
 		reservationutil.NewReservationReason("Insufficient koordinator.sh/gpu-mem-ratio"))
-	testFilterReservationStatus1 := framework.NewStatus(framework.Unschedulable,
+	testFilterReservationStatus1 := fwktype.NewStatus(fwktype.Unschedulable,
 		reservationutil.NewReservationReason("Insufficient cpu"),
 		"Insufficient memory")
 	type args struct {
 		hasStateData             bool
 		hasAffinity              bool
 		nodeReservationDiagnosis map[string]*nodeDiagnosisState
-		filteredNodeStatusMap    framework.NodeToStatusMap
+		filteredNodeStatusMap    *framework.NodeToStatus
 	}
 	tests := []struct {
 		name  string
 		args  args
-		want  *framework.PostFilterResult
-		want1 *framework.Status
+		want  *fwktype.PostFilterResult
+		want1 *fwktype.Status
 	}{
 		{
 			name: "no reservation filtering",
 			args: args{
-				hasStateData:          false,
-				filteredNodeStatusMap: framework.NodeToStatusMap{},
+				hasStateData: false,
+				// In k8s 1.35, NewNodeToStatus requires non-nil absentNodesStatus to avoid panic in NodesForStatusCode
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{}, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable)),
 			},
 			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable),
+			want1: fwktype.NewStatus(fwktype.Unschedulable),
 		},
 		{
 			name: "show reservation owner matched when reservation affinity specified",
@@ -3580,10 +3604,11 @@ func TestPostFilter(t *testing.T) {
 				hasStateData:             true,
 				hasAffinity:              true,
 				nodeReservationDiagnosis: map[string]*nodeDiagnosisState{},
-				filteredNodeStatusMap:    framework.NodeToStatusMap{},
+				// In k8s 1.35, NewNodeToStatus requires non-nil absentNodesStatus to avoid panic in NodesForStatusCode
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{}, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable)),
 			},
 			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable, "0 Reservation(s) matched owner total"),
+			want1: fwktype.NewStatus(fwktype.Unschedulable, "0 Reservation(s) matched owner total"),
 		},
 		{
 			name: "show reservation owner matched, unschedulable unmatched",
@@ -3601,13 +3626,13 @@ func TestPostFilter(t *testing.T) {
 						affinityUnmatched:        0,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": {},
 					"test-node-1": {},
-				},
+				}, nil),
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"4 Reservation(s) is unschedulable",
 				"4 Reservation(s) matched owner total"),
 		},
@@ -3627,13 +3652,13 @@ func TestPostFilter(t *testing.T) {
 						affinityUnmatched: 0,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": {},
 					"test-node-1": {},
-				},
+				}, nil),
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"4 Reservation(s) didn't match the requested reservation name",
 				"4 Reservation(s) matched owner total"),
 		},
@@ -3657,13 +3682,13 @@ func TestPostFilter(t *testing.T) {
 						},
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": {},
 					"test-node-1": {},
-				},
+				}, nil),
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"4 Reservation(s) had untolerated taint {node.kubernetes.io/unreachable: }",
 				"4 Reservation(s) matched owner total"),
 		},
@@ -3683,13 +3708,13 @@ func TestPostFilter(t *testing.T) {
 						notExactMatched:          1,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": {},
 					"test-node-1": {},
-				},
+				}, nil),
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"1 Reservation(s) is unschedulable",
 				"4 Reservation(s) is not exact matched",
 				"5 Reservation(s) matched owner total"),
@@ -3710,13 +3735,13 @@ func TestPostFilter(t *testing.T) {
 						notExactMatched:          1,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": {},
 					"test-node-1": {},
-				},
+				}, nil),
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"1 Reservation(s) is unschedulable",
 				"4 Reservation(s) is not exact matched",
 				"5 Reservation(s) matched owner total"),
@@ -3737,13 +3762,13 @@ func TestPostFilter(t *testing.T) {
 						affinityUnmatched:        1,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": {},
 					"test-node-1": {},
-				},
+				}, nil),
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"4 Reservation(s) didn't match affinity rules",
 				"1 Reservation(s) is unschedulable",
 				"5 Reservation(s) matched owner total"),
@@ -3764,13 +3789,13 @@ func TestPostFilter(t *testing.T) {
 						nameUnmatched: 2,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": {},
 					"test-node-1": {},
-				},
+				}, nil),
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"1 Reservation(s) exactly matches the requested reservation name",
 				"4 Reservation(s) didn't match the requested reservation name",
 				"1 Reservation(s) is not exact matched",
@@ -3792,13 +3817,13 @@ func TestPostFilter(t *testing.T) {
 						affinityUnmatched:        0,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": {},
 					"test-node-1": testFilterStatus,
-				},
+				}, nil),
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"3 Reservation(s) didn't match affinity rules",
 				"1 Reservation(s) is unschedulable",
 				"2 Reservation(s) for node reason that node(s) didn't match the requested node name",
@@ -3820,13 +3845,13 @@ func TestPostFilter(t *testing.T) {
 						affinityUnmatched:        0,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": testFilterReservationStatus,
 					"test-node-1": testFilterReservationStatus1,
-				},
+				}, nil),
 			},
 			want: nil,
-			want1: framework.NewStatus(framework.Unschedulable,
+			want1: fwktype.NewStatus(fwktype.Unschedulable,
 				"1 Reservation(s) didn't match affinity rules",
 				"1 Reservation(s) is unschedulable",
 				"1 Reservation(s) for node reason that Insufficient memory",
@@ -3844,13 +3869,13 @@ func TestPostFilter(t *testing.T) {
 						ignored: 1,
 					},
 				},
-				filteredNodeStatusMap: framework.NodeToStatusMap{
+				filteredNodeStatusMap: framework.NewNodeToStatus(map[string]*fwktype.Status{
 					"test-node-0": {},
 					"test-node-1": {},
-				},
+				}, nil),
 			},
 			want:  nil,
-			want1: framework.NewStatus(framework.Unschedulable),
+			want1: fwktype.NewStatus(fwktype.Unschedulable),
 		},
 	}
 	for _, tt := range tests {
@@ -3939,7 +3964,7 @@ func TestReservationNominate(t *testing.T) {
 		isPreAllocationRequired bool
 		hasAffinity             bool
 		nodeReservationStates   map[string]*nodeReservationState
-		wantStatus              *framework.Status
+		wantStatus              *fwktype.Status
 		// setupPlugin setups plugin before calling ReservationNominate
 		setupPlugin func(pl *Plugin)
 		// checkNominatedCache validates nominated cache after calling ReservationNominate
@@ -3970,7 +3995,7 @@ func TestReservationNominate(t *testing.T) {
 					nodeName: "test-node",
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonReservationAffinity),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, ErrReasonReservationAffinity),
 		},
 		{
 			name: "normal pod with reservation ignored",
@@ -4239,7 +4264,7 @@ func TestReserve(t *testing.T) {
 		pod             *corev1.Pod
 		reservation     *schedulingv1alpha1.Reservation
 		wantReservation *schedulingv1alpha1.Reservation
-		wantStatus      *framework.Status
+		wantStatus      *fwktype.Status
 		wantPods        map[types.UID]*frameworkext.PodRequirement
 	}{
 		{
@@ -4380,7 +4405,7 @@ func TestUnreserve(t *testing.T) {
 		pod                          *corev1.Pod
 		reservation                  *schedulingv1alpha1.Reservation
 		podAssignedToNode            bool
-		wantStatus                   *framework.Status
+		wantStatus                   *fwktype.Status
 		wantReservationAllocatedKept bool
 	}{
 		{
@@ -4475,7 +4500,7 @@ func TestPreBind(t *testing.T) {
 		assumedReservation *schedulingv1alpha1.Reservation
 		pod                *corev1.Pod
 		wantPod            *corev1.Pod
-		wantStatus         *framework.Status
+		wantStatus         *fwktype.Status
 	}{
 		{
 			name: "preBind pod with assumed reservation",
@@ -4626,25 +4651,25 @@ func TestBind(t *testing.T) {
 		nodeName        string
 		reservation     *schedulingv1alpha1.Reservation
 		fakeClient      koordclientset.Interface
-		want            *framework.Status
+		want            *fwktype.Status
 		wantReservation *schedulingv1alpha1.Reservation
 	}{
 		{
 			name: "skip for non-reserve pod",
 			pod:  normalPod,
-			want: framework.NewStatus(framework.Skip),
+			want: fwktype.NewStatus(fwktype.Skip),
 		},
 		{
 			name: "failed to get reservation",
 			pod:  reservePod,
-			want: framework.AsStatus(apierrors.NewNotFound(schedulingv1alpha1.Resource("reservation"), reservation.Name)),
+			want: fwktype.AsStatus(apierrors.NewNotFound(schedulingv1alpha1.Resource("reservation"), reservation.Name)),
 		},
 		{
 			name:        "get failed reservation",
 			pod:         reservePod,
 			nodeName:    testNodeName,
 			reservation: failedReservation,
-			want:        framework.AsStatus(errors.New(ErrReasonReservationInactive)),
+			want:        fwktype.AsStatus(errors.New(ErrReasonReservationInactive)),
 		},
 		{
 			name:        "failed to update status",
@@ -4652,7 +4677,7 @@ func TestBind(t *testing.T) {
 			nodeName:    testNodeName,
 			reservation: reservation,
 			fakeClient:  koordfake.NewSimpleClientset(),
-			want:        framework.AsStatus(apierrors.NewNotFound(schedulingv1alpha1.Resource("reservations"), reservation.Name)),
+			want:        fwktype.AsStatus(apierrors.NewNotFound(schedulingv1alpha1.Resource("reservations"), reservation.Name)),
 		},
 		{
 			name:            "bind reservation successfully",
@@ -4752,19 +4777,19 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 				// allocated: <0, 0Gi>, unallocated: <16, 32Gi>
 				return []*corev1.Pod{}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess())
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MaxNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MaxNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 			},
 		},
@@ -4785,7 +4810,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
@@ -4793,7 +4818,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("5", "10Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				if conf.PreferNoPreAllocatedPods {
@@ -4807,14 +4832,14 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 						"selected pre-allocatable pod mismatch")
 				}
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
-					assert.Equal(t, framework.MaxNodeScore, score)
+					assert.Equal(t, fwktype.MaxNodeScore, score)
 				} else {
-					assert.Equal(t, framework.MaxNodeScore/2, score)
+					assert.Equal(t, fwktype.MaxNodeScore/2, score)
 				}
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
 					assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 				} else {
@@ -4837,7 +4862,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
@@ -4845,20 +4870,20 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 				// no node reservation state since no pre-allocatable pods
 				assert.Nil(t, state.nodeReservationStates[nodeName], "node reservation state should be nil")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
 					// reuse failure reasons by node-unallocated check
-					assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+					assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 						status, "got unexpected status: %v", status)
 				} else {
 					assert.True(t, status.IsSuccess())
 					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 				}
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MaxNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MaxNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 			},
 		},
@@ -4877,7 +4902,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 					createTestPreAllocatablePod("pod4", nodeName, "1", "2Gi", "90"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
@@ -4886,8 +4911,8 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("12", "18Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 					status, "got unexpected status: %v", status)
 			},
 		},
@@ -4910,7 +4935,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 					createTestPreAllocatablePod("pod4", nodeName, "4", "2Gi", "50"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
@@ -4919,8 +4944,8 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("14", "28Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node",
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node",
 					"Insufficient memory by node"),
 					status, "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
@@ -4947,7 +4972,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 					createTestPreAllocatablePod("pod5", nodeName, "1", "1Gi", "50"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
@@ -4956,7 +4981,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("10", "18Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 1,
@@ -4964,10 +4989,10 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 				assert.Equal(t, "pod4", getNodeRState(state, nodeName).selectedPreAllocatablePods[0].Name,
 					"selected pre-allocatable pod mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MaxNodeScore/2, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MaxNodeScore/2, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 1, "pre-allocated pods count mismatch")
 				assert.Equal(t, "pod4", state.preAllocated[0].Name, "pre-allocated pod mismatch")
 			},
@@ -4991,7 +5016,7 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 					createTestPreAllocatablePod("pod4", nodeName, "1", "2Gi", "50"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
@@ -5000,17 +5025,17 @@ func TestPreAllocationClusterModeMultipleEnabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("14", "28Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 2, "selected pre-allocatable pods count mismatch")
 				assert.Equal(t, "pod2", getNodeRState(state, nodeName).selectedPreAllocatablePods[0].Name, "selected pre-allocatable pod mismatch")
 				assert.Equal(t, "pod4", getNodeRState(state, nodeName).selectedPreAllocatablePods[1].Name, "selected pre-allocatable pod mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MaxNodeScore/3, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MaxNodeScore/3, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 2, "pre-allocated pods count mismatch")
 				assert.Equal(t, "pod2", state.preAllocated[0].Name, "first pre-allocated pod mismatch")
 				assert.Equal(t, "pod4", state.preAllocated[1].Name, "second pre-allocated pod mismatch")
@@ -5062,19 +5087,19 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 				// allocated: <0, 0Gi>, unallocated: <16, 32Gi>
 				return []*corev1.Pod{}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess())
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MinNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MinNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 			},
 		},
@@ -5096,7 +5121,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
@@ -5104,7 +5129,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("5", "10Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				if conf.PreferNoPreAllocatedPods {
@@ -5115,10 +5140,10 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 						"selected pre-allocatable pods count mismatch")
 				}
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MinNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MinNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
 					assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 				} else {
@@ -5141,7 +5166,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
@@ -5149,10 +5174,10 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 				// no node reservation state since no pre-allocatable pods
 				assert.Nil(t, state.nodeReservationStates[nodeName], "node reservation state should be nil")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
 					// reuse failure reasons by node-unallocated check
-					assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+					assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 						status, "got unexpected status: %v", status)
 				} else {
 					// When no pre-allocatable pods exist, this plugin won't check node node-unallocated resources.
@@ -5160,10 +5185,10 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 					assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 				}
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MinNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MinNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 			},
 		},
@@ -5182,7 +5207,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 					createTestPreAllocatablePod("pod4", nodeName, "1", "2Gi", "90"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
@@ -5191,8 +5216,8 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("12", "18Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 					status, "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0,
@@ -5218,7 +5243,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 					createTestPreAllocatablePod("pod4", nodeName, "5", "2Gi", "50"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
@@ -5227,9 +5252,9 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("15", "28Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				// For non-required pre-allocation, insufficient reasons by reservation should not be included in the final status
-				assert.Equal(t, framework.NewStatus(framework.Unschedulable,
+				assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable,
 					"Insufficient cpu by node", "Insufficient memory by node"),
 					status, "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
@@ -5252,7 +5277,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 					createTestPreAllocatablePod("pod5", nodeName, "1", "1Gi", "50"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
@@ -5261,15 +5286,15 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("10", "18Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 3, "selected pre-allocatable pods count mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MinNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MinNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 1, "pre-allocated pods count mismatch")
 			},
 		},
@@ -5296,7 +5321,7 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 					createTestPreAllocatablePod("pod4", nodeName, "5", "2Gi", "50"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				//assert.Nil(t, result)
 				//assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
@@ -5305,9 +5330,9 @@ func TestPreAllocationClusterModeMultipleDisabled(t *testing.T) {
 				assert.Equal(t, framework.NewResource(makeResourceList("15", "28Gi")),
 					state.nodeReservationStates[nodeName].podRequested, "all pod requested mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				// For required pre-allocation, insufficient reasons by reservation should be included in the final status
-				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node",
+				assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node",
 					"Insufficient memory by node", "Reservation(s) Insufficient memory", "Reservation(s) Insufficient cpu"),
 					status, "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
@@ -5361,19 +5386,19 @@ func TestPreAllocationDefaultModeMultipleEnabled(t *testing.T) {
 				// allocated: <0, 0Gi>, unallocated: <16, 32Gi>
 				return []*corev1.Pod{}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess())
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MaxNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MaxNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 			},
 		},
@@ -5394,14 +5419,14 @@ func TestPreAllocationDefaultModeMultipleEnabled(t *testing.T) {
 					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				if conf.PreferNoPreAllocatedPods {
@@ -5413,14 +5438,14 @@ func TestPreAllocationDefaultModeMultipleEnabled(t *testing.T) {
 						"selected pre-allocatable pods count mismatch")
 				}
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
-					assert.Equal(t, framework.MaxNodeScore, score)
+					assert.Equal(t, fwktype.MaxNodeScore, score)
 				} else {
-					assert.Equal(t, framework.MaxNodeScore/2, score)
+					assert.Equal(t, fwktype.MaxNodeScore/2, score)
 				}
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
 					assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 				} else {
@@ -5442,16 +5467,16 @@ func TestPreAllocationDefaultModeMultipleEnabled(t *testing.T) {
 					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
 					// When PreferNoPreAllocatedPods is true, check node unallocated first and fail
-					assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+					assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 						status, "got unexpected status: %v", status)
 				} else {
 					// When PreferNoPreAllocatedPods is false, no pre-allocatable pods, but code returns success
@@ -5475,14 +5500,14 @@ func TestPreAllocationDefaultModeMultipleEnabled(t *testing.T) {
 					createTestPreAllocatablePodWithOwnerLabel("pod4", nodeName, "1", "2Gi", ownerLabels),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 					status, "got unexpected status: %v", status)
 			},
 		},
@@ -5505,21 +5530,21 @@ func TestPreAllocationDefaultModeMultipleEnabled(t *testing.T) {
 					createTestPreAllocatablePodWithOwnerLabel("pod4", nodeName, "1", "2Gi", ownerLabels),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("4", "8Gi"), state.podRequests, "reserve pod requests mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 2, "selected pre-allocatable pods count mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MaxNodeScore/3, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MaxNodeScore/3, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 2, "pre-allocated pods count mismatch")
 			},
 		},
@@ -5543,22 +5568,22 @@ func TestPreAllocationDefaultModeMultipleEnabled(t *testing.T) {
 					createTestPreAllocatablePodWithOwnerLabel("pod5", nodeName, "1", "1Gi", ownerLabels),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 1,
 					"selected pre-allocatable pods count mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MaxNodeScore/2, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MaxNodeScore/2, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 1, "pre-allocated pods count mismatch")
 			},
 		},
@@ -5609,19 +5634,19 @@ func TestPreAllocationDefaultModeMultipleDisabled(t *testing.T) {
 				// allocated: <0, 0Gi>, unallocated: <16, 32Gi>
 				return []*corev1.Pod{}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "Pre-allocatable pods count mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess())
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0, "selected pre-allocatable pods count mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MinNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MinNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 			},
 		},
@@ -5643,13 +5668,13 @@ func TestPreAllocationDefaultModeMultipleDisabled(t *testing.T) {
 					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				if conf.PreferNoPreAllocatedPods {
@@ -5662,10 +5687,10 @@ func TestPreAllocationDefaultModeMultipleDisabled(t *testing.T) {
 						"selected pre-allocatable pods count mismatch")
 				}
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MinNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MinNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
 					assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 				} else {
@@ -5688,28 +5713,28 @@ func TestPreAllocationDefaultModeMultipleDisabled(t *testing.T) {
 					createTestPod("pod3", nodeName, "1", "2Gi"),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 0, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if conf.PreferNoPreAllocatedPods {
 					// When PreferNoPreAllocatedPods is true, check node unallocated first and fail
-					assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+					assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 						status, "got unexpected status: %v", status)
 				} else {
 					// When PreferNoPreAllocatedPods is false, no pre-allocatable pods, but code returns success
 					assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
 				}
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if !conf.PreferNoPreAllocatedPods {
-					assert.Equal(t, framework.MinNodeScore, score)
+					assert.Equal(t, fwktype.MinNodeScore, score)
 				}
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				if !conf.PreferNoPreAllocatedPods {
 					assert.Len(t, state.preAllocated, 0, "pre-allocated pods count mismatch")
 				}
@@ -5730,14 +5755,14 @@ func TestPreAllocationDefaultModeMultipleDisabled(t *testing.T) {
 					createTestPreAllocatablePodWithOwnerLabel("pod4", nodeName, "1", "2Gi", ownerLabels),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 					status, "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 2, "pre-allocatable pods count mismatch")
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 0,
@@ -5764,23 +5789,23 @@ func TestPreAllocationDefaultModeMultipleDisabled(t *testing.T) {
 					createTestPreAllocatablePodWithOwnerLabel("pod5", nodeName, "1", "1Gi", ownerLabels),
 				}
 			},
-			checkPreFilterFn: func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkPreFilterFn: func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.Nil(t, result)
 				assert.Nil(t, status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				assert.Equal(t, makeResourceList("8", "16Gi"), state.podRequests, "reserve pod requests mismatch")
 			},
-			checkFilterFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkFilterFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				assert.True(t, status.IsSuccess(), "got unexpected status: %v", status)
 				assert.Len(t, getNodeRState(state, nodeName).preAllocatablePods, 3, "pre-allocatable pods count mismatch")
 				// When EnableMultiple=false, all matching pods are selected at Filter
 				assert.Len(t, getNodeRState(state, nodeName).selectedPreAllocatablePods, 3,
 					"selected pre-allocatable pods count mismatch")
 			},
-			checkScoreFn: func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
-				assert.Equal(t, framework.MinNodeScore, score)
+			checkScoreFn: func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
+				assert.Equal(t, fwktype.MinNodeScore, score)
 			},
-			checkReserveFn: func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig) {
+			checkReserveFn: func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig) {
 				// Only one pod is reserved when EnableMultiple=false
 				assert.Len(t, state.preAllocated, 1, "pre-allocated pods count mismatch")
 			},
@@ -5925,31 +5950,21 @@ func (npm *nominatedPodMap) delete(p *corev1.Pod) {
 }
 
 // UpdateNominatedPod updates the <oldPod> with <newPod>.
-func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.Pod, newPodInfo *framework.PodInfo) {
+func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.Pod, newPodInfo fwktype.PodInfo) {
 	npm.Lock()
 	defer npm.Unlock()
-	// In some cases, an Update event with no "NominatedNode" present is received right
-	// after a node("NominatedNode") is reserved for this pod in memory.
-	// In this case, we need to keep reserving the NominatedNode when updating the pod pointer.
 	nodeName := ""
-	// We won't fall into below `if` block if the Update event represents:
-	// (1) NominatedNode info is added
-	// (2) NominatedNode info is updated
-	// (3) NominatedNode info is removed
-	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPodInfo.Pod) == "" {
+	if NominatedNodeName(oldPod) == "" && NominatedNodeName(newPodInfo.GetPod()) == "" {
 		if nnn, ok := npm.nominatedPodToNode[oldPod.UID]; ok {
-			// This is the only case we should continue reserving the NominatedNode
 			nodeName = nnn
 		}
 	}
-	// We update irrespective of the nominatedNodeName changed or not, to ensure
-	// that pod pointer is updated.
 	npm.delete(oldPod)
-	npm.add(newPodInfo, nodeName)
+	npm.add(&framework.PodInfo{Pod: newPodInfo.GetPod()}, nodeName)
 }
 
-// NewPodNominator creates a nominatedPodMap as a backing of framework.PodNominator.
-func NewPodNominator() framework.PodNominator {
+// NewPodNominator creates a nominatedPodMap as a backing of fwktype.PodNominator.
+func NewPodNominator() fwktype.PodNominator {
 	return &nominatedPodMap{
 		nominatedPods:      make(map[string][]*framework.PodInfo),
 		nominatedPodToNode: make(map[types.UID]string),
@@ -5972,20 +5987,23 @@ func (npm *nominatedPodMap) DeleteNominatedPodIfExists(pod *corev1.Pod) {
 // This is called during the preemption process after a node is nominated to run
 // the pod. We update the structure before sending a request to update the pod
 // object to avoid races with the following scheduling cycles.
-func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
+func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi fwktype.PodInfo, nominatingInfo *fwktype.NominatingInfo) {
 	npm.Lock()
-	npm.add(pi, nominatingInfo.NominatedNodeName)
+	npm.add(&framework.PodInfo{Pod: pi.GetPod()}, nominatingInfo.NominatedNodeName)
 	npm.Unlock()
 }
 
 // NominatedPodsForNode returns pods that are nominated to run on the given node,
 // but they are waiting for other pods to be removed from the node.
-func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []*framework.PodInfo {
+func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []fwktype.PodInfo {
 	npm.RLock()
 	defer npm.RUnlock()
-	// TODO: we may need to return a copy of []*Pods to avoid modification
-	// on the caller side.
-	return npm.nominatedPods[nodeName]
+	pods := npm.nominatedPods[nodeName]
+	result := make([]fwktype.PodInfo, len(pods))
+	for i, p := range pods {
+		result[i] = p
+	}
+	return result
 }
 
 // TestPreAllocation tests the basic end-to-end flow of Reservation PreAllocation.
@@ -6087,8 +6105,8 @@ func TestPreAllocation(t *testing.T) {
 		assert.True(t, status.IsSuccess())
 
 		// Run PreFilter
-		_, status = pl.PreFilter(context.TODO(), cycleState, reservePod)
-		assert.True(t, status.IsSuccess() || status.Code() == framework.Skip)
+		_, status = pl.PreFilter(context.TODO(), cycleState, reservePod, nil)
+		assert.True(t, status.IsSuccess() || status.Code() == fwktype.Skip)
 
 		// Run Filter
 		nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
@@ -6233,8 +6251,8 @@ func TestPreAllocation(t *testing.T) {
 		cycleState := framework.NewCycleState()
 
 		// Run PreFilter
-		_, status := pl.PreFilter(context.TODO(), cycleState, testPod)
-		assert.True(t, status.IsSuccess() || status.Code() == framework.Skip)
+		_, status := pl.PreFilter(context.TODO(), cycleState, testPod, nil)
+		assert.True(t, status.IsSuccess() || status.Code() == fwktype.Skip)
 
 		// Run Filter
 		nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
@@ -6422,10 +6440,10 @@ type preAllocationTestCase struct {
 	reserveResource       corev1.ResourceList
 	setupNode             func() *corev1.Node
 	setupPods             func() []*corev1.Pod
-	checkPreFilterFn      func(result *framework.PreFilterResult, status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-	checkFilterFn         func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-	checkScoreFn          func(score int64, status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
-	checkReserveFn        func(status *framework.Status, state *stateData, conf *config.PreAllocationConfig)
+	checkPreFilterFn      func(result *fwktype.PreFilterResult, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig)
+	checkFilterFn         func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig)
+	checkScoreFn          func(score int64, status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig)
+	checkReserveFn        func(status *fwktype.Status, state *stateData, conf *config.PreAllocationConfig)
 }
 
 func testPreAllocationMode(t *testing.T, tt preAllocationTestCase, node *corev1.Node,
@@ -6506,17 +6524,17 @@ func testPreAllocationMode(t *testing.T, tt preAllocationTestCase, node *corev1.
 	testReservePod := reservationutil.NewReservePod(testReservation)
 
 	cycleState := framework.NewCycleState()
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
 
 	// Run BeforePreFilter and PreFilter
 	pl.BeforePreFilter(ctx, cycleState, testReservePod)
-	result, status := pl.PreFilter(ctx, cycleState, testReservePod)
+	result, status := pl.PreFilter(ctx, cycleState, testReservePod, []fwktype.NodeInfo{nodeInfo})
 	if tt.checkPreFilterFn != nil {
 		tt.checkPreFilterFn(result, status, getStateData(cycleState), preAllocationConf)
 	}
 
 	// Run Filter
-	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
-	assert.NoError(t, err)
 	status = pl.Filter(context.TODO(), cycleState, testReservePod, nodeInfo)
 	if tt.checkFilterFn != nil {
 		tt.checkFilterFn(status, getStateData(cycleState), preAllocationConf)
@@ -6524,7 +6542,7 @@ func testPreAllocationMode(t *testing.T, tt preAllocationTestCase, node *corev1.
 
 	// Run Score
 	if tt.checkScoreFn != nil {
-		score, scoreStatus := pl.Score(ctx, cycleState, testReservePod, node.Name)
+		score, scoreStatus := pl.Score(ctx, cycleState, testReservePod, nodeInfo)
 		tt.checkScoreFn(score, scoreStatus, getStateData(cycleState), preAllocationConf)
 	}
 

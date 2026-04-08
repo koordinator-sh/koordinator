@@ -25,24 +25,25 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 func TestTakeoverNominatingInfo(t *testing.T) {
 	type args struct {
 		podInfo        *framework.QueuedPodInfo
-		status         *framework.Status
-		nominatingInfo *framework.NominatingInfo
+		status         *fwktype.Status
+		nominatingInfo *fwktype.NominatingInfo
 	}
 	tests := []struct {
 		name               string
 		args               args
-		wantNominatingInfo *framework.NominatingInfo
+		wantNominatingInfo *fwktype.NominatingInfo
 	}{
 		{
 			name: "job preemption success reject waitingPod",
 			args: args{
-				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+				nominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
 					PodInfo: &framework.PodInfo{
 						Pod: &corev1.Pod{
@@ -55,14 +56,14 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 						},
 					},
 				},
-				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobPreemptionSuccessPlugin),
+				status: (fwktype.NewStatus(fwktype.Unschedulable)).WithPlugin(JobPreemptionSuccessPlugin),
 			},
-			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: "test-node"},
+			wantNominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: "test-node"},
 		},
 		{
 			name: "job reject waitingPod",
 			args: args{
-				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+				nominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
 					PodInfo: &framework.PodInfo{
 						Pod: &corev1.Pod{
@@ -75,14 +76,14 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 						},
 					},
 				},
-				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobRejectPlugin),
+				status: (fwktype.NewStatus(fwktype.Unschedulable)).WithPlugin(JobRejectPlugin),
 			},
-			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeNoop},
+			wantNominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeNoop},
 		},
 		{
 			name: "job preemption failure reject waitingPod",
 			args: args{
-				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+				nominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
 					PodInfo: &framework.PodInfo{
 						Pod: &corev1.Pod{
@@ -95,14 +96,14 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 						},
 					},
 				},
-				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin(JobPreemptionFailurePlugin),
+				status: (fwktype.NewStatus(fwktype.Unschedulable)).WithPlugin(JobPreemptionFailurePlugin),
 			},
-			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+			wantNominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
 		},
 		{
 			name: "other plugin failure",
 			args: args{
-				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+				nominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
 					PodInfo: &framework.PodInfo{
 						Pod: &corev1.Pod{
@@ -115,14 +116,14 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 						},
 					},
 				},
-				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin("other-plugin"),
+				status: (fwktype.NewStatus(fwktype.Unschedulable)).WithPlugin("other-plugin"),
 			},
-			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+			wantNominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
 		},
 		{
 			name: "success",
 			args: args{
-				nominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+				nominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
 				podInfo: &framework.QueuedPodInfo{
 					PodInfo: &framework.PodInfo{
 						Pod: &corev1.Pod{
@@ -135,9 +136,9 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 						},
 					},
 				},
-				status: &framework.Status{},
+				status: &fwktype.Status{},
 			},
-			wantNominatingInfo: &framework.NominatingInfo{NominatingMode: framework.ModeOverride, NominatedNodeName: ""},
+			wantNominatingInfo: &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
 		},
 	}
 	for _, tt := range tests {
@@ -150,7 +151,7 @@ func TestTakeoverNominatingInfo(t *testing.T) {
 
 func Test_getRejecterPlugin(t *testing.T) {
 	type args struct {
-		status *framework.Status
+		status *fwktype.Status
 	}
 	tests := []struct {
 		name string
@@ -160,21 +161,21 @@ func Test_getRejecterPlugin(t *testing.T) {
 		{
 			name: "success",
 			args: args{
-				status: &framework.Status{},
+				status: &fwktype.Status{},
 			},
 			want: "",
 		},
 		{
 			name: "1.28 reject",
 			args: args{
-				status: (framework.NewStatus(framework.Unschedulable)).WithFailedPlugin("plugin"),
+				status: (fwktype.NewStatus(fwktype.Unschedulable)).WithPlugin("plugin"),
 			},
 			want: "plugin",
 		},
 		{
 			name: "1.33 reject",
 			args: args{
-				status: (framework.NewStatus(framework.Unschedulable)).WithError(&framework.FitError{
+				status: (fwktype.NewStatus(fwktype.Unschedulable)).WithError(&framework.FitError{
 					Diagnosis: framework.Diagnosis{
 						UnschedulablePlugins: sets.New[string]("plugin"),
 					},

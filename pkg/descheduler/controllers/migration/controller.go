@@ -91,7 +91,7 @@ type Reconciler struct {
 	reconcilerUID types.UID
 }
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	controllerArgs, ok := args.(*deschedulerconfig.MigrationControllerArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type MigrationControllerArgs, got %T", args)
@@ -123,19 +123,22 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 	r.arbitrator = a
 	arbitrationEventHandler := arbitrator.NewHandler(a, r.Client)
 
-	if err = c.Watch(source.Kind(options.Manager.GetCache(), &sev1alpha1.PodMigrationJob{}), arbitrationEventHandler, &predicate.Funcs{
-		DeleteFunc: func(event event.DeleteEvent) bool {
-			job := event.Object.(*sev1alpha1.PodMigrationJob)
+	if err = c.Watch(source.Kind[client.Object](options.Manager.GetCache(), &sev1alpha1.PodMigrationJob{}, arbitrationEventHandler, predicate.TypedFuncs[client.Object]{
+		DeleteFunc: func(evt event.TypedDeleteEvent[client.Object]) bool {
+			job, ok := evt.Object.(*sev1alpha1.PodMigrationJob)
+			if !ok {
+				return false
+			}
 			r.assumedCache.delete(job)
 			// TODO(joseph): It's better that delete reservation asynchronously
 			if err = r.deleteReservation(context.TODO(), job); err != nil {
 				klog.Errorf("Failed to delete reservation, MigrationJob: %s, err: %v", job.Name, err)
 			}
 			return true
-		}}); err != nil {
+		}})); err != nil {
 		return nil, err
 	}
-	if err = c.Watch(source.Kind(options.Manager.GetCache(), r.reservationInterpreter.GetReservationType()), &handler.Funcs{}); err != nil {
+	if err = c.Watch(source.Kind[client.Object](options.Manager.GetCache(), r.reservationInterpreter.GetReservationType(), &handler.Funcs{})); err != nil {
 		return nil, err
 	}
 	r.reconcilerUID = UUIDGenerateFn()

@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	quotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
+	apisquotav1alpha1 "github.com/koordinator-sh/koordinator/apis/quota/v1alpha1"
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/quota/v1alpha1"
+	quotav1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/quota/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // ElasticQuotaProfiles.
 type ElasticQuotaProfileInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.ElasticQuotaProfileLister
+	Lister() quotav1alpha1.ElasticQuotaProfileLister
 }
 
 type elasticQuotaProfileInformer struct {
@@ -57,21 +57,33 @@ func NewElasticQuotaProfileInformer(client versioned.Interface, namespace string
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredElasticQuotaProfileInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.QuotaV1alpha1().ElasticQuotaProfiles(namespace).List(context.TODO(), options)
+				return client.QuotaV1alpha1().ElasticQuotaProfiles(namespace).List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.QuotaV1alpha1().ElasticQuotaProfiles(namespace).Watch(context.TODO(), options)
+				return client.QuotaV1alpha1().ElasticQuotaProfiles(namespace).Watch(context.Background(), options)
 			},
-		},
-		&quotav1alpha1.ElasticQuotaProfile{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.QuotaV1alpha1().ElasticQuotaProfiles(namespace).List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.QuotaV1alpha1().ElasticQuotaProfiles(namespace).Watch(ctx, options)
+			},
+		}, client),
+		&apisquotav1alpha1.ElasticQuotaProfile{},
 		resyncPeriod,
 		indexers,
 	)
@@ -82,9 +94,9 @@ func (f *elasticQuotaProfileInformer) defaultInformer(client versioned.Interface
 }
 
 func (f *elasticQuotaProfileInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&quotav1alpha1.ElasticQuotaProfile{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisquotav1alpha1.ElasticQuotaProfile{}, f.defaultInformer)
 }
 
-func (f *elasticQuotaProfileInformer) Lister() v1alpha1.ElasticQuotaProfileLister {
-	return v1alpha1.NewElasticQuotaProfileLister(f.Informer().GetIndexer())
+func (f *elasticQuotaProfileInformer) Lister() quotav1alpha1.ElasticQuotaProfileLister {
+	return quotav1alpha1.NewElasticQuotaProfileLister(f.Informer().GetIndexer())
 }

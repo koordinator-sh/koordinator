@@ -24,7 +24,7 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	policy "k8s.io/api/policy/v1beta1"
+	policy "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -272,6 +272,8 @@ func (controller *QuotaOverUsedRevokeController) getToMonitorQuotas() map[string
 }
 
 func EvictPod(ctx context.Context, client clientset.Interface, pod *v1.Pod, deleteOptions *metav1.DeleteOptions) error {
+	// In Kubernetes 1.25+, the v1beta1 eviction API was removed.
+	// Always use policy/v1 Eviction API for k8s 1.25 and above.
 	eviction := &policy.Eviction{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pod.Name,
@@ -279,7 +281,7 @@ func EvictPod(ctx context.Context, client clientset.Interface, pod *v1.Pod, dele
 		},
 		DeleteOptions: deleteOptions,
 	}
-	err := client.PolicyV1beta1().Evictions(eviction.Namespace).Evict(ctx, eviction)
+	err := client.PolicyV1().Evictions(eviction.Namespace).Evict(ctx, eviction)
 	if apierrors.IsTooManyRequests(err) {
 		return fmt.Errorf("error when evicting pod (ignoring) %q: %v", pod.Name, err)
 	}

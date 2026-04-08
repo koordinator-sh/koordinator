@@ -31,7 +31,7 @@ import (
 	policylisters "k8s.io/client-go/listers/policy/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
@@ -65,7 +65,7 @@ type PostFilterState struct {
 	usedLimit          corev1.ResourceList
 }
 
-func (p *PostFilterState) Clone() framework.StateData {
+func (p *PostFilterState) Clone() fwktype.StateData {
 	return &PostFilterState{
 		skip:               p.skip,
 		quotaInfo:          p.quotaInfo,
@@ -76,7 +76,7 @@ func (p *PostFilterState) Clone() framework.StateData {
 }
 
 type Plugin struct {
-	handle            framework.Handle
+	handle            fwktype.Handle
 	client            versioned.Interface
 	pluginArgs        *config.ElasticQuotaArgs
 	quotaLister       v1alpha1.ElasticQuotaLister
@@ -108,13 +108,13 @@ type Plugin struct {
 }
 
 var (
-	_ framework.EnqueueExtensions = &Plugin{}
-	_ framework.PreFilterPlugin   = &Plugin{}
-	_ framework.PostFilterPlugin  = &Plugin{}
-	_ framework.ReservePlugin     = &Plugin{}
+	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.PreFilterPlugin   = &Plugin{}
+	_ fwktype.PostFilterPlugin  = &Plugin{}
+	_ fwktype.ReservePlugin     = &Plugin{}
 )
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 	pluginArgs, ok := args.(*config.ElasticQuotaArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type ElasticQuotaArgs, got %T", args)
@@ -233,43 +233,43 @@ func (g *Plugin) Name() string {
 	return Name
 }
 
-func (g *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
+func (g *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWithHint, error) {
 	// To register a custom event, follow the naming convention at:
 	// https://git.k8s.io/kubernetes/pkg/scheduler/eventhandlers.go#L403-L410
 	eqGVK := fmt.Sprintf("elasticquotas.v1alpha1.%v", scheduling.GroupName)
-	events := []framework.ClusterEventWithHint{
-		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
-		{Event: framework.ClusterEvent{Resource: framework.GVK(eqGVK), ActionType: framework.All}},
+	events := []fwktype.ClusterEventWithHint{
+		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
+		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(eqGVK), ActionType: fwktype.All}},
 	}
 
 	// Only set QueueingHintFn if EnableQueueHint is enabled
 	if g.pluginArgs.EnableQueueHint {
-		events = []framework.ClusterEventWithHint{
-			{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}, QueueingHintFn: g.isSchedulableAfterPodDeletion},
-			{Event: framework.ClusterEvent{Resource: framework.GVK(eqGVK), ActionType: framework.Update}, QueueingHintFn: g.isSchedulableAfterQuotaChanged},
+		events = []fwktype.ClusterEventWithHint{
+			{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}, QueueingHintFn: g.isSchedulableAfterPodDeletion},
+			{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(eqGVK), ActionType: fwktype.Update}, QueueingHintFn: g.isSchedulableAfterQuotaChanged},
 		}
 	}
 
-	return events
+	return events, nil
 }
 
-func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+func (g *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
 	if quotaName == "" {
 		g.skipPostFilterState(cycleState)
-		return nil, framework.NewStatus(framework.Skip)
+		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
 
 	mgr := g.GetGroupQuotaManagerForTree(treeID)
 	if mgr == nil {
-		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuotaManager for quota: %v, tree: %v", quotaName, treeID))
+		return nil, fwktype.NewStatus(fwktype.Error, fmt.Sprintf("Could not find the specified ElasticQuotaManager for quota: %v, tree: %v", quotaName, treeID))
 	}
 	if g.pluginArgs.EnableRuntimeQuota {
 		mgr.RefreshRuntime(quotaName)
 	}
 	quotaInfo := mgr.GetQuotaInfoByName(quotaName)
 	if quotaInfo == nil {
-		return nil, framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
+		return nil, fwktype.NewStatus(fwktype.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
 	}
 	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
@@ -277,7 +277,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	podRequest = quotav1.Mask(podRequest, quotav1.ResourceNames(quotaInfo.CalculateInfo.Max))
 	used := quotav1.Add(podRequest, state.used)
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(used, state.usedLimit); !isLessEqual {
-		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v",
 			quotaName, printResourceList(state.usedLimit), printResourceList(state.used), printResourceList(podRequest), exceedDimensions))
 	}
@@ -287,7 +287,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		nonPreemptibleUsed := state.nonPreemptibleUsed
 		addNonPreemptibleUsed := quotav1.Add(podRequest, nonPreemptibleUsed)
 		if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(addNonPreemptibleUsed, quotaMin); !isLessEqual {
-			return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
+			return nil, fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf("Insufficient non-preemptible quotas, "+
 				"quotaName: %v, min: %v, nonPreemptibleUsed: %v, pod's request: %v, exceedDimensions: %v",
 				quotaName, printResourceList(quotaMin), printResourceList(nonPreemptibleUsed), printResourceList(podRequest), exceedDimensions))
 		}
@@ -295,7 +295,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 
 	for _, hookPlugin := range mgr.GetHookPlugins() {
 		if err := hookPlugin.CheckPod(quotaName, pod); err != nil {
-			return nil, framework.NewStatus(framework.Unschedulable,
+			return nil, fwktype.NewStatus(fwktype.Unschedulable,
 				fmt.Sprintf("CheckPod failed for hook plugin %v, err: %v", hookPlugin.GetKey(), err))
 		}
 	}
@@ -304,10 +304,10 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		return nil, g.checkQuotaRecursive(mgr, quotaInfo.ParentName, []string{quotaInfo.ParentName, quotaName}, podRequest)
 	}
 
-	return nil, framework.NewStatus(framework.Success, "")
+	return nil, fwktype.NewStatus(fwktype.Success, "")
 }
 
-func (g *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
+func (g *Plugin) PreFilterExtensions() fwktype.PreFilterExtensions {
 	return g
 }
 
@@ -359,32 +359,32 @@ func (g *Plugin) getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod *corev1.Pod) 
 
 // isSchedulableAfterQuotaChanged determines if a pod becomes schedulable after quota is updated.
 // QueueAfterBackoff is default queueingHintFn behavior.
-func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) framework.QueueingHint {
+func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
 	originalQuota, modifiedQuota, err := schedutil.As[*apiv1alpha1.ElasticQuota](oldObj, newObj)
 	if err != nil {
 		logger.Error(err, "Failed to convert oldObj or newObj to ElasticQuota", "oldObj", oldObj, "newObj", newObj)
-		return framework.QueueAfterBackoff
+		return fwktype.Queue, nil
 	}
 
 	if originalQuota == nil || modifiedQuota == nil {
-		return framework.QueueAfterBackoff
+		return fwktype.Queue, nil
 	}
 
 	// Use snapshot to get pod quota name and tree ID without locking
 	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod)
 	if podQuotaName == "" {
-		return framework.QueueSkip
+		return fwktype.QueueSkip, nil
 	}
 
 	// Check if modified quota is in the same tree as the pod
 	modifiedQuotaTreeID := extension.GetQuotaTreeID(modifiedQuota)
 	if modifiedQuotaTreeID != podTreeID {
-		return framework.QueueSkip
+		return fwktype.QueueSkip, nil
 	}
 
 	mgr := g.GetGroupQuotaManagerForTree(podTreeID)
 	if mgr == nil {
-		return framework.QueueSkip
+		return fwktype.QueueSkip, nil
 	}
 
 	// Create quota info from original and modified quota
@@ -393,13 +393,13 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 
 	hasChanged := oldQuotaInfo.IsQuotaChange(newQuotaInfo) || mgr.IsQuotaUpdated(oldQuotaInfo, newQuotaInfo, modifiedQuota)
 	if !hasChanged {
-		return framework.QueueSkip
+		return fwktype.QueueSkip, nil
 	}
 
 	// Quota has changed, check if modified quota is in the pod's path to root
 	if modifiedQuota.Name == podQuotaName {
 		// Modified quota is the pod's quota, allow queueing
-		return framework.QueueAfterBackoff
+		return fwktype.Queue, nil
 	}
 
 	// Modified quota is not the pod's quota, check if it's in the path to root
@@ -407,65 +407,65 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 		snapshot, exists := g.getQuotaSnapshot(podTreeID)
 
 		if !exists || snapshot == nil {
-			return framework.QueueAfterBackoff
+			return fwktype.Queue, nil
 		}
 
 		// Get the path from pod's quota to root using the snapshot
 		parentPath := snapshot.GetQuotaPathToRoot(podQuotaName)
 		for _, quotaNameInPath := range parentPath {
 			if quotaNameInPath == modifiedQuota.Name {
-				return framework.QueueAfterBackoff
+				return fwktype.Queue, nil
 			}
 		}
 	}
 
 	// Modified quota is not in the pod's path to root, skip
-	return framework.QueueSkip
+	return fwktype.QueueSkip, nil
 }
 
 // isSchedulableAfterPodDeletion determines if a pod becomes schedulable after another pod is deleted.
 // QueueAfterBackoff is default queueingHintFn behavior.
-func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) framework.QueueingHint {
+func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
 	deletedPod, _, err := schedutil.As[*corev1.Pod](oldObj, newObj)
 	if err != nil {
 		logger.Error(err, "Failed to convert oldObj to Pod in isSchedulableAfterPodDeletion", "oldObj", oldObj, "newObj", newObj)
-		return framework.QueueAfterBackoff
+		return fwktype.Queue, nil
 	}
 
 	if deletedPod == nil {
-		return framework.QueueAfterBackoff
+		return fwktype.Queue, nil
 	}
 
 	// Use snapshot to get quota names and tree IDs without locking
 	deletedPodQuotaName, deletedPodTreeID := g.getPodAssociateQuotaNameAndTreeIDFromSnapshot(deletedPod)
 	if deletedPodQuotaName == "" {
-		return framework.QueueSkip
+		return fwktype.QueueSkip, nil
 	}
 
 	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod)
 	if podQuotaName == "" {
-		return framework.QueueSkip
+		return fwktype.QueueSkip, nil
 	}
 
 	// Check if deleted pod and unschedulable pod are in the same tree
 	if deletedPodTreeID != podTreeID {
-		return framework.QueueSkip
+		return fwktype.QueueSkip, nil
 	}
 
 	snapshot, exists := g.getQuotaSnapshot(podTreeID)
 	if !exists || snapshot == nil {
-		return framework.QueueAfterBackoff
+		return fwktype.Queue, nil
 	}
 
 	// Get quota info from snapshot and check if pod is assigned
 	quotaInfo := snapshot.GetQuotaInfoByName(deletedPodQuotaName)
 	if quotaInfo != nil && !quotaInfo.CheckPodIsAssigned(deletedPod) {
-		return framework.QueueSkip
+		return fwktype.QueueSkip, nil
 	}
 
 	if deletedPodQuotaName == podQuotaName {
 		// Deleted pod is in the same quota as the unschedulable pod, allow queueing
-		return framework.QueueAfterBackoff
+		return fwktype.Queue, nil
 	}
 
 	// Check if deleted pod's quota is in the unschedulable pod's path to root
@@ -475,96 +475,89 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 		for _, quotaNameInPath := range parentPath {
 			if quotaNameInPath == deletedPodQuotaName {
 				// Deleted pod's quota is in the path to root, allow queueing
-				return framework.QueueAfterBackoff
+				return fwktype.Queue, nil
 			}
 		}
 	}
 
 	// Deleted pod's quota is not in the unschedulable pod's path to root, skip
-	return framework.QueueSkip
+	return fwktype.QueueSkip, nil
 }
 
 // AddPod is called by the framework while trying to evaluate the impact
 // of adding podToAdd to the node while scheduling podToSchedule.
-func (g *Plugin) AddPod(ctx context.Context, state *framework.CycleState, podToSchedule *corev1.Pod, podInfoToAdd *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (g *Plugin) AddPod(ctx context.Context, state fwktype.CycleState, podToSchedule *corev1.Pod, podInfoToAdd fwktype.PodInfo, nodeInfo fwktype.NodeInfo) *fwktype.Status {
 	postFilterState, err := getPostFilterState(state)
 	if err != nil {
 		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
-		return framework.NewStatus(framework.Error, err.Error())
+		return fwktype.NewStatus(fwktype.Error, err.Error())
 	}
 
 	if postFilterState.skip {
-		return framework.NewStatus(framework.Success, "")
+		return fwktype.NewStatus(fwktype.Success, "")
 	}
 
-	if postFilterState.quotaInfo.IsPodExist(podInfoToAdd.Pod) {
-		podReq := core.PodRequests(podInfoToAdd.Pod)
+	if postFilterState.quotaInfo.IsPodExist(podInfoToAdd.GetPod()) {
+		podReq := core.PodRequests(podInfoToAdd.GetPod())
 		podReq = quotav1.Mask(podReq, quotav1.ResourceNames(postFilterState.quotaInfo.CalculateInfo.Max))
 		postFilterState.used = quotav1.Add(postFilterState.used, podReq)
 	}
-	return framework.NewStatus(framework.Success, "")
+	return fwktype.NewStatus(fwktype.Success, "")
 }
 
 // RemovePod is called by the framework while trying to evaluate the impact
 // of removing podToRemove from the node while scheduling podToSchedule.
-func (g *Plugin) RemovePod(ctx context.Context, state *framework.CycleState, podToSchedule *corev1.Pod, podInfoToRemove *framework.PodInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (g *Plugin) RemovePod(ctx context.Context, state fwktype.CycleState, podToSchedule *corev1.Pod, podInfoToRemove fwktype.PodInfo, nodeInfo fwktype.NodeInfo) *fwktype.Status {
 	postFilterState, err := getPostFilterState(state)
 	if err != nil {
 		klog.ErrorS(err, "Failed to read postFilterState from cycleState", "elasticQuotaSnapshotKey", postFilterState)
-		return framework.NewStatus(framework.Error, err.Error())
+		return fwktype.NewStatus(fwktype.Error, err.Error())
 	}
 
 	if postFilterState.skip {
-		return framework.NewStatus(framework.Success, "")
+		return fwktype.NewStatus(fwktype.Success, "")
 	}
 
-	if postFilterState.quotaInfo.IsPodExist(podInfoToRemove.Pod) {
-		podReq := core.PodRequests(podInfoToRemove.Pod)
+	if postFilterState.quotaInfo.IsPodExist(podInfoToRemove.GetPod()) {
+		podReq := core.PodRequests(podInfoToRemove.GetPod())
 		podReq = quotav1.Mask(podReq, quotav1.ResourceNames(postFilterState.quotaInfo.CalculateInfo.Max))
 		postFilterState.used = quotav1.SubtractWithNonNegativeResult(postFilterState.used, podReq)
 	}
-	return framework.NewStatus(framework.Success, "")
+	return fwktype.NewStatus(fwktype.Success, "")
 }
 
 // PostFilter modify the defaultPreemption, only allow pods in the same quota can preempt others.
-func (g *Plugin) PostFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (g *Plugin) PostFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status) {
 	defer func() {
 		metrics.PreemptionAttempts.Inc()
 	}()
 
-	pe := preemption.Evaluator{
-		PluginName: Name,
-		Handler:    g.handle,
-		PodLister:  g.podLister,
-		PdbLister:  g.pdbLister,
-		State:      state,
-		Interface:  g,
-	}
+	pe := preemption.NewEvaluator(Name, g.handle, g, false)
 
-	result, status := pe.Preempt(ctx, pod, filteredNodeStatusMap)
+	result, status := pe.Preempt(ctx, state, pod, filteredNodeStatusMap)
 	if status.Message() != "" {
-		return result, framework.NewStatus(status.Code(), "preemption: "+status.Message())
+		return result, fwktype.NewStatus(status.Code(), "preemption: "+status.Message())
 	}
 	return result, status
 }
 
-func (g *Plugin) Reserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
+func (g *Plugin) Reserve(ctx context.Context, state fwktype.CycleState, p *corev1.Pod, nodeName string) *fwktype.Status {
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(p)
 	if quotaName == "" {
-		return framework.NewStatus(framework.Success, "")
+		return fwktype.NewStatus(fwktype.Success, "")
 	}
 
 	mgr := g.GetGroupQuotaManagerForTree(treeID)
 	if mgr == nil {
 		klog.Errorf("failed reserve pod %v/%v, quota manager not found, quota: %v, tree: %v", p.Namespace, p.Name, quotaName, treeID)
-		return framework.NewStatus(framework.Error, fmt.Sprintf("quota manager not found, quota: %v, tree: %v", quotaName, treeID))
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("quota manager not found, quota: %v, tree: %v", quotaName, treeID))
 	}
 
 	mgr.ReservePod(quotaName, p)
-	return framework.NewStatus(framework.Success, "")
+	return fwktype.NewStatus(fwktype.Success, "")
 }
 
-func (g *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) {
+func (g *Plugin) Unreserve(ctx context.Context, state fwktype.CycleState, p *corev1.Pod, nodeName string) {
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(p)
 	if quotaName == "" {
 		return

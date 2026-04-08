@@ -1,0 +1,16 @@
+# Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
+version: v1.25.0
+
+# Ignore rules
+ignore:
+  snyk:lic:golang:cyphar.com:go-pathrs:MPL-2.0:
+    - '*':
+        reason: >-
+          MPL-2.0 is a weak copyleft license. The project only uses go-pathrs as
+          a transitive dependency via k8s.io/kubernetes → github.com/cyphar/filepath-securejoin.
+          koordinator does not modify go-pathrs source code, so MPL-2.0 copyleft
+          obligations do not apply. This license is already permitted in
+          .license/dependency_decisions.yml.
+        expires: 2099-01-01T00:00:00.000Z
+
+patch: {}

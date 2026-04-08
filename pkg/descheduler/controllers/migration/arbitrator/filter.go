@@ -158,7 +158,7 @@ func (f *filter) initFilters(args *deschedulerconfig.MigrationControllerArgs, ha
 		LabelSelector:           labelSelector,
 		PriorityThreshold:       priorityThreshold,
 	}
-	defaultEvictor, err := defaultevictor.New(defaultEvictorArgs, handle)
+	defaultEvictor, err := defaultevictor.New(context.TODO(), defaultEvictorArgs, handle)
 	if err != nil {
 		return err
 	}

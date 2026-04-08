@@ -16,7 +16,14 @@ pkg/scheduler/frameworkext/topologymanager/policy_restricted.go
 pkg/scheduler/frameworkext/topologymanager/policy_restricted_test.go
 pkg/scheduler/frameworkext/topologymanager/policy_single_numa_node.go
 pkg/scheduler/frameworkext/topologymanager/policy_single_numa_node_test.go
+pkg/koordlet/metriccache/mockmetriccache/mock.go
+pkg/koordlet/metriccache/mockmetriccache/mock_kv_storage.go
+pkg/koordlet/metriccache/mockmetriccache/mock_metric_result.go
+pkg/koordlet/metriccache/mockmetriccache/mock_tsdb_storage.go
+pkg/koordlet/runtimehooks/nri/mock_nri.go
+pkg/koordlet/statesinformer/mockstatesinformer/mock.go
 pkg/koordlet/util/kubelet
+pkg/koordlet/util/runtime/handler/mockclient/mock.go
 pkg/util/cpuset/cpuset.go
 pkg/util/cpuset/cpuset_test.go
 pkg/util/bitmask/bitmask.go

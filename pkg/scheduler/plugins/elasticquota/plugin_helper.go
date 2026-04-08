@@ -28,7 +28,7 @@ import (
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulerv1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -247,7 +247,7 @@ func (g *Plugin) createRootQuotaIfNotPresent() {
 	klog.Infof("create RootQuota successfully")
 }
 
-func (g *Plugin) snapshotPostFilterState(quotaInfo *core.QuotaInfo, state *framework.CycleState) *PostFilterState {
+func (g *Plugin) snapshotPostFilterState(quotaInfo *core.QuotaInfo, state fwktype.CycleState) *PostFilterState {
 	postFilterState := &PostFilterState{
 		quotaInfo:          quotaInfo,
 		used:               quotaInfo.GetUsed(),
@@ -258,14 +258,14 @@ func (g *Plugin) snapshotPostFilterState(quotaInfo *core.QuotaInfo, state *frame
 	return postFilterState
 }
 
-func (g *Plugin) skipPostFilterState(state *framework.CycleState) {
+func (g *Plugin) skipPostFilterState(state fwktype.CycleState) {
 	postFilterState := &PostFilterState{
 		skip: true,
 	}
 	state.Write(postFilterKey, postFilterState)
 }
 
-func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, error) {
+func getPostFilterState(cycleState fwktype.CycleState) (*PostFilterState, error) {
 	c, err := cycleState.Read(postFilterKey)
 	if err != nil {
 		return nil, fmt.Errorf("error reading %q from cycleState: %v", postFilterKey, err)
@@ -278,21 +278,21 @@ func getPostFilterState(cycleState *framework.CycleState) (*PostFilterState, err
 	return s, nil
 }
 
-func (g *Plugin) checkQuotaRecursive(mgr *core.GroupQuotaManager, curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *framework.Status {
+func (g *Plugin) checkQuotaRecursive(mgr *core.GroupQuotaManager, curQuotaName string, quotaNameTopo []string, podRequest v1.ResourceList) *fwktype.Status {
 	if curQuotaName == extension.RootQuotaName {
-		return framework.NewStatus(framework.Success, "")
+		return fwktype.NewStatus(fwktype.Success, "")
 	}
 
 	quotaInfo := mgr.GetQuotaInfoByName(curQuotaName)
 	if quotaInfo == nil {
-		return framework.NewStatus(framework.Error, fmt.Sprintf("Could not find the elasticQuota %v, quotaNameTopo: %v", curQuotaName, quotaNameTopo))
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("Could not find the elasticQuota %v, quotaNameTopo: %v", curQuotaName, quotaNameTopo))
 	}
 	quotaUsed := quotaInfo.GetUsed()
 	quotaUsedLimit := g.getQuotaInfoUsedLimit(quotaInfo)
 
 	newUsed := quotav1.Mask(quotav1.Add(podRequest, quotaUsed), quotav1.ResourceNames(podRequest))
 	if isLessEqual, exceedDimensions := quotav1.LessThanOrEqual(newUsed, quotaUsedLimit); !isLessEqual {
-		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
+		return fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf("Insufficient quotas, "+
 			"quotaNameTopo: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v", quotaNameTopo,
 			printResourceList(quotaUsedLimit), printResourceList(quotaUsed), printResourceList(podRequest), exceedDimensions))
 	}
