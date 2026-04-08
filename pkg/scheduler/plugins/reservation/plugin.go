@@ -395,6 +395,14 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState *framew
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
 
+	// For reservation-ignored pods, the transformer has already restored all reservation resources back to the node.
+	// NodeResourceFit plugin will validate if the node has sufficient resources for the pod.
+	// So we can skip the resource validation here and return success directly.
+	if apiext.IsReservationIgnored(pod) {
+		klog.V(5).InfoS("Skip duplicated filter for reservation-ignored pod", "pod", klog.KObj(pod), "node", node.Name, "matchedReservations", len(matchedReservations))
+		return nil
+	}
+
 	// Contextualization: If a pod only have one reservation matched, the fitsNode should be equivalent to
 	// the NodeResourceFit's Filter, so we can skip the fitsNode to reduce overhead.
 	isFitsNodeSkipped := pl.enableSkipReservationFitsNode && len(matchedReservations) <= 1
