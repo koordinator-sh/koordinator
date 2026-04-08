@@ -60,8 +60,42 @@ const (
 	nodeTopoInformerName PluginName = "nodeTopoInformer"
 )
 
+var (
+	managedNRTResources = []corev1.ResourceName{
+		corev1.ResourceCPU,
+		corev1.ResourceMemory,
+		extension.ResourceGPU,
+		corev1.ResourceHugePagesPrefix + "2Mi",
+		corev1.ResourceHugePagesPrefix + "1Gi",
+	}
+
+	managedNRTAnnotationKeys = []string{
+		extension.AnnotationCPUBasicInfo,
+		extension.AnnotationKubeletCPUManagerPolicy,
+		extension.AnnotationNodeCPUSharedPools,
+		extension.AnnotationNodeBECPUSharedPools,
+		extension.AnnotationNodeCPUTopology,
+		extension.AnnotationNodeCPUAllocs,
+		extension.AnnotationNodeReservation,
+		extension.AnnotationNodeSystemQOSResource,
+	}
+
+	managedNRTLabelKeys = []string{
+		extension.LabelNodeEnableNUMAReservation,
+	}
+
+	extendNRTStatusFn = func(nrtStatus *nodeTopologyStatus, node *corev1.Node, numaNodeCount int) error {
+		return nil
+	}
+
+	extendNRTEqualFn = func(nrtStatus *nodeTopologyStatus, oldNRT *v1alpha1.NodeResourceTopology) (bool, string) {
+		return true, ""
+	}
+)
+
 type nodeTopologyStatus struct {
 	Annotations    map[string]string
+	Labels         map[string]string
 	TopologyPolicy v1alpha1.TopologyManagerPolicy
 	Zones          v1alpha1.ZoneList
 }
@@ -81,9 +115,19 @@ func (n *nodeTopologyStatus) isChanged(oldNRT *v1alpha1.NodeResourceTopology) (b
 		return true, fmt.Sprintf("annotations changed, key %s", key)
 	}
 
+	// check labels
+	if isEqual, key := isEqualNRTLabels(oldNRT.Labels, n.Labels); !isEqual {
+		return true, fmt.Sprintf("labels changed, key %s", key)
+	}
+
 	// check Zones
 	if isEqual, msg := isEqualNRTZones(oldNRT.Zones, n.Zones); !isEqual {
 		return true, fmt.Sprintf("Zones changed, item: %s", msg)
+	}
+
+	// hook to compare extended status
+	if isEqual, msg := extendNRTEqualFn(n, oldNRT); !isEqual {
+		return true, fmt.Sprintf("extended status changed, item: %s", msg)
 	}
 
 	return false, ""
@@ -95,6 +139,12 @@ func (n *nodeTopologyStatus) updateNRT(nrt *v1alpha1.NodeResourceTopology) {
 	}
 	for k, v := range n.Annotations {
 		nrt.Annotations[k] = v
+	}
+	if nrt.Labels == nil {
+		nrt.Labels = map[string]string{}
+	}
+	for k, v := range n.Labels {
+		nrt.Labels[k] = v
 	}
 
 	nrt.TopologyPolicies = []string{string(n.TopologyPolicy)}
@@ -387,6 +437,19 @@ func (s *nodeTopoInformer) calcNodeTopo() (*nodeTopologyStatus, error) {
 		nodeTopoStatus.Annotations[extension.AnnotationNodeSystemQOSResource] = string(systemQOSJson)
 	}
 
+	// sync managed labels
+	if node.Labels != nil && len(node.Labels[extension.LabelNodeEnableNUMAReservation]) > 0 {
+		if nodeTopoStatus.Labels == nil {
+			nodeTopoStatus.Labels = make(map[string]string)
+		}
+		nodeTopoStatus.Labels[extension.LabelNodeEnableNUMAReservation] = node.Labels[extension.LabelNodeEnableNUMAReservation]
+	}
+
+	// hook to set extra status
+	if err = extendNRTStatusFn(nodeTopoStatus, node, len(zoneList)); err != nil {
+		return nil, fmt.Errorf("failed to set extra status, err: %v", err)
+	}
+
 	klog.V(6).Infof("calculate node topology status: %+v", nodeTopoStatus)
 	return nodeTopoStatus, nil
 }
@@ -439,8 +502,15 @@ func removeSystemQOSCPUs(cpuSharePools []extension.CPUSharedPool, sysQOSRes *ext
 	return newCPUSharePools
 }
 
-func getNodeReserved(cpuTopology *topology.CPUTopology, nodeAnnotations map[string]string) extension.NodeReservation {
-	reserved := extension.NodeReservation{}
+func getNodeReserved(cpuTopology *topology.CPUTopology, nodeAnnotations map[string]string) *extension.NodeReservation {
+	reserved, err := extension.GetNodeReservation(nodeAnnotations)
+	if err != nil {
+		klog.Warningf("failed to GetNodeReservation, err: %s", err)
+		reserved = &extension.NodeReservation{}
+	} else if reserved == nil {
+		klog.V(6).Info("node reservation not found, use empty NodeReservation")
+		reserved = &extension.NodeReservation{}
+	}
 	reservedCPUs, numReservedCPUs := extension.GetReservedCPUs(nodeAnnotations)
 	if reservedCPUs != "" {
 		cpus, _ := cpuset.Parse(reservedCPUs)
@@ -614,7 +684,7 @@ func isEqualNRTZones(oldZones, newZones v1alpha1.ZoneList) (bool, string) {
 		}
 	}
 
-	if !util.IsZoneListResourceEqual(oldZones, newZones, string(corev1.ResourceCPU), string(corev1.ResourceMemory)) {
+	if !util.IsZoneListResourceEqual(oldZones, newZones, managedNRTResources...) {
 		return false, "resources"
 	}
 
@@ -627,17 +697,7 @@ func isEqualNRTAnnotations(oldAnno, newAnno map[string]string) (bool, string) {
 		oldData interface{}
 		newData interface{}
 	)
-	keys := []string{
-		extension.AnnotationCPUBasicInfo,
-		extension.AnnotationKubeletCPUManagerPolicy,
-		extension.AnnotationNodeCPUSharedPools,
-		extension.AnnotationNodeBECPUSharedPools,
-		extension.AnnotationNodeCPUTopology,
-		extension.AnnotationNodeCPUAllocs,
-		extension.AnnotationNodeReservation,
-		extension.AnnotationNodeSystemQOSResource,
-	}
-	for _, key := range keys {
+	for _, key := range managedNRTAnnotationKeys {
 		oldValue, oldExist := oldAnno[key]
 		newValue, newExist := newAnno[key]
 		if !oldExist && !newExist {
@@ -662,6 +722,15 @@ func isEqualNRTAnnotations(oldAnno, newAnno map[string]string) (bool, string) {
 		}
 	}
 
+	return true, ""
+}
+
+func isEqualNRTLabels(oldLabels, newLabels map[string]string) (bool, string) {
+	for _, k := range managedNRTLabelKeys {
+		if oldLabels[k] != newLabels[k] {
+			return false, k
+		}
+	}
 	return true, ""
 }
 
@@ -779,7 +848,22 @@ func (s *nodeTopoInformer) calTopologyZoneList(nodeCPUInfo *metriccache.NodeCPUI
 		return nil, fmt.Errorf("NUMA node number not matched")
 	}
 
-	zoneResourceList := map[string]corev1.ResourceList{}
+	// Check if NUMA reservation is enabled
+	var enableNUMAReservation bool
+	var node *corev1.Node
+	if s.nodeInformer != nil {
+		node = s.nodeInformer.GetNode()
+		enableNUMAReservation = node != nil && node.Labels != nil && node.Labels[extension.LabelNodeEnableNUMAReservation] == "true"
+	}
+
+	// Calculate kubelet reserved resources for NUMA-level deduction
+	var nodeKubeletReserved corev1.ResourceList
+	if enableNUMAReservation {
+		nodeKubeletReserved = s.getNodeKubeletReservedResources()
+	}
+
+	// Build zone resources with capacity and allocatable
+	zoneResources := map[string]util.ZoneResources{}
 	for i := 0; i < nodeNum; i++ {
 		var cpuQuant resource.Quantity
 		cpuInfos, ok := nodeCPUInfo.TotalInfo.NodeToCPU[int32(i)]
@@ -817,15 +901,28 @@ func (s *nodeTopoInformer) calTopologyZoneList(nodeCPUInfo *metriccache.NodeCPUI
 		}
 
 		zoneName := util.GenNodeZoneName(i)
-		zoneResourceList[zoneName] = corev1.ResourceList{
+		capacity := corev1.ResourceList{
 			corev1.ResourceCPU:                     cpuQuant,
 			corev1.ResourceMemory:                  memQuant,
 			corev1.ResourceHugePagesPrefix + "2Mi": hugepage2MQuant,
 			corev1.ResourceHugePagesPrefix + "1Gi": hugepage1GQuant,
 		}
 
+		// Initialize allocatable as a copy of capacity
+		allocatable := capacity.DeepCopy()
+
+		zoneResources[zoneName] = util.ZoneResources{
+			Capacity:    capacity,
+			Allocatable: allocatable,
+		}
 	}
-	zoneList := util.ZoneResourceListToZoneList(zoneResourceList)
+
+	// Apply NUMA-level reservation if enabled
+	if enableNUMAReservation && nodeNum > 0 {
+		zoneResources = applyNUMAReservationToZoneResources(zoneResources, nodeKubeletReserved, nodeNum)
+	}
+
+	zoneList := util.ZoneResourcesToZoneList(zoneResources)
 
 	return zoneList, nil
 }
@@ -919,4 +1016,88 @@ func getTopologyPolicy(topologyManagerPolicy string, topologyManagerScope string
 	}
 
 	return v1alpha1.None
+}
+
+// getNodeKubeletReservedResources calculates the kubelet reserved resources on the node.
+// It returns the difference between node capacity and allocatable resources.
+func (s *nodeTopoInformer) getNodeKubeletReservedResources() corev1.ResourceList {
+	node := s.nodeInformer.GetNode()
+	if node == nil {
+		klog.Warning("node is nil, cannot calculate kubelet reserved resources")
+		return corev1.ResourceList{}
+	}
+
+	// Calculate reserved resources: capacity - allocatable
+	reserved := corev1.ResourceList{}
+	for _, resourceName := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		capacity, hasCapacity := node.Status.Capacity[resourceName]
+		allocatable, hasAllocatable := node.Status.Allocatable[resourceName]
+		if hasCapacity && hasAllocatable {
+			reservedValue := capacity.DeepCopy()
+			reservedValue.Sub(allocatable)
+			if reservedValue.Sign() > 0 {
+				reserved[resourceName] = reservedValue
+			}
+		}
+	}
+
+	return reserved
+}
+
+// applyNUMAReservationToZoneResources applies kubelet reserved resources to NUMA-level zones evenly.
+// It deducts ceil(reserved / numaCount) from each NUMA node's allocatable resources only.
+func applyNUMAReservationToZoneResources(zoneResources map[string]util.ZoneResources, nodeReserved corev1.ResourceList, numaCount int) map[string]util.ZoneResources {
+	if numaCount <= 0 || len(nodeReserved) == 0 {
+		return zoneResources
+	}
+
+	// Calculate per-NUMA reservation: ceil(reserved / numaCount)
+	perNUMAReserved := corev1.ResourceList{}
+	for resourceName, reservedQuantity := range nodeReserved {
+		perNUMAValue := divideResourceByCount(reservedQuantity, numaCount)
+		if perNUMAValue.Sign() > 0 {
+			perNUMAReserved[resourceName] = perNUMAValue
+		}
+	}
+
+	if len(perNUMAReserved) == 0 {
+		return zoneResources
+	}
+
+	// Apply reservation to each zone's allocatable (capacity remains unchanged)
+	for zoneName, resources := range zoneResources {
+		newAllocatable := resources.Allocatable.DeepCopy()
+		for resourceName, reservedQty := range perNUMAReserved {
+			if allocatable, exists := newAllocatable[resourceName]; exists {
+				// Deduct reservation from allocatable
+				allocatable.Sub(reservedQty)
+				if allocatable.Sign() < 0 {
+					// Keep the same format but set to zero
+					allocatable = *resource.NewQuantity(0, allocatable.Format)
+				}
+				newAllocatable[resourceName] = allocatable
+			}
+		}
+		// Ensure capacity is not affected by explicitly copying it
+		zoneResources[zoneName] = util.ZoneResources{
+			Capacity:    resources.Capacity.DeepCopy(),
+			Allocatable: newAllocatable,
+		}
+	}
+
+	return zoneResources
+}
+
+// divideResourceByCount divides a resource quantity by count using ceiling division.
+// This ensures that the total reserved across all NUMA nodes is at least the node-level reservation.
+func divideResourceByCount(quantity resource.Quantity, count int) resource.Quantity {
+	if count <= 0 {
+		return *resource.NewMilliQuantity(0, quantity.Format)
+	}
+
+	// Use MilliValue for better precision with CPU resources
+	milliValue := quantity.MilliValue()
+	// Ceiling division: (milliValue + count - 1) / count
+	perNUMAMilliValue := (milliValue + int64(count) - 1) / int64(count)
+	return *resource.NewMilliQuantity(perNUMAMilliValue, quantity.Format)
 }
