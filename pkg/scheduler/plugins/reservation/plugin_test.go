@@ -5846,6 +5846,7 @@ func createTestPreAllocatablePodWithOwnerLabel(name, nodeName, cpu, memory strin
 	for k, v := range ownerLabels {
 		pod.Labels[k] = v
 	}
+	pod.Labels[apiext.LabelPodPreAllocatable] = "true"
 	return pod
 }
 
