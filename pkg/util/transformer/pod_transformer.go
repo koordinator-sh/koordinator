@@ -192,7 +192,14 @@ func replaceAndEraseWithResourcesMapper(resList corev1.ResourceList, mapper map[
 
 func TransformSchedulerName() func(pod *corev1.Pod) {
 	return func(pod *corev1.Pod) {
-		pod.Spec.SchedulerName = apiext.GetSchedulerName(pod)
+		schedulerName := apiext.GetSchedulerName(pod)
+		if schedulerName != pod.Spec.SchedulerName {
+			if pod.Annotations == nil {
+				pod.Annotations = make(map[string]string)
+			}
+			pod.Annotations[apiext.AnnotationOriginalSchedulerName] = pod.Spec.SchedulerName
+		}
+		pod.Spec.SchedulerName = schedulerName
 	}
 }
 
