@@ -64,6 +64,7 @@ import (
 
 	schedulerserverconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/options"
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
@@ -400,6 +401,15 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	networkTopologyManager := networktopology.NewTreeManager(cc.KoordinatorSharedInformerFactory, cc.InformerFactory, cc.KoordinatorClient)
 
+	// When CrossSchedulerNomination feature gate is enabled, create a CrossSchedulerPodNominator
+	// to track nominated pods from other schedulers for cross-scheduler resource accounting.
+	// Profile names are registered lazily in NewFrameworkExtender after each framework profile is built,
+	// so that the actual schedulerName (which may be overridden at runtime) is captured correctly.
+	var crossSchedulerNominator *frameworkext.CrossSchedulerPodNominator
+	if utilfeature.DefaultFeatureGate.Enabled(koordfeatures.CrossSchedulerNomination) {
+		crossSchedulerNominator = frameworkext.NewCrossSchedulerPodNominator()
+	}
+
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
 	frameworkExtenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
@@ -408,6 +418,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
 		frameworkext.WithNodeResourceTopologySharedInformerFactory(cc.NodeResourceTopologyInformerFactory),
 		frameworkext.WithNetworkTopologyManager(networkTopologyManager),
+		frameworkext.WithCrossSchedulerPodNominator(crossSchedulerNominator),
 	)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -463,7 +474,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	frameworkExtenderFactory.InitScheduler(&frameworkext.SchedulerAdapter{Scheduler: sched})
 	schedAdapter := frameworkExtenderFactory.Scheduler()
 
-	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
+	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, cc.InformerFactory, cc.KoordinatorSharedInformerFactory, crossSchedulerNominator)
 	reservationErrorHandler := eventhandlers.MakeReservationErrorHandler(
 		sched,
 		schedAdapter,

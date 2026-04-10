@@ -25,8 +25,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	clientfeatures "k8s.io/client-go/features"
@@ -36,6 +38,7 @@ import (
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
@@ -461,68 +464,161 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 }
 
 func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) {
+	const (
+		highPriority = int32(200)
+		midPriority  = int32(100)
+		lowPriority  = int32(50)
+	)
+
+	newNode := func(cpu string) *corev1.Node {
+		return &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+			Status: corev1.NodeStatus{
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:  resource.MustParse(cpu),
+					corev1.ResourcePods: resource.MustParse("110"),
+				},
+			},
+		}
+	}
+
+	newCrossNominator := func(pods ...*corev1.Pod) *CrossSchedulerPodNominator {
+		nominator := NewCrossSchedulerPodNominator()
+		nominator.AddLocalProfileName("koord-scheduler")
+		for _, pod := range pods {
+			nominator.OnAdd(pod)
+		}
+		return nominator
+	}
+
 	tests := []struct {
-		name     string
-		pod      *corev1.Pod
-		nodeInfo fwktype.NodeInfo
-		want     *fwktype.Status
+		name                                string
+		enableCrossSchedulerNomination      bool
+		enableSkipFilterWithNominatedPods   bool
+		node                                *corev1.Node
+		pod                                 *corev1.Pod
+		nativeNominatedPods                 []*corev1.Pod
+		crossSchedulerNominator             *CrossSchedulerPodNominator
+		nominatedPodsOfTheSameJob           []string
+		wantSuccess                         bool
+		wantUnschedulable                   bool
+		wantNotUnschedulableAndUnresolvable bool
 	}{
 		{
-			name:     "normal RunFilterPluginsWithNominatedPods",
-			pod:      &corev1.Pod{},
-			nodeInfo: framework.NewNodeInfo(),
-			want:     nil,
+			name:                                "default two-pass native nominated pod returns unschedulable",
+			node:                                newNode("2"),
+			pod:                                 makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			nativeNominatedPods:                 []*corev1.Pod{makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "koord-scheduler", "test-node", "")},
+			wantUnschedulable:                   true,
+			wantNotUnschedulableAndUnresolvable: true,
+		},
+		{
+			name:        "default two-pass without nominated pods succeeds",
+			node:        newNode("2"),
+			pod:         makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			wantSuccess: true,
+		},
+		{
+			name:                                "cross-scheduler two-pass high priority nominated pod returns unschedulable",
+			enableCrossSchedulerNomination:      true,
+			node:                                newNode("2"),
+			pod:                                 makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			crossSchedulerNominator:             newCrossNominator(makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "other-scheduler", "test-node", "")),
+			wantUnschedulable:                   true,
+			wantNotUnschedulableAndUnresolvable: true,
+		},
+		{
+			name:                           "cross-scheduler two-pass same priority nominated pod is ignored",
+			enableCrossSchedulerNomination: true,
+			node:                           newNode("2"),
+			pod:                            makePriorityPod("scheduling-pod", "uid-scheduling", midPriority, "1", "koord-scheduler", "", ""),
+			crossSchedulerNominator:        newCrossNominator(makePriorityPod("nominated-pod", "uid-nominated", midPriority, "1500m", "other-scheduler", "test-node", "")),
+			wantSuccess:                    true,
+		},
+		{
+			name:                              "skip-filter single-pass native nominated pod fails",
+			enableSkipFilterWithNominatedPods: true,
+			node:                              newNode("2"),
+			pod:                               makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			nativeNominatedPods:               []*corev1.Pod{makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "koord-scheduler", "test-node", "")},
+			wantUnschedulable:                 true,
+		},
+		{
+			name:                              "skip-filter single-pass native nominated pod succeeds when capacity is enough",
+			enableSkipFilterWithNominatedPods: true,
+			node:                              newNode("4"),
+			pod:                               makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			nativeNominatedPods:               []*corev1.Pod{makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1", "koord-scheduler", "test-node", "")},
+			wantSuccess:                       true,
+		},
+		{
+			name:                              "skip-filter single-pass with cross-scheduler high priority nominated pod fails",
+			enableCrossSchedulerNomination:    true,
+			enableSkipFilterWithNominatedPods: true,
+			node:                              newNode("2"),
+			pod:                               makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			crossSchedulerNominator:           newCrossNominator(makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "other-scheduler", "test-node", "")),
+			wantUnschedulable:                 true,
+		},
+		{
+			name:                              "skip-filter single-pass with cross-scheduler same priority nominated pod is ignored",
+			enableCrossSchedulerNomination:    true,
+			enableSkipFilterWithNominatedPods: true,
+			node:                              newNode("2"),
+			pod:                               makePriorityPod("scheduling-pod", "uid-scheduling", midPriority, "1", "koord-scheduler", "", ""),
+			crossSchedulerNominator:           newCrossNominator(makePriorityPod("nominated-pod", "uid-nominated", midPriority, "1500m", "other-scheduler", "test-node", "")),
+			wantSuccess:                       true,
+		},
+		{
+			name:                      "same-job nominated pod is excluded",
+			node:                      newNode("2"),
+			pod:                       makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			nativeNominatedPods:       []*corev1.Pod{makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "koord-scheduler", "test-node", "")},
+			nominatedPodsOfTheSameJob: []string{"uid-nominated"},
+			wantSuccess:               true,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			koordClientSet := koordfake.NewSimpleClientset()
-			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extenderFactory, err := NewFrameworkExtenderFactory(
-				WithServicesEngine(services.NewEngine(gin.New())),
-				WithKoordinatorClientSet(koordClientSet),
-				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-			)
-			assert.NoError(t, err)
-			assert.NotNil(t, extenderFactory)
-			assert.Equal(t, koordClientSet, extenderFactory.KoordinatorClientSet())
-			assert.Equal(t, koordSharedInformerFactory, extenderFactory.KoordinatorSharedInformerFactory())
-			registeredPlugins := []schedulertesting.RegisterPluginFunc{
-				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterFilterPlugin("T1", PluginFactoryProxy(extenderFactory, func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
-					return &TestTransformer{name: "T1", index: 1}, nil
-				})),
-				schedulertesting.RegisterFilterPlugin("T2", PluginFactoryProxy(extenderFactory, func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
-					return &TestTransformer{name: "T2", index: 2}, nil
-				})),
+			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.CrossSchedulerNomination, tt.enableCrossSchedulerNomination)()
+			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.SkipFilterWithNominatedPods, tt.enableSkipFilterWithNominatedPods)()
+
+			extender, nodeInfo := buildCrossSchedulerExtenderAndNodeInfo(t, tt.node, tt.crossSchedulerNominator)
+			ctx := context.TODO()
+			logger := klog.FromContext(ctx)
+			for _, nominatedPod := range tt.nativeNominatedPods {
+				nominatedPodInfo, err := framework.NewPodInfo(nominatedPod)
+				assert.NoError(t, err)
+				extender.AddNominatedPod(logger, nominatedPodInfo, &fwktype.NominatingInfo{
+					NominatingMode:    fwktype.ModeOverride,
+					NominatedNodeName: nominatedPod.Status.NominatedNodeName,
+				})
 			}
-			fakeClient := kubefake.NewSimpleClientset()
-			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
-			fh, err := schedulertesting.NewFramework(
-				context.TODO(),
-				registeredPlugins,
-				"koord-scheduler",
-				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfoLister{}}),
-				frameworkruntime.WithClientSet(fakeClient),
-				frameworkruntime.WithInformerFactory(sharedInformerFactory),
-				frameworkruntime.WithPodNominator(NewFakePodNominator()),
-			)
-			assert.NoError(t, err)
-			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
-			frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
-			tt.nodeInfo.SetNode(&corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node-1",
-				},
-			})
-			assert.Equal(t, tt.want, frameworkExtender.RunFilterPluginsWithNominatedPods(context.TODO(), framework.NewCycleState(), tt.pod, tt.nodeInfo))
-			assert.Len(t, tt.pod.Annotations, 2)
-			expectedAnnotations := map[string]string{
-				"BeforeFilter-1": "1",
-				"BeforeFilter-2": "2",
+
+			state := framework.NewCycleState()
+			if len(tt.nominatedPodsOfTheSameJob) > 0 {
+				MakeNominatedPodsOfTheSameJob(state, tt.nominatedPodsOfTheSameJob)
 			}
-			assert.Equal(t, expectedAnnotations, tt.pod.Annotations)
+
+			status := extender.RunFilterPluginsWithNominatedPods(ctx, state, tt.pod, nodeInfo)
+			if tt.wantSuccess {
+				if status != nil {
+					assert.True(t, status.IsSuccess(), "expected success, got: %v", status)
+				}
+				return
+			}
+
+			if assert.NotNil(t, status) {
+				assert.False(t, status.IsSuccess(), "expected failure, got success")
+				if tt.wantUnschedulable {
+					assert.True(t, status.IsRejected(), "expected unschedulable status, got: %v", status)
+				}
+				if tt.wantNotUnschedulableAndUnresolvable {
+					assert.NotEqual(t, fwktype.UnschedulableAndUnresolvable, status.Code(),
+						"expected retryable unschedulable status, got: %v", status)
+				}
+			}
 		})
 	}
 }
@@ -2122,4 +2218,96 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 			}
 		})
 	}
+}
+
+// fakeFitFilterPlugin is a simple filter plugin that checks CPU resource fit,
+// used by CrossScheduler nomination tests.
+type fakeFitFilterPlugin struct{}
+
+func (f *fakeFitFilterPlugin) Name() string { return "FakeFitFilterPlugin" }
+
+func (f *fakeFitFilterPlugin) Filter(_ context.Context, _ fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) *fwktype.Status {
+	if insufficient := noderesources.Fits(pod, nodeInfo, nil, noderesources.ResourceRequestsOptions{}); len(insufficient) != 0 {
+		var reasons []string
+		for _, r := range insufficient {
+			reasons = append(reasons, r.Reason)
+		}
+		return fwktype.NewStatus(fwktype.Unschedulable, reasons...)
+	}
+	return nil
+}
+
+// makePriorityPod creates a pod with a given priority, CPU request, schedulerName, and optionally a nominated node.
+func makePriorityPod(name string, uid types.UID, priority int32, cpuReq string, schedulerName, nominatedNode, nodeName string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+			UID:       uid,
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: schedulerName,
+			NodeName:      nodeName,
+			Priority:      &priority,
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse(cpuReq),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			NominatedNodeName: nominatedNode,
+		},
+	}
+}
+
+// buildCrossSchedulerExtenderAndNodeInfo is a helper that creates a FrameworkExtender with FakeFitFilterPlugin
+// and optionally injects a CrossSchedulerPodNominator.
+func buildCrossSchedulerExtenderAndNodeInfo(t *testing.T, node *corev1.Node, crossNominator *CrossSchedulerPodNominator) (FrameworkExtender, fwktype.NodeInfo) {
+	t.Helper()
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+
+	opts := []Option{
+		WithKoordinatorClientSet(koordClientSet),
+		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	}
+	if crossNominator != nil {
+		opts = append(opts, WithCrossSchedulerPodNominator(crossNominator))
+	}
+
+	extenderFactory, err := NewFrameworkExtenderFactory(opts...)
+	assert.NoError(t, err)
+
+	nodeInfo := framework.NewNodeInfo()
+	nodeInfo.SetNode(node)
+
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		schedulertesting.RegisterFilterPlugin("FakeFitFilterPlugin", func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
+			return &fakeFitFilterPlugin{}, nil
+		}),
+	}
+
+	fakeClient := kubefake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
+		registeredPlugins,
+		"koord-scheduler",
+		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfoLister{nodeInfo}}),
+		frameworkruntime.WithClientSet(fakeClient),
+		frameworkruntime.WithInformerFactory(sharedInformerFactory),
+		frameworkruntime.WithPodNominator(NewFakePodNominator()),
+	)
+	assert.NoError(t, err)
+
+	extender := extenderFactory.NewFrameworkExtender(fh)
+	extender.SetConfiguredPlugins(fh.ListPlugins())
+	return extender, nodeInfo
 }

@@ -73,6 +73,7 @@ type extendedHandleOptions struct {
 	reservationCache                    ReservationCache
 	reservationNominator                ReservationNominator
 	networkTopologyManager              networktopology.TreeManager
+	crossSchedulerNominator             *CrossSchedulerPodNominator
 }
 
 type Option func(*extendedHandleOptions)
@@ -119,6 +120,12 @@ func WithNetworkTopologyManager(manager networktopology.TreeManager) Option {
 	}
 }
 
+func WithCrossSchedulerPodNominator(nominator *CrossSchedulerPodNominator) Option {
+	return func(options *extendedHandleOptions) {
+		options.crossSchedulerNominator = nominator
+	}
+}
+
 // FrameworkExtenderFactory is a factory for creating a FrameworkExtender.
 // NOTE: DO NOT put framework-level data here.
 type FrameworkExtenderFactory struct {
@@ -137,6 +144,7 @@ type FrameworkExtenderFactory struct {
 	*errorHandlerDispatcher
 
 	networkTopologyTreeManager networktopology.TreeManager
+	crossSchedulerNominator    *CrossSchedulerPodNominator
 
 	metricsRecorder *metrics.MetricAsyncRecorder
 }
@@ -163,6 +171,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		monitor:                             NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
 		errorHandlerDispatcher:              newErrorHandlerDispatcher(),
 		networkTopologyTreeManager:          handleOptions.networkTopologyManager,
+		crossSchedulerNominator:             handleOptions.crossSchedulerNominator,
 		metricsRecorder:                     metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
 	}, nil
 }

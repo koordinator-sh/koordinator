@@ -58,6 +58,9 @@ type ExtendedHandle interface {
 	// It returns nil when the framework does not support the resource reservation.
 	GetReservationNominator() ReservationNominator
 	GetNetworkTopologyTreeManager() networktopology.TreeManager
+	// GetCrossSchedulerPodNominator returns the CrossSchedulerPodNominator for cross-scheduler nominated pod tracking.
+	// It returns nil when the feature is not enabled or not configured.
+	GetCrossSchedulerPodNominator() *CrossSchedulerPodNominator
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.

@@ -97,6 +97,8 @@ type frameworkExtenderImpl struct {
 	topologyManager           topologymanager.Interface
 
 	metricsRecorder *metrics.MetricAsyncRecorder
+
+	crossSchedulerNominator *CrossSchedulerPodNominator
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -124,8 +126,16 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		podLister:                           fw.SharedInformerFactory().Core().V1().Pods().Lister(),
 		reservationLister:                   f.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister(),
 		networkTopologyTreeManager:          f.networkTopologyTreeManager,
+		crossSchedulerNominator:             f.crossSchedulerNominator,
 	}
 	frameworkExtender.topologyManager = topologymanager.New(frameworkExtender)
+
+	// Register the profile name to CrossSchedulerPodNominator so that pods from
+	// this profile are excluded from cross-scheduler nomination tracking.
+	if f.crossSchedulerNominator != nil {
+		f.crossSchedulerNominator.AddLocalProfileName(fw.ProfileName())
+	}
+
 	return frameworkExtender
 }
 
@@ -274,6 +284,10 @@ func (ext *frameworkExtenderImpl) GetNetworkTopologyTreeManager() networktopolog
 	return ext.networkTopologyTreeManager
 }
 
+func (ext *frameworkExtenderImpl) GetCrossSchedulerPodNominator() *CrossSchedulerPodNominator {
+	return ext.crossSchedulerNominator
+}
+
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) (*fwktype.PreFilterResult, *fwktype.Status, sets.Set[string]) {
 	trace := utiltrace.New("RunPreFilterPluginTransformers", utiltrace.Field{Key: "namespace", Value: pod.Namespace}, utiltrace.Field{Key: "name", Value: pod.Name})
@@ -404,17 +418,7 @@ func (ext *frameworkExtenderImpl) RunFilterPluginsWithNominatedPods(ctx context.
 		}
 	}
 
-	nominatedPodsOfSameJob := getNominatedPodsOfTheSameJob(cycleState)
-	var status *fwktype.Status
-	if len(nominatedPodsOfSameJob) != 0 {
-		status = ext.runFilterPluginsWithNominatedPodsIgnoreSameJob(ctx, cycleState, pod, nodeInfo, nominatedPodsOfSameJob)
-	} else {
-		status = ext.Framework.RunFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
-	}
-	if !status.IsSuccess() && debugFilterFailure {
-		klog.Infof("Failed to filter for Pod %q on Node %q, failedPlugin: %s, schedulingPhaseBeingInvoked: %s, reason: %s", klog.KObj(pod), klog.KObj(nodeInfo.Node()), status.Plugin(), schedulingphase.GetExtensionPointBeingExecuted(cycleState), status.Message())
-	}
-	return status
+	return ext.runFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
 }
 
 func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeInfos []fwktype.NodeInfo) ([]fwktype.NodePluginScores, *fwktype.Status) {
