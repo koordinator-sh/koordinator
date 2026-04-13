@@ -61,6 +61,7 @@ const (
 )
 
 var (
+	// ResourceName list managed by the nodeTopoInformer
 	managedNRTResources = []corev1.ResourceName{
 		corev1.ResourceCPU,
 		corev1.ResourceMemory,
@@ -68,7 +69,7 @@ var (
 		corev1.ResourceHugePagesPrefix + "2Mi",
 		corev1.ResourceHugePagesPrefix + "1Gi",
 	}
-
+	// Annotation keys list managed by the nodeTopoInformer
 	managedNRTAnnotationKeys = []string{
 		extension.AnnotationCPUBasicInfo,
 		extension.AnnotationKubeletCPUManagerPolicy,
@@ -80,15 +81,20 @@ var (
 		extension.AnnotationNodeSystemQOSResource,
 	}
 
+	// Label keys list managed by the nodeTopoInformer
 	managedNRTLabelKeys = []string{
 		extension.LabelNodeEnableNUMAReservation,
 	}
-
-	extendNRTStatusFn = func(nrtStatus *nodeTopologyStatus, node *corev1.Node, numaNodeCount int) error {
+	// Zone resources merging function
+	mergeNRTZoneFn = func(nrt *v1alpha1.NodeResourceTopology, zoneList v1alpha1.ZoneList) v1alpha1.ZoneList {
+		return util.MergeZoneList(util.TrimDifferentZone(nrt.Zones, zoneList), zoneList)
+	}
+	// NRT status extension function
+	extendNRTStatusFn = func(_ *nodeTopologyStatus, _ *corev1.Node, _ int) error {
 		return nil
 	}
-
-	extendNRTEqualFn = func(nrtStatus *nodeTopologyStatus, oldNRT *v1alpha1.NodeResourceTopology) (bool, string) {
+	// NRT status comparison function
+	extendNRTEqualFn = func(_ *nodeTopologyStatus, _ *v1alpha1.NodeResourceTopology) (bool, string) {
 		return true, ""
 	}
 )
@@ -150,7 +156,7 @@ func (n *nodeTopologyStatus) updateNRT(nrt *v1alpha1.NodeResourceTopology) {
 	nrt.TopologyPolicies = []string{string(n.TopologyPolicy)}
 
 	// trim useless zone name and merge with the existing zone list
-	nrt.Zones = util.MergeZoneList(util.TrimDifferentZone(nrt.Zones, n.Zones), n.Zones)
+	nrt.Zones = mergeNRTZoneFn(nrt, n.Zones)
 }
 
 type nodeTopoInformer struct {
