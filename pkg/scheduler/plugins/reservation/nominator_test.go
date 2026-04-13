@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
+	apiresource "k8s.io/component-helpers/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
@@ -344,7 +344,7 @@ func TestNominatePreAllocation(t *testing.T) {
 					},
 				},
 			},
-			AllocateOnce:   ptr.To[bool](false),
+			AllocateOnce:   ptr.To(false),
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
 			PreAllocation:  true,
 		},
@@ -576,7 +576,7 @@ func TestNominatePreAllocation(t *testing.T) {
 					nodeRState = &nodeReservationState{}
 				}
 				nodeRState.nodeName = pod.Spec.NodeName
-				nodeRState.preAllocatablePods = append(nodeRState.preAllocatablePods, pod)
+				nodeRState.selectedPreAllocatablePods = append(nodeRState.selectedPreAllocatablePods, pod)
 				state.nodeReservationStates[pod.Spec.NodeName] = nodeRState
 			}
 			cycleState.Write(stateKey, state)
@@ -658,7 +658,7 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 	assert.NoError(t, err)
 	recoverNodeInfoFn := func() {
 		for _, v := range reservations {
-			nodeInfo.AddPod(reservationutil.NewReservePod(v))
+			nodeInfo.(*framework.NodeInfo).AddPod(reservationutil.NewReservePod(v))
 		}
 	}
 
@@ -695,7 +695,7 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		recoverNodeInfoFn()
 		cycleState := framework.NewCycleState()
 		pl.BeforePreFilter(context.TODO(), cycleState, pod)
-		pl.PreFilter(context.TODO(), cycleState, pod)
+		pl.PreFilter(context.TODO(), cycleState, pod, nil)
 		pl.Filter(context.TODO(), cycleState, pod, nodeInfo)
 		nm := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
 		rInfo, status := nm.NominateReservation(context.TODO(), cycleState, pod, node.Name)
@@ -745,7 +745,7 @@ func TestReservationsNominator(t *testing.T) {
 	}
 	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
 	assert.NoError(t, err)
-	assert.Equal(t, 0, len(nodeInfo.Pods))
+	assert.Equal(t, 0, len(nodeInfo.GetPods()))
 
 	p, err := suit.pluginFactory()
 	assert.NoError(t, err)
@@ -760,12 +760,12 @@ func TestReservationsNominator(t *testing.T) {
 	assert.Equal(t, pod, pods[2])
 	assert.True(t, update)
 	assert.True(t, status.IsSuccess())
-	assert.Equal(t, 1, len(nodeInfoOut.Pods))
+	assert.Equal(t, 1, len(nodeInfoOut.GetPods()))
 
 	nominatorImpl.AddNominatedReservePod(pods[1], "node-1")
 	pod, nodeInfoOut, update, status = pl.BeforeFilter(ctx, state, pods[2], nodeInfo)
 	assert.Equal(t, pod, pods[2])
 	assert.True(t, update)
 	assert.True(t, status.IsSuccess())
-	assert.Equal(t, 2, len(nodeInfoOut.Pods))
+	assert.Equal(t, 2, len(nodeInfoOut.GetPods()))
 }

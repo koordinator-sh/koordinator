@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -298,7 +299,7 @@ func TestFakeNominator_ReservationNominate(t *testing.T) {
 		pod        *corev1.Pod
 		nodeName   string
 		prepareFn  func(*FakeNominator)
-		wantStatus *framework.Status
+		wantStatus *fwktype.Status
 	}{
 		{
 			name: "reserve pod should be skipped",

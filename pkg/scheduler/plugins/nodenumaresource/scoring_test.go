@@ -26,7 +26,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
+	apiresource "k8s.io/component-helpers/resource"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
@@ -51,7 +52,7 @@ func TestNUMANodeScore(t *testing.T) {
 		numaNodeCounts map[string]int
 		requestedPod   *corev1.Pod
 		existingPods   []*corev1.Pod
-		expectedScores framework.NodeScoreList
+		expectedScores fwktype.NodeScoreList
 		strategy       *schedulerconfig.ScoringStrategy
 	}{
 		{
@@ -84,7 +85,7 @@ func TestNUMANodeScore(t *testing.T) {
 					},
 				},
 			},
-			expectedScores: []framework.NodeScore{
+			expectedScores: []fwktype.NodeScore{
 				{
 					Name:  "test-node-1",
 					Score: 35,
@@ -125,7 +126,7 @@ func TestNUMANodeScore(t *testing.T) {
 					},
 				},
 			},
-			expectedScores: []framework.NodeScore{
+			expectedScores: []fwktype.NodeScore{
 				{
 					Name:  "test-node-1",
 					Score: 63,
@@ -176,7 +177,7 @@ func TestNUMANodeScore(t *testing.T) {
 					},
 				},
 			},
-			expectedScores: []framework.NodeScore{
+			expectedScores: []fwktype.NodeScore{
 				{
 					Name:  "test-node-1",
 					Score: 19,
@@ -241,7 +242,7 @@ func TestNUMANodeScore(t *testing.T) {
 					},
 				},
 			},
-			expectedScores: []framework.NodeScore{
+			expectedScores: []fwktype.NodeScore{
 				{
 					Name:  "test-node-1",
 					Score: 23,
@@ -264,7 +265,7 @@ func TestNUMANodeScore(t *testing.T) {
 			if tt.strategy != nil {
 				suit.nodeNUMAResourceArgs.ScoringStrategy = tt.strategy
 			}
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 
@@ -311,18 +312,18 @@ func TestNUMANodeScore(t *testing.T) {
 			}
 
 			cycleState := framework.NewCycleState()
-			_, status := pl.PreFilter(context.TODO(), cycleState, tt.requestedPod)
+			_, status := pl.PreFilter(context.TODO(), cycleState, tt.requestedPod, nil)
 			assert.True(t, status.IsSuccess())
 
-			var gotScores framework.NodeScoreList
+			var gotScores fwktype.NodeScoreList
 			for _, n := range tt.nodes {
 				nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get(n.Name)
 				assert.NoError(t, err)
 				status = pl.Filter(context.TODO(), cycleState, tt.requestedPod, nodeInfo)
 				assert.True(t, status.IsSuccess())
-				score, status := p.(framework.ScorePlugin).Score(context.TODO(), cycleState, tt.requestedPod, n.Name)
+				score, status := p.(fwktype.ScorePlugin).Score(context.TODO(), cycleState, tt.requestedPod, nodeInfo)
 				assert.True(t, status.IsSuccess())
-				gotScores = append(gotScores, framework.NodeScore{Name: n.Name, Score: score})
+				gotScores = append(gotScores, fwktype.NodeScore{Name: n.Name, Score: score})
 			}
 			assert.Equal(t, tt.expectedScores, gotScores)
 		})
@@ -336,13 +337,13 @@ func TestPlugin_Score(t *testing.T) {
 		state       *preFilterState
 		pod         *corev1.Pod
 		cpuTopology *CPUTopology
-		want        *framework.Status
+		want        *fwktype.Status
 		wantScore   int64
 	}{
 		{
 			name: "error with missing preFilterState",
 			pod:  &corev1.Pod{},
-			want: framework.AsStatus(framework.ErrNotFound),
+			want: fwktype.AsStatus(fwktype.ErrNotFound),
 		},
 		{
 			name: "error with missing allocationState",
@@ -510,7 +511,7 @@ func TestPlugin_Score(t *testing.T) {
 					},
 				},
 			}
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
@@ -541,7 +542,7 @@ func TestPlugin_Score(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, nodeInfo)
 
-			gotScore, gotStatus := plg.Score(context.TODO(), cycleState, tt.pod, "test-node-1")
+			gotScore, gotStatus := plg.Score(context.TODO(), cycleState, tt.pod, nodeInfo)
 			if !reflect.DeepEqual(gotStatus, tt.want) {
 				t.Errorf("Score() = %v, want %v", gotStatus, tt.want)
 			}
@@ -563,7 +564,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 		cpuTopologies map[string]*CPUTopology
 		nodeHasNRT    []string
 		nodeRatios    map[string]extension.Ratio
-		wantScoreList framework.NodeScoreList
+		wantScoreList fwktype.NodeScoreList
 	}{
 		{
 			name:         "ScoringStrategy MostAllocated, non-cpuset pod",
@@ -574,7 +575,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makeNode("node3", map[corev1.ResourceName]string{"cpu": "32", "memory": "40Gi"}, 2.0),
 			},
 			nodeRatios:    map[string]apiext.Ratio{"node1": 1.0, "node2": 2.0, "node3": 2.0},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 32}, {Name: "node2", Score: 16}, {Name: "node3", Score: 26}},
+			wantScoreList: []fwktype.NodeScore{{Name: "node1", Score: 32}, {Name: "node2", Score: 16}, {Name: "node3", Score: 26}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.MostAllocated,
@@ -597,7 +598,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				"node2": buildCPUTopologyForTest(2, 1, 8, 2),
 				"node3": buildCPUTopologyForTest(2, 1, 8, 2),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 32}, {Name: "node2", Score: 19}, {Name: "node3", Score: 32}},
+			wantScoreList: []fwktype.NodeScore{{Name: "node1", Score: 32}, {Name: "node2", Score: 19}, {Name: "node3", Score: 32}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.MostAllocated,
@@ -622,7 +623,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 35}},
+			wantScoreList: []fwktype.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 35}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.MostAllocated,
@@ -647,7 +648,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", false),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", false),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 30}},
+			wantScoreList: []fwktype.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 30}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.MostAllocated,
@@ -672,7 +673,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 38}},
+			wantScoreList: []fwktype.NodeScore{{Name: "node1", Score: 68}, {Name: "node2", Score: 38}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.MostAllocated,
@@ -692,7 +693,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", false),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", false),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 72}},
+			wantScoreList: []fwktype.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 72}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.LeastAllocated,
@@ -717,7 +718,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 64}},
+			wantScoreList: []fwktype.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 64}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.LeastAllocated,
@@ -742,7 +743,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", false),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", false),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 68}},
+			wantScoreList: []fwktype.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 68}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.LeastAllocated,
@@ -767,7 +768,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node1", true),
 				makePodOnNode(map[corev1.ResourceName]string{"cpu": "20", "memory": "4Gi"}, "node2", true),
 			},
-			wantScoreList: []framework.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 61}},
+			wantScoreList: []fwktype.NodeScore{{Name: "node1", Score: 31}, {Name: "node2", Score: 61}},
 			args: schedulerconfig.NodeNUMAResourceArgs{
 				ScoringStrategy: &schedulerconfig.ScoringStrategy{
 					Type:      schedulerconfig.LeastAllocated,
@@ -781,7 +782,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, tt.existingPods, tt.nodes)
 			suit.nodeNUMAResourceArgs.ScoringStrategy = tt.args.ScoringStrategy
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NoError(t, err)
 			suit.start()
 
@@ -818,16 +819,18 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 			}
 
 			state := framework.NewCycleState()
-			_, status := pl.PreFilter(context.TODO(), state, tt.requestedPod)
+			_, status := pl.PreFilter(context.TODO(), state, tt.requestedPod, nil)
 			assert.True(t, status.IsSuccess())
 
-			var gotScoreList framework.NodeScoreList
+			var gotScoreList fwktype.NodeScoreList
 			for _, n := range tt.nodes {
-				score, status := p.(framework.ScorePlugin).Score(context.TODO(), state, tt.requestedPod, n.Name)
+				nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get(n.Name)
+				assert.NoError(t, err)
+				score, status := p.(fwktype.ScorePlugin).Score(context.TODO(), state, tt.requestedPod, nodeInfo)
 				if !status.IsSuccess() {
 					t.Errorf("unexpected error: %v", status)
 				}
-				gotScoreList = append(gotScoreList, framework.NodeScore{Name: n.Name, Score: score})
+				gotScoreList = append(gotScoreList, fwktype.NodeScore{Name: n.Name, Score: score})
 			}
 			assert.Equal(t, tt.wantScoreList, gotScoreList)
 		})

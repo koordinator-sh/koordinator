@@ -19,10 +19,10 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // ClusterColocationProfileLister helps list ClusterColocationProfiles.
@@ -30,39 +30,19 @@ import (
 type ClusterColocationProfileLister interface {
 	// List lists all ClusterColocationProfiles in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.ClusterColocationProfile, err error)
+	List(selector labels.Selector) (ret []*configv1alpha1.ClusterColocationProfile, err error)
 	// Get retrieves the ClusterColocationProfile from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.ClusterColocationProfile, error)
+	Get(name string) (*configv1alpha1.ClusterColocationProfile, error)
 	ClusterColocationProfileListerExpansion
 }
 
 // clusterColocationProfileLister implements the ClusterColocationProfileLister interface.
 type clusterColocationProfileLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*configv1alpha1.ClusterColocationProfile]
 }
 
 // NewClusterColocationProfileLister returns a new ClusterColocationProfileLister.
 func NewClusterColocationProfileLister(indexer cache.Indexer) ClusterColocationProfileLister {
-	return &clusterColocationProfileLister{indexer: indexer}
-}
-
-// List lists all ClusterColocationProfiles in the indexer.
-func (s *clusterColocationProfileLister) List(selector labels.Selector) (ret []*v1alpha1.ClusterColocationProfile, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.ClusterColocationProfile))
-	})
-	return ret, err
-}
-
-// Get retrieves the ClusterColocationProfile from the index for a given name.
-func (s *clusterColocationProfileLister) Get(name string) (*v1alpha1.ClusterColocationProfile, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1alpha1.Resource("clustercolocationprofile"), name)
-	}
-	return obj.(*v1alpha1.ClusterColocationProfile), nil
+	return &clusterColocationProfileLister{listers.New[*configv1alpha1.ClusterColocationProfile](indexer, configv1alpha1.Resource("clustercolocationprofile"))}
 }

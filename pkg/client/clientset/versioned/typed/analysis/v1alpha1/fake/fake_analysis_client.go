@@ -29,7 +29,7 @@ type FakeAnalysisV1alpha1 struct {
 }
 
 func (c *FakeAnalysisV1alpha1) Recommendations(namespace string) v1alpha1.RecommendationInterface {
-	return &FakeRecommendations{c, namespace}
+	return newFakeRecommendations(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

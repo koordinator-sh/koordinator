@@ -43,10 +43,10 @@ type switchMetric struct{}
 
 var (
 	_ leaderelection.MetricsProvider = metricsProvider{}
-	_ leaderelection.SwitchMetric    = switchMetric{}
+	_ leaderelection.LeaderMetric    = switchMetric{}
 )
 
-func (metricsProvider) NewLeaderMetric() leaderelection.SwitchMetric {
+func (metricsProvider) NewLeaderMetric() leaderelection.LeaderMetric {
 	return switchMetric{}
 }
 
@@ -57,3 +57,5 @@ func (switchMetric) On(_ string) {
 func (s switchMetric) Off(string) {
 	leaderMetric.Set(0)
 }
+
+func (switchMetric) SlowpathExercised(_ string) {}

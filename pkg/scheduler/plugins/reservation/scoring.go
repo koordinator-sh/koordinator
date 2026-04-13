@@ -25,8 +25,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	resourceapi "k8s.io/component-helpers/resource"
+	"k8s.io/kube-scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 	pluginhelper "k8s.io/kubernetes/pkg/scheduler/framework/plugins/helper"
 
@@ -39,27 +40,33 @@ const (
 	mostPreferredScore = 1000
 )
 
-func (pl *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+func (pl *Plugin) PreScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfos []fwktype.NodeInfo) *fwktype.Status {
+	nodes := make([]*corev1.Node, 0, len(nodeInfos))
+	for _, ni := range nodeInfos {
+		if n := ni.Node(); n != nil {
+			nodes = append(nodes, n)
+		}
+	}
 	if reservationutil.IsReservePod(pod) {
 		if reservationutil.IsReservePodPreAllocation(pod) {
 			return pl.preScoreForPreAllocation(ctx, cycleState, pod, nodes)
 		}
 
-		return framework.NewStatus(framework.Skip)
+		return fwktype.NewStatus(fwktype.Skip)
 	}
 
 	return pl.preScoreForNormalPod(ctx, cycleState, pod, nodes)
 }
 
-func (pl *Plugin) preScoreForNormalPod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+func (pl *Plugin) preScoreForNormalPod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *fwktype.Status {
 	// if the pod is reservation-ignored, it does not want a nominated reservation
 	if apiext.IsReservationIgnored(pod) {
-		return framework.NewStatus(framework.Skip)
+		return fwktype.NewStatus(fwktype.Skip)
 	}
 
 	state := getStateData(cycleState)
 	if len(state.nodeReservationStates) == 0 {
-		return framework.NewStatus(framework.Skip)
+		return fwktype.NewStatus(fwktype.Skip)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -93,7 +100,7 @@ func (pl *Plugin) preScoreForNormalPod(ctx context.Context, cycleState *framewor
 		}
 	}, "ReservationPreScore")
 	if err := errCh.ReceiveError(); err != nil {
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 
 	nominatedReservations = nominatedReservations[:nominatedNodeIndex]
@@ -115,13 +122,20 @@ func (pl *Plugin) preScoreForNormalPod(ctx context.Context, cycleState *framewor
 	return nil
 }
 
-func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *fwktype.Status {
 	state := getStateData(cycleState)
 	if len(state.nodeReservationStates) == 0 {
-		return framework.NewStatus(framework.Skip)
+		return fwktype.NewStatus(fwktype.Skip)
 	}
 	if state.rInfo == nil {
-		return framework.AsStatus(fmt.Errorf("missing PreAllocation Reservation"))
+		return fwktype.AsStatus(fmt.Errorf("missing PreAllocation Reservation"))
+	}
+
+	if state.rInfo.IsMultiplePAPodsEnabled() {
+		// For multiple pre-allocatable pods mode, skip the nomination in PreScore phase.
+		// The selectedPreAllocatablePods are already determined during Filter phase,
+		// and Score phase will use them directly without needing a single nominated pod.
+		return fwktype.NewStatus(fwktype.Skip)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -135,7 +149,7 @@ func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState *fram
 		node := nodes[piece]
 		var preAllocatable []*corev1.Pod
 		if nodeRState := state.nodeReservationStates[node.Name]; nodeRState != nil {
-			preAllocatable = nodeRState.preAllocatablePods
+			preAllocatable = nodeRState.selectedPreAllocatablePods
 		}
 		if len(preAllocatable) == 0 {
 			return
@@ -152,7 +166,7 @@ func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState *fram
 		}
 	}, "ReservationPreScore")
 	if err := errCh.ReceiveError(); err != nil {
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 
 	nominatedPreAllocatable = nominatedPreAllocatable[:nominatedNodeIndex]
@@ -163,19 +177,20 @@ func (pl *Plugin) preScoreForPreAllocation(ctx context.Context, cycleState *fram
 	return nil
 }
 
-func (pl *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+func (pl *Plugin) Score(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (int64, *fwktype.Status) {
+	nodeName := nodeInfo.Node().Name
 	if reservationutil.IsReservePod(pod) {
 		if reservationutil.IsReservePodPreAllocation(pod) {
 			return pl.scoreForPreAllocation(ctx, cycleState, pod, nodeName)
 		}
 
-		return framework.MinNodeScore, nil
+		return fwktype.MinNodeScore, nil
 	}
 
 	return pl.scoreForNormalPod(ctx, cycleState, pod, nodeName)
 }
 
-func (pl *Plugin) scoreForNormalPod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+func (pl *Plugin) scoreForNormalPod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) (int64, *fwktype.Status) {
 	state := getStateData(cycleState)
 
 	if state.preferredNode == nodeName {
@@ -184,7 +199,7 @@ func (pl *Plugin) scoreForNormalPod(ctx context.Context, cycleState *framework.C
 
 	reservationInfo := pl.handle.GetReservationNominator().GetNominatedReservation(pod, nodeName)
 	if reservationInfo == nil {
-		return framework.MinNodeScore, nil
+		return fwktype.MinNodeScore, nil
 	}
 	for _, v := range state.nodeReservationStates[nodeName].matchedOrIgnored {
 		if v.UID() == reservationInfo.UID() {
@@ -193,48 +208,58 @@ func (pl *Plugin) scoreForNormalPod(ctx context.Context, cycleState *framework.C
 		}
 	}
 	if reservationInfo == nil {
-		return 0, framework.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
+		return 0, fwktype.AsStatus(fmt.Errorf("impossible, there is no relevant Reservation information"))
 	}
 
 	return pl.ScoreReservation(ctx, cycleState, pod, reservationInfo, nodeName)
 }
 
-func (pl *Plugin) scoreForPreAllocation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+func (pl *Plugin) scoreForPreAllocation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) (int64, *fwktype.Status) {
 	state := getStateData(cycleState)
 
 	if state.preferredNode == nodeName {
 		return mostPreferredScore, nil
 	}
 
+	if state.rInfo.IsMultiplePAPodsEnabled() {
+		// If there is no pre-allocatable pod nominated on this node, give it the highest priority.
+		nodeRState := state.nodeReservationStates[nodeName]
+		if nodeRState == nil || len(nodeRState.selectedPreAllocatablePods) == 0 {
+			return framework.MaxNodeScore, nil
+		}
+		// The more pre-allocatable pods are selected on this node, the lower priority it will get.
+		return framework.MaxNodeScore / int64(1+len(nodeRState.selectedPreAllocatablePods)), nil
+	}
+
 	preAllocatable := pl.handle.GetReservationNominator().GetNominatedPreAllocation(state.rInfo, nodeName)
 	if preAllocatable == nil {
-		return framework.MinNodeScore, nil
+		return fwktype.MinNodeScore, nil
 	}
-	for _, v := range state.nodeReservationStates[nodeName].preAllocatablePods {
+	for _, v := range state.nodeReservationStates[nodeName].selectedPreAllocatablePods {
 		if v.GetUID() == preAllocatable.GetUID() {
 			preAllocatable = v
 			break
 		}
 	}
 	if preAllocatable == nil {
-		return 0, framework.AsStatus(fmt.Errorf("impossible, there is no relevant pre-allocatable"))
+		return 0, fwktype.AsStatus(fmt.Errorf("impossible, there is no relevant pre-allocatable"))
 	}
 
 	return pl.ScoreReservation(ctx, cycleState, preAllocatable, state.rInfo, nodeName)
 }
 
-func (pl *Plugin) ScoreExtensions() framework.ScoreExtensions {
+func (pl *Plugin) ScoreExtensions() fwktype.ScoreExtensions {
 	return pl
 }
 
-func (pl *Plugin) NormalizeScore(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, scores framework.NodeScoreList) *framework.Status {
+func (pl *Plugin) NormalizeScore(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, scores fwktype.NodeScoreList) *fwktype.Status {
 	if reservationutil.IsReservePod(pod) {
 		return nil
 	}
-	return pluginhelper.DefaultNormalizeScore(framework.MaxNodeScore, false, scores)
+	return pluginhelper.DefaultNormalizeScore(fwktype.MaxNodeScore, false, scores)
 }
 
-func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, nodeName string) (int64, *framework.Status) {
+func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, nodeName string) (int64, *fwktype.Status) {
 	state := getStateData(cycleState)
 	preemptibleInRR := state.preemptibleInRRs[nodeName][rInfo.UID()]
 	allocated := rInfo.Allocated
@@ -257,7 +282,7 @@ func (pl *Plugin) ScoreReservation(ctx context.Context, cycleState *framework.Cy
 	for resource, capacity := range resources {
 		req := requested[resource]
 		if req.Cmp(capacity) <= 0 {
-			s += framework.MaxNodeScore * req.MilliValue() / capacity.MilliValue()
+			s += fwktype.MaxNodeScore * req.MilliValue() / capacity.MilliValue()
 		}
 	}
 	return s / w, nil

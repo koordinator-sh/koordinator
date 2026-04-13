@@ -29,8 +29,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -91,7 +92,7 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 	assert.NoError(b, err)
 	pl := p.(*Plugin)
 	fakePreFilterPl := schedulertesting.FakePreFilterPlugin{
-		Result: &framework.PreFilterResult{
+		Result: &fwktype.PreFilterResult{
 			NodeNames: sets.New[string](preFilterNodeNames...),
 		},
 	}
@@ -146,7 +147,7 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 		assert.NoError(b, err)
 		reservePod := reservationutil.NewReservePod(reservation)
 		reservePods[string(reservePod.UID)] = reservePod
-		nodeInfo.AddPod(reservePod)
+		nodeInfo.(*framework.NodeInfo).AddPod(reservePod)
 		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), reservePod))
 	}
 
@@ -216,10 +217,10 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 		assert.True(b, restored)
 		assert.True(b, status.IsSuccess())
 
-		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 		assert.True(b, status.IsSuccess())
 
-		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod, nil)
 		assert.True(b, status.IsSuccess())
 		preFilterResult = preFilterResult.Merge(preFilterResult1)
 
@@ -234,7 +235,7 @@ func BenchmarkBeforePrefilterWithMatchedPod(b *testing.B) {
 			for _, ri := range v.matchedOrIgnored {
 				p := reservePods[string(ri.UID())]
 				if p != nil {
-					nodeInfo.AddPod(p)
+					nodeInfo.(*framework.NodeInfo).AddPod(p)
 				}
 			}
 		}
@@ -295,7 +296,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 	assert.NoError(b, err)
 	pl := p.(*Plugin)
 	fakePreFilterPl := schedulertesting.FakePreFilterPlugin{
-		Result: &framework.PreFilterResult{
+		Result: &fwktype.PreFilterResult{
 			NodeNames: sets.New[string](preFilterNodeNames...),
 		},
 	}
@@ -348,7 +349,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(node.Name)
 		assert.NoError(b, err)
 		reservePod := reservationutil.NewReservePod(reservation)
-		nodeInfo.AddPod(reservePod)
+		nodeInfo.(*framework.NodeInfo).AddPod(reservePod)
 		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), reservePod))
 
 		for j := 0; j < 4; j++ {
@@ -373,7 +374,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 				},
 			}
 			pl.reservationCache.updatePod(reservation.UID, reservation.UID, nil, pod)
-			nodeInfo.AddPod(pod)
+			nodeInfo.(*framework.NodeInfo).AddPod(pod)
 			assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), pod))
 		}
 	}
@@ -435,10 +436,10 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 		assert.True(b, restored)
 		assert.True(b, status.IsSuccess())
 
-		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 		assert.True(b, status.IsSuccess())
 
-		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod, nil)
 		assert.True(b, status.IsSuccess())
 		preFilterResult = preFilterResult.Merge(preFilterResult1)
 
@@ -501,7 +502,7 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 	pl := p.(*Plugin)
 	pl.enableLazyReservationRestore = true
 	fakePreFilterPl := schedulertesting.FakePreFilterPlugin{
-		Result: &framework.PreFilterResult{
+		Result: &fwktype.PreFilterResult{
 			NodeNames: sets.New[string](preFilterNodeNames...),
 		},
 	}
@@ -556,7 +557,7 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 		assert.NoError(b, err)
 		reservePod := reservationutil.NewReservePod(reservation)
 		reservePods[string(reservePod.UID)] = reservePod
-		nodeInfo.AddPod(reservePod)
+		nodeInfo.(*framework.NodeInfo).AddPod(reservePod)
 		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), reservePod))
 	}
 
@@ -626,10 +627,10 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 		assert.True(b, restored)
 		assert.True(b, status.IsSuccess())
 
-		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 		assert.True(b, status.IsSuccess())
 
-		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod, nil)
 		assert.True(b, status.IsSuccess())
 		preFilterResult = preFilterResult.Merge(preFilterResult1)
 
@@ -644,7 +645,7 @@ func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testi
 			for _, ri := range v.matchedOrIgnored {
 				p := reservePods[string(ri.UID())]
 				if p != nil {
-					nodeInfo.AddPod(p)
+					nodeInfo.(*framework.NodeInfo).AddPod(p)
 				}
 			}
 		}
@@ -706,7 +707,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 	pl := p.(*Plugin)
 	pl.enableLazyReservationRestore = true
 	fakePreFilterPl := schedulertesting.FakePreFilterPlugin{
-		Result: &framework.PreFilterResult{
+		Result: &fwktype.PreFilterResult{
 			NodeNames: sets.New[string](preFilterNodeNames...),
 		},
 	}
@@ -759,7 +760,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(node.Name)
 		assert.NoError(b, err)
 		reservePod := reservationutil.NewReservePod(reservation)
-		nodeInfo.AddPod(reservePod)
+		nodeInfo.(*framework.NodeInfo).AddPod(reservePod)
 		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), reservePod))
 
 		for j := 0; j < 4; j++ {
@@ -784,7 +785,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 				},
 			}
 			pl.reservationCache.updatePod(reservation.UID, reservation.UID, nil, pod)
-			nodeInfo.AddPod(pod)
+			nodeInfo.(*framework.NodeInfo).AddPod(pod)
 			assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), pod))
 		}
 	}
@@ -846,10 +847,10 @@ func BenchmarkBeforePrefilterWithUnmatchedPodEnableLazyReservationRestore(b *tes
 		assert.True(b, restored)
 		assert.True(b, status.IsSuccess())
 
-		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 		assert.True(b, status.IsSuccess())
 
-		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod)
+		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod, nil)
 		assert.True(b, status.IsSuccess())
 		preFilterResult = preFilterResult.Merge(preFilterResult1)
 

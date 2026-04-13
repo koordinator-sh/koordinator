@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -37,7 +38,7 @@ type nominatedPodMap struct {
 	// nominatedPods is a map keyed by a node name and the value is a list of
 	// pods which are nominated to run on the node. These are pods which can be in
 	// the activeQ or unschedulableQ.
-	nominatedPods map[string][]*framework.PodInfo
+	nominatedPods map[string][]fwktype.PodInfo
 	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is
 	// nominated.
 	nominatedPodToNode map[types.UID]string
@@ -45,30 +46,30 @@ type nominatedPodMap struct {
 	sync.RWMutex
 }
 
-// NewFakePodNominator creates a nominatedPodMap as a backing of framework.PodNominator.
-func NewFakePodNominator() framework.PodNominator {
+// NewFakePodNominator creates a nominatedPodMap as a backing of fwktype.PodNominator.
+func NewFakePodNominator() fwktype.PodNominator {
 	return &nominatedPodMap{
-		nominatedPods:      make(map[string][]*framework.PodInfo),
+		nominatedPods:      make(map[string][]fwktype.PodInfo),
 		nominatedPodToNode: make(map[types.UID]string),
 	}
 }
 
-func (npm *nominatedPodMap) add(pi *framework.PodInfo, nodeName string) {
+func (npm *nominatedPodMap) add(pi fwktype.PodInfo, nodeName string) {
 	// always delete the pod if it already exist, to ensure we never store more than
 	// one instance of the pod.
-	npm.delete(pi.Pod)
+	npm.delete(pi.GetPod())
 
 	nnn := nodeName
 	if len(nnn) == 0 {
-		nnn = pi.Pod.Status.NominatedNodeName
+		nnn = pi.GetPod().Status.NominatedNodeName
 		if len(nnn) == 0 {
 			return
 		}
 	}
-	npm.nominatedPodToNode[pi.Pod.UID] = nnn
+	npm.nominatedPodToNode[pi.GetPod().UID] = nnn
 	for _, npi := range npm.nominatedPods[nnn] {
-		if npi.Pod.UID == pi.Pod.UID {
-			klog.V(4).InfoS("Pod already exists in the nominated map", "pod", klog.KObj(npi.Pod))
+		if npi.GetPod().UID == pi.GetPod().UID {
+			klog.V(4).InfoS("Pod already exists in the nominated map", "pod", klog.KObj(npi.GetPod()))
 			return
 		}
 	}
@@ -81,7 +82,7 @@ func (npm *nominatedPodMap) delete(p *corev1.Pod) {
 		return
 	}
 	for i, np := range npm.nominatedPods[nnn] {
-		if np.Pod.UID == p.UID {
+		if np.GetPod().UID == p.UID {
 			npm.nominatedPods[nnn] = append(npm.nominatedPods[nnn][:i], npm.nominatedPods[nnn][i+1:]...)
 			if len(npm.nominatedPods[nnn]) == 0 {
 				delete(npm.nominatedPods, nnn)
@@ -93,7 +94,7 @@ func (npm *nominatedPodMap) delete(p *corev1.Pod) {
 }
 
 // UpdateNominatedPod updates the <oldPod> with <newPod>.
-func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.Pod, newPodInfo *framework.PodInfo) {
+func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.Pod, newPodInfo fwktype.PodInfo) {
 	npm.Lock()
 	defer npm.Unlock()
 	// In some cases, an Update event with no "NominatedNode" present is received right
@@ -104,7 +105,7 @@ func (npm *nominatedPodMap) UpdateNominatedPod(logr klog.Logger, oldPod *corev1.
 	// (1) NominatedNode info is added
 	// (2) NominatedNode info is updated
 	// (3) NominatedNode info is removed
-	if oldPod.Status.NominatedNodeName == "" && newPodInfo.Pod.Status.NominatedNodeName == "" {
+	if oldPod.Status.NominatedNodeName == "" && newPodInfo.GetPod().Status.NominatedNodeName == "" {
 		if nnn, ok := npm.nominatedPodToNode[oldPod.UID]; ok {
 			// This is the only case we should continue reserving the NominatedNode
 			nodeName = nnn
@@ -127,7 +128,7 @@ func (npm *nominatedPodMap) DeleteNominatedPodIfExists(pod *corev1.Pod) {
 // This is called during the preemption process after a node is nominated to run
 // the pod. We update the structure before sending a request to update the pod
 // object to avoid races with the following scheduling cycles.
-func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi *framework.PodInfo, nominatingInfo *framework.NominatingInfo) {
+func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi fwktype.PodInfo, nominatingInfo *fwktype.NominatingInfo) {
 	npm.Lock()
 	npm.add(pi, nominatingInfo.NominatedNodeName)
 	npm.Unlock()
@@ -135,10 +136,10 @@ func (npm *nominatedPodMap) AddNominatedPod(logger klog.Logger, pi *framework.Po
 
 // NominatedPodsForNode returns pods that are nominated to run on the given node,
 // but they are waiting for other pods to be removed from the node.
-func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []*framework.PodInfo {
+func (npm *nominatedPodMap) NominatedPodsForNode(nodeName string) []fwktype.PodInfo {
 	npm.RLock()
 	defer npm.RUnlock()
-	// TODO: we may need to return a copy of []*Pods to avoid modification
+	// TODO: we may need to return a copy of []PodInfo to avoid modification
 	// on the caller side.
 	return npm.nominatedPods[nodeName]
 }
@@ -150,7 +151,7 @@ type FakeNominator struct {
 	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated.
 	nominatedPodToNode map[types.UID]map[string]types.UID
 	reservations       map[types.UID]*ReservationInfo
-	preAllocatable     map[types.UID]map[string]*corev1.Pod
+	preAllocatable     map[types.UID]map[string][]*corev1.Pod
 	// nominatedReservePod is map keyed by nodeName, value is the nominated reservations
 	nominatedReservePod       map[string][]*framework.PodInfo
 	nominatedReservePodToNode map[types.UID]string
@@ -162,7 +163,7 @@ func NewFakeReservationNominator() *FakeNominator {
 		nominatedReservePod:       map[string][]*framework.PodInfo{},
 		nominatedReservePodToNode: map[types.UID]string{},
 		reservations:              map[types.UID]*ReservationInfo{},
-		preAllocatable:            map[types.UID]map[string]*corev1.Pod{},
+		preAllocatable:            map[types.UID]map[string][]*corev1.Pod{},
 	}
 }
 
@@ -211,7 +212,7 @@ func (nm *FakeNominator) GetNominatedReservation(pod *corev1.Pod, nodeName strin
 	return nm.reservations[nm.nominatedPodToNode[pod.UID][nodeName]]
 }
 
-func (nm *FakeNominator) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status) {
+func (nm *FakeNominator) NominateReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *fwktype.Status) {
 	if reservationutil.IsReservePod(pod) {
 		return nil, nil
 	}
@@ -264,7 +265,7 @@ func (nm *FakeNominator) deleteReservePod(pod *corev1.Pod) {
 	delete(nm.nominatedReservePodToNode, pod.UID)
 }
 
-func (nm *FakeNominator) NominatePreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, nodeName string) (*corev1.Pod, *framework.Status) {
+func (nm *FakeNominator) NominatePreAllocation(ctx context.Context, cycleState fwktype.CycleState, rInfo *ReservationInfo, nodeName string) (*corev1.Pod, *fwktype.Status) {
 	if !rInfo.IsPreAllocation() {
 		return nil, nil
 	}
@@ -279,10 +280,10 @@ func (nm *FakeNominator) AddNominatedPreAllocation(rInfo *ReservationInfo, nodeN
 	defer nm.lock.Unlock()
 	nodeToPreAllocatable := nm.preAllocatable[rInfo.UID()]
 	if nodeToPreAllocatable == nil {
-		nodeToPreAllocatable = map[string]*corev1.Pod{}
+		nodeToPreAllocatable = map[string][]*corev1.Pod{}
 		nm.preAllocatable[rInfo.UID()] = nodeToPreAllocatable
 	}
-	nodeToPreAllocatable[nodeName] = pod
+	nodeToPreAllocatable[nodeName] = []*corev1.Pod{pod}
 }
 
 func (nm *FakeNominator) GetNominatedPreAllocation(rInfo *ReservationInfo, nodeName string) *corev1.Pod {
@@ -292,11 +293,45 @@ func (nm *FakeNominator) GetNominatedPreAllocation(rInfo *ReservationInfo, nodeN
 	if nodeToPreAllocatable == nil {
 		return nil
 	}
-	return nodeToPreAllocatable[nodeName]
+	pods := nodeToPreAllocatable[nodeName]
+	if len(pods) > 0 {
+		return pods[0]
+	}
+	return nil
 }
 
 func (nm *FakeNominator) deletePreAllocation(pod *corev1.Pod) {
 	delete(nm.preAllocatable, pod.UID)
+}
+
+func (nm *FakeNominator) RemoveNominatedPreAllocation(pod *corev1.Pod) {
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+	nm.deletePreAllocation(pod)
+}
+
+func (nm *FakeNominator) AddNominatedPreAllocations(rInfo *ReservationInfo, nodeName string, pods []*corev1.Pod) {
+	if !rInfo.IsPreAllocation() || len(pods) == 0 {
+		return
+	}
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+	nodeToPreAllocatable := nm.preAllocatable[rInfo.UID()]
+	if nodeToPreAllocatable == nil {
+		nodeToPreAllocatable = map[string][]*corev1.Pod{}
+		nm.preAllocatable[rInfo.UID()] = nodeToPreAllocatable
+	}
+	nodeToPreAllocatable[nodeName] = pods
+}
+
+func (nm *FakeNominator) GetNominatedPreAllocations(rInfo *ReservationInfo, nodeName string) []*corev1.Pod {
+	nm.lock.RLock()
+	defer nm.lock.RUnlock()
+	nodeToPreAllocatable := nm.preAllocatable[rInfo.UID()]
+	if nodeToPreAllocatable == nil {
+		return nil
+	}
+	return nodeToPreAllocatable[nodeName]
 }
 
 // GetNominatedNodeForReservePod returns the node name that the reserve pod is nominated to.
@@ -307,7 +342,7 @@ func (nm *FakeNominator) GetNominatedNodeForReservePod(pod *corev1.Pod) string {
 	return nm.nominatedReservePodToNode[pod.UID]
 }
 
-func (nm *FakeNominator) ReservationNominate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+func (nm *FakeNominator) ReservationNominate(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
 	if reservationutil.IsReservePod(pod) {
 		return nil
 	} else {
@@ -317,7 +352,7 @@ func (nm *FakeNominator) ReservationNominate(ctx context.Context, cycleState *fr
 
 		nominatedReservationInfo := nm.GetNominatedReservation(pod, nodeName)
 		if nominatedReservationInfo == nil {
-			var status *framework.Status
+			var status *fwktype.Status
 			nominatedReservationInfo, status = nm.NominateReservation(ctx, cycleState, pod, nodeName)
 			if !status.IsSuccess() {
 				return status

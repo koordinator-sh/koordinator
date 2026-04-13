@@ -35,6 +35,7 @@ import (
 	coretesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/events"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -53,6 +54,21 @@ import (
 type fakeFrameworkHandle struct {
 	framework.Handle
 	koordinatorclientset.Interface
+}
+
+// IsWatchListSemanticsUnSupported signals to informer reflectors that WatchList
+// semantics are not supported by the underlying fake clientset.
+// Without this, type-asserting fakeFrameworkHandle to koordinatorclientset.Interface
+// loses the IsWatchListSemanticsUnSupported method on the concrete fake clientset,
+// causing informers to use watchList and block waiting for bookmark events.
+func (h *fakeFrameworkHandle) IsWatchListSemanticsUnSupported() bool {
+	type unsupportedWatchList interface {
+		IsWatchListSemanticsUnSupported() bool
+	}
+	if c, ok := h.Interface.(unsupportedWatchList); ok {
+		return c.IsWatchListSemanticsUnSupported()
+	}
+	return false
 }
 
 func setupFakeDiscoveryWithPolicyResource(fake *coretesting.Fake) {
@@ -1410,8 +1426,8 @@ func TestLowNodeLoad(t *testing.T) {
 						})
 					},
 					func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
-						reg.Register(LowNodeLoadName, func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-							return NewLowNodeLoad(args, &fakeFrameworkHandle{
+						reg.Register(LowNodeLoadName, func(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+							return NewLowNodeLoad(ctx, args, &fakeFrameworkHandle{
 								Handle:    handle,
 								Interface: koordClientSet,
 							})
@@ -1578,8 +1594,8 @@ func TestMaxEvictionTotal(t *testing.T) {
 						})
 					},
 					func(reg *frameworkruntime.Registry, profile *deschedulerconfig.DeschedulerProfile) {
-						reg.Register(LowNodeLoadName, func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-							return NewLowNodeLoad(args, &fakeFrameworkHandle{
+						reg.Register(LowNodeLoadName, func(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+							return NewLowNodeLoad(ctx, args, &fakeFrameworkHandle{
 								Handle:    handle,
 								Interface: koordClientSet,
 							})
@@ -1645,6 +1661,9 @@ func TestOverUtilizedEvictionReason(t *testing.T) {
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
+					Annotations: map[string]string{
+						extension.AnnotationNodeRawAllocatable: `{"cpu":96,"memory":"512Gi"}`,
+					},
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
@@ -1668,6 +1687,9 @@ func TestOverUtilizedEvictionReason(t *testing.T) {
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
+					Annotations: map[string]string{
+						extension.AnnotationNodeRawAllocatable: `{"cpu":96,"memory":"512Gi"}`,
+					},
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
@@ -1696,6 +1718,9 @@ func TestOverUtilizedEvictionReason(t *testing.T) {
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
+					Annotations: map[string]string{
+						extension.AnnotationNodeRawAllocatable: `{"cpu":96,"memory":"512Gi"}`,
+					},
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
@@ -1728,6 +1753,9 @@ func TestOverUtilizedEvictionReason(t *testing.T) {
 			node: &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
+					Annotations: map[string]string{
+						extension.AnnotationNodeRawAllocatable: `{"cpu":96,"memory":"512Gi"}`,
+					},
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
@@ -2001,6 +2029,81 @@ func Test_filterRealAbnormalNodes(t *testing.T) {
 				gotNodes = append(gotNodes, v.node.Name)
 			}
 			assert.Equal(t, tt.want, gotNodes)
+		})
+	}
+}
+
+func Test_GetNodeRawAllocatableForDescheduler(t *testing.T) {
+	tests := []struct {
+		name string
+		node *corev1.Node
+		want corev1.ResourceList
+	}{
+		{
+			name: "node has no annotation - use allocatable",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("32Gi"),
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("16"),
+				corev1.ResourceMemory: resource.MustParse("32Gi"),
+			},
+		},
+		{
+			name: "node has valid raw allocatable annotation - use raw allocatable",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						extension.AnnotationNodeRawAllocatable: `{"cpu":"8","memory":"16Gi"}`,
+					},
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("32"),
+						corev1.ResourceMemory: resource.MustParse("64Gi"),
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+		{
+			name: "node has invalid raw allocatable annotation - fallback to allocatable",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+					Annotations: map[string]string{
+						extension.AnnotationNodeRawAllocatable: "invalid",
+					},
+				},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("32Gi"),
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("16"),
+				corev1.ResourceMemory: resource.MustParse("32Gi"),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetNodeRawAllocatableFromNode(tt.node)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }

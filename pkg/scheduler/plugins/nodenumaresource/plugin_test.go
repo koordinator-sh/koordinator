@@ -31,15 +31,19 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
+	apiresource "k8s.io/component-helpers/resource"
+	fwktype "k8s.io/kube-scheduler/framework"
 	k8sschedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -48,7 +52,7 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
@@ -56,17 +60,30 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
-var _ framework.SharedLister = &testSharedLister{}
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
+
+var _ fwktype.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*corev1.Node
-	nodeInfos   []*framework.NodeInfo
+	nodeInfos   []fwktype.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
 }
 
 func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLister {
 	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	nodeInfos := make([]*framework.NodeInfo, 0)
+	nodeInfos := make([]fwktype.NodeInfo, 0)
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
@@ -92,7 +109,7 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 	}
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwktype.StorageInfoLister {
 	return f
 }
 
@@ -100,23 +117,23 @@ func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
 	return false
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwktype.NodeInfoLister {
 	return f
 }
 
-func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) List() ([]fwktype.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
 
-func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
@@ -153,7 +170,7 @@ type frameworkHandleExtender struct {
 }
 
 type pluginTestSuit struct {
-	framework.Handle
+	fwktype.Handle
 	ExtenderFactory      *frameworkext.FrameworkExtenderFactory
 	Extender             frameworkext.FrameworkExtender
 	NRTClientset         *nrtfake.Clientset
@@ -163,10 +180,10 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
-	var v1beta3args v1beta3.NodeNUMAResourceArgs
-	v1beta3.SetDefaults_NodeNUMAResourceArgs(&v1beta3args)
+	var v1args v1.NodeNUMAResourceArgs
+	v1.SetDefaults_NodeNUMAResourceArgs(&v1args)
 	var nodeNUMAResourceArgs schedulingconfig.NodeNUMAResourceArgs
-	err := v1beta3.Convert_v1beta3_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(&v1beta3args, &nodeNUMAResourceArgs, nil)
+	err := v1.Convert_v1_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(&v1args, &nodeNUMAResourceArgs, nil)
 	assert.NoError(t, err)
 
 	nrtClientSet := nrtfake.NewSimpleClientset()
@@ -179,16 +196,16 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 	)
 	assert.NoError(t, err)
 
-	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(configuration apiruntime.Object, f framework.Handle) (framework.Plugin, error) {
-		return New(configuration, &frameworkHandleExtender{
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, func(_ context.Context, configuration apiruntime.Object, f fwktype.Handle) (fwktype.Plugin, error) {
+		return New(context.Background(), configuration, &frameworkHandleExtender{
 			FrameworkExtender: f.(frameworkext.FrameworkExtender),
 			Clientset:         nrtClientSet,
 		})
 	})
 
-	registeredPlugins := []st.RegisterPluginFunc{
-		st.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		st.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 	}
 
 	cs := kubefake.NewSimpleClientset()
@@ -198,7 +215,7 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 	}
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	snapshot := newTestSharedLister(pods, nodes)
-	fh, err := st.NewFramework(
+	fh, err := schedulertesting.NewFramework(
 		context.TODO(),
 		registeredPlugins,
 		"koord-scheduler",
@@ -229,7 +246,7 @@ func (p *pluginTestSuit) start() {
 
 func TestNew(t *testing.T) {
 	suit := newPluginTestSuit(t, nil, nil)
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 	assert.Equal(t, Name, p.Name())
@@ -240,7 +257,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 		name              string
 		pod               *corev1.Pod
 		defaultBindPolicy schedulingconfig.CPUBindPolicy
-		want              *framework.Status
+		want              *fwktype.Status
 		wantState         *preFilterState
 	}{
 		{
@@ -463,7 +480,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip: true,
 			},
-			want: framework.NewStatus(framework.Skip),
+			want: fwktype.NewStatus(fwktype.Skip),
 		},
 		{
 			name: "skip BE Pod",
@@ -516,7 +533,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			wantState: &preFilterState{
 				skip: true,
 			},
-			want: framework.NewStatus(framework.Skip),
+			want: fwktype.NewStatus(fwktype.Skip),
 		},
 		{
 			name: "error with non-integer pod",
@@ -543,7 +560,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 					},
 				},
 			},
-			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, "the requested CPUs must be integer"),
+			want: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "the requested CPUs must be integer"),
 		},
 		{
 			name: "skip Pod with unsupported bind policy",
@@ -585,7 +602,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			if tt.defaultBindPolicy != "" {
 				suit.nodeNUMAResourceArgs.DefaultCPUBindPolicy = tt.defaultBindPolicy
 			}
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
@@ -602,7 +619,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 				}
 				hinter.SetSchedulingHintState(cycleState, hintStateData)
 			}
-			if _, got := p.(framework.PreFilterPlugin).PreFilter(context.TODO(), cycleState, tt.pod); !reflect.DeepEqual(got, tt.want) {
+			if _, got := p.(fwktype.PreFilterPlugin).PreFilter(context.TODO(), cycleState, tt.pod, nil); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("PreFilter() = %v, want %v", got, tt.want)
 			}
 			if !tt.want.IsSuccess() {
@@ -624,12 +641,12 @@ func TestPlugin_Filter(t *testing.T) {
 		cpuTopology          *CPUTopology
 		state                *preFilterState
 		allocationState      *NodeAllocation
-		want                 *framework.Status
+		want                 *fwktype.Status
 		wantAllocationResult *PodAllocation
 	}{
 		{
 			name: "error with missing preFilterState",
-			want: framework.AsStatus(framework.ErrNotFound),
+			want: fwktype.AsStatus(fwktype.ErrNotFound),
 		},
 		{
 			name: "error with invalid cpu topology",
@@ -638,7 +655,7 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     &CPUTopology{},
 			allocationState: NewNodeAllocation("test-node-1"),
-			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology),
+			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidCPUTopology),
 		},
 		{
 			name: "succeed with valid cpu topology",
@@ -668,7 +685,7 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
 			name: "LS Pod failed to verify Node FullPCPUsOnly with SMTAlignmentError",
@@ -684,7 +701,7 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
 			name: "LS Pod failed to verify Node FullPCPUsOnly with non-integer request",
@@ -700,7 +717,7 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidRequestedCPUs),
+			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidRequestedCPUs),
 		},
 		{
 			name: "verify Node FullPCPUsOnly",
@@ -725,7 +742,7 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
 			name: "verify required FullPCPUs",
@@ -764,7 +781,7 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			want:            framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrCPUBindPolicyConflict),
+			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrCPUBindPolicyConflict),
 		},
 		{
 			name: "verify FullPCPUsOnly with required FullPCPUs",
@@ -795,7 +812,7 @@ func TestPlugin_Filter(t *testing.T) {
 					extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption: "true",
 				},
 			},
-			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
+			want: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrSMTAlignmentError),
 		},
 		{
 			name: "verify Kubelet FullPCPUsOnly with required SpreadByPCPUs",
@@ -812,7 +829,7 @@ func TestPlugin_Filter(t *testing.T) {
 					extension.KubeletCPUManagerPolicyFullPCPUsOnlyOption: "true",
 				},
 			},
-			want: framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrCPUBindPolicyConflict),
+			want: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrCPUBindPolicyConflict),
 		},
 		{
 			name: "verify Kubelet FullPCPUsOnly with required FullPCPUs",
@@ -1005,7 +1022,7 @@ func TestPlugin_Filter(t *testing.T) {
 			},
 			cpuTopology:     buildCPUTopologyForTest(2, 1, 4, 2),
 			allocationState: NewNodeAllocation("test-node-1"),
-			want:            framework.NewStatus(framework.Unschedulable, "not enough cpus available to satisfy request"),
+			want:            fwktype.NewStatus(fwktype.Unschedulable, "not enough cpus available to satisfy request"),
 		},
 	}
 	for _, tt := range tests {
@@ -1033,7 +1050,7 @@ func TestPlugin_Filter(t *testing.T) {
 			}
 
 			suit := newPluginTestSuit(t, nil, nodes)
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
@@ -1093,7 +1110,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 		cpuTopology               *CPUTopology
 		nodeHasNRT                bool
 		nodeCPUAmplificationRatio extension.Ratio
-		wantStatus                *framework.Status
+		wantStatus                *fwktype.Status
 	}{
 		{
 			name:                      "no resources requested always fits",
@@ -1122,7 +1139,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 			existingPods:              []*corev1.Pod{makePodOnNode(map[corev1.ResourceName]string{"cpu": "64"}, "node-1", false)},
 			cpuTopology:               buildCPUTopologyForTest(2, 1, 8, 2),
 			nodeCPUAmplificationRatio: 2.0,
-			wantStatus:                framework.NewStatus(framework.Unschedulable, ErrInsufficientAmplifiedCPU),
+			wantStatus:                fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientAmplifiedCPU),
 		},
 		{
 			name:                      "insufficient cpu with cpuset pod on node",
@@ -1131,7 +1148,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 			cpuTopology:               buildCPUTopologyForTest(2, 1, 8, 2),
 			nodeHasNRT:                true,
 			nodeCPUAmplificationRatio: 2.0,
-			wantStatus:                framework.NewStatus(framework.Unschedulable, ErrInsufficientAmplifiedCPU),
+			wantStatus:                fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientAmplifiedCPU),
 		},
 		{
 			name:                      "insufficient cpu when scheduling cpuset pod",
@@ -1140,7 +1157,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 			cpuTopology:               buildCPUTopologyForTest(2, 1, 8, 2),
 			nodeHasNRT:                true,
 			nodeCPUAmplificationRatio: 2.0,
-			wantStatus:                framework.NewStatus(framework.Unschedulable, ErrInsufficientAmplifiedCPU),
+			wantStatus:                fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientAmplifiedCPU),
 		},
 		{
 			name:                      "insufficient cpu when scheduling cpuset pod with cpuset pod on node",
@@ -1149,7 +1166,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 			cpuTopology:               buildCPUTopologyForTest(2, 1, 8, 2),
 			nodeHasNRT:                true,
 			nodeCPUAmplificationRatio: 2.0,
-			wantStatus:                framework.NewStatus(framework.Unschedulable, ErrInsufficientAmplifiedCPU),
+			wantStatus:                fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientAmplifiedCPU),
 		},
 	}
 
@@ -1160,7 +1177,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 			node := makeNode("node-1", map[corev1.ResourceName]string{"cpu": cpu, "memory": "40Gi"}, tt.nodeCPUAmplificationRatio)
 			suit := newPluginTestSuit(t, tt.existingPods, []*corev1.Node{node})
 
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NoError(t, err)
 			suit.start()
 			pl := p.(*Plugin)
@@ -1187,7 +1204,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 			}
 
 			cycleState := framework.NewCycleState()
-			_, preFilterStatus := pl.PreFilter(context.TODO(), cycleState, tt.pod)
+			_, preFilterStatus := pl.PreFilter(context.TODO(), cycleState, tt.pod, nil)
 			assert.True(t, preFilterStatus.IsSuccess() || preFilterStatus.IsSkip())
 
 			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get("node-1")
@@ -1211,7 +1228,7 @@ func TestPlugin_FilterNominateReservation(t *testing.T) {
 		nodes []*corev1.Node
 	}
 	type args struct {
-		cycleState      *framework.CycleState
+		cycleState      fwktype.CycleState
 		pod             *corev1.Pod
 		reservationInfo *frameworkext.ReservationInfo
 		nodeName        string
@@ -1220,14 +1237,14 @@ func TestPlugin_FilterNominateReservation(t *testing.T) {
 		name   string
 		fields fields
 		args   args
-		want   *framework.Status
+		want   *fwktype.Status
 	}{
 		{
 			name: "missing preFilterState",
 			args: args{
 				cycleState: framework.NewCycleState(),
 			},
-			want: framework.AsStatus(framework.ErrNotFound),
+			want: fwktype.AsStatus(fwktype.ErrNotFound),
 		},
 		{
 			name: "skip",
@@ -1242,13 +1259,13 @@ func TestPlugin_FilterNominateReservation(t *testing.T) {
 				cycleState: testState,
 				nodeName:   "test-node",
 			},
-			want: framework.NewStatus(framework.Error, `getting nil node "test-node" from Snapshot`),
+			want: fwktype.NewStatus(fwktype.Error, `getting nil node "test-node" from Snapshot`),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil, tt.fields.nodes)
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 			pl := p.(*Plugin)
@@ -1271,14 +1288,14 @@ func TestPlugin_Reserve(t *testing.T) {
 		numaAffinity              bitmask.BitMask
 		cpuTopology               *CPUTopology
 		allocatedCPUs             []int
-		want                      *framework.Status
+		want                      *fwktype.Status
 		wantCPUSet                cpuset.CPUSet
 		wantNUMAResource          []NUMANodeResource
 	}{
 		{
 			name: "error with missing preFilterState",
 			pod:  &corev1.Pod{},
-			want: framework.AsStatus(framework.ErrNotFound),
+			want: fwktype.AsStatus(fwktype.ErrNotFound),
 		},
 		{
 			name: "error with invalid cpu topology",
@@ -1287,7 +1304,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			},
 			cpuTopology: &CPUTopology{},
 			pod:         &corev1.Pod{},
-			want:        framework.NewStatus(framework.Error, ErrInvalidCPUTopology),
+			want:        fwktype.NewStatus(fwktype.Error, ErrInvalidCPUTopology),
 		},
 		{
 			name: "succeed with skip",
@@ -1350,7 +1367,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			},
 			cpuTopology: buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:         &corev1.Pod{},
-			want:        framework.NewStatus(framework.Unschedulable, "not enough cpus available to satisfy request"),
+			want:        fwktype.NewStatus(fwktype.Unschedulable, "not enough cpus available to satisfy request"),
 		},
 		{
 			name: "succeed with valid cpu topology and node numa least allocate strategy",
@@ -1436,7 +1453,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
 			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:                       &corev1.Pod{},
-			want:                      framework.NewStatus(framework.Unschedulable, "Reservation(s) not enough cpus available to satisfy request"),
+			want:                      fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) not enough cpus available to satisfy request"),
 			wantCPUSet:                cpuset.NewCPUSet(),
 		},
 		{
@@ -1501,7 +1518,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:                       &corev1.Pod{},
 			numaAffinity:              node0,
-			want:                      framework.NewStatus(framework.Unschedulable, "Reservation(s) not enough cpus available to satisfy request"),
+			want:                      fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) not enough cpus available to satisfy request"),
 			wantCPUSet:                cpuset.NewCPUSet(),
 		},
 		{
@@ -1567,7 +1584,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
 			pod:                       &corev1.Pod{},
 			numaAffinity:              node0,
-			want:                      framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient NUMA cpu"),
+			want:                      fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient NUMA cpu"),
 			wantCPUSet:                cpuset.NewCPUSet(),
 		},
 		{
@@ -1628,7 +1645,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			}
 
 			suit := newPluginTestSuit(t, nil, nodes)
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
@@ -1778,7 +1795,7 @@ func TestPlugin_PreBind(t *testing.T) {
 		},
 	}
 	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 
@@ -1825,7 +1842,7 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 		},
 	}
 	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 
@@ -1880,7 +1897,7 @@ func TestPlugin_PreBindReservation(t *testing.T) {
 		},
 	}
 	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 
@@ -1922,7 +1939,7 @@ func TestPlugin_PreBindReservation(t *testing.T) {
 
 func TestRestoreReservation(t *testing.T) {
 	suit := newPluginTestSuit(t, nil, nil)
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 	cycleState := framework.NewCycleState()
@@ -2307,7 +2324,7 @@ func TestFilterWithNUMANodeScoring(t *testing.T) {
 			if tt.numaScoringStrategy != nil {
 				suit.nodeNUMAResourceArgs.NUMAScoringStrategy = tt.numaScoringStrategy
 			}
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 
@@ -2351,7 +2368,7 @@ func TestFilterWithNUMANodeScoring(t *testing.T) {
 			}
 
 			cycleState := framework.NewCycleState()
-			_, status := pl.PreFilter(context.TODO(), cycleState, tt.requestedPod)
+			_, status := pl.PreFilter(context.TODO(), cycleState, tt.requestedPod, nil)
 			assert.True(t, status.IsSuccess())
 
 			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get(tt.node.Name)

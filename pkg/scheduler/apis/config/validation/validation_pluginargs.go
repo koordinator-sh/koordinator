@@ -253,6 +253,14 @@ func ValidateReservationArgs(path *field.Path, args *config.ReservationArgs) err
 		))
 	}
 
+	if args.ResyncIntervalSeconds < 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("ResyncIntervalSeconds"),
+			args.ResyncIntervalSeconds,
+			"must be non-negative",
+		))
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}

@@ -20,6 +20,7 @@ import (
 	"flag"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	cliflag "k8s.io/component-base/cli/flag"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -96,6 +97,8 @@ func (c *Configuration) InitKubeConfigForKoordlet(kubeAPIQPS float64, kubeAPIBur
 	cfg.UserAgent = "koordlet"
 	cfg.QPS = float32(kubeAPIQPS)
 	cfg.Burst = kubeAPIBurst
+	cfg.ContentType = runtime.ContentTypeProtobuf
+	cfg.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
 	c.KubeRestConf = cfg
 	return nil
 }

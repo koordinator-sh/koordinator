@@ -340,9 +340,7 @@ func newHealthzAndMetricsHandler(config *kubeschedulerconfig.KubeSchedulerConfig
 	pathRecorderMux := mux.NewPathRecorderMux("koord-scheduler")
 	healthz.InstallHandler(pathRecorderMux, checks...)
 	installMetricHandler(pathRecorderMux, informers, isLeader)
-	if utilfeature.DefaultFeatureGate.Enabled(features.ComponentSLIs) {
-		slis.SLIMetricsWithReset{}.Install(pathRecorderMux)
-	}
+	slis.SLIMetricsWithReset{}.Install(pathRecorderMux)
 	if config.EnableProfiling {
 		routes.Profiling{}.Install(pathRecorderMux)
 		if config.EnableContentionProfiling {
@@ -483,6 +481,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 				KoordSharedInformerFactory: cc.KoordinatorSharedInformerFactory,
 				KoordClient:                cc.KoordinatorClient,
 				RecorderFactory:            recorderFactory,
+				KubeConfig:                 cc.KubeConfig,
 			})
 			if err != nil {
 				return nil, nil, nil, nil, err

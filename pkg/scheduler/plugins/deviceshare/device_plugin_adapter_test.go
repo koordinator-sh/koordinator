@@ -1185,7 +1185,7 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			pl, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+			pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 
 			suit.Framework.SharedInformerFactory().Start(nil)

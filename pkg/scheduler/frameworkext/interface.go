@@ -24,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -37,7 +38,7 @@ import (
 // ExtendedHandle extends the k8s scheduling framework Handle interface
 // to facilitate plugins to access Koordinator's resources and states.
 type ExtendedHandle interface {
-	framework.Handle
+	fwktype.Handle
 	// Scheduler return the scheduler adapter to support operating with cache and schedulingQueue.
 	// NOTE: Plugins do not acquire a dispatcher instance during plugin initialization,
 	// nor are they allowed to hold the object within the plugin object.
@@ -68,26 +69,26 @@ type FrameworkExtender interface {
 	// The plugin's FindOneNode method attempts to deterministically select a single target node name for the given pod.
 	// The normal Filter/Score cycle will still run as a validation step, but only against the single node returned by FindOneNode.
 	// It returns the chosen node name and a Status. If no plugin is registered, or the plugin decides not to intervene,
-	// the status will be framework.Skip and the scheduler falls back to the standard multi-node filtering flow.
-	RunFindOneNodePlugin(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status)
+	// the status will be fwktype.Skip and the scheduler falls back to the standard multi-node filtering flow.
+	RunFindOneNodePlugin(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status)
 	SetConfiguredPlugins(plugins *schedconfig.Plugins)
 
-	RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status
-	RunReservationExtensionRestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status)
+	RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status
+	RunReservationExtensionRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo fwktype.NodeInfo) (PluginToReservationRestoreStates, *fwktype.Status)
 	// RunReservationExtensionFinalRestoreReservation is deprecated, and will be removed next version.
 	// DEPRECATED: use RunReservationExtensionRestoreReservation instead.
-	RunReservationExtensionFinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states PluginToNodeReservationRestoreStates) *framework.Status
-	RunReservationExtensionPreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo) *framework.Status
-	RunReservationExtensionRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (PluginToReservationRestoreStates, *framework.Status)
+	RunReservationExtensionFinalRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, states PluginToNodeReservationRestoreStates) *fwktype.Status
+	RunReservationExtensionPreRestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, rInfo *ReservationInfo) *fwktype.Status
+	RunReservationExtensionRestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, rInfo *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo fwktype.NodeInfo) (PluginToReservationRestoreStates, *fwktype.Status)
 
-	RunReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status
-	RunNominateReservationFilterPlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
-	RunReservationScorePlugins(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfos []*ReservationInfo, nodeName string) (PluginToReservationScores, *framework.Status)
-	RunReservationPreAllocationScorePlugins(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, pods []*corev1.Pod, nodeName string) (PluginToReservationScores, *framework.Status)
+	RunReservationFilterPlugins(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo fwktype.NodeInfo) *fwktype.Status
+	RunNominateReservationFilterPlugins(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *fwktype.Status
+	RunReservationScorePlugins(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfos []*ReservationInfo, nodeName string) (PluginToReservationScores, *fwktype.Status)
+	RunReservationPreAllocationScorePlugins(ctx context.Context, cycleState fwktype.CycleState, rInfo *ReservationInfo, pods []*corev1.Pod, nodeName string) (PluginToReservationScores, *fwktype.Status)
 
-	RunNUMATopologyManagerAdmit(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *framework.Status
+	RunNUMATopologyManagerAdmit(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *fwktype.Status
 
-	RunResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status
+	RunResizePod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status
 }
 
 // SchedulingTransformer is the parent type for all the custom transformer plugins.
@@ -99,10 +100,10 @@ type SchedulingTransformer interface {
 type PreFilterTransformer interface {
 	SchedulingTransformer
 	// BeforePreFilter If there is a change to the incoming Pod, it needs to be modified after DeepCopy and returned.
-	BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status)
+	BeforePreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *fwktype.Status)
 	// AfterPreFilter is executed after PreFilter.
 	// There is a chance to trigger the correction of the State data of each plugin or do additional Node filtering after the PreFilter.
-	AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, preFilterResult *framework.PreFilterResult) *framework.Status
+	AfterPreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, preFilterResult *fwktype.PreFilterResult) *fwktype.Status
 }
 
 type FindOneNodePluginProvider interface {
@@ -111,9 +112,9 @@ type FindOneNodePluginProvider interface {
 
 // FindOneNodePlugin is responsible for finding a node for the pod according to calculated placement plans.
 type FindOneNodePlugin interface {
-	framework.Plugin
+	fwktype.Plugin
 	// FindOneNode  This extension point is used to help the scheduler customize the Pod Filter and Score process
-	FindOneNode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status)
+	FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status)
 }
 
 type PreferNodesPluginProvider interface {
@@ -122,27 +123,27 @@ type PreferNodesPluginProvider interface {
 
 // PreferNodesPlugin is responsible to provide preferred nodes for the pod according to scheduling hints.
 type PreferNodesPlugin interface {
-	framework.Plugin
+	fwktype.Plugin
 	// PreferNodes is used to provide preferred nodes for the scheduler to try scheduling first.
-	PreferNodes(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) ([]string, *framework.Status)
+	PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status)
 }
 
 // FilterTransformer is executed before Filter.
 type FilterTransformer interface {
 	SchedulingTransformer
-	BeforeFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool, *framework.Status)
+	BeforeFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (*corev1.Pod, fwktype.NodeInfo, bool, *fwktype.Status)
 }
 
 // ScoreTransformer is executed before Score.
 type ScoreTransformer interface {
 	SchedulingTransformer
-	BeforeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool, *framework.Status)
+	BeforeScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfos []fwktype.NodeInfo) (*corev1.Pod, []fwktype.NodeInfo, bool, *fwktype.Status)
 }
 
 // PostFilterTransformer is executed before PostFilter.
 type PostFilterTransformer interface {
 	SchedulingTransformer
-	AfterPostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap)
+	AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader)
 }
 
 // PluginToReservationRestoreStates declares a map from plugin name to its ReservationRestoreState.
@@ -158,20 +159,20 @@ type NodeReservationRestoreStates map[string]interface{}
 // held by Reservation, such as CPU Cores, GPU Devices, etc. During Pod scheduling, resources
 // held by these reservations need to be allocated first, otherwise resources will be wasted.
 type ReservationRestorePlugin interface {
-	framework.Plugin
-	PreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status
-	RestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status)
+	fwktype.Plugin
+	PreRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status
+	RestoreReservation(ctx context.Context, cycleState fwktype.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo fwktype.NodeInfo) (interface{}, *fwktype.Status)
 	// DEPRECATED
-	FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states NodeReservationRestoreStates) *framework.Status
+	FinalRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, states NodeReservationRestoreStates) *fwktype.Status
 }
 
 // ReservationPreAllocationRestorePlugin is used to support the return of fine-grained resources
 // held by pre-allocatable pods, such as CPU Cores, GPU Devices, etc. During Pod scheduling, resources
 // held by these pre-allocatable pods need to be allocated first, otherwise resources will be wasted.
 type ReservationPreAllocationRestorePlugin interface {
-	framework.Plugin
-	PreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *ReservationInfo) *framework.Status
-	RestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status)
+	fwktype.Plugin
+	PreRestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, r *ReservationInfo) *fwktype.Status
+	RestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, r *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo fwktype.NodeInfo) (interface{}, *fwktype.Status)
 }
 
 // ReservationFilterPlugin is an interface for Filter Reservation plugins.
@@ -180,9 +181,9 @@ type ReservationPreAllocationRestorePlugin interface {
 // can participate the Reserve.
 // TODO: Looking forward a merged method.
 type ReservationFilterPlugin interface {
-	framework.Plugin
-	FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status
-	FilterNominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status
+	fwktype.Plugin
+	FilterReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo fwktype.NodeInfo) *fwktype.Status
+	FilterNominateReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *fwktype.Status
 }
 
 // ReservationNominator nominates a more suitable Reservation in the Reserve stage and Pod will bind this Reservation.
@@ -190,8 +191,8 @@ type ReservationFilterPlugin interface {
 // When executing Reserve, each plugin will obtain the currently used Reservation through GetNominatedReservation,
 // and locate the previously returned reusable resources for Pod allocation.
 type ReservationNominator interface {
-	framework.Plugin
-	NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *framework.Status)
+	fwktype.Plugin
+	NominateReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) (*ReservationInfo, *fwktype.Status)
 	AddNominatedReservation(pod *corev1.Pod, nodeName string, rInfo *ReservationInfo)
 	// RemoveNominatedReservations is used to delete the nominated reserve pod.
 	// DEPRECATED: use DeleteNominatedReservePodOrReservation instead.
@@ -205,14 +206,18 @@ type ReservationNominator interface {
 	DeleteNominatedReservePod(reservePod *corev1.Pod)
 	// NominatedReservePodForNode returns nominated reserve pods on the given node.
 	NominatedReservePodForNode(nodeName string) []*framework.PodInfo
-	NominatePreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *ReservationInfo, nodeName string) (*corev1.Pod, *framework.Status)
+	NominatePreAllocation(ctx context.Context, cycleState fwktype.CycleState, rInfo *ReservationInfo, nodeName string) (*corev1.Pod, *fwktype.Status)
 	AddNominatedPreAllocation(rInfo *ReservationInfo, nodeName string, pod *corev1.Pod)
 	GetNominatedPreAllocation(rInfo *ReservationInfo, nodeName string) *corev1.Pod
 	// ReservationNominate is used to nominate a pod for an available reservation or nominate a reservation for a pre-allocatable pod.
-	ReservationNominate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status
+	ReservationNominate(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status
 	// DeleteNominatedReservePodOrReservation is used to delete the nominated reserve pod or
 	// the nominated reservation for the pod.
 	DeleteNominatedReservePodOrReservation(pod *corev1.Pod)
+	// AddNominatedPreAllocations nominates multiple pre-allocatable pods for a reservation.
+	AddNominatedPreAllocations(rInfo *ReservationInfo, nodeName string, pods []*corev1.Pod)
+	// GetNominatedPreAllocations returns the nominated pre-allocatable pods for a reservation.
+	GetNominatedPreAllocations(rInfo *ReservationInfo, nodeName string) []*corev1.Pod
 }
 
 const (
@@ -240,8 +245,8 @@ type PluginToReservationScores map[string]ReservationScoreList
 // ReservationScorePlugin is an interface that must be implemented by "ScoreReservation" plugins to rank
 // reservations that passed the reserve phase.
 type ReservationScorePlugin interface {
-	framework.Plugin
-	ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) (int64, *framework.Status)
+	fwktype.Plugin
+	ScoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) (int64, *fwktype.Status)
 	// ReservationScoreExtensions returns a ReservationScoreExtensions interface if it implements one, or nil if does not.
 	ReservationScoreExtensions() ReservationScoreExtensions
 }
@@ -251,14 +256,14 @@ type ReservationScoreExtensions interface {
 	// NormalizeReservationScore is called for all node scores produced by the same plugin's "ScoreReservation"
 	// method. A successful run of NormalizeReservationScore will update the scores list and return
 	// a success status.
-	NormalizeReservationScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, scores ReservationScoreList) *framework.Status
+	NormalizeReservationScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, scores ReservationScoreList) *fwktype.Status
 }
 
 // ResizePodPlugin is an interface that resize the pod resource spec before the Assume phase.
 // If you want to use the feature, must enable the feature gate ResizePod=true
 type ResizePodPlugin interface {
-	framework.Plugin
-	ResizePod(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status
+	fwktype.Plugin
+	ResizePod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status
 }
 
 // ReservationPreBindPlugin performs special binding logic specifically for Reservation in the PreBind phase.
@@ -266,20 +271,20 @@ type ResizePodPlugin interface {
 // and how Reservation itself uses PVC reserved resources also needs special handling.
 // In addition, implementing this interface can clearly indicate that the plugin supports Reservation.
 type ReservationPreBindPlugin interface {
-	framework.Plugin
-	PreBindReservation(ctx context.Context, cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status
+	fwktype.Plugin
+	PreBindReservation(ctx context.Context, cycleState fwktype.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *fwktype.Status
 }
 
 // PreBindExtensions is an extension to PreBind, which supports converting multiple modifications to the same object into a Patch operation.
 // It supports configuring multiple plugin instances. A certain instance can be skipped if it does not need to be processed.
 // Once a plugin instance returns success or failure, the process ends.
 type PreBindExtensions interface {
-	framework.Plugin
-	ApplyPatch(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status
+	fwktype.Plugin
+	ApplyPatch(ctx context.Context, cycleState fwktype.CycleState, originalObj, modifiedObj metav1.Object) *fwktype.Status
 }
 
 type NextPodPlugin interface {
-	framework.Plugin
+	fwktype.Plugin
 	// NextPod returns nil directly if NextPodPlugin has no suggestion for which Pod to dequeue next.
 	NextPod() *corev1.Pod
 }

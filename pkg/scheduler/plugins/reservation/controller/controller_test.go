@@ -29,12 +29,16 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apimachinery/pkg/util/wait"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	basemetrics "k8s.io/component-base/metrics"
+	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/component-base/metrics/testutil"
 	"k8s.io/utils/ptr"
 
@@ -48,6 +52,20 @@ import (
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
+
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	// In k8s v1.35, WatchListClient defaults to true (Beta), but fake clients
+	// don't support bookmark events required by WatchList, causing WaitForCacheSync to hang.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 func TestFailedOrSucceededReservation(t *testing.T) {
 	fakeClientSet := kubefake.NewSimpleClientset()
@@ -226,12 +244,11 @@ func TestSyncStatus(t *testing.T) {
 	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
 	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
 	// register metrics
-	metricsRegistry := basemetrics.NewKubeRegistry()
-	metrics.ReservationStatusPhase.GetGaugeVec().Reset()
+	metrics.Register()
+	metrics.ReservationStatusPhase.Reset()
+	metricsResourceRegistry := basemetrics.NewKubeRegistry()
 	metrics.ReservationResource.GetGaugeVec().Reset()
-	metricsRegistry.Registerer().MustRegister(
-		metrics.ReservationStatusPhase.GetGaugeVec(),
-		metrics.ReservationResource.GetGaugeVec())
+	metricsResourceRegistry.Registerer().MustRegister(metrics.ReservationResource.GetGaugeVec())
 
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
@@ -334,27 +351,8 @@ func TestSyncStatus(t *testing.T) {
 		cond.LastTransitionTime = metav1.Time{}
 	}
 	assert.Equal(t, expectReservation, got)
-	// check metrics
-	expectAvailableMetricCount := 0
-	expectFailedMetricCount := 0
-	expectPendingMetricCount := 0
-	expectSucceededMetricCount := 1
-	expectedSuccessedMetrics := fmt.Sprintf(`
-				# HELP scheduler_reservation_status_phase The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)
-				# TYPE scheduler_reservation_status_phase gauge
-				scheduler_reservation_status_phase{name="%s",phase="Available"} %v
-				scheduler_reservation_status_phase{name="%s",phase="Failed"} %v
-				scheduler_reservation_status_phase{name="%s",phase="Pending"} %v
-				scheduler_reservation_status_phase{name="%s",phase="Succeeded"} %v
-				`,
-		"normalReservation", expectAvailableMetricCount,
-		"normalReservation", expectFailedMetricCount,
-		"normalReservation", expectPendingMetricCount,
-		"normalReservation", expectSucceededMetricCount,
-	)
-	if err := testutil.GatherAndCompare(metricsRegistry, strings.NewReader(expectedSuccessedMetrics), "scheduler_reservation_status_phase"); err != nil {
-		t.Error(err)
-	}
+	// phase metrics are only written by resyncReservations(), not by syncStatus();
+	// no phase metric assertion here because the legacyregistry is shared across tests.
 
 	expectedUtilizationMetrics := fmt.Sprintf(`
 # HELP scheduler_reservation_resource Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.
@@ -371,7 +369,7 @@ scheduler_reservation_resource{name="%s",resource="memory",type="utilization",un
 		"normalReservation", "normalReservation",
 	)
 
-	if err := testutil.GatherAndCompare(metricsRegistry, strings.NewReader(expectedUtilizationMetrics),
+	if err := testutil.GatherAndCompare(metricsResourceRegistry, strings.NewReader(expectedUtilizationMetrics),
 		"scheduler_reservation_resource"); err != nil {
 		t.Error(err)
 	}
@@ -780,6 +778,202 @@ func TestPodEventHandlerUnassignedPod(t *testing.T) {
 	controller.onPodUpdate(oldPod, newPod)
 	assert.Equal(t, 0, len(controller.getPodsOnReservation("test-reservation-uid")))
 	assert.Equal(t, 0, len(controller.getPodsOnNode("test-node-1")))
+}
+
+func TestRecordReservationPhases(t *testing.T) {
+	tests := []struct {
+		name            string
+		reservation     *schedulingv1alpha1.Reservation
+		expectedMetrics string
+	}{
+		{
+			name: "Available reservation",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "r-available"},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationAvailable,
+				},
+			},
+			expectedMetrics: `
+# HELP scheduler_reservation_status_phase [ALPHA] The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)
+# TYPE scheduler_reservation_status_phase gauge
+scheduler_reservation_status_phase{name="r-available",phase="Available"} 1
+scheduler_reservation_status_phase{name="r-available",phase="Failed"} 0
+scheduler_reservation_status_phase{name="r-available",phase="Pending"} 0
+scheduler_reservation_status_phase{name="r-available",phase="Succeeded"} 0
+`,
+		},
+		{
+			name: "Pending reservation",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "r-pending"},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationPending,
+				},
+			},
+			expectedMetrics: `
+# HELP scheduler_reservation_status_phase [ALPHA] The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)
+# TYPE scheduler_reservation_status_phase gauge
+scheduler_reservation_status_phase{name="r-pending",phase="Available"} 0
+scheduler_reservation_status_phase{name="r-pending",phase="Failed"} 0
+scheduler_reservation_status_phase{name="r-pending",phase="Pending"} 1
+scheduler_reservation_status_phase{name="r-pending",phase="Succeeded"} 0
+`,
+		},
+		{
+			name: "Succeeded reservation",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "r-succeeded"},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationSucceeded,
+				},
+			},
+			expectedMetrics: `
+# HELP scheduler_reservation_status_phase [ALPHA] The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)
+# TYPE scheduler_reservation_status_phase gauge
+scheduler_reservation_status_phase{name="r-succeeded",phase="Available"} 0
+scheduler_reservation_status_phase{name="r-succeeded",phase="Failed"} 0
+scheduler_reservation_status_phase{name="r-succeeded",phase="Pending"} 0
+scheduler_reservation_status_phase{name="r-succeeded",phase="Succeeded"} 1
+`,
+		},
+		{
+			name: "Failed reservation",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "r-failed"},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationFailed,
+				},
+			},
+			expectedMetrics: `
+# HELP scheduler_reservation_status_phase [ALPHA] The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)
+# TYPE scheduler_reservation_status_phase gauge
+scheduler_reservation_status_phase{name="r-failed",phase="Available"} 0
+scheduler_reservation_status_phase{name="r-failed",phase="Failed"} 1
+scheduler_reservation_status_phase{name="r-failed",phase="Pending"} 0
+scheduler_reservation_status_phase{name="r-failed",phase="Succeeded"} 0
+`,
+		},
+		{
+			name: "reservation with empty phase defaults to Pending",
+			reservation: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "r-empty-phase"},
+				Status:     schedulingv1alpha1.ReservationStatus{},
+			},
+			expectedMetrics: `
+# HELP scheduler_reservation_status_phase [ALPHA] The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)
+# TYPE scheduler_reservation_status_phase gauge
+scheduler_reservation_status_phase{name="r-empty-phase",phase="Available"} 0
+scheduler_reservation_status_phase{name="r-empty-phase",phase="Failed"} 0
+scheduler_reservation_status_phase{name="r-empty-phase",phase="Pending"} 1
+scheduler_reservation_status_phase{name="r-empty-phase",phase="Succeeded"} 0
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			metrics.Register()
+			metrics.ReservationStatusPhase.Reset()
+
+			RecordReservationPhases(tt.reservation)
+
+			if err := testutil.GatherAndCompare(legacyregistry.DefaultGatherer, strings.NewReader(tt.expectedMetrics), "scheduler_reservation_status_phase"); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
+func TestResyncReservations(t *testing.T) {
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	// Register metrics into the global legacyregistry and reset to ensure isolation.
+	metrics.Register()
+	metrics.ReservationStatusPhase.Reset()
+
+	reservations := []*schedulingv1alpha1.Reservation{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "r-available"},
+			Status: schedulingv1alpha1.ReservationStatus{
+				Phase: schedulingv1alpha1.ReservationAvailable,
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "r-pending"},
+			Status: schedulingv1alpha1.ReservationStatus{
+				Phase: schedulingv1alpha1.ReservationPending,
+			},
+		},
+	}
+	for _, r := range reservations {
+		_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), r, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+
+	sharedInformerFactory.Start(nil)
+	koordSharedInformerFactory.Start(nil)
+	sharedInformerFactory.WaitForCacheSync(nil)
+	koordSharedInformerFactory.WaitForCacheSync(nil)
+
+	// First resync: both reservations are written.
+	controller.resyncReservations()
+
+	expectedAfterFirstResync := `
+# HELP scheduler_reservation_status_phase [ALPHA] The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)
+# TYPE scheduler_reservation_status_phase gauge
+scheduler_reservation_status_phase{name="r-available",phase="Available"} 1
+scheduler_reservation_status_phase{name="r-available",phase="Failed"} 0
+scheduler_reservation_status_phase{name="r-available",phase="Pending"} 0
+scheduler_reservation_status_phase{name="r-available",phase="Succeeded"} 0
+scheduler_reservation_status_phase{name="r-pending",phase="Available"} 0
+scheduler_reservation_status_phase{name="r-pending",phase="Failed"} 0
+scheduler_reservation_status_phase{name="r-pending",phase="Pending"} 1
+scheduler_reservation_status_phase{name="r-pending",phase="Succeeded"} 0
+`
+	if err := testutil.GatherAndCompare(legacyregistry.DefaultGatherer, strings.NewReader(expectedAfterFirstResync), "scheduler_reservation_status_phase"); err != nil {
+		t.Errorf("after first resync: %v", err)
+	}
+
+	// Delete r-available so that the second resync should clean up its metrics via Reset.
+	err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), "r-available", metav1.DeleteOptions{})
+	assert.NoError(t, err)
+
+	// Wait until the lister no longer sees r-available (informer cache has processed the delete event).
+	err = wait.PollUntilContextTimeout(context.TODO(), 5*time.Millisecond, 3*time.Second, true, func(ctx context.Context) (bool, error) {
+		list, err := controller.reservationLister.List(labels.Everything())
+		if err != nil {
+			return false, err
+		}
+		for _, r := range list {
+			if r.Name == "r-available" {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+	assert.NoError(t, err, "timed out waiting for lister to reflect deletion of r-available")
+
+	// Second resync: Reset clears stale r-available metrics, only r-pending remains.
+	controller.resyncReservations()
+
+	expectedAfterSecondResync := `
+# HELP scheduler_reservation_status_phase [ALPHA] The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)
+# TYPE scheduler_reservation_status_phase gauge
+scheduler_reservation_status_phase{name="r-pending",phase="Available"} 0
+scheduler_reservation_status_phase{name="r-pending",phase="Failed"} 0
+scheduler_reservation_status_phase{name="r-pending",phase="Pending"} 1
+scheduler_reservation_status_phase{name="r-pending",phase="Succeeded"} 0
+`
+	if err := testutil.GatherAndCompare(legacyregistry.DefaultGatherer, strings.NewReader(expectedAfterSecondResync), "scheduler_reservation_status_phase"); err != nil {
+		t.Errorf("after second resync (deleted r-available): %v", err)
+	}
 }
 
 func TestNew(t *testing.T) {

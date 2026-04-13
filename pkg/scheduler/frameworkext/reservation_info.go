@@ -20,15 +20,17 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	componentresource "k8s.io/component-helpers/resource"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
@@ -50,8 +52,8 @@ type ReservationInfo struct {
 	AllocatedResource     *framework.Resource // pre-calculated info: Allocated
 	Non0AllocatedMilliCPU int64               // pre-calculated info: non-zero milli-CPU of Allocated
 	Non0AllocatedMem      int64               // pre-calculated info: non-zero Memory of Allocated
-	AllocatablePorts      framework.HostPortInfo
-	AllocatedPorts        framework.HostPortInfo
+	AllocatablePorts      fwktype.HostPortInfo
+	AllocatedPorts        fwktype.HostPortInfo
 	AssignedPods          map[types.UID]*PodRequirement
 	OwnerMatchers         []reservationutil.ReservationOwnerMatcher
 	ParseError            error
@@ -62,11 +64,11 @@ type PodRequirement struct {
 	Name      string
 	UID       types.UID
 	Requests  corev1.ResourceList
-	Ports     framework.HostPortInfo
+	Ports     fwktype.HostPortInfo
 }
 
 func NewPodRequirement(pod *corev1.Pod) *PodRequirement {
-	requests := resource.PodRequests(pod, resource.PodResourcesOptions{})
+	requests := componentresource.PodRequests(pod, componentresource.PodResourcesOptions{})
 	ports := util.RequestedHostPorts(pod)
 	return &PodRequirement{
 		Namespace: pod.Namespace,
@@ -132,7 +134,7 @@ func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 	var parseErrors []error
 
-	allocatable := resource.PodRequests(pod, resource.PodResourcesOptions{})
+	allocatable := componentresource.PodRequests(pod, componentresource.PodResourcesOptions{})
 	reserved := util.GetNodeReservationFromAnnotation(pod.Annotations)
 	resourceNames := quotav1.ResourceNames(allocatable)
 	sort.Slice(resourceNames, func(i, j int) bool {
@@ -440,7 +442,7 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 }
 
 func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
-	ri.Allocatable = resource.PodRequests(pod, resource.PodResourcesOptions{})
+	ri.Allocatable = componentresource.PodRequests(pod, componentresource.PodResourcesOptions{})
 	var parseErrors []error
 	resourceNames := quotav1.ResourceNames(ri.Allocatable)
 	options, err := apiext.GetReservationRestrictedOptions(pod.Annotations)
@@ -518,8 +520,9 @@ func (ri *ReservationInfo) RefreshPreCalculated() {
 	allocatedResource := framework.NewResource(ri.Allocated)
 	ri.AllocatedResource = allocatedResource
 	if ri.Allocated != nil {
-		non0MilliCPU, non0Mem := schedutil.GetNonzeroRequests(&ri.Allocated)
-		ri.Non0AllocatedMilliCPU, ri.Non0AllocatedMem = non0MilliCPU, non0Mem
+		non0CPU := GetNonZeroRequestForResource(corev1.ResourceCPU, &ri.Allocated)
+		non0Mem := GetNonZeroRequestForResource(corev1.ResourceMemory, &ri.Allocated)
+		ri.Non0AllocatedMilliCPU, ri.Non0AllocatedMem = non0CPU.MilliValue(), non0Mem.Value()
 	} else {
 		ri.Non0AllocatedMilliCPU, ri.Non0AllocatedMem = 0, 0
 	}
@@ -563,4 +566,40 @@ func (ri *ReservationInfo) IsMatchable() bool {
 	}
 
 	return true
+}
+
+// IsMultiplePAPodsEnabled checks if multiple pre-allocated pods are enabled for the reservation.
+func (ri *ReservationInfo) IsMultiplePAPodsEnabled() bool {
+	if ri == nil {
+		return false
+	}
+	return reservationutil.IsMultiplePAPodsEnabled(ri.Reservation)
+}
+
+// GetNonZeroRequestForResource returns the requested values,
+// if the resource has undefined request for CPU or memory, it returns a default value.
+func GetNonZeroRequestForResource(resourceName corev1.ResourceName, requests *corev1.ResourceList) resource.Quantity {
+	if requests == nil {
+		return resource.Quantity{}
+	}
+	switch resourceName {
+	case corev1.ResourceCPU:
+		// Override if un-set, but not if explicitly set to zero
+		if _, found := (*requests)[corev1.ResourceCPU]; !found {
+			return *resource.NewMilliQuantity(schedutil.DefaultMilliCPURequest, resource.DecimalSI)
+		}
+		return requests.Cpu().DeepCopy()
+	case corev1.ResourceMemory:
+		// Override if un-set, but not if explicitly set to zero
+		if _, found := (*requests)[corev1.ResourceMemory]; !found {
+			return *resource.NewQuantity(schedutil.DefaultMemoryRequest, resource.DecimalSI)
+		}
+		return requests.Memory().DeepCopy()
+	default:
+		quantity, found := (*requests)[resourceName]
+		if !found {
+			return resource.Quantity{}
+		}
+		return quantity.DeepCopy()
+	}
 }

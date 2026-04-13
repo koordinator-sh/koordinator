@@ -18,7 +18,7 @@ limitations under the License.
 package nodenumaresource
 
 import (
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 )
 
 // leastResourceScorer favors nodes with fewer requested resources.
@@ -54,5 +54,5 @@ func leastRequestedScore(requested, capacity int64) int64 {
 		return 0
 	}
 
-	return ((capacity - requested) * framework.MaxNodeScore) / capacity
+	return ((capacity - requested) * fwktype.MaxNodeScore) / capacity
 }

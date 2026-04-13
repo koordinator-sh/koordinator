@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
@@ -67,11 +68,11 @@ func TestScore(t *testing.T) {
 		reserved        apiext.DeviceAllocations
 		nodeDeviceCache *nodeDeviceCache
 		wantScore       int64
-		wantStatus      *framework.Status
+		wantStatus      *fwktype.Status
 	}{
 		{
 			name:       "error missing preFilterState",
-			wantStatus: framework.AsStatus(framework.ErrNotFound),
+			wantStatus: fwktype.AsStatus(fwktype.ErrNotFound),
 		},
 		{
 			name:       "skip == true",
@@ -109,7 +110,7 @@ func TestScore(t *testing.T) {
 				},
 			},
 			wantScore:  0,
-			wantStatus: framework.NewStatus(framework.UnschedulableAndUnresolvable, "Insufficient gpu devices"),
+			wantStatus: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "Insufficient gpu devices"),
 		},
 		{
 			name: "completely idle node",
@@ -541,7 +542,7 @@ func TestScore(t *testing.T) {
 			if tt.strategy != "" {
 				args.ScoringStrategy.Type = tt.strategy
 			}
-			p, err := suit.proxyNew(args, suit)
+			p, err := suit.proxyNew(context.TODO(), args, suit)
 			assert.NoError(t, err)
 
 			pl := p.(*Plugin)
@@ -589,7 +590,9 @@ func TestScore(t *testing.T) {
 				}
 				cycleState.Write(reservationRestoreStateKey, restoreState)
 			}
-			score, status := pl.Score(context.TODO(), cycleState, &corev1.Pod{}, "test-node")
+			testNodeInfo, err := suit.SnapshotSharedLister().NodeInfos().Get("test-node")
+			assert.NoError(t, err)
+			score, status := pl.Score(context.TODO(), cycleState, &corev1.Pod{}, testNodeInfo)
 			assert.Equal(t, tt.wantScore, score)
 			assert.Equal(t, tt.wantStatus, status)
 		})
@@ -599,18 +602,18 @@ func TestScore(t *testing.T) {
 func TestScoreExtension(t *testing.T) {
 	tests := []struct {
 		name          string
-		nodeScoreList framework.NodeScoreList
-		want          framework.NodeScoreList
+		nodeScoreList fwktype.NodeScoreList
+		want          fwktype.NodeScoreList
 	}{
 		{
 			name: "node score 0",
-			nodeScoreList: framework.NodeScoreList{
+			nodeScoreList: fwktype.NodeScoreList{
 				{
 					Name:  "test-node",
 					Score: 0,
 				},
 			},
-			want: framework.NodeScoreList{
+			want: fwktype.NodeScoreList{
 				{
 					Name:  "test-node",
 					Score: 0,
@@ -619,13 +622,13 @@ func TestScoreExtension(t *testing.T) {
 		},
 		{
 			name: "only one node has score",
-			nodeScoreList: framework.NodeScoreList{
+			nodeScoreList: fwktype.NodeScoreList{
 				{
 					Name:  "test-node",
 					Score: 10,
 				},
 			},
-			want: framework.NodeScoreList{
+			want: fwktype.NodeScoreList{
 				{
 					Name:  "test-node",
 					Score: 100,
@@ -634,7 +637,7 @@ func TestScoreExtension(t *testing.T) {
 		},
 		{
 			name: "node score exceeded maxScore",
-			nodeScoreList: framework.NodeScoreList{
+			nodeScoreList: fwktype.NodeScoreList{
 				{
 					Name:  "test-node",
 					Score: 200,
@@ -644,7 +647,7 @@ func TestScoreExtension(t *testing.T) {
 					Score: 10,
 				},
 			},
-			want: framework.NodeScoreList{
+			want: fwktype.NodeScoreList{
 				{
 					Name:  "test-node",
 					Score: 100,
@@ -732,7 +735,7 @@ func TestScoreReservation(t *testing.T) {
 		nodeDeviceCache    *nodeDeviceCache
 		wantScore          int64
 		wantNormalize      *int64
-		wantStatus         *framework.Status
+		wantStatus         *fwktype.Status
 	}{
 		{
 			name: "score reservation with default allocate policy 1",
@@ -1167,7 +1170,7 @@ func TestScoreReservation(t *testing.T) {
 			if tt.scoreStrategy != "" {
 				args.ScoringStrategy.Type = tt.scoreStrategy
 			}
-			p, err := suit.proxyNew(args, suit)
+			p, err := suit.proxyNew(context.TODO(), args, suit)
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 			pl.nodeDeviceCache = tt.nodeDeviceCache
@@ -1191,7 +1194,7 @@ func TestScoreReservation(t *testing.T) {
 			}
 
 			cycleState := framework.NewCycleState()
-			_, status := pl.PreFilter(context.TODO(), cycleState, pod)
+			_, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 			assert.True(t, status.IsSuccess())
 
 			state, status := getPreFilterState(cycleState)

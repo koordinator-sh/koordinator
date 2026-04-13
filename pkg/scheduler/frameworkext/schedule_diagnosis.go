@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -38,6 +39,15 @@ var (
 	diagnosisQueueSize    = 1000
 	diagnosisWorkerCount  = 10 // Default number of workers
 )
+
+var customDiagnosisProcessor map[string]func(diagnosis *Diagnosis)
+
+func RegisterCustomDiagnosisProcessor(name string, processor func(diagnosis *Diagnosis)) {
+	if customDiagnosisProcessor == nil {
+		customDiagnosisProcessor = make(map[string]func(diagnosis *Diagnosis))
+	}
+	customDiagnosisProcessor[name] = processor
+}
 
 // DumpDiagnosisSetter set dumpDiagnosis
 func DumpDiagnosisSetter(val string) (string, error) {
@@ -58,7 +68,7 @@ func DumpDiagnosisBlockingSetter(val string) (string, error) {
 	return fmt.Sprintf("successfully set debugFilterFailure to %s", val), nil
 }
 
-func DumpDiagnosis(state *framework.CycleState) string {
+func DumpDiagnosis(state fwktype.CycleState) string {
 	if dumpDiagnosis == false {
 		return ""
 	}
@@ -81,7 +91,7 @@ func DumpDiagnosis(state *framework.CycleState) string {
 	return ""
 }
 
-func GetDiagnosis(state *framework.CycleState) *Diagnosis {
+func GetDiagnosis(state fwktype.CycleState) *Diagnosis {
 	diagnosis, _ := state.Read(diagnosisStateKey)
 	if diagnosis == nil {
 		// just for test
@@ -96,7 +106,7 @@ const (
 	diagnosisStateKey = extension.SchedulingDomainPrefix + "/diagnosis"
 )
 
-func InitDiagnosis(state *framework.CycleState, pod *corev1.Pod) {
+func InitDiagnosis(state fwktype.CycleState, pod *corev1.Pod) {
 	questionKey := framework.GetNamespacedName(pod.Namespace, pod.Name)
 	if reservation.IsReservePod(pod) {
 		questionKey = reservation.GetReservationNameFromReservePod(pod)
@@ -111,10 +121,10 @@ func InitDiagnosis(state *framework.CycleState, pod *corev1.Pod) {
 }
 
 var (
-	_ framework.StateData = &Diagnosis{}
+	_ fwktype.StateData = &Diagnosis{}
 )
 
-func (d *Diagnosis) Clone() framework.StateData {
+func (d *Diagnosis) Clone() fwktype.StateData {
 	return d
 }
 
@@ -127,7 +137,7 @@ type Diagnosis struct {
 	PreFilterMessage     string      `json:"preFilterMessage,omitempty"`
 	TopologyKeyToExplain string      `json:"topologyKeyToExplain,omitempty"`
 	IsRootCausePod       bool        `json:"isRootCausePod"`
-	// maybe modify framework.Status to cover addedNominatedPods, corresponding resourceView(such as requested and total) when failed
+	// maybe modify fwktype.Status to cover addedNominatedPods, corresponding resourceView(such as requested and total) when failed
 	ScheduleDiagnosis   *ScheduleDiagnosis   `json:"scheduleDiagnosis"`
 	PreemptionDiagnosis *PreemptionDiagnosis `json:"preemptionDiagnosis"`
 }
@@ -135,10 +145,10 @@ type Diagnosis struct {
 type ScheduleDiagnosis struct {
 	SchedulingMode SchedulingMode `json:"-"`
 	// AlreadyWaitForBoundPods and AlreadyWaitForBound only meaningful when PodSchedulingMode
-	AlreadyWaitForBoundPods []*corev1.Pod             `json:"-"`
-	AlreadyWaitForBound     int                       `json:"alreadyWaitForBound"`
-	NodeOfferSlot           map[string]int            `json:"nodeOfferSlot,omitempty"`
-	NodeToStatusMap         framework.NodeToStatusMap `json:"-"`
+	AlreadyWaitForBoundPods []*corev1.Pod              `json:"-"`
+	AlreadyWaitForBound     int                        `json:"alreadyWaitForBound"`
+	NodeOfferSlot           map[string]int             `json:"nodeOfferSlot,omitempty"`
+	NodeToStatusMap         map[string]*fwktype.Status `json:"-"`
 	// NodeFailedDetails
 	NodeFailedDetails v1alpha1.NodeFailedDetails `json:"nodeFailedDetails,omitempty"`
 }
@@ -214,10 +224,16 @@ func (dq *DiagnosisQueue) processDiagnosis(diagnosis *Diagnosis) string {
 	}
 	dumpMessage := util.DumpJSON(diagnosis)
 	klog.Infof("dump diagnosis for %s, targetPod: %s/%s/%s: $%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID, dumpMessage)
+	for _, f := range customDiagnosisProcessor {
+		if f != nil {
+			f(diagnosis)
+			klog.Infof("custom diagnosis processor for %s, targetPod: %s/%s/%s", diagnosis.QuestionedKey, diagnosis.TargetPod.Namespace, diagnosis.TargetPod.Name, diagnosis.TargetPod.UID)
+		}
+	}
 	return dumpMessage
 }
 
-func convertStatusMapToFailedDetail(statusMap framework.NodeToStatusMap) v1alpha1.NodeFailedDetails {
+func convertStatusMapToFailedDetail(statusMap map[string]*fwktype.Status) v1alpha1.NodeFailedDetails {
 	if len(statusMap) == 0 {
 		return nil
 	}
@@ -225,8 +241,8 @@ func convertStatusMapToFailedDetail(statusMap framework.NodeToStatusMap) v1alpha
 	for s, status := range statusMap {
 		failedStatus := v1alpha1.NodeFailedStatus{
 			Reason:           status.Message(),
-			FailedPlugin:     status.FailedPlugin(),
-			PreemptMightHelp: status.Code() != framework.UnschedulableAndUnresolvable,
+			FailedPlugin:     status.Plugin(),
+			PreemptMightHelp: status.Code() != fwktype.UnschedulableAndUnresolvable,
 		}
 		failedDetail, ok := statusToNodeFailedDetails[failedStatus]
 		if !ok {

@@ -50,7 +50,7 @@ var _ framework.EvictPlugin = &DefaultEvictor{}
 var _ framework.FilterPlugin = &DefaultEvictor{}
 var _ k8sdeschedulerframework.EvictorPlugin = &DefaultEvictor{}
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	defaultArgs := &defaultevictor.DefaultEvictorArgs{}
 	defaultevictor.SetDefaults_DefaultEvictorArgs(defaultArgs)
 	if args == nil {
@@ -74,7 +74,7 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 		}
 	}
 
-	evictor, err := defaultevictor.New(args, adaptor.NewFrameworkHandleAdaptor(handle))
+	evictor, err := defaultevictor.New(ctx, args, adaptor.NewFrameworkHandleAdaptor(handle))
 	if err != nil {
 		return nil, err
 	}

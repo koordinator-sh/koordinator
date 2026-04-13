@@ -29,23 +29,23 @@ type FakeSchedulingV1alpha1 struct {
 }
 
 func (c *FakeSchedulingV1alpha1) ClusterNetworkTopologies() v1alpha1.ClusterNetworkTopologyInterface {
-	return &FakeClusterNetworkTopologies{c}
+	return newFakeClusterNetworkTopologies(c)
 }
 
 func (c *FakeSchedulingV1alpha1) Devices() v1alpha1.DeviceInterface {
-	return &FakeDevices{c}
+	return newFakeDevices(c)
 }
 
 func (c *FakeSchedulingV1alpha1) PodMigrationJobs() v1alpha1.PodMigrationJobInterface {
-	return &FakePodMigrationJobs{c}
+	return newFakePodMigrationJobs(c)
 }
 
 func (c *FakeSchedulingV1alpha1) Reservations() v1alpha1.ReservationInterface {
-	return &FakeReservations{c}
+	return newFakeReservations(c)
 }
 
 func (c *FakeSchedulingV1alpha1) ScheduleExplanations(namespace string) v1alpha1.ScheduleExplanationInterface {
-	return &FakeScheduleExplanations{c, namespace}
+	return newFakeScheduleExplanations(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

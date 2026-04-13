@@ -21,12 +21,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
-var _ framework.StateData = &stateData{}
+var _ fwktype.StateData = &stateData{}
 
 type stateData struct {
 	// scheduling cycle data
@@ -39,8 +39,8 @@ type stateData struct {
 	assumed *frameworkext.ReservationInfo
 	// reservation of the reserve pod
 	rInfo *frameworkext.ReservationInfo // ready-only
-	// pre-allocated pod
-	preAllocated *corev1.Pod
+	// pre-allocated pods
+	preAllocated []*corev1.Pod
 	// whether bind a pod to a reservation
 	hasReservationAllocated bool
 }
@@ -52,7 +52,7 @@ type schedulingStateData struct {
 	hasAffinity          bool
 	reservationName      string
 	podRequests          corev1.ResourceList
-	podRequestsResources *framework.Resource
+	podRequestsResources fwktype.Resource
 	podResourceNames     []corev1.ResourceName
 
 	isPreAllocationRequired bool
@@ -65,6 +65,11 @@ type schedulingStateData struct {
 	preferredNode            string
 }
 
+// nodeReservationState stores the reservation state for a specific node during the scheduling cycle.
+// NOTE: This struct is NOT thread-safe. It is designed to be accessed sequentially within a single
+// scheduling cycle. In the Filter phase, each node's state is processed exactly once, so concurrent
+// access to the same nodeReservationState instance should not occur. Do not access or modify the same
+// nodeReservationState from multiple goroutines.
 type nodeReservationState struct {
 	nodeName string
 	// matchedOrIgnored represents all matched or ignored reservations for the scheduling pod.
@@ -72,13 +77,16 @@ type nodeReservationState struct {
 
 	// podRequested represents all Pods(including matched reservation) requested resources
 	// but excluding the already allocated from unmatched reservations
-	podRequested *framework.Resource
+	podRequested fwktype.Resource
 	// rAllocated represents the allocated resources of matched reservations
-	rAllocated *framework.Resource
+	rAllocated fwktype.Resource
 
 	unmatched []*frameworkext.ReservationInfo
 
 	preAllocatablePods []*corev1.Pod
+
+	// selectedPreAllocatablePods represents the selected pre-allocated pods for the reservation.
+	selectedPreAllocatablePods []*corev1.Pod
 
 	preRestored   bool // restore in PreFilter or Filter
 	finalRestored bool // restore in Filter
@@ -100,7 +108,7 @@ type nodeDiagnosisState struct {
 	errUnmatched             int // unmatched due to parse ownership or affinity error
 }
 
-func (s *stateData) Clone() framework.StateData {
+func (s *stateData) Clone() fwktype.StateData {
 	ns := &stateData{
 		schedulingStateData: schedulingStateData{
 			hasAffinity:              s.hasAffinity,
@@ -150,7 +158,7 @@ func (s *stateData) CleanSchedulingData() {
 	s.schedulingStateData = schedulingStateData{}
 }
 
-func getStateData(cycleState *framework.CycleState) *stateData {
+func getStateData(cycleState fwktype.CycleState) *stateData {
 	v, err := cycleState.Read(stateKey)
 	if err != nil {
 		return &stateData{}

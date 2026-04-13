@@ -19,22 +19,22 @@ package testutil
 import (
 	"fmt"
 
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
+
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mock_metriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/ptr"
-
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-
-	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	putil "github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type FakeRecorder struct {
@@ -72,6 +72,13 @@ func MockTestNode(cpu, memory string) *corev1.Node {
 			},
 		},
 	}
+}
+
+func MockTestNodeWithExtendResource(cpu, memory string, allocatable, capacity corev1.ResourceList) *corev1.Node {
+	node := MockTestNode(cpu, memory)
+	putil.AddResourceList(node.Status.Allocatable, allocatable)
+	putil.AddResourceList(node.Status.Capacity, capacity)
+	return node
 }
 
 func MockTestPod(qosClass apiext.QoSClass, name string) *corev1.Pod {
