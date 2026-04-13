@@ -19,6 +19,7 @@ package impl
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -3319,6 +3320,366 @@ func Test_applyNUMAReservationToZoneResources(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test_extendNRTStatusFn verifies that the extendNRTStatusFn hook is invoked during calcNodeTopo
+// and can inject extra fields into nodeTopologyStatus.
+func Test_extendNRTStatusFn(t *testing.T) {
+	// Save and restore the original hook.
+	origFn := extendNRTStatusFn
+	defer func() { extendNRTStatusFn = origFn }()
+
+	called := false
+	var capturedNode *corev1.Node
+	var capturedNumZones int
+	const extraAnnotationKey = "test.koordinator.sh/extra"
+	const extraAnnotationVal = "extra-value"
+
+	extendNRTStatusFn = func(status *nodeTopologyStatus, node *corev1.Node, numZones int) error {
+		called = true
+		capturedNode = node
+		capturedNumZones = numZones
+		if status.Annotations == nil {
+			status.Annotations = map[string]string{}
+		}
+		status.Annotations[extraAnnotationKey] = extraAnnotationVal
+		return nil
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(8589934592, resource.BinarySI),
+			},
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(8589934592, resource.BinarySI),
+			},
+		},
+	}
+
+	nodeCPUInfo := &metriccache.NodeCPUInfo{
+		ProcessorInfos: []koordletutil.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 1},
+			{CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 1},
+		},
+		TotalInfo: koordletutil.CPUTotalInfo{
+			NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+				0: {{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0}, {CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0}},
+				1: {{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 1}, {CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 1}},
+			},
+		},
+	}
+
+	nodeNUMAInfo := &koordletutil.NodeNUMAInfo{
+		NUMAInfos: []koordletutil.NUMAInfo{
+			{NUMANodeID: 0, MemInfo: &koordletutil.MemInfo{MemTotal: 4194304}},
+			{NUMANodeID: 1, MemInfo: &koordletutil.MemInfo{MemTotal: 4194304}},
+		},
+		MemInfoMap: map[int32]*koordletutil.MemInfo{
+			0: {MemTotal: 4194304},
+			1: {MemTotal: 4194304},
+		},
+	}
+
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
+	mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nodeCPUInfo, true).AnyTimes()
+	mockMetricCache.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(nodeNUMAInfo, true).AnyTimes()
+
+	informer := &nodeTopoInformer{
+		config:       NewDefaultConfig(),
+		metricCache:  mockMetricCache,
+		nodeInformer: &nodeInformer{node: testNode},
+		podsInformer: &podsInformer{},
+		kubelet: &testKubeletStub{
+			config: &kubeletconfiginternal.KubeletConfiguration{
+				CPUManagerPolicy: "none",
+			},
+		},
+	}
+
+	status, err := informer.calcNodeTopo()
+	assert.NoError(t, err)
+	assert.True(t, called, "extendNRTStatusFn should be called")
+	assert.Equal(t, testNode, capturedNode)
+	assert.Equal(t, 2, capturedNumZones)
+	assert.Equal(t, extraAnnotationVal, status.Annotations[extraAnnotationKey],
+		"extra annotation injected by extendNRTStatusFn should be present")
+}
+
+// Test_extendNRTStatusFn_error verifies that if extendNRTStatusFn returns an error,
+// calcNodeTopo propagates it.
+func Test_extendNRTStatusFn_error(t *testing.T) {
+	origFn := extendNRTStatusFn
+	defer func() { extendNRTStatusFn = origFn }()
+
+	extendNRTStatusFn = func(_ *nodeTopologyStatus, _ *corev1.Node, _ int) error {
+		return fmt.Errorf("extend status error")
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+		Status: corev1.NodeStatus{
+			Capacity:    corev1.ResourceList{corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI), corev1.ResourceMemory: *resource.NewQuantity(4294967296, resource.BinarySI)},
+			Allocatable: corev1.ResourceList{corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI), corev1.ResourceMemory: *resource.NewQuantity(4294967296, resource.BinarySI)},
+		},
+	}
+	nodeCPUInfo := &metriccache.NodeCPUInfo{
+		ProcessorInfos: []koordletutil.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0},
+		},
+		TotalInfo: koordletutil.CPUTotalInfo{
+			NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+				0: {{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0}, {CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0}},
+			},
+		},
+	}
+	nodeNUMAInfo := &koordletutil.NodeNUMAInfo{
+		NUMAInfos:  []koordletutil.NUMAInfo{{NUMANodeID: 0, MemInfo: &koordletutil.MemInfo{MemTotal: 4194304}}},
+		MemInfoMap: map[int32]*koordletutil.MemInfo{0: {MemTotal: 4194304}},
+	}
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
+	mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nodeCPUInfo, true).AnyTimes()
+	mockMetricCache.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(nodeNUMAInfo, true).AnyTimes()
+
+	informer := &nodeTopoInformer{
+		config:       NewDefaultConfig(),
+		metricCache:  mockMetricCache,
+		nodeInformer: &nodeInformer{node: testNode},
+		podsInformer: &podsInformer{},
+		kubelet: &testKubeletStub{
+			config: &kubeletconfiginternal.KubeletConfiguration{CPUManagerPolicy: "none"},
+		},
+	}
+
+	_, err := informer.calcNodeTopo()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "extend status error")
+}
+
+// Test_extendNRTEqualFn verifies that the extendNRTEqualFn hook is invoked during isChanged
+// and can force a change to be reported.
+func Test_extendNRTEqualFn(t *testing.T) {
+	origFn := extendNRTEqualFn
+	defer func() { extendNRTEqualFn = origFn }()
+
+	tests := []struct {
+		name       string
+		hookResult bool
+		hookMsg    string
+		wantChange bool
+		wantMsg    string
+	}{
+		{
+			name:       "hook returns equal",
+			hookResult: true,
+			hookMsg:    "",
+			wantChange: false,
+			wantMsg:    "",
+		},
+		{
+			name:       "hook returns not equal",
+			hookResult: false,
+			hookMsg:    "extra field changed",
+			wantChange: true,
+			wantMsg:    "extended status changed, item: extra field changed",
+		},
+	}
+
+	// A fixed oldNRT and newTopoStatus that are otherwise equal.
+	oldNRT := &topologyv1alpha1.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				extension.AnnotationKubeletCPUManagerPolicy: `{"policy":"none"}`,
+				extension.AnnotationNodeCPUSharedPools:      `[]`,
+				extension.AnnotationNodeBECPUSharedPools:    `[]`,
+				extension.AnnotationNodeCPUTopology:         `{"detail":[]}`,
+				extension.AnnotationNodeCPUAllocs:           `null`,
+				extension.AnnotationCPUBasicInfo:            `{}`,
+			},
+		},
+		TopologyPolicies: []string{string(topologyv1alpha1.None)},
+		Zones:            topologyv1alpha1.ZoneList{},
+	}
+	newStatus := &nodeTopologyStatus{
+		Annotations: map[string]string{
+			extension.AnnotationKubeletCPUManagerPolicy: `{"policy":"none"}`,
+			extension.AnnotationNodeCPUSharedPools:      `[]`,
+			extension.AnnotationNodeBECPUSharedPools:    `[]`,
+			extension.AnnotationNodeCPUTopology:         `{"detail":[]}`,
+			extension.AnnotationNodeCPUAllocs:           `null`,
+			extension.AnnotationCPUBasicInfo:            `{}`,
+		},
+		TopologyPolicy: topologyv1alpha1.None,
+		Zones:          topologyv1alpha1.ZoneList{},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hookIsEqual := tt.hookResult
+			hookMsg := tt.hookMsg
+			extendNRTEqualFn = func(_ *nodeTopologyStatus, _ *topologyv1alpha1.NodeResourceTopology) (bool, string) {
+				return hookIsEqual, hookMsg
+			}
+			gotChanged, gotMsg := newStatus.isChanged(oldNRT)
+			assert.Equal(t, tt.wantChange, gotChanged)
+			assert.Equal(t, tt.wantMsg, gotMsg)
+		})
+	}
+}
+
+// Test_mergeNRTZoneFn verifies that the mergeNRTZoneFn hook controls how zones are merged
+// when writing to the NRT object.
+func Test_mergeNRTZoneFn(t *testing.T) {
+	origFn := mergeNRTZoneFn
+	defer func() { mergeNRTZoneFn = origFn }()
+
+	customZone := topologyv1alpha1.ZoneList{
+		{Name: "custom-zone", Type: "Node"},
+	}
+	mergeNRTZoneFn = func(_ *topologyv1alpha1.NodeResourceTopology, zoneList topologyv1alpha1.ZoneList) topologyv1alpha1.ZoneList {
+		// Return a custom zone list regardless of inputs.
+		return customZone
+	}
+
+	status := &nodeTopologyStatus{
+		Zones: topologyv1alpha1.ZoneList{
+			{Name: "node-0", Type: "Node"},
+			{Name: "node-1", Type: "Node"},
+		},
+	}
+	nrt := &topologyv1alpha1.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{}},
+	}
+	status.updateNRT(nrt)
+	assert.Equal(t, customZone, nrt.Zones,
+		"mergeNRTZoneFn override should replace the zone list")
+}
+
+// Test_managedNRTAnnotationKeys_extended verifies that dynamically appended annotation keys
+// are tracked by isEqualNRTAnnotations.
+func Test_managedNRTAnnotationKeys_extended(t *testing.T) {
+	origKeys := managedNRTAnnotationKeys
+	defer func() { managedNRTAnnotationKeys = origKeys }()
+
+	const extraKey = "test.koordinator.sh/extra-annotation"
+	managedNRTAnnotationKeys = append(managedNRTAnnotationKeys, extraKey)
+
+	// Both have the extra key -> equal.
+	isEqual, key := isEqualNRTAnnotations(
+		map[string]string{extraKey: `"v1"`},
+		map[string]string{extraKey: `"v1"`},
+	)
+	assert.True(t, isEqual)
+	assert.Empty(t, key)
+
+	// New has the extra key, old does not -> not equal.
+	isEqual, key = isEqualNRTAnnotations(
+		map[string]string{},
+		map[string]string{extraKey: `"v2"`},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraKey, key)
+
+	// Old has the extra key, new does not -> not equal.
+	isEqual, key = isEqualNRTAnnotations(
+		map[string]string{extraKey: `"v2"`},
+		map[string]string{},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraKey, key)
+
+	// Values differ -> not equal.
+	isEqual, key = isEqualNRTAnnotations(
+		map[string]string{extraKey: `"v1"`},
+		map[string]string{extraKey: `"v2"`},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraKey, key)
+}
+
+// Test_managedNRTLabelKeys_extended verifies that dynamically appended label keys
+// are tracked by isEqualNRTLabels.
+func Test_managedNRTLabelKeys_extended(t *testing.T) {
+	origKeys := managedNRTLabelKeys
+	defer func() { managedNRTLabelKeys = origKeys }()
+
+	const extraLabelKey = "test.koordinator.sh/extra-label"
+	managedNRTLabelKeys = append(managedNRTLabelKeys, extraLabelKey)
+
+	// Same value -> equal.
+	isEqual, key := isEqualNRTLabels(
+		map[string]string{extraLabelKey: "true"},
+		map[string]string{extraLabelKey: "true"},
+	)
+	assert.True(t, isEqual)
+	assert.Empty(t, key)
+
+	// Different value -> not equal.
+	isEqual, key = isEqualNRTLabels(
+		map[string]string{extraLabelKey: "true"},
+		map[string]string{extraLabelKey: "false"},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraLabelKey, key)
+
+	// Old missing, new has it -> not equal.
+	isEqual, key = isEqualNRTLabels(
+		map[string]string{},
+		map[string]string{extraLabelKey: "true"},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraLabelKey, key)
+}
+
+// Test_managedNRTResources_extended verifies that dynamically appended resource names
+// are tracked by isEqualNRTZones.
+func Test_managedNRTResources_extended(t *testing.T) {
+	origResources := managedNRTResources
+	defer func() { managedNRTResources = origResources }()
+
+	const extraResource corev1.ResourceName = "example.com/fpga"
+	managedNRTResources = append(managedNRTResources, extraResource)
+
+	zoneWithExtra := topologyv1alpha1.ZoneList{
+		{
+			Name: "node-0",
+			Type: "Node",
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{Name: string(extraResource), Available: resource.MustParse("4"), Capacity: resource.MustParse("4"), Allocatable: resource.MustParse("4")},
+			},
+		},
+	}
+	zoneWithExtraDiff := topologyv1alpha1.ZoneList{
+		{
+			Name: "node-0",
+			Type: "Node",
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{Name: string(extraResource), Available: resource.MustParse("2"), Capacity: resource.MustParse("4"), Allocatable: resource.MustParse("2")},
+			},
+		},
+	}
+
+	// Same zones -> equal.
+	isEqual, msg := isEqualNRTZones(zoneWithExtra, zoneWithExtra)
+	assert.True(t, isEqual, msg)
+
+	// Different extended resource quantity -> not equal.
+	isEqual, msg = isEqualNRTZones(zoneWithExtra, zoneWithExtraDiff)
+	assert.False(t, isEqual, msg)
 }
 
 func Test_nodeTopoInformer_getNodeKubeletReservedResources(t *testing.T) {
