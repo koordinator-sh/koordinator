@@ -79,6 +79,8 @@ type LoadAwareSchedulingArgs struct {
 	// and only set up in custom node annotations,
 	// we should pass these resource names in plugin args explicitly.
 	SupportedResources []corev1.ResourceName `json:"supportedResources,omitempty"`
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint *bool `json:"enableQueueHint,omitempty"`
 }
 
 type LoadAwareSchedulingAggregatedArgs struct {

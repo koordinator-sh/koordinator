@@ -491,6 +491,9 @@ func autoConvert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in
 		out.Aggregated = nil
 	}
 	out.SupportedResources = *(*[]corev1.ResourceName)(unsafe.Pointer(&in.SupportedResources))
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -526,6 +529,9 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1_LoadAwareSchedulingArgs(in
 		out.Aggregated = nil
 	}
 	out.SupportedResources = *(*[]corev1.ResourceName)(unsafe.Pointer(&in.SupportedResources))
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
