@@ -80,6 +80,7 @@ const (
 
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.SignPlugin        = &Plugin{}
 
 	_ fwktype.PreFilterPlugin  = &Plugin{}
 	_ fwktype.FilterPlugin     = &Plugin{}
@@ -180,6 +181,27 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+// SignPod contributes the reservation-relevant attributes that would
+// change the outcome of this plugin's Filter/Score paths so the scheduler
+// can batch pods with identical signatures (KEP-5598).
+func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	if reservationutil.IsReservePod(pod) {
+		return []fwktype.SignFragment{{
+			Key:   "koord.Reservation.reservePodFor",
+			Value: reservationutil.GetReservationNameFromReservePod(pod),
+		}}, nil
+	}
+	if pod.Annotations != nil {
+		if aff, ok := pod.Annotations[apiext.AnnotationReservationAffinity]; ok && aff != "" {
+			return []fwktype.SignFragment{{
+				Key:   "koord.Reservation.affinity",
+				Value: aff,
+			}}, nil
+		}
+	}
+	return []fwktype.SignFragment{}, nil
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
