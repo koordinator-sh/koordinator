@@ -67,6 +67,7 @@ var _ fwktype.PreBindPlugin = &Coscheduling{}
 var _ frameworkext.ReservationPreBindPlugin = &Coscheduling{}
 var _ fwktype.PostBindPlugin = &Coscheduling{}
 var _ fwktype.EnqueueExtensions = &Coscheduling{}
+var _ fwktype.SignPlugin = &Coscheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
@@ -109,6 +110,21 @@ func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.
 func (cs *Coscheduling) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWithHint, error) {
 	// indicates that we are not interested in any events
 	return nil, nil
+}
+
+// SignPod returns the pod's gang identity so that pods in different
+// PodGroups do not share batched scheduling results (KEP-5598). The
+// gang id combines namespace and gang name, so two gangs with the same
+// name in different namespaces stay distinct.
+func (cs *Coscheduling) SignPod(_ context.Context, pod *v1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	gangName := util.GetGangNameByPod(pod)
+	if gangName == "" {
+		return []fwktype.SignFragment{}, nil
+	}
+	return []fwktype.SignFragment{{
+		Key:   "koord.Coscheduling.gang",
+		Value: util.GetId(pod.Namespace, gangName),
+	}}, nil
 }
 
 // Name returns name of the plugin. It is used in logs, etc.
