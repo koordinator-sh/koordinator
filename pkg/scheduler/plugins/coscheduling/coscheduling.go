@@ -110,7 +110,13 @@ func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.
 }
 
 func (cs *Coscheduling) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWithHint, error) {
-	// indicates that we are not interested in any events
+	// Gang gating is driven entirely by PreEnqueue: a pod only leaves the
+	// unschedulable queue once its PodGroup's minMember is satisfied, and
+	// that signal is produced inside PreEnqueue rather than by cluster
+	// events. Registering cluster events here would not reduce re-queuing
+	// because the PreEnqueue gate would reject the pod again. Returning an
+	// empty slice keeps the scheduler from registering redundant listeners
+	// under the k8s 1.35 SchedulerQueueingHints feature gate.
 	return nil, nil
 }
 
