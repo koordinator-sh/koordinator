@@ -33,15 +33,14 @@ import (
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
 
-// TestPlugin_EventsToRegister 檢查 EnableQueueHint 開關的事件形狀。
 func TestPlugin_EventsToRegister(t *testing.T) {
 	tests := []struct {
 		name            string
 		enableQueueHint bool
 		expectHintFn    bool
 	}{
-		{"queue hint 關掉時不帶 hint", false, false},
-		{"queue hint 打開時要帶 hint", true, true},
+		{"no hint functions when queue hint is disabled", false, false},
+		{"hint functions are set when queue hint is enabled", true, true},
 	}
 
 	for _, tt := range tests {
@@ -73,7 +72,6 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 			}
 			assert.NotNil(t, podEv)
 			assert.NotNil(t, devEv)
-			// ActionType 不因開關而收窄
 			assert.Equal(t, fwktype.Delete, podEv.Event.ActionType)
 			assert.Equal(t, fwktype.Add|fwktype.Update|fwktype.Delete, devEv.Event.ActionType)
 
@@ -141,25 +139,31 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 		expectedHint fwktype.QueueingHint
 	}{
 		{
-			name:         "oldObj 型別不對，保守 re-queue",
+			name:         "oldObj has the wrong type, fall back to Queue",
 			waitingPod:   makePodRequestingGPU("w1", ""),
 			deletedObj:   "not-a-pod",
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name:         "等待中 pod 不要 device，不需要喚醒",
+			name:         "nil deleted pod, fall back to Queue",
+			waitingPod:   makePodRequestingGPU("w1n", ""),
+			deletedObj:   (*corev1.Pod)(nil),
+			expectedHint: fwktype.Queue,
+		},
+		{
+			name:         "waiting pod does not request devices, no need to wake it up",
 			waitingPod:   makePodNoDevice("w2"),
 			deletedObj:   makePodRequestingGPU("deleted-gpu", "n1"),
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
-			name:         "等待中 pod 要 GPU，刪掉的 pod 也佔 GPU，值得重試",
+			name:         "waiting pod requests GPU and the deleted pod also held GPU, requeue",
 			waitingPod:   makePodRequestingGPU("w3", ""),
 			deletedObj:   makePodRequestingGPU("deleted-gpu", "n1"),
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name:         "等待中 pod 要 GPU，但被刪的 pod 沒佔 device",
+			name:         "waiting pod requests GPU but the deleted pod held no device resources",
 			waitingPod:   makePodRequestingGPU("w4", ""),
 			deletedObj:   makePodNoDevice("deleted-norm"),
 			expectedHint: fwktype.QueueSkip,
@@ -200,35 +204,35 @@ func TestPlugin_QueueingHint_IsSchedulableAfterDeviceChange(t *testing.T) {
 		expectedHint fwktype.QueueingHint
 	}{
 		{
-			name:         "型別不對，保守 re-queue",
+			name:         "wrong type, fall back to Queue",
 			waitingPod:   makePodRequestingGPU("w1", ""),
 			oldObj:       nil,
 			newObj:       "not-a-device",
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name:         "等待中 pod 沒要 device，什麼變化都 skip",
+			name:         "waiting pod needs no device, skip any change",
 			waitingPod:   makePodNoDevice("w2"),
 			oldObj:       nil,
 			newObj:       dev,
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
-			name:         "Add 一個 device，值得重試",
+			name:         "Add a device, requeue",
 			waitingPod:   makePodRequestingGPU("w3", ""),
 			oldObj:       nil,
 			newObj:       dev,
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name:         "Update 一個 device（容量可能變動），值得重試",
+			name:         "Update a device (capacity may have shifted), requeue",
 			waitingPod:   makePodRequestingGPU("w4", ""),
 			oldObj:       dev,
 			newObj:       dev,
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name:         "Delete device 不會讓等待者變得可排，直接 skip",
+			name:         "Delete device cannot unblock a waiting consumer, skip",
 			waitingPod:   makePodRequestingGPU("w5", ""),
 			oldObj:       dev,
 			newObj:       nil,

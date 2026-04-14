@@ -34,8 +34,6 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-// TestPlugin_EventsToRegister 檢查 EnableQueueHint 打開與關掉時，事件註冊的形狀。
-// 關掉時要維持現有行為（兩個事件、沒有 hint 函式）；打開時要兩個事件都帶 hint。
 func TestPlugin_EventsToRegister(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -43,12 +41,12 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 		expectHintFn    bool
 	}{
 		{
-			name:            "queue hint 關掉時，兩個事件都不帶 hint 函式",
+			name:            "no hint functions when queue hint is disabled",
 			enableQueueHint: false,
 			expectHintFn:    false,
 		},
 		{
-			name:            "queue hint 打開時，兩個事件都要帶 hint 函式",
+			name:            "hint functions are set when queue hint is enabled",
 			enableQueueHint: true,
 			expectHintFn:    true,
 		},
@@ -65,7 +63,7 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 
 			events, err := pl.EventsToRegister(context.TODO())
 			assert.NoError(t, err)
-			assert.Equal(t, 2, len(events), "應該剛好註冊 Pod 和 Reservation 兩種事件")
+			assert.Equal(t, 2, len(events), "should register exactly Pod and Reservation events")
 
 			expectedGVK := fmt.Sprintf("reservations.%v.%v",
 				schedulingv1alpha1.GroupVersion.Version,
@@ -80,16 +78,16 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 					reservationEvent = &events[i]
 				}
 			}
-			assert.NotNil(t, podEvent, "Pod Delete 事件應該存在")
-			assert.NotNil(t, reservationEvent, "Reservation Add|Update|Delete 事件應該存在")
+			assert.NotNil(t, podEvent, "Pod Delete event should be registered")
+			assert.NotNil(t, reservationEvent, "Reservation Add|Update|Delete event should be registered")
 
-			// ActionType 不論開關都不收窄，維持既有語意
+			// Action type is preserved regardless of the flag.
 			assert.Equal(t, fwktype.Delete, podEvent.Event.ActionType)
 			assert.Equal(t, fwktype.Add|fwktype.Update|fwktype.Delete, reservationEvent.Event.ActionType)
 
 			if tt.expectHintFn {
-				assert.NotNil(t, podEvent.QueueingHintFn, "打開 queue hint 後 Pod 事件要帶 hint")
-				assert.NotNil(t, reservationEvent.QueueingHintFn, "打開 queue hint 後 Reservation 事件要帶 hint")
+				assert.NotNil(t, podEvent.QueueingHintFn)
+				assert.NotNil(t, reservationEvent.QueueingHintFn)
 			} else {
 				assert.Nil(t, podEvent.QueueingHintFn)
 				assert.Nil(t, reservationEvent.QueueingHintFn)
@@ -98,7 +96,6 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 	}
 }
 
-// makeWaitingPodUsingReservation 造一個「有 reservation affinity」的等待中 pod。
 func makeWaitingPodUsingReservation(name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -112,7 +109,6 @@ func makeWaitingPodUsingReservation(name string) *corev1.Pod {
 	}
 }
 
-// makeWaitingPodNoReservation 造一個完全不碰 reservation 的 pod。
 func makeWaitingPodNoReservation(name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -123,7 +119,6 @@ func makeWaitingPodNoReservation(name string) *corev1.Pod {
 	}
 }
 
-// makeReservePod 造一個 reserve pod，IsReservePod 靠 annotation 判別。
 func makeReservePod(name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -148,7 +143,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 		expectedHint fwktype.QueueingHint
 	}{
 		{
-			name: "oldObj 不是 pod，保守 re-queue",
+			name: "oldObj is not a Pod, fall back to Queue",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w1"),
 				oldObj:     "not-a-pod",
@@ -156,7 +151,15 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "等待中的 pod 跟 reservation 無關，直接 skip",
+			name: "nil deleted pod, fall back to Queue",
+			args: args{
+				waitingPod: makeWaitingPodUsingReservation("w1n"),
+				oldObj:     (*corev1.Pod)(nil),
+			},
+			expectedHint: fwktype.Queue,
+		},
+		{
+			name: "waiting pod is unrelated to reservation, skip",
 			args: args{
 				waitingPod: makeWaitingPodNoReservation("w2"),
 				oldObj:     makeReservePod("deleted-reserve"),
@@ -164,7 +167,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
-			name: "等待中的 pod 需要 reservation，且被刪的是 reserve pod，值得喚醒",
+			name: "waiting pod uses reservation and the deleted pod is a reserve pod, requeue",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w3"),
 				oldObj:     makeReservePod("deleted-reserve"),
@@ -172,7 +175,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "等待中的 pod 需要 reservation，但被刪的 pod 跟 reservation 毫無關係，skip",
+			name: "waiting pod uses reservation, deleted pod is unrelated, skip",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w4"),
 				oldObj:     makeWaitingPodNoReservation("deleted-normal"),
@@ -197,8 +200,39 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 	}
 }
 
+// TestPlugin_QueueingHint_PodDeletion_AssignedViaCache covers the branch
+// where the deleted pod is a regular (non-reserve) pod that was bound to
+// a reservation tracked by reservationCache. Pod deletion in that state
+// releases capacity from the reservation and must re-queue waiting pods
+// that use reservations.
+func TestPlugin_QueueingHint_PodDeletion_AssignedViaCache(t *testing.T) {
+	suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+		args.EnableQueueHint = true
+	})
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-cache", UID: "r-cache"},
+	}
+	assert.NoError(t, reservationutil.SetReservationAvailable(reservation, "node-1"))
+	pl.reservationCache.updateReservation(reservation)
+
+	assignedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "assigned", Namespace: "default", UID: "assigned-uid"},
+		Spec:       corev1.PodSpec{NodeName: "node-1"},
+	}
+	assert.NoError(t, pl.reservationCache.assumePod(reservation.UID, assignedPod))
+
+	waiting := makeWaitingPodUsingReservation("waiting")
+	got, err := pl.isSchedulableAfterPodDeletion(klog.Background(), waiting, assignedPod, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, fwktype.Queue, got)
+}
+
 func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
-	// IsReservationActive 要求 Status.NodeName 不空、Phase 是 Available 或 Waiting
+	// IsReservationActive requires Status.NodeName to be set and a Phase of Available or Waiting.
 	activeReservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{Name: "r-active", UID: "r-active"},
 		Status: schedulingv1alpha1.ReservationStatus{
@@ -222,7 +256,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 		expectedHint fwktype.QueueingHint
 	}{
 		{
-			name: "不是 Reservation 型別，保守 re-queue",
+			name: "obj is not a Reservation, fall back to Queue",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w1"),
 				oldObj:     nil,
@@ -231,7 +265,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "等待中的 pod 跟 reservation 無關，所有變化都 skip",
+			name: "waiting pod is unrelated to reservations, skip all reservation changes",
 			args: args{
 				waitingPod: makeWaitingPodNoReservation("w2"),
 				oldObj:     nil,
@@ -240,7 +274,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
-			name: "Add 一個 Available reservation，值得 re-queue",
+			name: "Add an active reservation, requeue",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w3"),
 				oldObj:     nil,
@@ -249,7 +283,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "Add 一個還沒 ready 的 reservation，先 skip",
+			name: "Add a not-yet-ready reservation, skip",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w4"),
 				oldObj:     nil,
@@ -258,7 +292,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
-			name: "Update：從 pending 變 available，值得 re-queue",
+			name: "Update from pending to available, requeue",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w5"),
 				oldObj:     pendingReservation,
@@ -267,7 +301,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "Update：兩邊都 Available、沒實質變化，skip 避免 noise",
+			name: "Update while both are available with no meaningful change, skip to avoid queue noise",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w6"),
 				oldObj:     activeReservation,
@@ -276,7 +310,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
-			name: "Delete：既然有用 reservation 的 pod 在等，給它一次重新評估機會",
+			name: "Delete gives waiting pods another chance to re-evaluate",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w7"),
 				oldObj:     activeReservation,

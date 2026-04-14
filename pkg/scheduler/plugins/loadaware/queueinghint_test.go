@@ -83,8 +83,8 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 		enableQueueHint bool
 		expectHintFn    bool
 	}{
-		{"queue hint 關掉時不帶 hint", false, false},
-		{"queue hint 打開時要帶 hint", true, true},
+		{"no hint functions when queue hint is disabled", false, false},
+		{"hint functions are set when queue hint is enabled", true, true},
 	}
 
 	for _, tt := range tests {
@@ -141,9 +141,10 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 		oldObj       interface{}
 		expectedHint fwktype.QueueingHint
 	}{
-		{"oldObj 型別錯誤 fall back Queue", "not-a-pod", fwktype.Queue},
-		{"被刪的 pod 根本沒綁過 node，skip", unboundPod, fwktype.QueueSkip},
-		{"被刪的 pod 曾綁 node，可能釋放 load，Queue", boundPod, fwktype.Queue},
+		{"oldObj has the wrong type, fall back to Queue", "not-a-pod", fwktype.Queue},
+		{"deleted pod was never bound to a node, skip", unboundPod, fwktype.QueueSkip},
+		{"deleted pod was bound to a node and may have freed load, Queue", boundPod, fwktype.Queue},
+		{"nil deleted pod, skip", (*corev1.Pod)(nil), fwktype.QueueSkip},
 	}
 
 	for _, tt := range tests {
@@ -166,10 +167,10 @@ func TestPlugin_QueueingHint_IsSchedulableAfterNodeMetricChange(t *testing.T) {
 		newObj       interface{}
 		expectedHint fwktype.QueueingHint
 	}{
-		{"型別錯誤 fall back Queue", nil, "not-a-metric", fwktype.Queue},
-		{"Add metric，值得重試", nil, metric, fwktype.Queue},
-		{"Update metric，值得重試", metric, metric, fwktype.Queue},
-		{"Delete metric 不會讓負載變低", metric, nil, fwktype.QueueSkip},
+		{"wrong type, fall back to Queue", nil, "not-a-metric", fwktype.Queue},
+		{"Add metric, requeue", nil, metric, fwktype.Queue},
+		{"Update metric, requeue", metric, metric, fwktype.Queue},
+		{"Delete metric cannot lower load, skip", metric, nil, fwktype.QueueSkip},
 	}
 
 	for _, tt := range tests {

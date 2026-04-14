@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -34,15 +34,14 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
 
-// TestPlugin_EventsToRegister 檢查 EnableQueueHint 開關對事件形狀的影響。
 func TestPlugin_EventsToRegister(t *testing.T) {
 	tests := []struct {
 		name            string
 		enableQueueHint bool
 		expectHintFn    bool
 	}{
-		{"queue hint 關掉時不帶 hint 函式", false, false},
-		{"queue hint 打開時要帶 hint 函式", true, true},
+		{"no hint functions when queue hint is disabled", false, false},
+		{"hint functions are set when queue hint is enabled", true, true},
 	}
 
 	for _, tt := range tests {
@@ -87,7 +86,6 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 	}
 }
 
-// makePodWithNUMAPolicy 造一個要求 NUMA topology 的 pod。
 func makePodWithNUMAPolicy(name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -109,7 +107,6 @@ func makePodWithNUMAPolicy(name string) *corev1.Pod {
 	}
 }
 
-// makePlainPod 造一個完全不碰 NUMA 的 pod。
 func makePlainPod(name string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -136,25 +133,31 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 		expectedHint fwktype.QueueingHint
 	}{
 		{
-			name:         "oldObj 不是 *Pod，保守 re-queue",
+			name:         "oldObj is not a Pod, fall back to Queue",
 			waiting:      makePodWithNUMAPolicy("w1"),
 			deletedObj:   "not-a-pod",
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name:         "等待中 pod 不要 NUMA，不值得喚醒",
+			name:         "nil deleted pod, fall back to Queue",
+			waiting:      makePodWithNUMAPolicy("w1n"),
+			deletedObj:   (*corev1.Pod)(nil),
+			expectedHint: fwktype.Queue,
+		},
+		{
+			name:         "waiting pod does not require NUMA, no need to wake it up",
 			waiting:      makePlainPod("w2"),
 			deletedObj:   makePodWithNUMAPolicy("del-numa"),
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
-			name:         "等待中要 NUMA，被刪的也是 NUMA pod，值得重試",
+			name:         "waiting pod requires NUMA and deleted pod is also NUMA-pinned, requeue",
 			waiting:      makePodWithNUMAPolicy("w3"),
 			deletedObj:   makePodWithNUMAPolicy("del-numa"),
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name:         "等待中要 NUMA，被刪的是普通 pod，沒釋放 NUMA 資源",
+			name:         "waiting pod requires NUMA but deleted pod is plain, no NUMA resources released",
 			waiting:      makePodWithNUMAPolicy("w4"),
 			deletedObj:   makePlainPod("del-plain"),
 			expectedHint: fwktype.QueueSkip,
@@ -188,11 +191,11 @@ func TestPlugin_QueueingHint_IsSchedulableAfterNRTChange(t *testing.T) {
 		newObj       interface{}
 		expectedHint fwktype.QueueingHint
 	}{
-		{"型別錯誤 fall back Queue", makePodWithNUMAPolicy("w1"), nil, "not-nrt", fwktype.Queue},
-		{"等待中不要 NUMA，全部 skip", makePlainPod("w2"), nil, nrt, fwktype.QueueSkip},
-		{"Add NRT，值得重試", makePodWithNUMAPolicy("w3"), nil, nrt, fwktype.Queue},
-		{"Update NRT，值得重試", makePodWithNUMAPolicy("w4"), nrt, nrt, fwktype.Queue},
-		{"Delete NRT 不會讓等待者變可排", makePodWithNUMAPolicy("w5"), nrt, nil, fwktype.QueueSkip},
+		{"wrong type, fall back to Queue", makePodWithNUMAPolicy("w1"), nil, "not-nrt", fwktype.Queue},
+		{"waiting pod needs no NUMA, skip all", makePlainPod("w2"), nil, nrt, fwktype.QueueSkip},
+		{"Add NRT, requeue", makePodWithNUMAPolicy("w3"), nil, nrt, fwktype.Queue},
+		{"Update NRT, requeue", makePodWithNUMAPolicy("w4"), nrt, nrt, fwktype.Queue},
+		{"Delete NRT cannot unblock a waiter, skip", makePodWithNUMAPolicy("w5"), nrt, nil, fwktype.QueueSkip},
 	}
 
 	for _, tt := range tests {

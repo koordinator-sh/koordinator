@@ -114,9 +114,9 @@ func (cs *Coscheduling) EventsToRegister(_ context.Context) ([]fwktype.ClusterEv
 	// unschedulable queue once its PodGroup's minMember is satisfied, and
 	// that signal is produced inside PreEnqueue rather than by cluster
 	// events. Registering cluster events here would not reduce re-queuing
-	// because the PreEnqueue gate would reject the pod again. Returning an
-	// empty slice keeps the scheduler from registering redundant listeners
-	// under the k8s 1.35 SchedulerQueueingHints feature gate.
+	// because the PreEnqueue gate would reject the pod again. Returning nil
+	// keeps the scheduler from registering redundant listeners under the
+	// k8s 1.35 SchedulerQueueingHints feature gate.
 	return nil, nil
 }
 
