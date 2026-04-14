@@ -62,6 +62,7 @@ const (
 
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.SignPlugin        = &Plugin{}
 
 	_ fwktype.PreFilterPlugin = &Plugin{}
 	_ fwktype.FilterPlugin    = &Plugin{}
@@ -260,6 +261,29 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+// SignPod captures the NUMA and resource-spec annotations that drive the
+// Filter and Score paths so pods with matching scheduling requirements can
+// share batched scheduling results (KEP-5598).
+func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	if pod.Annotations == nil {
+		return []fwktype.SignFragment{}, nil
+	}
+	fragments := make([]fwktype.SignFragment, 0, 2)
+	if v, ok := pod.Annotations[extension.AnnotationNUMATopologySpec]; ok && v != "" {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.NodeNUMAResource.numaTopology",
+			Value: v,
+		})
+	}
+	if v, ok := pod.Annotations[extension.AnnotationResourceSpec]; ok && v != "" {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.NodeNUMAResource.resourceSpec",
+			Value: v,
+		})
+	}
+	return fragments, nil
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
