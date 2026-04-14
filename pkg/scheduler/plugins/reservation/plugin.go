@@ -176,10 +176,83 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("reservations.%v.%v", schedulingv1alpha1.GroupVersion.Version, schedulingv1alpha1.GroupVersion.Group)
-	return []fwktype.ClusterEventWithHint{
+	events := []fwktype.ClusterEventWithHint{
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
-	}, nil
+	}
+
+	if pl.args != nil && pl.args.EnableQueueHint {
+		events[0].QueueingHintFn = pl.isSchedulableAfterPodDeletion
+		events[1].QueueingHintFn = pl.isSchedulableAfterReservationChange
+	}
+	return events, nil
+}
+
+func podUsesReservation(pod *corev1.Pod) bool {
+	if reservationutil.IsReservePod(pod) {
+		return true
+	}
+	affinity, err := reservationutil.GetRequiredReservationAffinity(pod)
+	return err == nil && affinity != nil
+}
+
+func (pl *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
+	deletedPod, ok := oldObj.(*corev1.Pod)
+	if !ok {
+		logger.V(5).Info("oldObj is not *Pod, fall back to Queue", "oldObj", oldObj)
+		return fwktype.Queue, nil
+	}
+	if deletedPod == nil {
+		return fwktype.Queue, nil
+	}
+	if !podUsesReservation(pod) {
+		return fwktype.QueueSkip, nil
+	}
+	if reservationutil.IsReservePod(deletedPod) {
+		return fwktype.Queue, nil
+	}
+	if pl.reservationCache != nil && deletedPod.Spec.NodeName != "" {
+		if pl.reservationCache.GetReservationInfoByPod(deletedPod, deletedPod.Spec.NodeName) != nil {
+			return fwktype.Queue, nil
+		}
+	}
+	return fwktype.QueueSkip, nil
+}
+
+func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
+	oldR, oldOK := toReservation(oldObj)
+	newR, newOK := toReservation(newObj)
+	if !oldOK || !newOK {
+		logger.V(5).Info("obj is not *Reservation, fall back to Queue", "oldObj", oldObj, "newObj", newObj)
+		return fwktype.Queue, nil
+	}
+	if !podUsesReservation(pod) {
+		return fwktype.QueueSkip, nil
+	}
+	// Delete: give a matching waiter one more scheduling chance.
+	if newR == nil {
+		return fwktype.Queue, nil
+	}
+	// Add: a fresh reservation only matters once it reaches an active phase.
+	if oldR == nil {
+		if reservationutil.IsReservationActive(newR) {
+			return fwktype.Queue, nil
+		}
+		return fwktype.QueueSkip, nil
+	}
+	// Update: the typical wake-up signal is an inactive -> active transition.
+	if !reservationutil.IsReservationActive(oldR) && reservationutil.IsReservationActive(newR) {
+		return fwktype.Queue, nil
+	}
+	return fwktype.QueueSkip, nil
+}
+
+func toReservation(obj interface{}) (*schedulingv1alpha1.Reservation, bool) {
+	if obj == nil {
+		return nil, true
+	}
+	r, ok := obj.(*schedulingv1alpha1.Reservation)
+	return r, ok
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
