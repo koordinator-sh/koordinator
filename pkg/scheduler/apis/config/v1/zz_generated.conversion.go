@@ -538,6 +538,9 @@ func autoConvert_v1_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(in *Node
 	// WARNING: in.DefaultCPUBindPolicy requires manual conversion: inconvertible types (*github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1.CPUBindPolicy vs string)
 	out.ScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	out.NUMAScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.NUMAScoringStrategy))
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -545,6 +548,9 @@ func autoConvert_config_NodeNUMAResourceArgs_To_v1_NodeNUMAResourceArgs(in *conf
 	// WARNING: in.DefaultCPUBindPolicy requires manual conversion: inconvertible types (string vs *github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1.CPUBindPolicy)
 	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	out.NUMAScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.NUMAScoringStrategy))
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 

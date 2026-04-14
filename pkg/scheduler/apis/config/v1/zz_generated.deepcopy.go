@@ -410,6 +410,11 @@ func (in *NodeNUMAResourceArgs) DeepCopyInto(out *NodeNUMAResourceArgs) {
 		*out = new(ScoringStrategy)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

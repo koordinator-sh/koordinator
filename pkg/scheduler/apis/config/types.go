@@ -136,6 +136,8 @@ type NodeNUMAResourceArgs struct {
 	ScoringStrategy *ScoringStrategy
 	// NUMAScoringStrategy is used to configure the scoring strategy of the NUMANode-level
 	NUMAScoringStrategy *ScoringStrategy
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint bool
 }
 
 // CPUBindPolicy defines the CPU binding policy

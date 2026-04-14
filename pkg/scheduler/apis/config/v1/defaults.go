@@ -160,6 +160,9 @@ func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 			},
 		}
 	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
+	}
 }
 
 func SetDefaults_ReservationArgs(obj *ReservationArgs) {

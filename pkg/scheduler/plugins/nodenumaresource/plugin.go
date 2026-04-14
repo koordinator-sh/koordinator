@@ -258,10 +258,67 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("noderesourcetopologies.%v.%v", nrtv1alpha1.SchemeGroupVersion.Version, nrtv1alpha1.SchemeGroupVersion.Group)
-	return []fwktype.ClusterEventWithHint{
+	events := []fwktype.ClusterEventWithHint{
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
-	}, nil
+	}
+
+	if p.pluginArgs != nil && p.pluginArgs.EnableQueueHint {
+		events[0].QueueingHintFn = p.isSchedulableAfterPodDeletion
+		events[1].QueueingHintFn = p.isSchedulableAfterNRTChange
+	}
+	return events, nil
+}
+
+func podNeedsNUMAAllocation(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	numaSpec, err := extension.GetNUMATopologySpec(pod.Annotations)
+	if err == nil && numaSpec != nil && numaSpec.NUMATopologyPolicy != extension.NUMATopologyPolicyNone && numaSpec.NUMATopologyPolicy != "" {
+		return true
+	}
+	return AllowUseCPUSet(pod)
+}
+
+func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
+	deletedPod, ok := oldObj.(*corev1.Pod)
+	if !ok {
+		logger.V(5).Info("oldObj is not *Pod, fall back to Queue", "oldObj", oldObj)
+		return fwktype.Queue, nil
+	}
+	if deletedPod == nil {
+		return fwktype.Queue, nil
+	}
+	if !podNeedsNUMAAllocation(pod) || !podNeedsNUMAAllocation(deletedPod) {
+		return fwktype.QueueSkip, nil
+	}
+	return fwktype.Queue, nil
+}
+
+func (p *Plugin) isSchedulableAfterNRTChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
+	_, oldOK := toNRT(oldObj)
+	_, newOK := toNRT(newObj)
+	if !oldOK || !newOK {
+		logger.V(5).Info("obj is not *NodeResourceTopology, fall back to Queue", "oldObj", oldObj, "newObj", newObj)
+		return fwktype.Queue, nil
+	}
+	if !podNeedsNUMAAllocation(pod) {
+		return fwktype.QueueSkip, nil
+	}
+	// NRT delete cannot unblock a waiting NUMA pod.
+	if newObj == nil {
+		return fwktype.QueueSkip, nil
+	}
+	return fwktype.Queue, nil
+}
+
+func toNRT(obj interface{}) (*nrtv1alpha1.NodeResourceTopology, bool) {
+	if obj == nil {
+		return nil, true
+	}
+	nrt, ok := obj.(*nrtv1alpha1.NodeResourceTopology)
+	return nrt, ok
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
