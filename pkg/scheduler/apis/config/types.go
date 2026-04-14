@@ -342,6 +342,8 @@ type DeviceShareArgs struct {
 	// GPUShareUnsupportedModels lists GPU vendor-model pairs that do not support GPU sharing (e.g. vNPU).
 	// Pods requesting gpu.shared resources will be filtered out from nodes matching any of these models.
 	GPUShareUnsupportedModels []GPUShareUnsupportedModel
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint bool
 }
 
 // GPUShareUnsupportedModel identifies a GPU model that does not support GPU sharing.

@@ -282,6 +282,9 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 	if obj.GPUSharedResourceTemplatesConfig == nil {
 		obj.GPUSharedResourceTemplatesConfig = defaultGPUSharedResourceTemplatesConfig
 	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
+	}
 }
 
 // SetDefaults_SchedulingHintArgs sets the default parameters for SchedulingHint plugin.
