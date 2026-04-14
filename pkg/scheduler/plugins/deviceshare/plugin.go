@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -56,6 +57,7 @@ const (
 
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.SignPlugin        = &Plugin{}
 
 	_ fwktype.PreFilterPlugin = &Plugin{}
 	_ fwktype.FilterPlugin    = &Plugin{}
@@ -182,6 +184,50 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+// SignPod captures the pod's device requests so the scheduler can batch
+// pods with identical device demand under KEP-5598. Pods that do not
+// request devices contribute nothing and stay batchable with each other.
+func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	requests, err := GetPodDeviceRequests(pod)
+	if err != nil {
+		// A malformed device request would also fail PreFilter; keep batching
+		// off for this pod rather than asserting a signature.
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, err.Error())
+	}
+	if len(requests) == 0 {
+		return []fwktype.SignFragment{}, nil
+	}
+	return []fwktype.SignFragment{{
+		Key:   "koord.DeviceShare.deviceRequests",
+		Value: canonicalDeviceRequests(requests),
+	}}, nil
+}
+
+// canonicalDeviceRequests turns the device request map into a stable,
+// comparable representation so two pods requesting the same set produce
+// the same fragment value.
+func canonicalDeviceRequests(requests map[schedulingv1alpha1.DeviceType]corev1.ResourceList) []string {
+	deviceTypes := make([]string, 0, len(requests))
+	for dt := range requests {
+		deviceTypes = append(deviceTypes, string(dt))
+	}
+	sort.Strings(deviceTypes)
+	out := make([]string, 0, len(requests))
+	for _, dt := range deviceTypes {
+		rl := requests[schedulingv1alpha1.DeviceType(dt)]
+		names := make([]string, 0, len(rl))
+		for n := range rl {
+			names = append(names, string(n))
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			q := rl[corev1.ResourceName(n)]
+			out = append(out, dt+"/"+n+"="+q.String())
+		}
+	}
+	return out
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
