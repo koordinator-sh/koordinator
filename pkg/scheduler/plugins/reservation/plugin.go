@@ -214,33 +214,37 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 	// would see, instead of silently canonicalizing the raw bytes.
 	// Marshal the parsed structs (not the raw annotation) so formatting
 	// differences between semantically equal values collapse.
-	if raw := pod.Annotations[apiext.AnnotationReservationAffinity]; raw != "" {
+	if _, ok := pod.Annotations[apiext.AnnotationReservationAffinity]; ok {
 		aff, err := apiext.GetReservationAffinity(pod.Annotations)
 		if err != nil {
 			return nil, fwktype.AsStatus(err)
 		}
-		b, mErr := json.Marshal(aff)
-		if mErr != nil {
-			return nil, fwktype.AsStatus(mErr)
+		if aff != nil {
+			b, mErr := json.Marshal(aff)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.Reservation.affinity",
+				Value: string(b),
+			})
 		}
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.Reservation.affinity",
-			Value: string(b),
-		})
 	}
-	if raw := pod.Annotations[apiext.AnnotationExactMatchReservationSpec]; raw != "" {
+	if _, ok := pod.Annotations[apiext.AnnotationExactMatchReservationSpec]; ok {
 		exact, err := apiext.GetExactMatchReservationSpec(pod.Annotations)
 		if err != nil {
 			return nil, fwktype.AsStatus(err)
 		}
-		b, mErr := json.Marshal(exact)
-		if mErr != nil {
-			return nil, fwktype.AsStatus(mErr)
+		if exact != nil {
+			b, mErr := json.Marshal(exact)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.Reservation.exactMatch",
+				Value: string(b),
+			})
 		}
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.Reservation.exactMatch",
-			Value: string(b),
-		})
 	}
 	if apiext.IsReservationIgnored(pod) {
 		fragments = append(fragments, fwktype.SignFragment{

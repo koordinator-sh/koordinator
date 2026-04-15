@@ -282,7 +282,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 	// uses (see PreFilter below) so malformed input produces the identical
 	// Error Status instead of silently canonicalizing the raw bytes and
 	// letting a bad pod share a signature with a clean one.
-	if raw := pod.Annotations[extension.AnnotationNUMATopologySpec]; raw != "" {
+	if _, ok := pod.Annotations[extension.AnnotationNUMATopologySpec]; ok {
 		numaSpec, err := extension.GetNUMATopologySpec(pod.Annotations)
 		if err != nil {
 			return nil, fwktype.NewStatus(fwktype.Error, err.Error())
@@ -296,7 +296,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: string(b),
 		})
 	}
-	if raw := pod.Annotations[extension.AnnotationResourceSpec]; raw != "" {
+	if _, ok := pod.Annotations[extension.AnnotationResourceSpec]; ok {
 		resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
 		if err != nil {
 			return nil, fwktype.NewStatus(fwktype.Error, err.Error())

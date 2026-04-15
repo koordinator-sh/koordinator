@@ -230,7 +230,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 	// canonicalizing raw bytes. Marshal the parsed struct (with helper
 	// defaults applied, e.g. GPUPartitionSpec.AllocatePolicy) so two
 	// semantically equal annotations share a fragment value.
-	if raw := pod.Annotations[apiext.AnnotationDeviceAllocated]; raw != "" {
+	if _, ok := pod.Annotations[apiext.AnnotationDeviceAllocated]; ok {
 		allocs, err := apiext.GetDeviceAllocations(pod.Annotations)
 		if err != nil {
 			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
@@ -244,7 +244,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: string(b),
 		})
 	}
-	if raw := pod.Annotations[apiext.AnnotationDeviceAllocateHint]; raw != "" {
+	if _, ok := pod.Annotations[apiext.AnnotationDeviceAllocateHint]; ok {
 		hints, err := apiext.GetDeviceAllocateHints(pod.Annotations)
 		if err != nil {
 			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
@@ -259,7 +259,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: string(b),
 		})
 	}
-	if raw := pod.Annotations[apiext.AnnotationDeviceJointAllocate]; raw != "" {
+	if _, ok := pod.Annotations[apiext.AnnotationDeviceJointAllocate]; ok {
 		joint, err := apiext.GetDeviceJointAllocate(pod.Annotations)
 		if err != nil {
 			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
@@ -274,7 +274,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: string(b),
 		})
 	}
-	if raw := pod.Annotations[apiext.AnnotationGPUPartitionSpec]; raw != "" {
+	if _, ok := pod.Annotations[apiext.AnnotationGPUPartitionSpec]; ok {
 		spec, err := apiext.GetGPUPartitionSpec(pod.Annotations)
 		if err != nil {
 			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
