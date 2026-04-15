@@ -144,7 +144,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 		{"oldObj has the wrong type, fall back to Queue", "not-a-pod", fwktype.Queue},
 		{"deleted pod was never bound to a node, skip", unboundPod, fwktype.QueueSkip},
 		{"deleted pod was bound to a node and may have freed load, Queue", boundPod, fwktype.Queue},
-		{"nil deleted pod, skip", (*corev1.Pod)(nil), fwktype.QueueSkip},
+		{"nil deleted pod is ambiguous, re-queue conservatively", (*corev1.Pod)(nil), fwktype.Queue},
 	}
 
 	for _, tt := range tests {

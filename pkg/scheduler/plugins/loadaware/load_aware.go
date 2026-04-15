@@ -148,8 +148,13 @@ func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 		logger.V(5).Info("oldObj is not *Pod, fall back to Queue", "oldObj", oldObj)
 		return fwktype.Queue, nil
 	}
+	// With a nil deleted pod we cannot tell whether it had been bound and
+	// freed load, so re-queue conservatively instead of starving the waiter.
+	if deletedPod == nil {
+		return fwktype.Queue, nil
+	}
 	// A pod that never bound to a node cannot have affected any node's load.
-	if deletedPod == nil || deletedPod.Spec.NodeName == "" {
+	if deletedPod.Spec.NodeName == "" {
 		return fwktype.QueueSkip, nil
 	}
 	return fwktype.Queue, nil
