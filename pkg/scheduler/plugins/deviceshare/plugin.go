@@ -200,7 +200,7 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 //   - Reservation affinity presence (drives isReservationRequired).
 //   - Pre-allocation-required label (drives isReservationRequired).
 //
-// JSON-shaped annotations are canonicalised so semantically equal values
+// JSON-shaped annotations are canonicalized so semantically equal values
 // produce the same signature regardless of formatting.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	requests, err := GetPodDeviceRequests(pod)
@@ -247,7 +247,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 	return fragments, nil
 }
 
-// canonicalJSON normalises a JSON annotation value so two semantically
+// canonicalJSON normalizes a JSON annotation value so two semantically
 // equal annotations (different whitespace or object key order) produce
 // the same signature fragment. Malformed input is returned unchanged.
 func canonicalJSON(s string) string {

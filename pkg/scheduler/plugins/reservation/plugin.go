@@ -237,7 +237,7 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 	return fragments, nil
 }
 
-// canonicalOwnerInputs serialises the pod attributes that reservation owner
+// canonicalOwnerInputs serializes the pod attributes that reservation owner
 // matching consults (labels + owner references) into a stable string. Pods
 // with identical labels and owner references produce the same value
 // regardless of map iteration order.
@@ -267,7 +267,7 @@ func canonicalOwnerInputs(pod *corev1.Pod) string {
 	return strings.Join(parts, "|")
 }
 
-// canonicalJSON normalises a JSON annotation value so two semantically
+// canonicalJSON normalizes a JSON annotation value so two semantically
 // equal annotations (different whitespace or object key order) produce
 // the same signature fragment. Malformed input is returned unchanged.
 func canonicalJSON(s string) string {

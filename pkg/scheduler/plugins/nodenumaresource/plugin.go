@@ -315,7 +315,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 	return fragments, nil
 }
 
-// canonicalResourceList serialises a ResourceList into a sorted slice so two
+// canonicalResourceList serializes a ResourceList into a sorted slice so two
 // equal request maps produce identical fragment values regardless of map
 // iteration order.
 func canonicalResourceList(rl corev1.ResourceList) []string {
@@ -332,7 +332,7 @@ func canonicalResourceList(rl corev1.ResourceList) []string {
 	return out
 }
 
-// canonicalJSON normalises a JSON annotation value so two semantically
+// canonicalJSON normalizes a JSON annotation value so two semantically
 // equal annotations (different whitespace or object key order) produce
 // the same signature fragment. Malformed input is returned unchanged.
 func canonicalJSON(s string) string {
