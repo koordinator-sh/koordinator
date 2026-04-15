@@ -52,7 +52,7 @@ func TestCoscheduling_SignPod(t *testing.T) {
 		}
 	}
 
-	t.Run("pod without gang annotations contributes nothing", func(t *testing.T) {
+	t.Run("pod without PodGroup label contributes nothing", func(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", "default", nil))
 		assert.True(t, status.IsSuccess())
 		assert.Empty(t, fragments)
