@@ -208,19 +208,39 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 	}
 
 	fragments := make([]fwktype.SignFragment, 0, 5)
-	if pod.Annotations != nil {
-		if aff, ok := pod.Annotations[apiext.AnnotationReservationAffinity]; ok && aff != "" {
-			fragments = append(fragments, fwktype.SignFragment{
-				Key:   "koord.Reservation.affinity",
-				Value: canonicalJSON(aff),
-			})
+	// Parse reservation-affinity / exact-match annotations with the same
+	// helpers PreFilter uses (transformer.go around prepareMatchReservationStateForNormalPod)
+	// so malformed input yields the identical Status a non-batched schedule
+	// would see, instead of silently canonicalizing the raw bytes.
+	// Marshal the parsed structs (not the raw annotation) so formatting
+	// differences between semantically equal values collapse.
+	if raw := pod.Annotations[apiext.AnnotationReservationAffinity]; raw != "" {
+		aff, err := apiext.GetReservationAffinity(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.AsStatus(err)
 		}
-		if exact, ok := pod.Annotations[apiext.AnnotationExactMatchReservationSpec]; ok && exact != "" {
-			fragments = append(fragments, fwktype.SignFragment{
-				Key:   "koord.Reservation.exactMatch",
-				Value: canonicalJSON(exact),
-			})
+		b, mErr := json.Marshal(aff)
+		if mErr != nil {
+			return nil, fwktype.AsStatus(mErr)
 		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.affinity",
+			Value: string(b),
+		})
+	}
+	if raw := pod.Annotations[apiext.AnnotationExactMatchReservationSpec]; raw != "" {
+		exact, err := apiext.GetExactMatchReservationSpec(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.AsStatus(err)
+		}
+		b, mErr := json.Marshal(exact)
+		if mErr != nil {
+			return nil, fwktype.AsStatus(mErr)
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.exactMatch",
+			Value: string(b),
+		})
 	}
 	if apiext.IsReservationIgnored(pod) {
 		fragments = append(fragments, fwktype.SignFragment{
@@ -289,21 +309,6 @@ func canonicalOwnerInputs(pod *corev1.Pod) string {
 		parts = append(parts, owners...)
 	}
 	return strings.Join(parts, "|")
-}
-
-// canonicalJSON normalizes a JSON annotation value so two semantically
-// equal annotations (different whitespace or object key order) produce
-// the same signature fragment. Malformed input is returned unchanged.
-func canonicalJSON(s string) string {
-	var v interface{}
-	if err := json.Unmarshal([]byte(s), &v); err != nil {
-		return s
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return s
-	}
-	return string(b)
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.

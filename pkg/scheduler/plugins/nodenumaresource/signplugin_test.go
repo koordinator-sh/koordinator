@@ -108,17 +108,24 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Equal(t, fa, fb)
 	})
 
-	t.Run("malformed JSON annotation falls back to raw value", func(t *testing.T) {
+	t.Run("malformed numa-topology-spec mirrors PreFilter Error status", func(t *testing.T) {
 		pod := mkPod("bad", map[string]string{
 			apiext.AnnotationNUMATopologySpec: "not-json",
 		})
 		fragments, status := pl.SignPod(context.TODO(), pod)
-		assert.True(t, status == nil || status.IsSuccess())
-		// The numaTopology fragment falls back, no extra fragments since the
-		// pod has no requests/affinity/pre-allocation labels.
-		require.Len(t, fragments, 1)
-		assert.Equal(t, "koord.NodeNUMAResource.numaTopology", fragments[0].Key)
-		assert.Equal(t, "not-json", fragments[0].Value)
+		require.NotNil(t, status, "malformed JSON must not silently canonicalize into a fragment")
+		assert.Equal(t, fwktype.Error, status.Code())
+		assert.Nil(t, fragments)
+	})
+
+	t.Run("malformed resource-spec mirrors PreFilter Error status", func(t *testing.T) {
+		pod := mkPod("bad", map[string]string{
+			apiext.AnnotationResourceSpec: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status)
+		assert.Equal(t, fwktype.Error, status.Code())
+		assert.Nil(t, fragments)
 	})
 
 	mkPodWithRequests := func(name string, cpu, mem string) *corev1.Pod {

@@ -224,20 +224,70 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: canonicalDeviceRequests(requests),
 		})
 	}
-	if pod.Annotations != nil {
-		for _, key := range []string{
-			apiext.AnnotationDeviceAllocated,
-			apiext.AnnotationDeviceAllocateHint,
-			apiext.AnnotationDeviceJointAllocate,
-			apiext.AnnotationGPUPartitionSpec,
-		} {
-			if v, ok := pod.Annotations[key]; ok && v != "" {
-				fragments = append(fragments, fwktype.SignFragment{
-					Key:   "koord.DeviceShare.annotation:" + key,
-					Value: canonicalJSON(v),
-				})
-			}
+	// Parse device-shape annotations with the same helpers preparePod /
+	// parsePodDeviceShareExtensions use so malformed input yields the
+	// identical UnschedulableAndUnresolvable Status instead of silently
+	// canonicalizing raw bytes. Marshal the parsed struct (with helper
+	// defaults applied, e.g. GPUPartitionSpec.AllocatePolicy) so two
+	// semantically equal annotations share a fragment value.
+	if raw := pod.Annotations[apiext.AnnotationDeviceAllocated]; raw != "" {
+		allocs, err := apiext.GetDeviceAllocations(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 		}
+		b, mErr := json.Marshal(allocs)
+		if mErr != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, mErr.Error())
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationDeviceAllocated,
+			Value: string(b),
+		})
+	}
+	if raw := pod.Annotations[apiext.AnnotationDeviceAllocateHint]; raw != "" {
+		hints, err := apiext.GetDeviceAllocateHints(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
+				fmt.Sprintf("invalid DeviceAllocateHint annotation, err: %s", err.Error()))
+		}
+		b, mErr := json.Marshal(hints)
+		if mErr != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, mErr.Error())
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationDeviceAllocateHint,
+			Value: string(b),
+		})
+	}
+	if raw := pod.Annotations[apiext.AnnotationDeviceJointAllocate]; raw != "" {
+		joint, err := apiext.GetDeviceJointAllocate(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
+				fmt.Sprintf("invalid DeviceJointAllocate annotation, err: %s", err.Error()))
+		}
+		b, mErr := json.Marshal(joint)
+		if mErr != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, mErr.Error())
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationDeviceJointAllocate,
+			Value: string(b),
+		})
+	}
+	if raw := pod.Annotations[apiext.AnnotationGPUPartitionSpec]; raw != "" {
+		spec, err := apiext.GetGPUPartitionSpec(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
+				fmt.Sprintf("invalid GPUPartitionSpec annotation, err: %s", err.Error()))
+		}
+		b, mErr := json.Marshal(spec)
+		if mErr != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, mErr.Error())
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationGPUPartitionSpec,
+			Value: string(b),
+		})
 	}
 	if affinity != nil {
 		fragments = append(fragments, fwktype.SignFragment{
@@ -252,21 +302,6 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 		})
 	}
 	return fragments, nil
-}
-
-// canonicalJSON normalizes a JSON annotation value so two semantically
-// equal annotations (different whitespace or object key order) produce
-// the same signature fragment. Malformed input is returned unchanged.
-func canonicalJSON(s string) string {
-	var v interface{}
-	if err := json.Unmarshal([]byte(s), &v); err != nil {
-		return s
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return s
-	}
-	return string(b)
 }
 
 // canonicalDeviceRequests turns the device request map into a stable,

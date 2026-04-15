@@ -99,7 +99,7 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.NotNil(t, findFragment(fragments, "koord.Reservation.ownerInputs"))
 	})
 
-	t.Run("reservation affinity canonicalisation: same JSON shape produces the same affinity fragment", func(t *testing.T) {
+	t.Run("reservation affinity canonicalization: same JSON shape produces the same affinity fragment", func(t *testing.T) {
 		mk := func(name, anno string) *corev1.Pod {
 			return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 				Name: name, UID: types.UID(name), Namespace: "default",
@@ -116,7 +116,7 @@ func TestPlugin_SignPod(t *testing.T) {
 			findFragment(fb, "koord.Reservation.affinity"))
 	})
 
-	t.Run("malformed reservation affinity falls back to the raw string in the affinity fragment", func(t *testing.T) {
+	t.Run("malformed reservation affinity mirrors PreFilter and refuses to sign", func(t *testing.T) {
 		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 			Name: "bad", UID: "bad", Namespace: "default",
 			Annotations: map[string]string{
@@ -124,8 +124,22 @@ func TestPlugin_SignPod(t *testing.T) {
 			},
 		}}
 		fragments, status := pl.SignPod(context.TODO(), pod)
-		assert.True(t, status == nil || status.IsSuccess())
-		assert.Equal(t, "not-json", findFragment(fragments, "koord.Reservation.affinity"))
+		require.NotNil(t, status, "malformed affinity must not silently canonicalize into a fragment")
+		assert.False(t, status.IsSuccess())
+		assert.Nil(t, fragments)
+	})
+
+	t.Run("malformed exact-match-reservation mirrors PreFilter and refuses to sign", func(t *testing.T) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: "bad-exact", UID: "bad-exact", Namespace: "default",
+			Annotations: map[string]string{
+				apiext.AnnotationExactMatchReservationSpec: "not-json",
+			},
+		}}
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status, "malformed exact-match must not silently canonicalize into a fragment")
+		assert.False(t, status.IsSuccess())
+		assert.Nil(t, fragments)
 	})
 
 	t.Run("reservation-ignored label adds a dedicated fragment", func(t *testing.T) {

@@ -278,19 +278,37 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 //   - pre-allocation-required label drives isPreAllocationRequired.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	fragments := make([]fwktype.SignFragment, 0, 5)
-	if pod.Annotations != nil {
-		if v, ok := pod.Annotations[extension.AnnotationNUMATopologySpec]; ok && v != "" {
-			fragments = append(fragments, fwktype.SignFragment{
-				Key:   "koord.NodeNUMAResource.numaTopology",
-				Value: canonicalJSON(v),
-			})
+	// Parse numa-topology-spec / resource-spec with the same helpers PreFilter
+	// uses (see PreFilter below) so malformed input produces the identical
+	// Error Status instead of silently canonicalizing the raw bytes and
+	// letting a bad pod share a signature with a clean one.
+	if raw := pod.Annotations[extension.AnnotationNUMATopologySpec]; raw != "" {
+		numaSpec, err := extension.GetNUMATopologySpec(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.Error, err.Error())
 		}
-		if v, ok := pod.Annotations[extension.AnnotationResourceSpec]; ok && v != "" {
-			fragments = append(fragments, fwktype.SignFragment{
-				Key:   "koord.NodeNUMAResource.resourceSpec",
-				Value: canonicalJSON(v),
-			})
+		b, mErr := json.Marshal(numaSpec)
+		if mErr != nil {
+			return nil, fwktype.NewStatus(fwktype.Error, mErr.Error())
 		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.NodeNUMAResource.numaTopology",
+			Value: string(b),
+		})
+	}
+	if raw := pod.Annotations[extension.AnnotationResourceSpec]; raw != "" {
+		resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.Error, err.Error())
+		}
+		b, mErr := json.Marshal(resourceSpec)
+		if mErr != nil {
+			return nil, fwktype.NewStatus(fwktype.Error, mErr.Error())
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.NodeNUMAResource.resourceSpec",
+			Value: string(b),
+		})
 	}
 	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	requests = quotav1.RemoveZeros(requests)
@@ -338,21 +356,6 @@ func canonicalResourceList(rl corev1.ResourceList) []string {
 		out = append(out, n+"="+q.String())
 	}
 	return out
-}
-
-// canonicalJSON normalizes a JSON annotation value so two semantically
-// equal annotations (different whitespace or object key order) produce
-// the same signature fragment. Malformed input is returned unchanged.
-func canonicalJSON(s string) string {
-	var v interface{}
-	if err := json.Unmarshal([]byte(s), &v); err != nil {
-		return s
-	}
-	b, err := json.Marshal(v)
-	if err != nil {
-		return s
-	}
-	return string(b)
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {

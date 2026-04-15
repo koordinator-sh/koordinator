@@ -154,11 +154,52 @@ func TestPlugin_SignPod(t *testing.T) {
 	t.Run("gpu-partition-spec annotation produces a different signature", func(t *testing.T) {
 		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
 		part := mkPodWithAnno("part", map[string]string{
-			apiext.AnnotationGPUPartitionSpec: `{"size":2}`,
+			apiext.AnnotationGPUPartitionSpec: `{"allocatePolicy":"Restricted"}`,
 		})
 		fa, _ := pl.SignPod(context.TODO(), base)
 		fb, _ := pl.SignPod(context.TODO(), part)
 		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("malformed device-allocated annotation opts the pod out with UnschedulableAndUnresolvable", func(t *testing.T) {
+		pod := mkPodWithAnno("bad-alloc", map[string]string{
+			apiext.AnnotationDeviceAllocated: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status)
+		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code(),
+			"malformed JSON must not silently canonicalize into a fragment")
+		assert.Nil(t, fragments)
+	})
+
+	t.Run("malformed device-allocate-hint annotation opts the pod out with UnschedulableAndUnresolvable", func(t *testing.T) {
+		pod := mkPodWithAnno("bad-hint", map[string]string{
+			apiext.AnnotationDeviceAllocateHint: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status)
+		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code())
+		assert.Nil(t, fragments)
+	})
+
+	t.Run("malformed device-joint-allocate annotation opts the pod out with UnschedulableAndUnresolvable", func(t *testing.T) {
+		pod := mkPodWithAnno("bad-joint", map[string]string{
+			apiext.AnnotationDeviceJointAllocate: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status)
+		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code())
+		assert.Nil(t, fragments)
+	})
+
+	t.Run("malformed gpu-partition-spec annotation opts the pod out with UnschedulableAndUnresolvable", func(t *testing.T) {
+		pod := mkPodWithAnno("bad-part", map[string]string{
+			apiext.AnnotationGPUPartitionSpec: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status)
+		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code())
+		assert.Nil(t, fragments)
 	})
 
 	t.Run("reservation affinity adds a dedicated fragment", func(t *testing.T) {
