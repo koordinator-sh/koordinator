@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/test"
 )
 
@@ -233,6 +234,63 @@ func TestSortPodsOnOneOverloadedNode(t *testing.T) {
 	}
 	sortPodsOnOneOverloadedNode(nodeInfo, removablePods, resourceWeights, false)
 	assert.Equal(t, expectedResult, removablePods)
+}
+
+func TestBalancePodsSkipsWhenNoTargetNodes(t *testing.T) {
+	pod := test.BuildTestPod("test-pod", 1000, 0, "source-node", test.SetRSOwnerRef)
+	sourceNode := test.BuildTestNode("source-node", 4000, 3000, 10, nil)
+	sourceNodeInfo := NodeInfo{
+		NodeUsage: &NodeUsage{
+			node:    sourceNode,
+			allPods: []*corev1.Pod{pod},
+			usage: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU: resource.NewMilliQuantity(2500, resource.DecimalSI),
+			},
+			podMetrics: map[types.NamespacedName]*slov1alpha1.ResourceMap{
+				{Namespace: pod.Namespace, Name: pod.Name}: {
+					ResourceList: corev1.ResourceList{
+						corev1.ResourceCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
+					},
+				},
+			},
+		},
+		thresholds: NodeThresholds{
+			highResourceThreshold: map[corev1.ResourceName]*resource.Quantity{
+				corev1.ResourceCPU: resource.NewMilliQuantity(3000, resource.DecimalSI),
+			},
+		},
+	}
+
+	podFilterCalls := 0
+	balancePods(
+		context.Background(),
+		"test-node-pool",
+		[]NodeInfo{sourceNodeInfo},
+		nil,
+		map[string]*NodeUsage{sourceNode.Name: sourceNodeInfo.NodeUsage},
+		map[string]NodeThresholds{sourceNode.Name: sourceNodeInfo.thresholds},
+		newAvailableUsage([]corev1.ResourceName{corev1.ResourceCPU}),
+		false,
+		true,
+		false,
+		map[corev1.ResourceName]int64{corev1.ResourceCPU: 1},
+		nil,
+		func(*corev1.Pod) bool {
+			podFilterCalls++
+			return true
+		},
+		func(string, framework.FilterFunc) ([]*corev1.Pod, error) {
+			t.Fatal("node fit should not be evaluated when there are no target nodes")
+			return nil, nil
+		},
+		func(NodeInfo, map[corev1.ResourceName]*resource.Quantity, bool) bool {
+			t.Fatal("eviction should not be attempted when there are no target nodes")
+			return false
+		},
+		nil,
+	)
+
+	assert.Zero(t, podFilterCalls)
 }
 
 func TestPodFitsAnyNodeWithThreshold(t *testing.T) {

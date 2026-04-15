@@ -1,0 +1,372 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "9.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "pluginId": "prometheus" },
+    { "type": "panel", "id": "timeseries", "name": "Time series" },
+    { "type": "panel", "id": "stat", "name": "Stat" },
+    { "type": "panel", "id": "table", "name": "Table" },
+    { "type": "panel", "id": "piechart", "name": "Pie chart" }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Eviction Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Total Evictions (All Time)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(descheduler_pods_evicted{job=~\"$job\"})",
+          "legendFormat": "total"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Successful Evictions (All Time)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(descheduler_pods_evicted{job=~\"$job\", result=\"success\"})",
+          "legendFormat": "success"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Failed Evictions (All Time)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(descheduler_pods_evicted{job=~\"$job\", result=\"error\"})",
+          "legendFormat": "error"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Current Eviction Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(descheduler_pods_evicted{job=~\"$job\"}[$__rate_interval]))",
+          "legendFormat": "rate"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 101,
+      "title": "Eviction Rate",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 10,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Eviction Rate by Result",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(descheduler_pods_evicted{job=~\"$job\"}[$__rate_interval])) by (result)",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 11,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Eviction Rate by Strategy",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(descheduler_pods_evicted{job=~\"$job\"}[$__rate_interval])) by (strategy)",
+          "legendFormat": "{{strategy}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 12,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Eviction Rate by Node (Top 10)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(descheduler_pods_evicted{job=~\"$job\"}[$__rate_interval])) by (node))",
+          "legendFormat": "{{node}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 13,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Eviction Rate by Namespace (Top 10)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(descheduler_pods_evicted{job=~\"$job\"}[$__rate_interval])) by (namespace))",
+          "legendFormat": "{{namespace}}"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "id": 102,
+      "title": "Eviction Breakdown",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
+      "id": 20,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Successful Evictions by Strategy",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(descheduler_pods_evicted{job=~\"$job\", result=\"success\"}[$__rate_interval])) by (strategy)",
+          "legendFormat": "{{strategy}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
+      "id": 21,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Failed Evictions by Strategy",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(descheduler_pods_evicted{job=~\"$job\", result=\"error\"}[$__rate_interval])) by (strategy)",
+          "legendFormat": "{{strategy}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "id": 22,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Rate-Limited Evictions (Max Per Node Reached)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(descheduler_pods_evicted{job=~\"$job\", result=\"maximum number of pods per node reached\"}[$__rate_interval])) by (node)",
+          "legendFormat": "node={{node}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "id": 23,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Rate-Limited Evictions (Max Per Namespace Reached)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(descheduler_pods_evicted{job=~\"$job\", result=\"maximum number of pods per namespace reached\"}[$__rate_interval])) by (namespace)",
+          "legendFormat": "ns={{namespace}}"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "id": 103,
+      "title": "Eviction Details by Strategy and Node",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 42 },
+      "id": 30,
+      "options": {},
+      "title": "Eviction Count by Strategy, Node, Namespace",
+      "type": "table",
+      "targets": [
+        {
+          "expr": "sum by (strategy, node, namespace, result) (increase(descheduler_pods_evicted{job=~\"$job\"}[$__range]))",
+          "format": "table",
+          "instant": true,
+          "legendFormat": ""
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true },
+            "renameByName": { "Value": "Count" }
+          }
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+      "id": 31,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Cumulative Evictions by Strategy",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(descheduler_pods_evicted{job=~\"$job\"}) by (strategy)",
+          "legendFormat": "{{strategy}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+      "id": 32,
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "pieType": "donut"
+      },
+      "title": "Eviction Distribution by Result",
+      "type": "piechart",
+      "targets": [
+        {
+          "expr": "sum(descheduler_pods_evicted{job=~\"$job\"}) by (result)",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["koordinator", "descheduler", "descheduling"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(descheduler_pods_evicted, job)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Job",
+        "multi": false,
+        "name": "job",
+        "query": "label_values(descheduler_pods_evicted, job)",
+        "refresh": 2,
+        "regex": "",
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Koordinator Descheduling",
+  "uid": "koordinator-descheduling",
+  "version": 1
+}
