@@ -233,15 +233,17 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 	if newR == nil {
 		return fwktype.Queue, nil
 	}
-	// Add: a fresh reservation only matters once it reaches an active phase.
+	// A reservation is only matchable for allocation (ReservationInfo.IsMatchable)
+	// once it reaches the Available phase, so the hint keys off availability,
+	// not the broader "active" (Available or Waiting) status.
 	if oldR == nil {
-		if reservationutil.IsReservationActive(newR) {
+		if reservationutil.IsReservationAvailable(newR) {
 			return fwktype.Queue, nil
 		}
 		return fwktype.QueueSkip, nil
 	}
-	// Update: the typical wake-up signal is an inactive -> active transition.
-	if !reservationutil.IsReservationActive(oldR) && reservationutil.IsReservationActive(newR) {
+	// Update: the wake-up signal is the transition into the Available phase.
+	if !reservationutil.IsReservationAvailable(oldR) && reservationutil.IsReservationAvailable(newR) {
 		return fwktype.Queue, nil
 	}
 	return fwktype.QueueSkip, nil

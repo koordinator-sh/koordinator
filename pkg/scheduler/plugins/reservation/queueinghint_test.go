@@ -232,11 +232,20 @@ func TestPlugin_QueueingHint_PodDeletion_AssignedViaCache(t *testing.T) {
 }
 
 func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
-	// IsReservationActive requires Status.NodeName to be set and a Phase of Available or Waiting.
-	activeReservation := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{Name: "r-active", UID: "r-active"},
+	// IsReservationAvailable requires Status.NodeName to be set and Phase == Available.
+	// The hint keys off availability because that is what ReservationInfo.IsMatchable
+	// requires when the scheduler looks for a match.
+	availableReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-available", UID: "r-available"},
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "node-1",
+		},
+	}
+	waitingReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-waiting", UID: "r-waiting"},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationWaiting,
 			NodeName: "node-1",
 		},
 	}
@@ -269,21 +278,21 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			args: args{
 				waitingPod: makeWaitingPodNoReservation("w2"),
 				oldObj:     nil,
-				newObj:     activeReservation,
+				newObj:     availableReservation,
 			},
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
-			name: "Add an active reservation, requeue",
+			name: "Add an available reservation, requeue",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w3"),
 				oldObj:     nil,
-				newObj:     activeReservation,
+				newObj:     availableReservation,
 			},
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "Add a not-yet-ready reservation, skip",
+			name: "Add a not-yet-available reservation (pending), skip",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w4"),
 				oldObj:     nil,
@@ -292,20 +301,47 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
+			name: "Add a Waiting reservation is not yet matchable, skip",
+			args: args{
+				waitingPod: makeWaitingPodUsingReservation("w4w"),
+				oldObj:     nil,
+				newObj:     waitingReservation,
+			},
+			expectedHint: fwktype.QueueSkip,
+		},
+		{
 			name: "Update from pending to available, requeue",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w5"),
 				oldObj:     pendingReservation,
-				newObj:     activeReservation,
+				newObj:     availableReservation,
 			},
 			expectedHint: fwktype.Queue,
+		},
+		{
+			name: "Update from Waiting to Available is the matchability transition, requeue",
+			args: args{
+				waitingPod: makeWaitingPodUsingReservation("w5w"),
+				oldObj:     waitingReservation,
+				newObj:     availableReservation,
+			},
+			expectedHint: fwktype.Queue,
+		},
+		{
+			name: "Update from Pending to Waiting is still not matchable, skip",
+			args: args{
+				waitingPod: makeWaitingPodUsingReservation("w5p"),
+				oldObj:     pendingReservation,
+				newObj:     waitingReservation,
+			},
+			expectedHint: fwktype.QueueSkip,
 		},
 		{
 			name: "Update while both are available with no meaningful change, skip to avoid queue noise",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w6"),
-				oldObj:     activeReservation,
-				newObj:     activeReservation,
+				oldObj:     availableReservation,
+				newObj:     availableReservation,
 			},
 			expectedHint: fwktype.QueueSkip,
 		},
@@ -313,7 +349,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			name: "Delete gives waiting pods another chance to re-evaluate",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w7"),
-				oldObj:     activeReservation,
+				oldObj:     availableReservation,
 				newObj:     nil,
 			},
 			expectedHint: fwktype.Queue,
