@@ -42,18 +42,6 @@ func TestPlugin_SignPod(t *testing.T) {
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
-	type kv struct {
-		key string
-		val any
-	}
-	toKVs := func(fragments []fwktype.SignFragment) []kv {
-		out := make([]kv, 0, len(fragments))
-		for _, f := range fragments {
-			out = append(out, kv{key: f.Key, val: f.Value})
-		}
-		return out
-	}
-
 	normalPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "n", Namespace: "default", UID: types.UID("n")},
 	}
@@ -75,60 +63,60 @@ func TestPlugin_SignPod(t *testing.T) {
 		},
 	}
 
-	tests := []struct {
-		name     string
-		pod      *corev1.Pod
-		expected []kv
-	}{
-		{
-			name:     "plain pod contributes no fragments",
-			pod:      normalPod,
-			expected: []kv{},
-		},
-		{
-			name: "reserve pod contributes the target reservation name",
-			pod:  reservePod,
-			expected: []kv{
-				{key: "koord.Reservation.reservePodFor", val: "booked-r"},
-			},
-		},
-		{
-			name: "pod with reservation affinity contributes the raw affinity",
-			pod:  affinityPod,
-			expected: []kv{
-				{key: "koord.Reservation.affinity", val: `{"reservationSelector":{"app":"demo"}}`},
-			},
-		},
+	// findFragment returns the value for the given key in the fragment slice
+	// (or nil if missing). Tests use this to assert specific fragments
+	// without coupling to the full fragment list.
+	findFragment := func(fragments []fwktype.SignFragment, key string) any {
+		for _, f := range fragments {
+			if f.Key == key {
+				return f.Value
+			}
+		}
+		return nil
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			fragments, status := pl.SignPod(context.TODO(), tt.pod)
-			assert.True(t, status == nil || status.IsSuccess(), "status should be nil or Success")
-			assert.Equal(t, tt.expected, toKVs(fragments))
-		})
-	}
-
-	t.Run("reservation affinity with different formatting produces the same fragment", func(t *testing.T) {
-		a := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-			Name: "a", UID: "a", Namespace: "default",
-			Annotations: map[string]string{
-				apiext.AnnotationReservationAffinity: `{"reservationSelector":{"app":"demo"}}`,
-			},
-		}}
-		b := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-			Name: "b", UID: "b", Namespace: "default",
-			Annotations: map[string]string{
-				// Identical meaning but with whitespace around the object.
-				apiext.AnnotationReservationAffinity: "{ \"reservationSelector\" : { \"app\" : \"demo\" } }",
-			},
-		}}
-		fa, _ := pl.SignPod(context.TODO(), a)
-		fb, _ := pl.SignPod(context.TODO(), b)
-		assert.Equal(t, fa, fb)
+	t.Run("reserve pod short-circuits to a single reservePodFor fragment", func(t *testing.T) {
+		fragments, status := pl.SignPod(context.TODO(), reservePod)
+		assert.True(t, status == nil || status.IsSuccess(), "status should be nil or Success")
+		require.Len(t, fragments, 1)
+		assert.Equal(t, "koord.Reservation.reservePodFor", fragments[0].Key)
+		assert.Equal(t, "booked-r", fragments[0].Value)
 	})
 
-	t.Run("malformed reservation affinity falls back to the raw string", func(t *testing.T) {
+	t.Run("plain pod always contributes the ownerInputs fragment", func(t *testing.T) {
+		fragments, status := pl.SignPod(context.TODO(), normalPod)
+		assert.True(t, status == nil || status.IsSuccess())
+		assert.NotNil(t, findFragment(fragments, "koord.Reservation.ownerInputs"),
+			"every non-reserve pod must include owner-matching inputs")
+		assert.Nil(t, findFragment(fragments, "koord.Reservation.affinity"))
+	})
+
+	t.Run("pod with reservation affinity emits both affinity and ownerInputs fragments", func(t *testing.T) {
+		fragments, status := pl.SignPod(context.TODO(), affinityPod)
+		assert.True(t, status == nil || status.IsSuccess())
+		assert.Equal(t, `{"reservationSelector":{"app":"demo"}}`,
+			findFragment(fragments, "koord.Reservation.affinity"))
+		assert.NotNil(t, findFragment(fragments, "koord.Reservation.ownerInputs"))
+	})
+
+	t.Run("reservation affinity canonicalisation: same JSON shape produces the same affinity fragment", func(t *testing.T) {
+		mk := func(name, anno string) *corev1.Pod {
+			return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Name: name, UID: types.UID(name), Namespace: "default",
+				Annotations: map[string]string{apiext.AnnotationReservationAffinity: anno},
+			}}
+		}
+		a := mk("a", `{"reservationSelector":{"app":"demo"}}`)
+		b := mk("b", "{ \"reservationSelector\" : { \"app\" : \"demo\" } }")
+		fa, _ := pl.SignPod(context.TODO(), a)
+		fb, _ := pl.SignPod(context.TODO(), b)
+		// Owner-input fragments differ (different pod identity) but the
+		// affinity fragment must canonicalize to the same value.
+		assert.Equal(t, findFragment(fa, "koord.Reservation.affinity"),
+			findFragment(fb, "koord.Reservation.affinity"))
+	})
+
+	t.Run("malformed reservation affinity falls back to the raw string in the affinity fragment", func(t *testing.T) {
 		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 			Name: "bad", UID: "bad", Namespace: "default",
 			Annotations: map[string]string{
@@ -137,8 +125,7 @@ func TestPlugin_SignPod(t *testing.T) {
 		}}
 		fragments, status := pl.SignPod(context.TODO(), pod)
 		assert.True(t, status == nil || status.IsSuccess())
-		require.Len(t, fragments, 1)
-		assert.Equal(t, "not-json", fragments[0].Value)
+		assert.Equal(t, "not-json", findFragment(fragments, "koord.Reservation.affinity"))
 	})
 
 	t.Run("reservation-ignored label adds a dedicated fragment", func(t *testing.T) {
@@ -179,7 +166,10 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.NotEqual(t, fa, fb)
 	})
 
-	t.Run("identical labels and owners yield the same owner-input fragment", func(t *testing.T) {
+	t.Run("two pods with different identity always yield different signatures", func(t *testing.T) {
+		// MatchObjectRef can match by pod UID/Name/Namespace, so two distinct
+		// pods must not share a signature even when their labels and owners
+		// are identical. KEP-5598 prefers correctness over batching here.
 		mk := func(name string) *corev1.Pod {
 			return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 				Name: name, UID: types.UID(name), Namespace: "default",
@@ -191,6 +181,57 @@ func TestPlugin_SignPod(t *testing.T) {
 		}
 		fa, _ := pl.SignPod(context.TODO(), mk("a"))
 		fb, _ := pl.SignPod(context.TODO(), mk("b"))
-		assert.Equal(t, fa, fb)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("different namespace produces a different signature", func(t *testing.T) {
+		mk := func(ns string) *corev1.Pod {
+			return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Name: "p", UID: "p", Namespace: ns,
+			}}
+		}
+		fa, _ := pl.SignPod(context.TODO(), mk("ns-a"))
+		fb, _ := pl.SignPod(context.TODO(), mk("ns-b"))
+		assert.NotEqual(t, fa, fb,
+			"MatchObjectRef and MatchReservationControllerReference both consult pod.Namespace")
+	})
+
+	t.Run("different ownerRef.UID produces a different signature", func(t *testing.T) {
+		mk := func(name, uid string) *corev1.Pod {
+			return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Name: name, UID: types.UID(name), Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "apps/v1", Kind: "Deployment", Name: "web",
+					UID: types.UID(uid),
+				}},
+			}}
+		}
+		// Same pod identity, only ownerRef.UID differs.
+		fa, _ := pl.SignPod(context.TODO(), mk("p", "owner-1"))
+		fb, _ := pl.SignPod(context.TODO(), mk("p", "owner-2"))
+		assert.NotEqual(t, fa, fb,
+			"MatchReservationControllerReference matches by ownerRef.UID")
+	})
+
+	t.Run("different ownerRef.Controller flag produces a different signature", func(t *testing.T) {
+		mkRef := func(controller *bool) metav1.OwnerReference {
+			return metav1.OwnerReference{
+				APIVersion: "apps/v1", Kind: "Deployment", Name: "web", UID: "same",
+				Controller: controller,
+			}
+		}
+		t1, t2 := true, false
+		mk := func(controller *bool) *corev1.Pod {
+			return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Name: "p", UID: "p", Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{mkRef(controller)},
+			}}
+		}
+		fa, _ := pl.SignPod(context.TODO(), mk(&t1))
+		fb, _ := pl.SignPod(context.TODO(), mk(&t2))
+		fnil, _ := pl.SignPod(context.TODO(), mk(nil))
+		assert.NotEqual(t, fa, fb)
+		assert.NotEqual(t, fa, fnil)
+		assert.NotEqual(t, fb, fnil)
 	})
 }

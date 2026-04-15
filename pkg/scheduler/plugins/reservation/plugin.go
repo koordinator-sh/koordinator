@@ -228,24 +228,43 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 			Value: true,
 		})
 	}
-	if owner := canonicalOwnerInputs(pod); owner != "" {
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.Reservation.ownerInputs",
-			Value: owner,
-		})
-	}
+	// Owner-matching inputs are always present (at least the pod namespace
+	// shapes the matcher decision), so the fragment is unconditional.
+	fragments = append(fragments, fwktype.SignFragment{
+		Key:   "koord.Reservation.ownerInputs",
+		Value: canonicalOwnerInputs(pod),
+	})
 	return fragments, nil
 }
 
-// canonicalOwnerInputs serializes the pod attributes that reservation owner
-// matching consults (labels + owner references) into a stable string. Pods
-// with identical labels and owner references produce the same value
-// regardless of map iteration order.
+// canonicalOwnerInputs serializes every pod attribute that the reservation
+// owner matchers consult so two pods that would match different
+// reservations cannot share a signature. The matchers in
+// pkg/util/reservation/reservation.go consume:
+//
+//   - MatchLabels reads pod.Labels.
+//   - MatchObjectRef reads pod.UID, pod.Name, pod.Namespace, pod.APIVersion.
+//   - MatchReservationControllerReference reads pod.Namespace and the
+//     UID, Controller, Name, Kind and APIVersion of every OwnerReference.
+//
+// Including pod.UID and pod.Name effectively prevents batching across two
+// real pods, but that is the correct trade-off: KEP-5598 requires that
+// pods sharing a signature receive the same scheduling outcome. If a
+// reservation matches by ObjectReference UID, two pods with different
+// UIDs would resolve to different reservations and must not reuse a
+// cached scheduling decision.
 func canonicalOwnerInputs(pod *corev1.Pod) string {
-	if len(pod.Labels) == 0 && len(pod.OwnerReferences) == 0 {
-		return ""
+	parts := make([]string, 0, 6+len(pod.Labels)+len(pod.OwnerReferences))
+	parts = append(parts, "ns="+pod.Namespace)
+	if pod.Name != "" {
+		parts = append(parts, "name="+pod.Name)
 	}
-	parts := make([]string, 0, len(pod.Labels)+len(pod.OwnerReferences))
+	if pod.UID != "" {
+		parts = append(parts, "uid="+string(pod.UID))
+	}
+	if pod.APIVersion != "" {
+		parts = append(parts, "apiVersion="+pod.APIVersion)
+	}
 	if len(pod.Labels) > 0 {
 		keys := make([]string, 0, len(pod.Labels))
 		for k := range pod.Labels {
@@ -259,7 +278,12 @@ func canonicalOwnerInputs(pod *corev1.Pod) string {
 	if len(pod.OwnerReferences) > 0 {
 		owners := make([]string, 0, len(pod.OwnerReferences))
 		for _, ref := range pod.OwnerReferences {
-			owners = append(owners, "owner:"+ref.APIVersion+"/"+ref.Kind+"/"+ref.Name)
+			controller := ""
+			if ref.Controller != nil {
+				controller = strconv.FormatBool(*ref.Controller)
+			}
+			owners = append(owners, fmt.Sprintf("owner:apiVersion=%s/kind=%s/name=%s/uid=%s/controller=%s",
+				ref.APIVersion, ref.Kind, ref.Name, string(ref.UID), controller))
 		}
 		sort.Strings(owners)
 		parts = append(parts, owners...)
