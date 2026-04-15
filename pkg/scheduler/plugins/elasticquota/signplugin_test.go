@@ -25,18 +25,31 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	featuregatetesting "k8s.io/component-base/featuregate/testing"
 	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 )
 
 var _ fwktype.SignPlugin = &Plugin{}
 
 func TestPlugin_SignPod(t *testing.T) {
+	// Disable the default-quota fallback so pods without a label, or with an
+	// unknown quota label, yield no fragment. This keeps the test focused on
+	// real signature differences.
+	featuregatetesting.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.DisableDefaultQuota, true)
+
 	suit := newPluginTestSuit(t, nil)
 	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 	require.NoError(t, err)
 	pl := p.(*Plugin)
+
+	// Register two real quotas so the resolver (which cross-references a
+	// tree map) can return their names.
+	pl.addQuota("team-a", apiext.RootQuotaName, 96, 160, 10, 10, 96, 160, true, "", "tree-a")
+	pl.addQuota("team-b", apiext.RootQuotaName, 96, 160, 10, 10, 96, 160, true, "", "tree-b")
 
 	mkPod := func(name string, labels map[string]string) *corev1.Pod {
 		return &corev1.Pod{
@@ -53,7 +66,15 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Empty(t, fragments)
 	})
 
-	t.Run("pod with quota name contributes a fragment", func(t *testing.T) {
+	t.Run("pod with tree id but no quota name contributes nothing", func(t *testing.T) {
+		fragments, status := pl.SignPod(context.TODO(), mkPod("p", map[string]string{
+			apiext.LabelQuotaTreeID: "tree-a",
+		}))
+		assert.True(t, status.IsSuccess())
+		assert.Empty(t, fragments)
+	})
+
+	t.Run("pod with known quota name contributes a fragment", func(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", map[string]string{
 			apiext.LabelQuotaName: "team-a",
 		}))
@@ -62,11 +83,8 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Equal(t, "koord.ElasticQuota.quota", fragments[0].Key)
 	})
 
-	t.Run("same quota name and tree yield identical fragments", func(t *testing.T) {
-		labels := map[string]string{
-			apiext.LabelQuotaName:   "team-a",
-			apiext.LabelQuotaTreeID: "tree-1",
-		}
+	t.Run("two pods with the same quota label share the same fragment", func(t *testing.T) {
+		labels := map[string]string{apiext.LabelQuotaName: "team-a"}
 		fa, _ := pl.SignPod(context.TODO(), mkPod("a", labels))
 		fb, _ := pl.SignPod(context.TODO(), mkPod("b", labels))
 		assert.Equal(t, fa, fb)
@@ -75,18 +93,6 @@ func TestPlugin_SignPod(t *testing.T) {
 	t.Run("different quota names yield different fragments", func(t *testing.T) {
 		fa, _ := pl.SignPod(context.TODO(), mkPod("a", map[string]string{apiext.LabelQuotaName: "team-a"}))
 		fb, _ := pl.SignPod(context.TODO(), mkPod("b", map[string]string{apiext.LabelQuotaName: "team-b"}))
-		assert.NotEqual(t, fa, fb)
-	})
-
-	t.Run("different tree ids under same quota yield different fragments", func(t *testing.T) {
-		fa, _ := pl.SignPod(context.TODO(), mkPod("a", map[string]string{
-			apiext.LabelQuotaName:   "team-a",
-			apiext.LabelQuotaTreeID: "tree-1",
-		}))
-		fb, _ := pl.SignPod(context.TODO(), mkPod("b", map[string]string{
-			apiext.LabelQuotaName:   "team-a",
-			apiext.LabelQuotaTreeID: "tree-2",
-		}))
 		assert.NotEqual(t, fa, fb)
 	})
 }

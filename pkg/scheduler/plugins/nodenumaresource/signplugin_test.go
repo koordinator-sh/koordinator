@@ -94,4 +94,26 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Len(t, fragments, 1)
 		assert.Equal(t, "koord.NodeNUMAResource.resourceSpec", fragments[0].Key)
 	})
+
+	t.Run("identical annotations with different whitespace share the same fragment", func(t *testing.T) {
+		a := mkPod("a", map[string]string{
+			apiext.AnnotationNUMATopologySpec: `{"numaTopologyPolicy":"SingleNUMANode"}`,
+		})
+		b := mkPod("b", map[string]string{
+			apiext.AnnotationNUMATopologySpec: "{ \"numaTopologyPolicy\" : \"SingleNUMANode\" }",
+		})
+		fa, _ := pl.SignPod(context.TODO(), a)
+		fb, _ := pl.SignPod(context.TODO(), b)
+		assert.Equal(t, fa, fb)
+	})
+
+	t.Run("malformed JSON annotation falls back to raw value", func(t *testing.T) {
+		pod := mkPod("bad", map[string]string{
+			apiext.AnnotationNUMATopologySpec: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		assert.True(t, status.IsSuccess())
+		assert.Len(t, fragments, 1)
+		assert.Equal(t, "not-json", fragments[0].Value)
+	})
 }

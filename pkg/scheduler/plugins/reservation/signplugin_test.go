@@ -60,7 +60,7 @@ func TestPlugin_SignPod(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "rp", Namespace: "default", UID: types.UID("rp"),
 			Annotations: map[string]string{
-				reservationutil.AnnotationReservePod:    "true",
+				reservationutil.AnnotationReservePod:      "true",
 				reservationutil.AnnotationReservationName: "booked-r",
 			},
 		},
@@ -107,4 +107,36 @@ func TestPlugin_SignPod(t *testing.T) {
 			assert.Equal(t, tt.expected, toKVs(fragments))
 		})
 	}
+
+	t.Run("reservation affinity with different formatting produces the same fragment", func(t *testing.T) {
+		a := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: "a", UID: "a", Namespace: "default",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAffinity: `{"reservationSelector":{"app":"demo"}}`,
+			},
+		}}
+		b := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: "b", UID: "b", Namespace: "default",
+			Annotations: map[string]string{
+				// Identical meaning but with whitespace around the object.
+				apiext.AnnotationReservationAffinity: "{ \"reservationSelector\" : { \"app\" : \"demo\" } }",
+			},
+		}}
+		fa, _ := pl.SignPod(context.TODO(), a)
+		fb, _ := pl.SignPod(context.TODO(), b)
+		assert.Equal(t, fa, fb)
+	})
+
+	t.Run("malformed reservation affinity falls back to the raw string", func(t *testing.T) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: "bad", UID: "bad", Namespace: "default",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAffinity: "not-json",
+			},
+		}}
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		assert.True(t, status.IsSuccess())
+		assert.Len(t, fragments, 1)
+		assert.Equal(t, "not-json", fragments[0].Value)
+	})
 }

@@ -18,6 +18,7 @@ package nodenumaresource
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -274,16 +275,31 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 	if v, ok := pod.Annotations[extension.AnnotationNUMATopologySpec]; ok && v != "" {
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.NodeNUMAResource.numaTopology",
-			Value: v,
+			Value: canonicalJSON(v),
 		})
 	}
 	if v, ok := pod.Annotations[extension.AnnotationResourceSpec]; ok && v != "" {
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.NodeNUMAResource.resourceSpec",
-			Value: v,
+			Value: canonicalJSON(v),
 		})
 	}
 	return fragments, nil
+}
+
+// canonicalJSON normalises a JSON annotation value so two semantically
+// equal annotations (different whitespace or object key order) produce
+// the same signature fragment. Malformed input is returned unchanged.
+func canonicalJSON(s string) string {
+	var v interface{}
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return s
+	}
+	return string(b)
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {

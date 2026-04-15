@@ -83,4 +83,16 @@ func TestPlugin_SignPod(t *testing.T) {
 		fb, _ := pl.SignPod(context.TODO(), b)
 		assert.NotEqual(t, fa, fb)
 	})
+
+	t.Run("malformed device request opts the pod out of batching", func(t *testing.T) {
+		// ValidatePercentageResource rejects values > 100 that are not
+		// multiples of 100. 150 triggers that branch.
+		pod := mkPod("bad", corev1.ResourceList{
+			apiext.ResourceGPU: resource.MustParse("150"),
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		assert.False(t, status.IsSuccess(), "malformed requests should not produce a signature")
+		assert.Equal(t, fwktype.Unschedulable, status.Code())
+		assert.Nil(t, fragments)
+	})
 }

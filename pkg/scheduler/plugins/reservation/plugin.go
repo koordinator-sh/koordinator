@@ -18,6 +18,7 @@ package reservation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -197,11 +198,26 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 		if aff, ok := pod.Annotations[apiext.AnnotationReservationAffinity]; ok && aff != "" {
 			return []fwktype.SignFragment{{
 				Key:   "koord.Reservation.affinity",
-				Value: aff,
+				Value: canonicalJSON(aff),
 			}}, nil
 		}
 	}
 	return []fwktype.SignFragment{}, nil
+}
+
+// canonicalJSON normalises a JSON annotation value so two semantically
+// equal annotations (different whitespace or object key order) produce
+// the same signature fragment. Malformed input is returned unchanged.
+func canonicalJSON(s string) string {
+	var v interface{}
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return s
+	}
+	return string(b)
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
