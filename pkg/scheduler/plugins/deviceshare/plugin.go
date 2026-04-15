@@ -205,9 +205,16 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	requests, err := GetPodDeviceRequests(pod)
 	if err != nil {
-		// A malformed device request would also fail PreFilter; keep batching
-		// off for this pod rather than asserting a signature.
-		return nil, fwktype.NewStatus(fwktype.Unschedulable, err.Error())
+		// PreFilter (preparePod) returns UnschedulableAndUnresolvable for the
+		// same parse failure; mirror that exactly so the pod is handled
+		// identically whether opportunistic batching is on or off.
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
+	}
+	// Resolve reservation affinity up front so we can mirror PreFilter's
+	// failure mode and so the resulting fragment is deterministic when valid.
+	affinity, err := reservationutil.GetRequiredReservationAffinity(pod)
+	if err != nil {
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 
 	fragments := make([]fwktype.SignFragment, 0, 7)
@@ -232,7 +239,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			}
 		}
 	}
-	if affinity, err := reservationutil.GetRequiredReservationAffinity(pod); err == nil && affinity != nil {
+	if affinity != nil {
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.DeviceShare.hasReservationAffinity",
 			Value: true,

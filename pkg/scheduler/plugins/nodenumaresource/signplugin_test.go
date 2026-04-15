@@ -156,6 +156,17 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.NotEqual(t, fa, fb)
 	})
 
+	t.Run("malformed reservation affinity returns UnschedulableAndUnresolvable", func(t *testing.T) {
+		pod := mkPod("bad-aff", map[string]string{
+			apiext.AnnotationReservationAffinity: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status)
+		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code(),
+			"malformed affinity must mirror PreFilter rather than silently sharing a signature")
+		assert.Nil(t, fragments)
+	})
+
 	t.Run("pre-allocation-required label adds a dedicated fragment", func(t *testing.T) {
 		base := mkPod("plain", nil)
 		preAlloc := &corev1.Pod{

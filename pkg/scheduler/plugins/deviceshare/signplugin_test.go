@@ -85,7 +85,7 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.NotEqual(t, fa, fb)
 	})
 
-	t.Run("malformed device request opts the pod out of batching", func(t *testing.T) {
+	t.Run("malformed device request opts the pod out of batching with the same status as PreFilter", func(t *testing.T) {
 		// ValidatePercentageResource rejects values > 100 that are not
 		// multiples of 100. 150 triggers that branch.
 		pod := mkPod("bad", corev1.ResourceList{
@@ -94,7 +94,28 @@ func TestPlugin_SignPod(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), pod)
 		require.NotNil(t, status, "malformed input must yield an explicit Unschedulable status, not nil/Success")
 		assert.False(t, status.IsSuccess(), "malformed requests should not produce a signature")
-		assert.Equal(t, fwktype.Unschedulable, status.Code())
+		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code(),
+			"status code must match preparePod so retry/preemption paths behave the same")
+		assert.Nil(t, fragments)
+	})
+
+	t.Run("malformed reservation affinity opts the pod out with UnschedulableAndUnresolvable", func(t *testing.T) {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "bad-aff", Namespace: "default", UID: "bad-aff",
+				Annotations: map[string]string{apiext.AnnotationReservationAffinity: "not-json"},
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "c",
+				Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+					apiext.ResourceGPU: resource.MustParse("100"),
+				}},
+			}}},
+		}
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status)
+		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code(),
+			"malformed affinity must not silently produce the same signature as a clean pod")
 		assert.Nil(t, fragments)
 	})
 

@@ -300,7 +300,15 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: canonicalResourceList(requests),
 		})
 	}
-	if affinity, err := reservationutil.GetRequiredReservationAffinity(pod); err == nil && affinity != nil {
+	affinity, err := reservationutil.GetRequiredReservationAffinity(pod)
+	if err != nil {
+		// PreFilter treats this parse failure as UnschedulableAndUnresolvable
+		// (plugin.go around line 322); mirror that so a malformed-affinity pod
+		// is handled identically with or without opportunistic batching, and
+		// cannot share a signature with a clean affinity-less pod.
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
+	}
+	if affinity != nil {
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.NodeNUMAResource.hasReservationAffinity",
 			Value: true,
