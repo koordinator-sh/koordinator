@@ -184,9 +184,21 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 	}, nil
 }
 
-// SignPod contributes the reservation-relevant attributes that would
-// change the outcome of this plugin's Filter/Score paths so the scheduler
-// can batch pods with identical signatures (KEP-5598).
+// SignPod captures every pod-level input the Reservation plugin reads in
+// PreFilter/Filter/Score so opportunistic batching only groups pods whose
+// scheduling outcome through this plugin is equivalent (KEP-5598).
+//
+// For a reserve pod (a pod that owns a Reservation), only the target
+// reservation name matters; all other Filter/Score paths short-circuit on
+// the reserve-pod check.
+//
+// For a normal pod the contributing inputs are:
+//
+//   - reservation-affinity annotation (drives matching);
+//   - reservation-ignored label (skips reservation matching entirely);
+//   - exact-match-reservation annotation (extra strict matching);
+//   - owner-matching inputs (labels and ownerReferences) — the reservation
+//     cache's IsMatchable / MatchOwners reads these to pick a candidate.
 func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	if reservationutil.IsReservePod(pod) {
 		return []fwktype.SignFragment{{
@@ -194,15 +206,65 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 			Value: reservationutil.GetReservationNameFromReservePod(pod),
 		}}, nil
 	}
+
+	fragments := make([]fwktype.SignFragment, 0, 5)
 	if pod.Annotations != nil {
 		if aff, ok := pod.Annotations[apiext.AnnotationReservationAffinity]; ok && aff != "" {
-			return []fwktype.SignFragment{{
+			fragments = append(fragments, fwktype.SignFragment{
 				Key:   "koord.Reservation.affinity",
 				Value: canonicalJSON(aff),
-			}}, nil
+			})
+		}
+		if exact, ok := pod.Annotations[apiext.AnnotationExactMatchReservationSpec]; ok && exact != "" {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.Reservation.exactMatch",
+				Value: canonicalJSON(exact),
+			})
 		}
 	}
-	return []fwktype.SignFragment{}, nil
+	if apiext.IsReservationIgnored(pod) {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.ignored",
+			Value: true,
+		})
+	}
+	if owner := canonicalOwnerInputs(pod); owner != "" {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.ownerInputs",
+			Value: owner,
+		})
+	}
+	return fragments, nil
+}
+
+// canonicalOwnerInputs serialises the pod attributes that reservation owner
+// matching consults (labels + owner references) into a stable string. Pods
+// with identical labels and owner references produce the same value
+// regardless of map iteration order.
+func canonicalOwnerInputs(pod *corev1.Pod) string {
+	if len(pod.Labels) == 0 && len(pod.OwnerReferences) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(pod.Labels)+len(pod.OwnerReferences))
+	if len(pod.Labels) > 0 {
+		keys := make([]string, 0, len(pod.Labels))
+		for k := range pod.Labels {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			parts = append(parts, "label:"+k+"="+pod.Labels[k])
+		}
+	}
+	if len(pod.OwnerReferences) > 0 {
+		owners := make([]string, 0, len(pod.OwnerReferences))
+		for _, ref := range pod.OwnerReferences {
+			owners = append(owners, "owner:"+ref.APIVersion+"/"+ref.Kind+"/"+ref.Name)
+		}
+		sort.Strings(owners)
+		parts = append(parts, owners...)
+	}
+	return strings.Join(parts, "|")
 }
 
 // canonicalJSON normalises a JSON annotation value so two semantically

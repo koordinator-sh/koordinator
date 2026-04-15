@@ -89,11 +89,13 @@ func TestPlugin_SignPod(t *testing.T) {
 		}
 	}
 
-	t.Run("default priority pod contributes a fragment", func(t *testing.T) {
+	t.Run("default priority pod contributes priority + daemonset fragments", func(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", nil))
 		assert.True(t, status == nil || status.IsSuccess())
-		assert.Len(t, fragments, 1)
+		require.Len(t, fragments, 2)
 		assert.Equal(t, "koord.LoadAware.priorityClass", fragments[0].Key)
+		assert.Equal(t, "koord.LoadAware.daemonSetOwned", fragments[1].Key)
+		assert.Equal(t, false, fragments[1].Value)
 	})
 
 	t.Run("prod-priority pod differs from default-priority pod", func(t *testing.T) {
@@ -108,6 +110,31 @@ func TestPlugin_SignPod(t *testing.T) {
 		labels := map[string]string{apiext.LabelPodPriorityClass: string(apiext.PriorityProd)}
 		fa, _ := pl.SignPod(context.TODO(), mkPod("a", labels))
 		fb, _ := pl.SignPod(context.TODO(), mkPod("b", labels))
+		assert.Equal(t, fa, fb)
+	})
+
+	t.Run("DaemonSet ownership produces a different signature", func(t *testing.T) {
+		plain := mkPod("plain", nil)
+		ds := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "ds", Namespace: "default", UID: "ds",
+				OwnerReferences: []metav1.OwnerReference{{Kind: "DaemonSet", Name: "logs", APIVersion: "apps/v1"}},
+			},
+		}
+		fa, _ := pl.SignPod(context.TODO(), plain)
+		fb, _ := pl.SignPod(context.TODO(), ds)
+		assert.NotEqual(t, fa, fb, "Filter short-circuits on DaemonSet pods, so the signature must differ")
+	})
+
+	t.Run("two DaemonSet pods at the same priority share a signature", func(t *testing.T) {
+		mkDS := func(name string) *corev1.Pod {
+			return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Name: name, Namespace: "default", UID: types.UID(name),
+				OwnerReferences: []metav1.OwnerReference{{Kind: "DaemonSet", Name: "logs", APIVersion: "apps/v1"}},
+			}}
+		}
+		fa, _ := pl.SignPod(context.TODO(), mkDS("ds-a"))
+		fb, _ := pl.SignPod(context.TODO(), mkDS("ds-b"))
 		assert.Equal(t, fa, fb)
 	})
 }

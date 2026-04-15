@@ -97,4 +97,75 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Equal(t, fwktype.Unschedulable, status.Code())
 		assert.Nil(t, fragments)
 	})
+
+	mkPodWithAnno := func(name string, annos map[string]string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", UID: types.UID(name), Annotations: annos},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "c",
+				Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+					apiext.ResourceGPU: resource.MustParse("100"),
+				}},
+			}}},
+		}
+	}
+
+	t.Run("device-allocate-hint annotation produces a different signature", func(t *testing.T) {
+		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
+		hinted := mkPodWithAnno("hint", map[string]string{
+			apiext.AnnotationDeviceAllocateHint: `{"gpu":{"selector":{"matchLabels":{"a":"b"}}}}`,
+		})
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, _ := pl.SignPod(context.TODO(), hinted)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("device-joint-allocate annotation produces a different signature", func(t *testing.T) {
+		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
+		joint := mkPodWithAnno("joint", map[string]string{
+			apiext.AnnotationDeviceJointAllocate: `{"deviceTypes":["gpu","rdma"]}`,
+		})
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, _ := pl.SignPod(context.TODO(), joint)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("gpu-partition-spec annotation produces a different signature", func(t *testing.T) {
+		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
+		part := mkPodWithAnno("part", map[string]string{
+			apiext.AnnotationGPUPartitionSpec: `{"size":2}`,
+		})
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, _ := pl.SignPod(context.TODO(), part)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("reservation affinity adds a dedicated fragment", func(t *testing.T) {
+		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
+		withAff := mkPodWithAnno("aff", map[string]string{
+			apiext.AnnotationReservationAffinity: `{"reservationSelector":{"app":"demo"}}`,
+		})
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, _ := pl.SignPod(context.TODO(), withAff)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("pre-allocation-required label adds a dedicated fragment", func(t *testing.T) {
+		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
+		preAlloc := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "pre", Namespace: "default", UID: "pre",
+				Labels: map[string]string{apiext.LabelPreAllocationRequired: "true"},
+			},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "c",
+				Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+					apiext.ResourceGPU: resource.MustParse("100"),
+				}},
+			}}},
+		}
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, _ := pl.SignPod(context.TODO(), preAlloc)
+		assert.NotEqual(t, fa, fb)
+	})
 }

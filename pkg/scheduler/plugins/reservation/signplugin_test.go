@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -136,7 +137,60 @@ func TestPlugin_SignPod(t *testing.T) {
 		}}
 		fragments, status := pl.SignPod(context.TODO(), pod)
 		assert.True(t, status == nil || status.IsSuccess())
-		assert.Len(t, fragments, 1)
+		require.Len(t, fragments, 1)
 		assert.Equal(t, "not-json", fragments[0].Value)
+	})
+
+	t.Run("reservation-ignored label adds a dedicated fragment", func(t *testing.T) {
+		base := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", UID: "p", Namespace: "default"}}
+		ignored := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: "ig", UID: "ig", Namespace: "default",
+			Labels: map[string]string{apiext.LabelReservationIgnored: "true"},
+		}}
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, _ := pl.SignPod(context.TODO(), ignored)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("exact-match-reservation annotation adds a dedicated fragment", func(t *testing.T) {
+		base := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", UID: "p", Namespace: "default"}}
+		exact := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: "ex", UID: "ex", Namespace: "default",
+			Annotations: map[string]string{
+				apiext.AnnotationExactMatchReservationSpec: `{"resourceNames":["cpu"]}`,
+			},
+		}}
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, _ := pl.SignPod(context.TODO(), exact)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("owner-matching inputs (labels and ownerReferences) influence the signature", func(t *testing.T) {
+		a := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: "a", UID: "a", Namespace: "default",
+			Labels: map[string]string{"app": "x"},
+		}}
+		b := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: "b", UID: "b", Namespace: "default",
+			Labels: map[string]string{"app": "y"},
+		}}
+		fa, _ := pl.SignPod(context.TODO(), a)
+		fb, _ := pl.SignPod(context.TODO(), b)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("identical labels and owners yield the same owner-input fragment", func(t *testing.T) {
+		mk := func(name string) *corev1.Pod {
+			return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Name: name, UID: types.UID(name), Namespace: "default",
+				Labels: map[string]string{"app": "z", "tier": "frontend"},
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "apps/v1", Kind: "Deployment", Name: "web",
+				}},
+			}}
+		}
+		fa, _ := pl.SignPod(context.TODO(), mk("a"))
+		fb, _ := pl.SignPod(context.TODO(), mk("b"))
+		assert.Equal(t, fa, fb)
 	})
 }

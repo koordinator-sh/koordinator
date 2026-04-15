@@ -137,15 +137,25 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	}, nil
 }
 
-// SignPod captures the pod priority class that controls which load
-// threshold (prod vs. general) this plugin enforces, so pods that would
-// be filtered and scored identically can share batched scheduling
-// results under KEP-5598.
+// SignPod captures the pod-level inputs the plugin reads in Filter and
+// Score so opportunistic batching only groups pods whose scheduling
+// outcome is equivalent (KEP-5598). Two inputs matter for this plugin:
+//
+//   - Priority class chooses between Prod and general usage thresholds.
+//   - DaemonSet ownership short-circuits Filter (load_aware.go:168), so
+//     a DaemonSet pod and a non-DaemonSet pod with the same priority
+//     would otherwise share a signature but be filtered differently.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
-	return []fwktype.SignFragment{{
-		Key:   "koord.LoadAware.priorityClass",
-		Value: string(extension.GetPodPriorityClassWithDefault(pod)),
-	}}, nil
+	return []fwktype.SignFragment{
+		{
+			Key:   "koord.LoadAware.priorityClass",
+			Value: string(extension.GetPodPriorityClassWithDefault(pod)),
+		},
+		{
+			Key:   "koord.LoadAware.daemonSetOwned",
+			Value: isDaemonSetPod(pod.OwnerReferences),
+		},
+	}, nil
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {

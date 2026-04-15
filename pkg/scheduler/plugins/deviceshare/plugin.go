@@ -186,9 +186,22 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	}, nil
 }
 
-// SignPod captures the pod's device requests so the scheduler can batch
-// pods with identical device demand under KEP-5598. Pods that do not
-// request devices contribute nothing and stay batchable with each other.
+// SignPod captures every pod-level input the plugin reads in PreFilter
+// (utils.go:preparePod) so opportunistic batching only groups pods whose
+// scheduling outcome through this plugin is equivalent (KEP-5598).
+//
+// The fragments mirror preparePod's reads:
+//
+//   - Device requests (GPU/RDMA/FPGA type and amount).
+//   - Designated DeviceAllocations annotation (already-allocated minors).
+//   - DeviceAllocateHint annotation (placement preferences).
+//   - DeviceJointAllocate annotation (multi-device co-location).
+//   - GPUPartitionSpec annotation (partition requirements).
+//   - Reservation affinity presence (drives isReservationRequired).
+//   - Pre-allocation-required label (drives isReservationRequired).
+//
+// JSON-shaped annotations are canonicalised so semantically equal values
+// produce the same signature regardless of formatting.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	requests, err := GetPodDeviceRequests(pod)
 	if err != nil {
@@ -196,13 +209,57 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 		// off for this pod rather than asserting a signature.
 		return nil, fwktype.NewStatus(fwktype.Unschedulable, err.Error())
 	}
-	if len(requests) == 0 {
-		return []fwktype.SignFragment{}, nil
+
+	fragments := make([]fwktype.SignFragment, 0, 7)
+	if len(requests) > 0 {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.DeviceShare.deviceRequests",
+			Value: canonicalDeviceRequests(requests),
+		})
 	}
-	return []fwktype.SignFragment{{
-		Key:   "koord.DeviceShare.deviceRequests",
-		Value: canonicalDeviceRequests(requests),
-	}}, nil
+	if pod.Annotations != nil {
+		for _, key := range []string{
+			apiext.AnnotationDeviceAllocated,
+			apiext.AnnotationDeviceAllocateHint,
+			apiext.AnnotationDeviceJointAllocate,
+			apiext.AnnotationGPUPartitionSpec,
+		} {
+			if v, ok := pod.Annotations[key]; ok && v != "" {
+				fragments = append(fragments, fwktype.SignFragment{
+					Key:   "koord.DeviceShare.annotation:" + key,
+					Value: canonicalJSON(v),
+				})
+			}
+		}
+	}
+	if affinity, err := reservationutil.GetRequiredReservationAffinity(pod); err == nil && affinity != nil {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.DeviceShare.hasReservationAffinity",
+			Value: true,
+		})
+	}
+	if apiext.IsPreAllocationRequired(pod.Labels) {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.DeviceShare.preAllocationRequired",
+			Value: true,
+		})
+	}
+	return fragments, nil
+}
+
+// canonicalJSON normalises a JSON annotation value so two semantically
+// equal annotations (different whitespace or object key order) produce
+// the same signature fragment. Malformed input is returned unchanged.
+func canonicalJSON(s string) string {
+	var v interface{}
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return s
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return s
+	}
+	return string(b)
 }
 
 // canonicalDeviceRequests turns the device request map into a stable,

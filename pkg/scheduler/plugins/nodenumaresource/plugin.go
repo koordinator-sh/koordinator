@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -264,27 +265,71 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	}, nil
 }
 
-// SignPod captures the NUMA and resource-spec annotations that drive the
-// Filter and Score paths so pods with matching scheduling requirements can
-// share batched scheduling results (KEP-5598).
+// SignPod captures every pod-level input the plugin reads in PreFilter,
+// Filter and Score so opportunistic batching only groups pods whose
+// scheduling outcome through this plugin is equivalent (KEP-5598). The
+// fragments mirror the fields that PreFilter packs into preFilterState
+// (plugin.go:316-336):
+//
+//   - numa-topology-spec annotation drives policy / exclusivity.
+//   - resource-spec annotation drives CPU bind policy.
+//   - aggregate pod resource requests drive numCPUsNeeded.
+//   - reservation-affinity presence drives hasReservationAffinity.
+//   - pre-allocation-required label drives isPreAllocationRequired.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
-	if pod.Annotations == nil {
-		return []fwktype.SignFragment{}, nil
+	fragments := make([]fwktype.SignFragment, 0, 5)
+	if pod.Annotations != nil {
+		if v, ok := pod.Annotations[extension.AnnotationNUMATopologySpec]; ok && v != "" {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.NodeNUMAResource.numaTopology",
+				Value: canonicalJSON(v),
+			})
+		}
+		if v, ok := pod.Annotations[extension.AnnotationResourceSpec]; ok && v != "" {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.NodeNUMAResource.resourceSpec",
+				Value: canonicalJSON(v),
+			})
+		}
 	}
-	fragments := make([]fwktype.SignFragment, 0, 2)
-	if v, ok := pod.Annotations[extension.AnnotationNUMATopologySpec]; ok && v != "" {
+	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+	requests = quotav1.RemoveZeros(requests)
+	if len(requests) > 0 {
 		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.NodeNUMAResource.numaTopology",
-			Value: canonicalJSON(v),
+			Key:   "koord.NodeNUMAResource.requests",
+			Value: canonicalResourceList(requests),
 		})
 	}
-	if v, ok := pod.Annotations[extension.AnnotationResourceSpec]; ok && v != "" {
+	if affinity, err := reservationutil.GetRequiredReservationAffinity(pod); err == nil && affinity != nil {
 		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.NodeNUMAResource.resourceSpec",
-			Value: canonicalJSON(v),
+			Key:   "koord.NodeNUMAResource.hasReservationAffinity",
+			Value: true,
+		})
+	}
+	if extension.IsPreAllocationRequired(pod.Labels) {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.NodeNUMAResource.preAllocationRequired",
+			Value: true,
 		})
 	}
 	return fragments, nil
+}
+
+// canonicalResourceList serialises a ResourceList into a sorted slice so two
+// equal request maps produce identical fragment values regardless of map
+// iteration order.
+func canonicalResourceList(rl corev1.ResourceList) []string {
+	names := make([]string, 0, len(rl))
+	for n := range rl {
+		names = append(names, string(n))
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(rl))
+	for _, n := range names {
+		q := rl[corev1.ResourceName(n)]
+		out = append(out, n+"="+q.String())
+	}
+	return out
 }
 
 // canonicalJSON normalises a JSON annotation value so two semantically
