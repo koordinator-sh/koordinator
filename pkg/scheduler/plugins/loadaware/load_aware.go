@@ -20,12 +20,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	resourceapi "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 
@@ -139,14 +141,22 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 
 // SignPod captures the pod-level inputs the plugin reads in Filter and
 // Score so opportunistic batching only groups pods whose scheduling
-// outcome is equivalent (KEP-5598). Two inputs matter for this plugin:
+// outcome is equivalent (KEP-5598). The inputs that feed Filter/Score are:
 //
-//   - Priority class chooses between Prod and general usage thresholds.
+//   - Priority class chooses between Prod and general usage thresholds
+//     and also translates ResourceCPU/Memory names inside estimation.
 //   - DaemonSet ownership short-circuits Filter (load_aware.go:168), so
 //     a DaemonSet pod and a non-DaemonSet pod with the same priority
 //     would otherwise share a signature but be filtered differently.
+//   - Aggregate pod requests and limits: DefaultEstimator.EstimatePod
+//     (estimator/default_estimator.go) derives the estimated-used vector
+//     from resourceapi.PodRequests and resourceapi.PodLimits, and the
+//     filterNodeUsage threshold check keys on that vector.
+//   - Custom estimated-scaling-factors annotation: when allowCustomize
+//     is on, GetCustomEstimatedScalingFactors overrides the plugin-level
+//     factors per pod.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
-	return []fwktype.SignFragment{
+	fragments := []fwktype.SignFragment{
 		{
 			Key:   "koord.LoadAware.priorityClass",
 			Value: string(extension.GetPodPriorityClassWithDefault(pod)),
@@ -155,7 +165,45 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Key:   "koord.LoadAware.daemonSetOwned",
 			Value: isDaemonSetPod(pod.OwnerReferences),
 		},
-	}, nil
+	}
+	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+	if len(requests) > 0 {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.LoadAware.requests",
+			Value: canonicalResourceList(requests),
+		})
+	}
+	limits := resourceapi.PodLimits(pod, resourceapi.PodResourcesOptions{})
+	if len(limits) > 0 {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.LoadAware.limits",
+			Value: canonicalResourceList(limits),
+		})
+	}
+	if v, ok := pod.Annotations[extension.AnnotationCustomEstimatedScalingFactors]; ok {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.LoadAware.customScalingFactors",
+			Value: v,
+		})
+	}
+	return fragments, nil
+}
+
+// canonicalResourceList serializes a ResourceList into a sorted slice so
+// two pods with equal request maps produce identical fragment values
+// regardless of map iteration order.
+func canonicalResourceList(rl corev1.ResourceList) []string {
+	names := make([]string, 0, len(rl))
+	for n := range rl {
+		names = append(names, string(n))
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(rl))
+	for _, n := range names {
+		q := rl[corev1.ResourceName(n)]
+		out = append(out, n+"="+q.String())
+	}
+	return out
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {

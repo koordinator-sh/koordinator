@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -247,5 +248,88 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.NotEqual(t, fa, fb)
 		assert.NotEqual(t, fa, fnil)
 		assert.NotEqual(t, fb, fnil)
+	})
+
+	mkPodWithRequests := func(name, cpu, mem string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", UID: types.UID(name)},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "c",
+				Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse(cpu),
+					corev1.ResourceMemory: resource.MustParse(mem),
+				}},
+			}}},
+		}
+	}
+
+	t.Run("aggregate pod requests influence the signature", func(t *testing.T) {
+		fa, _ := pl.SignPod(context.TODO(), mkPodWithRequests("small", "1", "1Gi"))
+		fb, _ := pl.SignPod(context.TODO(), mkPodWithRequests("large", "4", "8Gi"))
+		assert.NotEqual(t, fa, fb,
+			"reservation matching capacity-checks against pod requests; different requests must not share a signature")
+	})
+
+	t.Run("required node affinity produces a different signature", func(t *testing.T) {
+		plain := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "plain", UID: "plain", Namespace: "default"}}
+		withAff := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "aff", UID: "aff", Namespace: "default"},
+			Spec: corev1.PodSpec{Affinity: &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+					NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+						MatchExpressions: []corev1.NodeSelectorRequirement{{
+							Key:      "kubernetes.io/zone",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"a"},
+						}},
+					}},
+				},
+			}}},
+		}
+		fa, _ := pl.SignPod(context.TODO(), plain)
+		fb, _ := pl.SignPod(context.TODO(), withAff)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("node selector produces a different signature", func(t *testing.T) {
+		plain := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "plain", UID: "plain", Namespace: "default"}}
+		withSel := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "sel", UID: "sel", Namespace: "default"},
+			Spec:       corev1.PodSpec{NodeSelector: map[string]string{"zone": "a"}},
+		}
+		fa, _ := pl.SignPod(context.TODO(), plain)
+		fb, _ := pl.SignPod(context.TODO(), withSel)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("required pod affinity flips the all-nodes pre-restore fragment", func(t *testing.T) {
+		plain := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "plain", UID: "plain", Namespace: "default"}}
+		withPodAff := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "pa", UID: "pa", Namespace: "default"},
+			Spec: corev1.PodSpec{Affinity: &corev1.Affinity{PodAffinity: &corev1.PodAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+					LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "web"}},
+					TopologyKey:   "kubernetes.io/hostname",
+				}},
+			}}},
+		}
+		fa, _ := pl.SignPod(context.TODO(), plain)
+		fb, _ := pl.SignPod(context.TODO(), withPodAff)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("required topologySpreadConstraint flips the all-nodes pre-restore fragment", func(t *testing.T) {
+		plain := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "plain", UID: "plain", Namespace: "default"}}
+		withTSC := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "tsc", UID: "tsc", Namespace: "default"},
+			Spec: corev1.PodSpec{TopologySpreadConstraints: []corev1.TopologySpreadConstraint{{
+				MaxSkew:           1,
+				TopologyKey:       "kubernetes.io/hostname",
+				WhenUnsatisfiable: corev1.DoNotSchedule,
+			}}},
+		}
+		fa, _ := pl.SignPod(context.TODO(), plain)
+		fb, _ := pl.SignPod(context.TODO(), withTSC)
+		assert.NotEqual(t, fa, fb)
 	})
 }

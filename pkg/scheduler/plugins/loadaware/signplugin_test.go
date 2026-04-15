@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
@@ -89,13 +90,68 @@ func TestPlugin_SignPod(t *testing.T) {
 		}
 	}
 
+	findFragment := func(fragments []fwktype.SignFragment, key string) any {
+		for _, f := range fragments {
+			if f.Key == key {
+				return f.Value
+			}
+		}
+		return nil
+	}
+
 	t.Run("default priority pod contributes priority + daemonset fragments", func(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", nil))
 		assert.True(t, status == nil || status.IsSuccess())
-		require.Len(t, fragments, 2)
-		assert.Equal(t, "koord.LoadAware.priorityClass", fragments[0].Key)
-		assert.Equal(t, "koord.LoadAware.daemonSetOwned", fragments[1].Key)
-		assert.Equal(t, false, fragments[1].Value)
+		assert.NotNil(t, findFragment(fragments, "koord.LoadAware.priorityClass"))
+		assert.Equal(t, false, findFragment(fragments, "koord.LoadAware.daemonSetOwned"))
+	})
+
+	mkPodWithRequests := func(name, cpu, mem string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", UID: types.UID(name)},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "c",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse(cpu),
+						corev1.ResourceMemory: resource.MustParse(mem),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse(cpu),
+						corev1.ResourceMemory: resource.MustParse(mem),
+					},
+				},
+			}}},
+		}
+	}
+
+	t.Run("different requests yield different signatures (EstimatePod input)", func(t *testing.T) {
+		fa, _ := pl.SignPod(context.TODO(), mkPodWithRequests("small", "1", "1Gi"))
+		fb, _ := pl.SignPod(context.TODO(), mkPodWithRequests("large", "4", "8Gi"))
+		assert.NotEqual(t, fa, fb,
+			"DefaultEstimator.EstimatePod keys on resourceapi.PodRequests; different requests must not share a signature")
+	})
+
+	t.Run("identical requests and limits share a signature", func(t *testing.T) {
+		fa, _ := pl.SignPod(context.TODO(), mkPodWithRequests("a", "2", "4Gi"))
+		fb, _ := pl.SignPod(context.TODO(), mkPodWithRequests("b", "2", "4Gi"))
+		assert.Equal(t, fa, fb)
+	})
+
+	t.Run("custom estimated scaling factors annotation produces a different signature", func(t *testing.T) {
+		plain := mkPod("plain", nil)
+		withFactors := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "with-factors", Namespace: "default", UID: "with-factors",
+				Annotations: map[string]string{
+					apiext.AnnotationCustomEstimatedScalingFactors: `{"cpu":80}`,
+				},
+			},
+		}
+		fa, _ := pl.SignPod(context.TODO(), plain)
+		fb, _ := pl.SignPod(context.TODO(), withFactors)
+		assert.NotEqual(t, fa, fb,
+			"custom scaling factors override EstimatePod output; different factors must not share a signature")
 	})
 
 	t.Run("prod-priority pod differs from default-priority pod", func(t *testing.T) {

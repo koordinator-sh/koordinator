@@ -192,13 +192,19 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 // reservation name matters; all other Filter/Score paths short-circuit on
 // the reserve-pod check.
 //
-// For a normal pod the contributing inputs are:
+// For a normal pod the contributing inputs follow
+// prepareMatchReservationStateForNormalPod (transformer.go:128-150):
 //
 //   - reservation-affinity annotation (drives matching);
 //   - reservation-ignored label (skips reservation matching entirely);
 //   - exact-match-reservation annotation (extra strict matching);
 //   - owner-matching inputs (labels and ownerReferences) — the reservation
-//     cache's IsMatchable / MatchOwners reads these to pick a candidate.
+//     cache's IsMatchable / MatchOwners reads these to pick a candidate;
+//   - aggregate pod resource requests — matched against reservation capacity;
+//   - required node affinity / nodeSelector — matched against the reservation's
+//     target node;
+//   - pod affinity / topologySpreadConstraints and required pod-affinity terms —
+//     they flip isPodAllNodesPreRestoreRequired and switch the preRestore path.
 func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	if reservationutil.IsReservePod(pod) {
 		return []fwktype.SignFragment{{
@@ -207,7 +213,7 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 		}}, nil
 	}
 
-	fragments := make([]fwktype.SignFragment, 0, 5)
+	fragments := make([]fwktype.SignFragment, 0, 8)
 	// Parse reservation-affinity / exact-match annotations with the same
 	// helpers PreFilter uses (transformer.go around prepareMatchReservationStateForNormalPod)
 	// so malformed input yields the identical Status a non-batched schedule
@@ -252,6 +258,49 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 			Value: true,
 		})
 	}
+	// Aggregate pod resource requests are matched against reservation
+	// capacity in prepareMatchReservationStateForNormalPod (transformer.go:147);
+	// two pods with the same labels/annotations but different requests can
+	// resolve to different reservations and must not share a signature.
+	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+	requests = quotav1.RemoveZeros(requests)
+	if len(requests) > 0 {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.requests",
+			Value: canonicalResourceList(requests),
+		})
+	}
+	// Required node affinity / nodeSelector constrain which reservations (or
+	// which reservation's target node) a pod can land on. Include the raw
+	// NodeAffinity and NodeSelector so two pods that would filter onto
+	// different nodes cannot reuse a cached scheduling decision.
+	if pod.Spec.Affinity != nil && pod.Spec.Affinity.NodeAffinity != nil &&
+		pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+		b, err := json.Marshal(pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution)
+		if err != nil {
+			return nil, fwktype.AsStatus(err)
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.requiredNodeAffinity",
+			Value: string(b),
+		})
+	}
+	if len(pod.Spec.NodeSelector) > 0 {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.nodeSelector",
+			Value: canonicalStringMap(pod.Spec.NodeSelector),
+		})
+	}
+	// Pod-affinity/anti-affinity and required topology-spread constraints
+	// flip isPodAllNodesPreRestoreRequired (transformer.go:862-876); two
+	// pods that land on different preRestore paths cannot share a cached
+	// scheduling decision.
+	if isPodAllNodesPreRestoreRequired(pod) {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.allNodesPreRestoreRequired",
+			Value: true,
+		})
+	}
 	// Owner-matching inputs are always present (at least the pod namespace
 	// shapes the matcher decision), so the fragment is unconditional.
 	fragments = append(fragments, fwktype.SignFragment{
@@ -259,6 +308,38 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 		Value: canonicalOwnerInputs(pod),
 	})
 	return fragments, nil
+}
+
+// canonicalResourceList turns a ResourceList into a sorted slice so two
+// equal request maps produce identical fragment values regardless of map
+// iteration order.
+func canonicalResourceList(rl corev1.ResourceList) []string {
+	names := make([]string, 0, len(rl))
+	for n := range rl {
+		names = append(names, string(n))
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(rl))
+	for _, n := range names {
+		q := rl[corev1.ResourceName(n)]
+		out = append(out, n+"="+q.String())
+	}
+	return out
+}
+
+// canonicalStringMap stabilizes the order of a string map so two equal
+// maps produce the same fragment value regardless of iteration order.
+func canonicalStringMap(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(m))
+	for _, k := range keys {
+		out = append(out, k+"="+m[k])
+	}
+	return out
 }
 
 // canonicalOwnerInputs serializes every pod attribute that the reservation
