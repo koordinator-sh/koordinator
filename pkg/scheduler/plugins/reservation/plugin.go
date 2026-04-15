@@ -38,6 +38,7 @@ import (
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -197,9 +198,9 @@ func podUsesReservation(pod *corev1.Pod) bool {
 }
 
 func (pl *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	deletedPod, ok := oldObj.(*corev1.Pod)
-	if !ok {
-		logger.V(5).Info("oldObj is not *Pod, fall back to Queue", "oldObj", oldObj)
+	deletedPod, _, err := schedutil.As[*corev1.Pod](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert oldObj to Pod in isSchedulableAfterPodDeletion", "oldObj", oldObj, "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	if deletedPod == nil {
@@ -220,10 +221,9 @@ func (pl *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.
 }
 
 func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	oldR, oldOK := toReservation(oldObj)
-	newR, newOK := toReservation(newObj)
-	if !oldOK || !newOK {
-		logger.V(5).Info("obj is not *Reservation, fall back to Queue", "oldObj", oldObj, "newObj", newObj)
+	oldR, newR, err := schedutil.As[*schedulingv1alpha1.Reservation](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert obj to Reservation in isSchedulableAfterReservationChange", "oldObj", oldObj, "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	if !podUsesReservation(pod) {
@@ -245,14 +245,6 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 		return fwktype.Queue, nil
 	}
 	return fwktype.QueueSkip, nil
-}
-
-func toReservation(obj interface{}) (*schedulingv1alpha1.Reservation, bool) {
-	if obj == nil {
-		return nil, true
-	}
-	r, ok := obj.(*schedulingv1alpha1.Reservation)
-	return r, ok
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.

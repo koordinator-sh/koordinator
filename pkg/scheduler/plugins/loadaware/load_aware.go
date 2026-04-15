@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -143,9 +144,9 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 }
 
 func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	deletedPod, ok := oldObj.(*corev1.Pod)
-	if !ok {
-		logger.V(5).Info("oldObj is not *Pod, fall back to Queue", "oldObj", oldObj)
+	deletedPod, _, err := schedutil.As[*corev1.Pod](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert oldObj to Pod in isSchedulableAfterPodDeletion", "oldObj", oldObj, "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	// With a nil deleted pod we cannot tell whether it had been bound and
@@ -161,25 +162,16 @@ func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 }
 
 func (p *Plugin) isSchedulableAfterNodeMetricChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	_, oldOK := toNodeMetric(oldObj)
-	_, newOK := toNodeMetric(newObj)
-	if !oldOK || !newOK {
-		logger.V(5).Info("obj is not *NodeMetric, fall back to Queue", "oldObj", oldObj, "newObj", newObj)
+	_, newMetric, err := schedutil.As[*slov1alpha1.NodeMetric](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert obj to NodeMetric in isSchedulableAfterNodeMetricChange", "oldObj", oldObj, "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	// Losing node metrics cannot unblock a pod filtered out due to high load.
-	if newObj == nil {
+	if newMetric == nil {
 		return fwktype.QueueSkip, nil
 	}
 	return fwktype.Queue, nil
-}
-
-func toNodeMetric(obj interface{}) (*slov1alpha1.NodeMetric, bool) {
-	if obj == nil {
-		return nil, true
-	}
-	m, ok := obj.(*slov1alpha1.NodeMetric)
-	return m, ok
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {

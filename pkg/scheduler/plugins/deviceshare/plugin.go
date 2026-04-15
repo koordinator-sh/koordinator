@@ -33,6 +33,7 @@ import (
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -202,9 +203,9 @@ func podRequestsAnyDevice(pod *corev1.Pod) bool {
 }
 
 func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	deletedPod, ok := oldObj.(*corev1.Pod)
-	if !ok {
-		logger.V(5).Info("oldObj is not *Pod, fall back to Queue", "oldObj", oldObj)
+	deletedPod, _, err := schedutil.As[*corev1.Pod](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert oldObj to Pod in isSchedulableAfterPodDeletion", "oldObj", oldObj, "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	if deletedPod == nil {
@@ -218,28 +219,19 @@ func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 }
 
 func (p *Plugin) isSchedulableAfterDeviceChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	_, oldOK := toDevice(oldObj)
-	_, newOK := toDevice(newObj)
-	if !oldOK || !newOK {
-		logger.V(5).Info("obj is not *Device, fall back to Queue", "oldObj", oldObj, "newObj", newObj)
+	_, newDev, err := schedutil.As[*schedulingv1alpha1.Device](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert obj to Device in isSchedulableAfterDeviceChange", "oldObj", oldObj, "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	if !podRequestsAnyDevice(pod) {
 		return fwktype.QueueSkip, nil
 	}
 	// Device delete cannot add capacity back for a waiting consumer.
-	if newObj == nil {
+	if newDev == nil {
 		return fwktype.QueueSkip, nil
 	}
 	return fwktype.Queue, nil
-}
-
-func toDevice(obj interface{}) (*schedulingv1alpha1.Device, bool) {
-	if obj == nil {
-		return nil, true
-	}
-	d, ok := obj.(*schedulingv1alpha1.Device)
-	return d, ok
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {

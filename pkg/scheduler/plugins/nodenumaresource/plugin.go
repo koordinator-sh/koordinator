@@ -32,6 +32,7 @@ import (
 	resourceapi "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -282,9 +283,9 @@ func podNeedsNUMAAllocation(pod *corev1.Pod) bool {
 }
 
 func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	deletedPod, ok := oldObj.(*corev1.Pod)
-	if !ok {
-		logger.V(5).Info("oldObj is not *Pod, fall back to Queue", "oldObj", oldObj)
+	deletedPod, _, err := schedutil.As[*corev1.Pod](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert oldObj to Pod in isSchedulableAfterPodDeletion", "oldObj", oldObj, "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	if deletedPod == nil {
@@ -297,28 +298,19 @@ func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 }
 
 func (p *Plugin) isSchedulableAfterNRTChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	_, oldOK := toNRT(oldObj)
-	_, newOK := toNRT(newObj)
-	if !oldOK || !newOK {
-		logger.V(5).Info("obj is not *NodeResourceTopology, fall back to Queue", "oldObj", oldObj, "newObj", newObj)
+	_, newNRT, err := schedutil.As[*nrtv1alpha1.NodeResourceTopology](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert obj to NodeResourceTopology in isSchedulableAfterNRTChange", "oldObj", oldObj, "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	if !podNeedsNUMAAllocation(pod) {
 		return fwktype.QueueSkip, nil
 	}
 	// NRT delete cannot unblock a waiting NUMA pod.
-	if newObj == nil {
+	if newNRT == nil {
 		return fwktype.QueueSkip, nil
 	}
 	return fwktype.Queue, nil
-}
-
-func toNRT(obj interface{}) (*nrtv1alpha1.NodeResourceTopology, bool) {
-	if obj == nil {
-		return nil, true
-	}
-	nrt, ok := obj.(*nrtv1alpha1.NodeResourceTopology)
-	return nrt, ok
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
