@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,6 +92,7 @@ func TestPlugin_SignPod(t *testing.T) {
 			apiext.ResourceGPU: resource.MustParse("150"),
 		})
 		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status, "malformed input must yield an explicit Unschedulable status, not nil/Success")
 		assert.False(t, status.IsSuccess(), "malformed requests should not produce a signature")
 		assert.Equal(t, fwktype.Unschedulable, status.Code())
 		assert.Nil(t, fragments)
