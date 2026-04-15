@@ -131,6 +131,17 @@ func TestPlugin_SignPod(t *testing.T) {
 		}
 	}
 
+	t.Run("device-allocated annotation produces a different signature", func(t *testing.T) {
+		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
+		allocated := mkPodWithAnno("alloc", map[string]string{
+			apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":0,"resources":{"koordinator.sh/gpu-core":"100"}}]}`,
+		})
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, status := pl.SignPod(context.TODO(), allocated)
+		assert.True(t, status == nil || status.IsSuccess())
+		assert.NotEqual(t, fa, fb)
+	})
+
 	t.Run("device-allocate-hint annotation produces a different signature", func(t *testing.T) {
 		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
 		hinted := mkPodWithAnno("hint", map[string]string{
