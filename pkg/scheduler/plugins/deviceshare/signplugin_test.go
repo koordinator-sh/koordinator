@@ -55,14 +55,14 @@ func TestPlugin_SignPod(t *testing.T) {
 	t.Run("pod without device requests contributes nothing", func(t *testing.T) {
 		pod := mkPod("plain", corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")})
 		fragments, status := pl.SignPod(context.TODO(), pod)
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Empty(t, fragments)
 	})
 
 	t.Run("pod requesting GPU contributes a fragment", func(t *testing.T) {
 		pod := mkPod("gpu", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
 		fragments, status := pl.SignPod(context.TODO(), pod)
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Len(t, fragments, 1)
 		assert.Equal(t, "koord.DeviceShare.deviceRequests", fragments[0].Key)
 		assert.NotNil(t, fragments[0].Value)

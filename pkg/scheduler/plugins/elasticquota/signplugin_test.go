@@ -62,7 +62,7 @@ func TestPlugin_SignPod(t *testing.T) {
 
 	t.Run("pod without quota labels contributes nothing", func(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", nil))
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Empty(t, fragments)
 	})
 
@@ -70,7 +70,7 @@ func TestPlugin_SignPod(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", map[string]string{
 			apiext.LabelQuotaTreeID: "tree-a",
 		}))
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Empty(t, fragments)
 	})
 
@@ -78,7 +78,7 @@ func TestPlugin_SignPod(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", map[string]string{
 			apiext.LabelQuotaName: "team-a",
 		}))
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Len(t, fragments, 1)
 		assert.Equal(t, "koord.ElasticQuota.quota", fragments[0].Key)
 	})

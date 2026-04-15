@@ -91,7 +91,7 @@ func TestPlugin_SignPod(t *testing.T) {
 
 	t.Run("default priority pod contributes a fragment", func(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", nil))
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Len(t, fragments, 1)
 		assert.Equal(t, "koord.LoadAware.priorityClass", fragments[0].Key)
 	})

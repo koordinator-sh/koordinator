@@ -103,7 +103,7 @@ func TestPlugin_SignPod(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fragments, status := pl.SignPod(context.TODO(), tt.pod)
-			assert.True(t, status.IsSuccess(), "status should be Success")
+			assert.True(t, status == nil || status.IsSuccess(), "status should be nil or Success")
 			assert.Equal(t, tt.expected, toKVs(fragments))
 		})
 	}
@@ -135,7 +135,7 @@ func TestPlugin_SignPod(t *testing.T) {
 			},
 		}}
 		fragments, status := pl.SignPod(context.TODO(), pod)
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Len(t, fragments, 1)
 		assert.Equal(t, "not-json", fragments[0].Value)
 	})

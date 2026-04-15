@@ -54,14 +54,14 @@ func TestCoscheduling_SignPod(t *testing.T) {
 
 	t.Run("pod without PodGroup label contributes nothing", func(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", "default", nil))
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Empty(t, fragments)
 	})
 
 	t.Run("pod with PodGroup label contributes its gang id", func(t *testing.T) {
 		labels := map[string]string{schedv1alpha1.PodGroupLabel: "gang-a"}
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p1", "ns-a", labels))
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Len(t, fragments, 1)
 		assert.Equal(t, "koord.Coscheduling.gang", fragments[0].Key)
 	})

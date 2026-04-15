@@ -49,7 +49,7 @@ func TestPlugin_SignPod(t *testing.T) {
 
 	t.Run("pod without NUMA annotations contributes nothing", func(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", nil))
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Empty(t, fragments)
 	})
 
@@ -57,7 +57,7 @@ func TestPlugin_SignPod(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", map[string]string{
 			apiext.AnnotationNUMATopologySpec: `{"numaTopologyPolicy":"SingleNUMANode"}`,
 		}))
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Len(t, fragments, 1)
 		assert.Equal(t, "koord.NodeNUMAResource.numaTopology", fragments[0].Key)
 	})
@@ -90,7 +90,7 @@ func TestPlugin_SignPod(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), mkPod("p", map[string]string{
 			apiext.AnnotationResourceSpec: `{"preferredCPUBindPolicy":"FullPCPUs"}`,
 		}))
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Len(t, fragments, 1)
 		assert.Equal(t, "koord.NodeNUMAResource.resourceSpec", fragments[0].Key)
 	})
@@ -112,7 +112,7 @@ func TestPlugin_SignPod(t *testing.T) {
 			apiext.AnnotationNUMATopologySpec: "not-json",
 		})
 		fragments, status := pl.SignPod(context.TODO(), pod)
-		assert.True(t, status.IsSuccess())
+		assert.True(t, status == nil || status.IsSuccess())
 		assert.Len(t, fragments, 1)
 		assert.Equal(t, "not-json", fragments[0].Value)
 	})
