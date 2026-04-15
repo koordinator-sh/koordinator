@@ -87,6 +87,10 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 }
 
 func makePodWithNUMAPolicy(name string) *corev1.Pod {
+	return makePodWithNUMAPolicyOnNode(name, "")
+}
+
+func makePodWithNUMAPolicyOnNode(name, nodeName string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -97,6 +101,7 @@ func makePodWithNUMAPolicy(name string) *corev1.Pod {
 			},
 		},
 		Spec: corev1.PodSpec{
+			NodeName: nodeName,
 			Containers: []corev1.Container{{
 				Name: "c",
 				Resources: corev1.ResourceRequirements{
@@ -151,15 +156,21 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			expectedHint: fwktype.QueueSkip,
 		},
 		{
-			name:         "waiting pod requires NUMA and deleted pod is also NUMA-pinned, requeue",
+			name:         "waiting pod requires NUMA and deleted pod is bound NUMA-pinned, requeue",
 			waiting:      makePodWithNUMAPolicy("w3"),
-			deletedObj:   makePodWithNUMAPolicy("del-numa"),
+			deletedObj:   makePodWithNUMAPolicyOnNode("del-numa", "node-1"),
 			expectedHint: fwktype.Queue,
 		},
 		{
 			name:         "waiting pod requires NUMA but deleted pod is plain, no NUMA resources released",
 			waiting:      makePodWithNUMAPolicy("w4"),
 			deletedObj:   makePlainPod("del-plain"),
+			expectedHint: fwktype.QueueSkip,
+		},
+		{
+			name:         "deleted NUMA pod was never bound to a node, skip",
+			waiting:      makePodWithNUMAPolicy("w5"),
+			deletedObj:   makePodWithNUMAPolicy("del-unbound"),
 			expectedHint: fwktype.QueueSkip,
 		},
 	}

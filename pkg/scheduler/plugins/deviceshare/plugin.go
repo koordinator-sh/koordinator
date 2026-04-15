@@ -215,6 +215,11 @@ func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 	if !podRequestsAnyDevice(pod) || !podRequestsAnyDevice(deletedPod) {
 		return fwktype.QueueSkip, nil
 	}
+	// A pod that never bound to a node never occupied nodeDeviceCache and so
+	// its deletion cannot have freed any device capacity for the waiter.
+	if deletedPod.Spec.NodeName == "" {
+		return fwktype.QueueSkip, nil
+	}
 	return fwktype.Queue, nil
 }
 

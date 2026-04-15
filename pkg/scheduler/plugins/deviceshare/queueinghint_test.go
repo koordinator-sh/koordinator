@@ -168,6 +168,12 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			deletedObj:   makePodNoDevice("deleted-norm"),
 			expectedHint: fwktype.QueueSkip,
 		},
+		{
+			name:         "deleted pod requests GPU but was never bound to a node, skip",
+			waitingPod:   makePodRequestingGPU("w5", ""),
+			deletedObj:   makePodRequestingGPU("deleted-unbound", ""),
+			expectedHint: fwktype.QueueSkip,
+		},
 	}
 
 	for _, tt := range tests {

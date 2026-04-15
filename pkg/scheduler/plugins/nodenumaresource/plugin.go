@@ -294,6 +294,11 @@ func (p *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 	if !podNeedsNUMAAllocation(pod) || !podNeedsNUMAAllocation(deletedPod) {
 		return fwktype.QueueSkip, nil
 	}
+	// A pod that never bound to a node never contributed to NUMA allocation
+	// state, so its deletion cannot release topology-pinned resources.
+	if deletedPod.Spec.NodeName == "" {
+		return fwktype.QueueSkip, nil
+	}
 	return fwktype.Queue, nil
 }
 
