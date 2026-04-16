@@ -29,6 +29,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -68,13 +69,11 @@ func DumpDiagnosisBlockingSetter(val string) (string, error) {
 	return fmt.Sprintf("successfully set debugFilterFailure to %s", val), nil
 }
 
-func DumpDiagnosis(state fwktype.CycleState) string {
-	if dumpDiagnosis == false {
+func DumpDiagnosis(diagnosis *Diagnosis) string {
+	if diagnosis == nil {
 		return ""
 	}
-
-	diagnosis := GetDiagnosis(state)
-	if diagnosis == nil {
+	if dumpDiagnosis == false {
 		return ""
 	}
 
@@ -140,6 +139,9 @@ type Diagnosis struct {
 	// maybe modify fwktype.Status to cover addedNominatedPods, corresponding resourceView(such as requested and total) when failed
 	ScheduleDiagnosis   *ScheduleDiagnosis   `json:"scheduleDiagnosis"`
 	PreemptionDiagnosis *PreemptionDiagnosis `json:"preemptionDiagnosis"`
+
+	AuditType    workloadauditor.RecordType `json:"-"`
+	AuditMessage string                     `json:"-"`
 }
 
 type ScheduleDiagnosis struct {

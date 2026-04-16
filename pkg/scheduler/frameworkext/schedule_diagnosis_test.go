@@ -115,7 +115,7 @@ func TestDumpDiagnosis(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			InitDiagnosis(cycleState, tt.pod)
 			tt.setDiagnosisFunc(cycleState)
-			gotDumpMessage := DumpDiagnosis(cycleState)
+			gotDumpMessage := DumpDiagnosis(GetDiagnosis(cycleState))
 			assert.Equal(t, tt.wantDumpMessage, gotDumpMessage)
 		})
 	}
@@ -183,7 +183,7 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 			}
 
 			// Run the function being benchmarked
-			DumpDiagnosis(cycleState)
+			DumpDiagnosis(GetDiagnosis(cycleState))
 		}
 	})
 
@@ -216,7 +216,7 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 			}
 
 			// Run the function being benchmarked
-			DumpDiagnosis(cycleState)
+			DumpDiagnosis(GetDiagnosis(cycleState))
 		}
 	})
 }

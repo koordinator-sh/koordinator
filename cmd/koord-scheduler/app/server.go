@@ -71,6 +71,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/informer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util/asynclog"
 	utilroutes "github.com/koordinator-sh/koordinator/pkg/util/routes"
@@ -118,6 +119,7 @@ for cost reduction and efficiency enhancement.
 	verflag.AddFlags(nfs.FlagSet("global"))
 	AddSyncBarrierFlags(nfs.FlagSet("global"))
 	globalflag.AddGlobalFlags(nfs.FlagSet("global"), cmd.Name(), logs.SkipLoggingConfigurationFlags())
+	workloadauditor.AddFlags(nfs.FlagSet("extend"))
 	frameworkext.AddFlags(nfs.FlagSet("extend"))
 	fs := cmd.Flags()
 	for _, f := range nfs.FlagSets {
@@ -410,6 +412,8 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		crossSchedulerNominator = frameworkext.NewCrossSchedulerPodNominator()
 	}
 
+	workloadAuditor := workloadauditor.NewWorkloadAuditor()
+
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
 	frameworkExtenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
@@ -419,6 +423,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		frameworkext.WithNodeResourceTopologySharedInformerFactory(cc.NodeResourceTopologyInformerFactory),
 		frameworkext.WithNetworkTopologyManager(networkTopologyManager),
 		frameworkext.WithCrossSchedulerPodNominator(crossSchedulerNominator),
+		frameworkext.WithWorkloadAuditor(workloadAuditor),
 	)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -475,6 +480,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	schedAdapter := frameworkExtenderFactory.Scheduler()
 
 	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, cc.InformerFactory, cc.KoordinatorSharedInformerFactory, crossSchedulerNominator)
+	workloadauditor.AddEventHandler(sched, workloadAuditor, cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
 	reservationErrorHandler := eventhandlers.MakeReservationErrorHandler(
 		sched,
 		schedAdapter,
