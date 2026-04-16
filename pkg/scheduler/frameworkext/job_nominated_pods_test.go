@@ -481,7 +481,7 @@ func Test_addNominatedPods(t *testing.T) {
 			state := framework.NewCycleState()
 			podsOfSameJob := sets.New[string](tt.podsOfSameJob...)
 
-			podsAdded, stateOut, nodeInfoOut, err, _ := addNominatedPods(
+			podsAdded, stateOut, nodeInfoOut, err := addNominatedPods(
 				context.TODO(), fh, tt.pod, state, nodeInfo, podsOfSameJob,
 			)
 

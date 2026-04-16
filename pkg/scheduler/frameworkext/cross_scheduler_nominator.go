@@ -62,7 +62,6 @@ func (n *CrossSchedulerPodNominator) AddLocalProfileName(profileName string) {
 }
 
 // NominatedPodsForNode returns the cross-scheduler nominated pods for the given node.
-// The caller should not modify the returned slice.
 func (n *CrossSchedulerPodNominator) NominatedPodsForNode(nodeName string) []fwktype.PodInfo {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
