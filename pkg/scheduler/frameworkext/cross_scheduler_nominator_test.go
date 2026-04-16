@@ -420,13 +420,21 @@ func TestCrossSchedulerPodNominator_NominatedPodsForNode_DeepCopy(t *testing.T) 
 	assert.Len(t, pods2, 1)
 
 	// Verify that the returned PodInfo objects are different instances.
-	// This tests that NominatedPodsForNode creates new PodInfo objects each time.
 	assert.NotSame(t, pods1[0], pods2[0], "returned PodInfo should be different instances")
 
-	// Note: Currently NewPodInfo creates a shallow copy (shares the same Pod object pointer).
-	// If true deep copy is required, NominatedPodsForNode should call pod.DeepCopy() before NewPodInfo.
-	// The current behavior is that modifying pods1[0].GetPod() WILL affect the internal state.
-	// This test documents the current behavior.
+	// Verify that the returned Pod objects are different instances (deep copy).
+	assert.NotSame(t, pods1[0].GetPod(), pods2[0].GetPod(), "returned Pod should be different instances (deep copy)")
+
+	// Verify true deep copy: modifying the returned pod does NOT affect internal state.
+	// Modify the returned pod's name.
+	originalName := pods1[0].GetPod().Name
+	pods1[0].GetPod().Name = "modified-name"
+
+	// Get the pods again and verify the internal state is unchanged.
+	pods3 := nominator.NominatedPodsForNode("node-1")
+	assert.Len(t, pods3, 1)
+	assert.Equal(t, originalName, pods3[0].GetPod().Name, "internal state should not be affected by modification to returned pod")
+	assert.NotEqual(t, "modified-name", pods3[0].GetPod().Name, "modification should not leak to internal state")
 }
 
 // TestCrossSchedulerPodNominator_FilteringResourceEventHandler tests the complete

@@ -69,6 +69,7 @@ func addNominatedPods(ctx context.Context, fh fwktype.Handle, pod *corev1.Pod, s
 	if len(nominatedPodInfos) == 0 {
 		return false, state, nodeInfo, nil, nil
 	}
+
 	nodeInfoOut := nodeInfo.Snapshot()
 	stateOut := state.Clone()
 	podsAdded := false
@@ -90,17 +91,21 @@ func addNominatedPods(ctx context.Context, fh fwktype.Handle, pod *corev1.Pod, s
 			podsAdded = true
 		}
 	}
-	if len(addedPods) > 0 {
+
+	if podsAdded {
 		klog.V(5).Infof("Added %v pods with equal or higher priority to the node %q when schedule pod %s/%s", addedPods, nodeInfo.Node().Name, pod.Namespace, pod.Name)
+		return true, stateOut, nodeInfoOut, nil, addedPods
 	}
-	return podsAdded, stateOut, nodeInfoOut, nil, addedPods
+
+	return false, state, nodeInfo, nil, nil
 }
 
 // addMergedNominatedPods adds both native and cross-scheduler nominated pods to a cloned nodeInfo.
 // For native nominated pods: uses priority >= (consistent with k8s native behavior).
 // For cross-scheduler nominated pods: uses priority > (strictly greater than, to avoid same-priority deadlock).
-func (ext *frameworkExtenderImpl) addMergedNominatedPods(
+func addMergedNominatedPods(
 	ctx context.Context,
+	ext *frameworkExtenderImpl,
 	pod *corev1.Pod,
 	state fwktype.CycleState,
 	nodeInfo fwktype.NodeInfo,
@@ -125,7 +130,7 @@ func (ext *frameworkExtenderImpl) addMergedNominatedPods(
 	stateOut := state.Clone()
 	podsAdded := false
 
-	// Add native nominated pods not in the same job (priority >= current pod, consistent with k8s native behavior).
+	// Add responsible nominated pods not in the same job (priority >= current pod, consistent with k8s native behavior).
 	for _, pi := range nativeNominated {
 		piPod := pi.GetPod()
 		if corev1helper.PodPriority(piPod) >= podPriority &&
@@ -155,7 +160,12 @@ func (ext *frameworkExtenderImpl) addMergedNominatedPods(
 		}
 	}
 
-	return podsAdded, stateOut, nodeInfoOut, nil
+	if podsAdded {
+		klog.V(5).Infof("Added %v responsible and cross-scheduler nominated pods to the node %q when schedule pod %s/%s", podsAdded, nodeName, pod.Namespace, pod.Name)
+		return true, stateOut, nodeInfoOut, nil
+	}
+
+	return false, state, nodeInfo, nil
 }
 
 // runFilterPluginsWithNominatedPods is the unified implementation for running filter plugins
@@ -190,7 +200,7 @@ func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPods(
 			// Pass 1: add nominated pods to nodeInfo overlay.
 			var err error
 			if k8sfeature.DefaultFeatureGate.Enabled(features.CrossSchedulerNomination) && ext.crossSchedulerNominator != nil {
-				podsAdded, stateToUse, nodeInfoToUse, err = ext.addMergedNominatedPods(ctx, pod, state, info, podsOfSameJob)
+				podsAdded, stateToUse, nodeInfoToUse, err = addMergedNominatedPods(ctx, ext, pod, state, info, podsOfSameJob)
 			} else {
 				podsAdded, stateToUse, nodeInfoToUse, err, _ = addNominatedPods(ctx, ext, pod, state, info, podsOfSameJob)
 			}

@@ -69,7 +69,7 @@ func (n *CrossSchedulerPodNominator) NominatedPodsForNode(nodeName string) []fwk
 	// Make a copy of the nominated Pods so the caller can mutate safely.
 	pods := make([]fwktype.PodInfo, 0, len(n.nominatedPods[nodeName]))
 	for i := range n.nominatedPods[nodeName] {
-		podInfoCopy, err := framework.NewPodInfo(n.nominatedPods[nodeName][i].GetPod())
+		podInfoCopy, err := framework.NewPodInfo(n.nominatedPods[nodeName][i].GetPod().DeepCopy())
 		if err == nil {
 			pods = append(pods, podInfoCopy)
 		}
@@ -96,7 +96,7 @@ func (n *CrossSchedulerPodNominator) addNominatedPod(pod *corev1.Pod) {
 	n.nominatedPodToNode[pod.UID] = nodeName
 }
 
-// deleteNominatedPodLocked removes the nominated pod record. Must be called with write lock held.
+// deleteNominatedPod removes the nominated pod record. Must be called with write lock held.
 func (n *CrossSchedulerPodNominator) deleteNominatedPod(pod *corev1.Pod) {
 	nodeName, ok := n.nominatedPodToNode[pod.UID]
 	if !ok {

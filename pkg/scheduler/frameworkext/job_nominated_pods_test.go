@@ -431,31 +431,31 @@ func Test_addNominatedPods(t *testing.T) {
 			wantAddedCount: 1,
 		},
 		{
-			// Clone happens before filtering; stateOut/nodeInfoOut are clones even when no pods pass the filter.
+			// When no pods are added, stateOut/nodeInfoOut are the original objects (not clones).
 			name:           "low priority nominated pod is not added (priority < current)",
 			pod:            makeSimplePod("scheduling-pod", "uid-scheduling", midPriority, ""),
 			nominatedPods:  []*corev1.Pod{makeSimplePod("nominated-low", "uid-low", lowPriority, nodeName)},
 			wantPodsAdded:  false,
-			wantCloned:     true,
+			wantCloned:     false,
 			wantAddedCount: 0,
 		},
 		{
-			// Clone happens before filtering.
+			// When no pods are added, stateOut/nodeInfoOut are the original objects (not clones).
 			name:           "same UID nominated pod is excluded",
 			pod:            makeSimplePod("scheduling-pod", "uid-scheduling", midPriority, ""),
 			nominatedPods:  []*corev1.Pod{makeSimplePod("same-uid-pod", "uid-scheduling", highPriority, nodeName)},
 			wantPodsAdded:  false,
-			wantCloned:     true,
+			wantCloned:     false,
 			wantAddedCount: 0,
 		},
 		{
-			// Clone happens before filtering.
+			// When no pods are added, stateOut/nodeInfoOut are the original objects (not clones).
 			name:           "sameJob nominated pod is excluded",
 			pod:            makeSimplePod("scheduling-pod", "uid-scheduling", midPriority, ""),
 			nominatedPods:  []*corev1.Pod{makeSimplePod("nominated-job-pod", "uid-job-pod", highPriority, nodeName)},
 			podsOfSameJob:  []string{"uid-job-pod"},
 			wantPodsAdded:  false,
-			wantCloned:     true,
+			wantCloned:     false,
 			wantAddedCount: 0,
 		},
 		{
@@ -614,36 +614,39 @@ func Test_addMergedNominatedPods(t *testing.T) {
 			wantAddedCount: 1,
 		},
 		{
-			// Clone happens before filtering; stateOut/nodeInfoOut are clones even though the pod is not added.
+			// When no pods are added (priority == current for cross-scheduler is not added),
+			// stateOut/nodeInfoOut are the original objects (not clones).
 			name: "cross-scheduler nominated pod (priority == current) is not added",
 			pod:  makeSimplePod("scheduling-pod", "uid-scheduling", midPriority, ""),
 			crossNominator: newCrossNominator(
 				makePriorityPod("cross-equal", "uid-cross-equal", midPriority, "100m", "other-scheduler", nodeName, ""),
 			),
 			wantPodsAdded:  false,
-			wantCloned:     true,
+			wantCloned:     false,
 			wantAddedCount: 0,
 		},
 		{
-			// Clone happens before filtering.
+			// When no pods are added (priority < current for cross-scheduler),
+			// stateOut/nodeInfoOut are the original objects (not clones).
 			name: "cross-scheduler nominated pod (priority < current) is not added",
 			pod:  makeSimplePod("scheduling-pod", "uid-scheduling", midPriority, ""),
 			crossNominator: newCrossNominator(
 				makePriorityPod("cross-low", "uid-cross-low", lowPriority, "100m", "other-scheduler", nodeName, ""),
 			),
 			wantPodsAdded:  false,
-			wantCloned:     true,
+			wantCloned:     false,
 			wantAddedCount: 0,
 		},
 		{
-			// Clone happens before filtering.
+			// When no pods are added (sameJob excludes all),
+			// stateOut/nodeInfoOut are the original objects (not clones).
 			name:            "sameJob excludes native nominated pod",
 			pod:             makeSimplePod("scheduling-pod", "uid-scheduling", midPriority, ""),
 			nativeNominated: []*corev1.Pod{makeSimplePod("native-job-pod", "uid-job-pod", highPriority, nodeName)},
 			crossNominator:  newCrossNominator(),
 			podsOfSameJob:   []string{"uid-job-pod"},
 			wantPodsAdded:   false,
-			wantCloned:      true,
+			wantCloned:      false,
 			wantAddedCount:  0,
 		},
 		{
@@ -673,8 +676,8 @@ func Test_addMergedNominatedPods(t *testing.T) {
 			state := framework.NewCycleState()
 			podsOfSameJob := sets.New[string](tt.podsOfSameJob...)
 
-			podsAdded, stateOut, nodeInfoOut, err := impl.addMergedNominatedPods(
-				context.TODO(), tt.pod, state, nodeInfo, podsOfSameJob,
+			podsAdded, stateOut, nodeInfoOut, err := addMergedNominatedPods(
+				context.TODO(), impl, tt.pod, state, nodeInfo, podsOfSameJob,
 			)
 
 			assert.NoError(t, err, "unexpected error")
