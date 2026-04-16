@@ -1165,6 +1165,18 @@ func Test_Plugin_Filter(t *testing.T) {
 	testHuaweiNodeInfo := &framework.NodeInfo{}
 	testHuaweiNodeInfo.SetNode(testHuaweiNode)
 
+	testHuawei300IDuoNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+			Labels: map[string]string{
+				apiext.LabelGPUVendor: apiext.GPUVendorHuawei,
+				apiext.LabelGPUModel:  "Ascend-310P3-300I-DUO",
+			},
+		},
+	}
+	testHuawei300IDuoNodeInfo := &framework.NodeInfo{}
+	testHuawei300IDuoNodeInfo.SetNode(testHuawei300IDuoNode)
+
 	tests := []struct {
 		name                 string
 		state                *preFilterState
@@ -2665,6 +2677,18 @@ func Test_Plugin_Filter(t *testing.T) {
 			want:            nil,
 		},
 		{
+			name: "the pod requires vNPU but node GPU model Ascend-310P3-300I-DUO does not support it",
+			state: &preFilterState{
+				skip: false,
+				gpuRequirements: &GPURequirements{
+					gpuShared: true,
+				},
+			},
+			nodeDeviceCache: newNodeDeviceCache(),
+			nodeInfo:        testHuawei300IDuoNodeInfo,
+			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, `model "Ascend-310P3-300I-DUO" of vendor "huawei" does not support GPU Share`),
+		},
+		{
 			name: "allocate by designated, failure",
 			state: &preFilterState{
 				skip: false,
@@ -3180,6 +3204,12 @@ func Test_Plugin_Filter(t *testing.T) {
 			if strings.Contains(tt.name, "hami-core") {
 				pod.Labels = map[string]string{apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore)}
 				cycleState.Write(stateKey, tt.state)
+			}
+			if strings.Contains(tt.name, "Ascend-310P3-300I-DUO") {
+				cycleState.Write(stateKey, tt.state)
+				pl.gpuShareUnsupportedModels = map[string]sets.Set[string]{
+					apiext.GPUVendorHuawei: sets.New[string]("Ascend-310P3-300I-DUO"),
+				}
 			}
 			status := pl.Filter(context.TODO(), cycleState, pod, tt.nodeInfo)
 			assert.Equal(t, tt.want.Code(), status.Code())
