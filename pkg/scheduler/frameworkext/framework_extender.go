@@ -42,6 +42,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -69,6 +70,7 @@ type frameworkExtenderImpl struct {
 	reservationLister                   listerschedulingv1alpha1.ReservationLister
 
 	networkTopologyTreeManager networktopology.TreeManager
+	workloadAuditor            workloadauditor.WorkloadAuditor
 
 	preFilterTransformers         map[string]PreFilterTransformer
 	filterTransformers            map[string]FilterTransformer
@@ -127,6 +129,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		reservationLister:                   f.koordinatorSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister(),
 		networkTopologyTreeManager:          f.networkTopologyTreeManager,
 		crossSchedulerNominator:             f.crossSchedulerNominator,
+		workloadAuditor:                     f.workloadAuditor,
 	}
 	frameworkExtender.topologyManager = topologymanager.New(frameworkExtender)
 
@@ -286,6 +289,10 @@ func (ext *frameworkExtenderImpl) GetNetworkTopologyTreeManager() networktopolog
 
 func (ext *frameworkExtenderImpl) GetCrossSchedulerPodNominator() *CrossSchedulerPodNominator {
 	return ext.crossSchedulerNominator
+}
+
+func (ext *frameworkExtenderImpl) GetWorkloadAuditor() workloadauditor.WorkloadAuditor {
+	return ext.workloadAuditor
 }
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
@@ -452,7 +459,12 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap)
 			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
 		}
-		DumpDiagnosis(state)
+		diagnosis := GetDiagnosis(state)
+		DumpDiagnosis(diagnosis)
+		if diagnosis != nil && diagnosis.IsRootCausePod && diagnosis.AuditType != "" && ext.workloadAuditor != nil {
+			ext.workloadAuditor.RecordDiagnosis(pod, diagnosis.QuestionedKey, diagnosis.AuditType, diagnosis.AuditMessage)
+		}
+
 	}()
 
 	return ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)
@@ -554,6 +566,9 @@ func (ext *frameworkExtenderImpl) RunPostBindPlugins(ctx context.Context, state 
 		defer ext.monitor.Complete(pod, nil)
 	}
 	ext.Framework.RunPostBindPlugins(ctx, state, pod, nodeName)
+	if ext.workloadAuditor != nil {
+		ext.workloadAuditor.RecordPodScheduleResult(pod, workloadauditor.RecordTypeScheduled, nodeName)
+	}
 }
 
 func (ext *frameworkExtenderImpl) RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status {

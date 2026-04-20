@@ -44,6 +44,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	koordschedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
@@ -74,6 +75,7 @@ type extendedHandleOptions struct {
 	reservationNominator                ReservationNominator
 	networkTopologyManager              networktopology.TreeManager
 	crossSchedulerNominator             *CrossSchedulerPodNominator
+	workloadAuditor                     workloadauditor.WorkloadAuditor
 }
 
 type Option func(*extendedHandleOptions)
@@ -126,6 +128,12 @@ func WithCrossSchedulerPodNominator(nominator *CrossSchedulerPodNominator) Optio
 	}
 }
 
+func WithWorkloadAuditor(auditor workloadauditor.WorkloadAuditor) Option {
+	return func(options *extendedHandleOptions) {
+		options.workloadAuditor = auditor
+	}
+}
+
 // FrameworkExtenderFactory is a factory for creating a FrameworkExtender.
 // NOTE: DO NOT put framework-level data here.
 type FrameworkExtenderFactory struct {
@@ -145,6 +153,8 @@ type FrameworkExtenderFactory struct {
 
 	networkTopologyTreeManager networktopology.TreeManager
 	crossSchedulerNominator    *CrossSchedulerPodNominator
+
+	workloadAuditor workloadauditor.WorkloadAuditor
 
 	metricsRecorder *metrics.MetricAsyncRecorder
 }
@@ -172,6 +182,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		errorHandlerDispatcher:              newErrorHandlerDispatcher(),
 		networkTopologyTreeManager:          handleOptions.networkTopologyManager,
 		crossSchedulerNominator:             handleOptions.crossSchedulerNominator,
+		workloadAuditor:                     handleOptions.workloadAuditor,
 		metricsRecorder:                     metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
 	}, nil
 }
@@ -327,7 +338,9 @@ func makePodInfoFromPod(pod *corev1.Pod) (*framework.QueuedPodInfo, error) {
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
 	InitDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
-
+	if f.workloadAuditor != nil {
+		f.workloadAuditor.RecordAttemptPod(pod)
+	}
 	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
 		recordScheduleDiagnosis(cycleState, err)
@@ -402,6 +415,9 @@ func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Sche
 	sched.FailureHandler = func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) {
 		f.errorHandlerDispatcher.Error(ctx, fwk, podInfo, status, nominatingInfo, start)
 		f.monitor.Complete(podInfo.Pod, status)
+		if f.workloadAuditor != nil {
+			f.workloadAuditor.RecordPodScheduleResult(podInfo.Pod, workloadauditor.RecordTypeScheduleFailure, "")
+		}
 	}
 }
 

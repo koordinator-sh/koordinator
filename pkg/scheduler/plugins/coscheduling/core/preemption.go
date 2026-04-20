@@ -27,6 +27,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	schedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
@@ -223,6 +224,15 @@ func (ev *preemptionEvaluatorImpl) Preempt(ctx context.Context, state fwktype.Cy
 				NodeToStatusMap:     preemptionState.statusMap,
 			},
 			OtherDiagnosis: preemptionState,
+		}
+		switch preemptionState.Reason {
+		case ReasonTriggerPodPreemptSuccess:
+			scheduleDiagnosis.AuditType = workloadauditor.RecordTypePreemptNominated
+		case ReasonTerminatingVictimOnNominatedNode:
+			scheduleDiagnosis.AuditType = workloadauditor.RecordTypePreemptVictimDeleting
+		case ReasonListNode, ReasonNoNodesAvailable, ReasonNoPotentialVictims, ReasonPreemptionNotHelpful, ReasonSelectVictimsOnNodeError, ReasonPrepareCandidatesError:
+			scheduleDiagnosis.AuditType = workloadauditor.RecordTypePreemptFailure
+			scheduleDiagnosis.AuditMessage = preemptionState.Reason
 		}
 	}()
 	return ev.preempt(contextWithJobPreemptionState(ctx, preemptionState), state, pod, m)

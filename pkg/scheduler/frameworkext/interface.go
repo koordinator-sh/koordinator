@@ -33,6 +33,7 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 )
 
 // ExtendedHandle extends the k8s scheduling framework Handle interface
@@ -61,6 +62,7 @@ type ExtendedHandle interface {
 	// GetCrossSchedulerPodNominator returns the CrossSchedulerPodNominator for cross-scheduler nominated pod tracking.
 	// It returns nil when the feature is not enabled or not configured.
 	GetCrossSchedulerPodNominator() *CrossSchedulerPodNominator
+	GetWorkloadAuditor() workloadauditor.WorkloadAuditor
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.

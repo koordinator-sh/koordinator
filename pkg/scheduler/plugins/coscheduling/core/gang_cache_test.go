@@ -1289,24 +1289,24 @@ func TestGetGangGroupInfo_DeleteGangGroupInfo(t *testing.T) {
 	pglister := pgInformer.Lister()
 	cache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, pglister, pgClient, nil)
 
-	gangGroupInfo := cache.getGangGroupInfo("aa", []string{"aa"}, false)
+	gangGroupInfo, _ := cache.getGangGroupInfo("aa", []string{"aa"}, false)
 	assert.True(t, gangGroupInfo == nil)
 	assert.Equal(t, 0, len(cache.gangGroupInfoMap))
 
-	gangGroupInfo = cache.getGangGroupInfo("aa", []string{"aa"}, true)
+	gangGroupInfo, _ = cache.getGangGroupInfo("aa", []string{"aa"}, true)
 	assert.True(t, gangGroupInfo != nil)
 	assert.Equal(t, gangGroupInfo.GangGroupId, "aa")
 	assert.Equal(t, gangGroupInfo.GangGroup, []string{"aa"})
 	assert.Equal(t, 1, len(cache.gangGroupInfoMap))
 
-	gangGroupInfo = cache.getGangGroupInfo("aa", []string{"aa"}, false)
+	gangGroupInfo, _ = cache.getGangGroupInfo("aa", []string{"aa"}, false)
 	assert.True(t, gangGroupInfo != nil)
 	assert.Equal(t, gangGroupInfo.GangGroupId, "aa")
 	assert.Equal(t, gangGroupInfo.GangGroup, []string{"aa"})
 	assert.Equal(t, 1, len(cache.gangGroupInfoMap))
 
 	cache.deleteGangGroupInfo("aa")
-	gangGroupInfo = cache.getGangGroupInfo("aa", []string{"aa"}, false)
+	gangGroupInfo, _ = cache.getGangGroupInfo("aa", []string{"aa"}, false)
 	assert.True(t, gangGroupInfo == nil)
 	assert.Equal(t, 0, len(cache.gangGroupInfoMap))
 }
