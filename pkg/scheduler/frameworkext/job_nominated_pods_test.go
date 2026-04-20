@@ -403,7 +403,7 @@ func Test_addNominatedPods(t *testing.T) {
 		wantPodsAdded  bool
 		wantAddedCount int // expected number of pods added to nodeInfo
 		// wantCloned indicates whether stateOut/nodeInfoOut are expected to be clones.
-		// This is true whenever nominatedPodInfos is non-empty (clone happens before filtering).
+		// True whenever pods are actually added to nodeInfo (i.e., podsAdded == true).
 		wantCloned bool
 	}{
 		{
@@ -481,19 +481,20 @@ func Test_addNominatedPods(t *testing.T) {
 			state := framework.NewCycleState()
 			podsOfSameJob := sets.New[string](tt.podsOfSameJob...)
 
-			podsAdded, stateOut, nodeInfoOut, err := addNominatedPods(
+			podsAdded, stateOut, nodeInfoOut, err, addedPods := addNominatedPods(
 				context.TODO(), fh, tt.pod, state, nodeInfo, podsOfSameJob,
 			)
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantPodsAdded, podsAdded, "podsAdded mismatch")
+			_ = addedPods // addedPods is only populated when klog V(5) is enabled or NominatedNodeName matches
 
 			if tt.wantCloned {
-				// Clone is created whenever nominatedPodInfos is non-empty, regardless of whether pods pass the filter.
+				// Clone is created whenever pods are actually added (podsAdded == true).
 				assert.NotSame(t, state, stateOut, "stateOut should be a clone")
 				assert.NotSame(t, nodeInfo, nodeInfoOut, "nodeInfoOut should be a clone")
 			} else {
-				// No nominated pods at all: early return with originals.
+				// No eligible pods added: returns original state and nodeInfo.
 				assert.Same(t, state, stateOut, "stateOut should be the original state")
 				assert.Same(t, nodeInfo, nodeInfoOut, "nodeInfoOut should be the original nodeInfo")
 			}
@@ -583,7 +584,7 @@ func Test_addMergedNominatedPods(t *testing.T) {
 		wantPodsAdded   bool
 		wantAddedCount  int
 		// wantCloned indicates whether stateOut/nodeInfoOut are expected to be clones.
-		// True whenever the combined nominated pod list is non-empty (clone happens before filtering).
+		// True whenever pods are actually added to nodeInfo (i.e., podsAdded == true).
 		wantCloned bool
 	}{
 		{
@@ -676,19 +677,20 @@ func Test_addMergedNominatedPods(t *testing.T) {
 			state := framework.NewCycleState()
 			podsOfSameJob := sets.New[string](tt.podsOfSameJob...)
 
-			podsAdded, stateOut, nodeInfoOut, err := addMergedNominatedPods(
+			podsAdded, stateOut, nodeInfoOut, err, addedPods := addMergedNominatedPods(
 				context.TODO(), impl, tt.pod, state, nodeInfo, podsOfSameJob,
 			)
 
 			assert.NoError(t, err, "unexpected error")
 			assert.Equal(t, tt.wantPodsAdded, podsAdded, "podsAdded mismatch")
+			_ = addedPods // addedPods is only populated when klog V(5) is enabled or NominatedNodeName matches
 
 			if tt.wantCloned {
-				// Clone is created whenever the combined nominated list is non-empty.
+				// Clone is returned whenever pods are actually added (podsAdded == true).
 				assert.NotSame(t, state, stateOut, "stateOut should be a clone")
 				assert.NotSame(t, nodeInfo, nodeInfoOut, "nodeInfoOut should be a clone")
 			} else {
-				// Both lists empty: early return with originals.
+				// No eligible pods added: returns original state and nodeInfo.
 				assert.Same(t, state, stateOut, "stateOut should be the original state")
 				assert.Same(t, nodeInfo, nodeInfoOut, "nodeInfoOut should be the original nodeInfo")
 			}
