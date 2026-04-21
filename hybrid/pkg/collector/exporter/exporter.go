@@ -14,7 +14,7 @@ import (
 	"k8s.io/klog/v2"
 
 	config "hybrid/config/collector"
-	"hybrid/pkg/collector/prometheus"
+	"hybrid/pkg/simple/prometheus"
 )
 
 const (
@@ -24,17 +24,22 @@ const (
 
 // Exporter prometheus metrics data exporter
 type Exporter struct {
-	config         *config.Config
-	promClient     *prometheus.Client
-	uploadNotifyCh chan string // notify upload ch
+	config        *config.Config
+	promClient    *prometheus.Client
+	uploadService UploadNotifier // Interface for upload notification
+}
+
+// UploadNotifier defines the interface for notifying upload service
+type UploadNotifier interface {
+	NotifyBegin(path string)
 }
 
 // NewExporter create a new exporter
-func NewExporter(promClient *prometheus.Client, cfg *config.Config, notify chan string) *Exporter {
+func NewExporter(promClient *prometheus.Client, cfg *config.Config, uploadService UploadNotifier) *Exporter {
 	return &Exporter{
-		promClient:     promClient,
-		config:         cfg,
-		uploadNotifyCh: notify,
+		promClient:    promClient,
+		config:        cfg,
+		uploadService: uploadService,
 	}
 }
 
@@ -75,14 +80,10 @@ func (e *Exporter) Export() error {
 		return fmt.Errorf("unknown export mode: %s", e.config.Export.Mode)
 	}
 
-	// notify upload after export
-	if exportPath != "" && e.uploadNotifyCh != nil {
-		select {
-		case e.uploadNotifyCh <- exportPath:
-			klog.Infof("Notified upload service: %s", exportPath)
-		default:
-			klog.Warning("Upload channel full, notification dropped")
-		}
+	// Notify upload service after successful export
+	if exportPath != "" && e.uploadService != nil {
+		e.uploadService.NotifyBegin(exportPath)
+		klog.V(4).Infof("Notified upload service: %s", exportPath)
 	}
 
 	return nil

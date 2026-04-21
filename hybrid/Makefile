@@ -2,36 +2,31 @@
 # Use of this source code is governed by a Apache license
 # that can be found in the LICENSE file.
 
-TAG ?= v1.0
+TAG ?= v1.1
 
 .PHONY: binary
-binary: hybrid-collector hybrid-manager
+binary: hybrid-agent
 
 # Build flags for debugging
 #FLAGS=-gcflags "all=-N -l"
 # Build flags for product
 FLAGS=-ldflags="-s -w"
 
-hybrid-collector:
-	CGO_ENABLED=0 go build ${FLAGS}  -o bin/hybrid-collector cmd/hybrid-collector/main.go
+hybrid-agent:
+	CGO_ENABLED=0 go build ${FLAGS}  -o bin/hybrid-agent cmd/hybrid-agent/main.go
 
-hybrid-manager:
-	CGO_ENABLED=0 go build ${FLAGS} -o bin/hybrid-manager cmd/hybrid-manager/main.go
-
-
-binary: hybrid-collector hybrid-manager
-
-clean:
-	rm -f bin/*
+binary: hybrid-agent
 
 .PHONY: all-images
-all-images: binary collector-image manager-image
+all-images: binary agent-image
 
 .PHONY: container
 container: all-images
 
-collector-image:
-	docker build -f ./build/hybrid-collector/Dockerfile -t hybrid-system/hybrid-collector:$(TAG) .
+agent-image:
+	docker build -f ./build/hybrid-agent/Dockerfile -t hybrid-system/hybrid-agent:$(TAG) .
 
 manager-image:
-	docker build -f ./build/hybrid-manager/Dockerfile -t hybrid-system/hybrid-manager:$(TAG) .
+
+clean:
+	rm -f bin/*

@@ -18,8 +18,8 @@ import (
 	"github.com/klauspost/compress/gzip"
 	"k8s.io/klog/v2"
 
-	"hybrid/pkg/collector/prometheus"
 	"hybrid/pkg/constants"
+	"hybrid/pkg/simple/prometheus"
 )
 
 type PrometheusJSONResult struct {
@@ -68,12 +68,30 @@ func (e *Exporter) exportToJson(allResults map[string][]prometheus.QueryResult) 
 				// Value as a string, preserving precision
 				jsonResult.Values[i] = tv.Value
 			}
+
+			// 获取的数据至少保证两个数据点
+			if len(jsonResult.Timestamps) < 2 || len(jsonResult.Values) < 2 {
+				continue // Skip if illegal values
+			}
+
+			// 清洗全零数据,减少数据干扰
+			allZero := true
+			for _, v := range jsonResult.Values {
+				if v != float64(0) {
+					allZero = false
+					break
+				}
+			}
+			if allZero {
+				continue // Skip if all values are zero
+			}
+
 			finalData = append(finalData, jsonResult)
 		}
 	}
 
-	if finalData == nil {
-		return "", fmt.Errorf("no data to export")
+	if len(finalData) == 0 {
+		return "", fmt.Errorf("no metrics data to export")
 	}
 
 	if err := compressToGz(exportPath, finalData); err != nil {
@@ -94,11 +112,9 @@ func compressToGz(path string, data []PrometheusJSONResult) error {
 
 	// Wrap the file with a buffered writer for efficiency
 	bufWriter := bufio.NewWriter(file)
-	defer bufWriter.Flush()
 
 	// Create a gzip writer
 	gzWriter := gzip.NewWriter(bufWriter)
-	defer gzWriter.Close()
 
 	encoder := json.NewEncoder(gzWriter)
 
@@ -107,6 +123,16 @@ func compressToGz(path string, data []PrometheusJSONResult) error {
 		if err := encoder.Encode(item); err != nil {
 			return fmt.Errorf("failed to encode json line: %w", err)
 		}
+	}
+
+	// Close gzip writer first to flush and write gzip footer
+	if err := gzWriter.Close(); err != nil {
+		return fmt.Errorf("failed to close gzip writer: %w", err)
+	}
+
+	// Then flush the buffered writer
+	if err := bufWriter.Flush(); err != nil {
+		return fmt.Errorf("failed to flush buffer: %w", err)
 	}
 
 	return nil
@@ -197,15 +223,10 @@ func (e *Exporter) shouldDeleteFile(fileInfo os.FileInfo) bool {
 
 func (e *Exporter) getRetentionHours() int64 {
 	if e.config.Export.LocalConfig.RetentionHours > 0 {
-		return e.config.Export.LocalConfig.RetentionHours
+		return int64(e.config.Export.LocalConfig.RetentionHours / time.Hour)
 	}
-	// default retain 24 hour export data
-	return 24
-}
-
-func compressTo7z(path string, data *[]PrometheusJSONResult) error {
-	// TODO:
-	return nil
+	// default retain 12 hour export data
+	return 12
 }
 
 func generateCompressFileName(format string) string {

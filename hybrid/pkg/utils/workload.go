@@ -190,6 +190,50 @@ func isLikelyHash(s string) bool {
 	return true
 }
 
+// GetWorkloadKindByName directly queries the workload type by namespace and name.
+// It checks all supported workload kinds in priority order and returns the first match.
+// Supported kinds: Deployment, StatefulSet, DaemonSet, Job, CronJob
+func GetWorkloadKindByName(ctx context.Context, client kubernetes.Interface, namespace, workloadName string) (*ControllerReference, error) {
+	if workloadName == "" || namespace == "" {
+		return nil, fmt.Errorf("namespace and workloadName are required")
+	}
+
+	// Define workload kinds to check in priority order
+	type workloadCheck struct {
+		kind string
+		fn   func(context.Context, kubernetes.Interface, string, string) error
+	}
+
+	checks := []workloadCheck{
+		{"Deployment", checkDeployment},
+		{"StatefulSet", checkStatefulSet},
+		{"DaemonSet", checkDaemonSet},
+		{"Job", checkJob},
+		{"CronJob", checkCronJob},
+	}
+
+	for _, check := range checks {
+		if err := check.fn(ctx, client, namespace, workloadName); err == nil {
+			klog.V(5).InfoS("Found workload", "namespace", namespace, "name", workloadName, "kind", check.kind)
+			return &ControllerReference{Name: workloadName, Kind: check.kind}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("workload %s/%s not found or kind not supported", namespace, workloadName)
+}
+
+// checkDeployment checks if a Deployment exists
+func checkDeployment(ctx context.Context, c kubernetes.Interface, ns, name string) error {
+	_, err := c.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
+	return err
+}
+
+// checkStatefulSet checks if a StatefulSet exists
+func checkStatefulSet(ctx context.Context, c kubernetes.Interface, ns, name string) error {
+	_, err := c.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
+	return err
+}
+
 func checkDaemonSet(ctx context.Context, c kubernetes.Interface, ns, name string) error {
 	_, err := c.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
 	return err

@@ -8,7 +8,7 @@
 // AI-predicted resource recommendations (cpu/memory requests and limits)
 // onto Kubernetes workloads.
 //
-// TODO: implement prediction parsing and workload patching logic.
+// TODO: 获取模型5的结果,通过控制器更新工作负载注解/标签
 package resource
 
 import (

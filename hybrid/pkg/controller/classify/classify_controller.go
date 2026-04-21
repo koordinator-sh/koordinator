@@ -22,6 +22,7 @@ import (
 	"hybrid/pkg/constants"
 	"hybrid/pkg/controller"
 	"hybrid/pkg/predictor"
+	"hybrid/pkg/simple/algorithm"
 	"hybrid/pkg/utils"
 )
 
@@ -32,7 +33,8 @@ const controllerName = "classify-controller"
 type Controller struct {
 	patchers          controller.WorkloadPatcherRegistry
 	downloader        predictor.Downloader
-	syncInterval      time.Duration
+	fetcher           predictor.Fetcher
+	notify            <-chan algorithm.TaskEvent // 订阅模型运行成功事件
 	excludeNamespaces sets.Set[string]
 	predFile          string
 }
@@ -45,32 +47,25 @@ func (c *Controller) Name() string { return controllerName }
 func (c *Controller) Start(ctx context.Context, mgr *controller.Manager) error {
 	c.patchers = controller.NewWorkloadPatcherRegistry(mgr.Client)
 	c.downloader = mgr.DownloadService
-	c.syncInterval = mgr.SyncInterval
+	c.fetcher = mgr.FetchService
+	c.notify = mgr.Notifier.Subscribe(algorithm.Model4)
 	c.excludeNamespaces = mgr.ExcludeNamespaces
 	c.predFile = filepath.Join(mgr.OutputDir, constants.DefaultPredictionFile)
 
-	klog.InfoS("ClassifyController starting",
-		"syncInterval", c.syncInterval,
-		"excludeNamespaces", sets.List(c.excludeNamespaces),
-		"predictionFile", c.predFile,
-	)
-
-	// Run one sync immediately so the very first interval isn't a cold start.
-	if err := c.sync(ctx); err != nil {
-		klog.ErrorS(err, "Initial classification sync failed")
-	}
-
-	ticker := time.NewTicker(c.syncInterval)
-	defer ticker.Stop()
+	klog.InfoS("ClassifyController starting", "excludeNamespaces", sets.List(c.excludeNamespaces))
 
 	for {
 		select {
 		case <-ctx.Done():
 			klog.Info("ClassifyController stopping")
 			return nil
-		case <-ticker.C:
+		case event, ok := <-c.notify:
+			if !ok {
+				return nil
+			}
+			klog.InfoS("ClassifyController received model4 task completion", "taskID", event.TaskID)
 			if err := c.sync(ctx); err != nil {
-				klog.ErrorS(err, "Classification sync failed")
+				klog.ErrorS(err, "ClassifyController sync failed", "taskID", event.TaskID)
 			}
 		}
 	}
@@ -80,11 +75,8 @@ func (c *Controller) Start(ctx context.Context, mgr *controller.Manager) error {
 func (c *Controller) sync(ctx context.Context) error {
 	start := time.Now()
 
-	if err := c.downloader.Download(ctx); err != nil {
-		return fmt.Errorf("failed to download: %w", err)
-	}
-
-	records, err := predictor.ParsePredictionFile(c.predFile)
+	// 获取 MODEL4 的结果
+	records, err := c.fetcher.FetchModel4Results(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to parse: %w", err)
 	}
@@ -118,7 +110,11 @@ func (c *Controller) sync(ctx context.Context) error {
 func (c *Controller) applyAnnotations(ctx context.Context, rec predictor.PodRecord) error {
 	ref, err := utils.GetControllerInfoForPod(ctx, c.patchers.Client(), rec.Namespace, rec.Name)
 	if err != nil {
-		return fmt.Errorf("resolve controller: %w", err)
+		if errors.IsNotFound(err) {
+			klog.V(4).InfoS("Pod not found, skipping", "namespace", rec.Namespace, "name", rec.Name)
+			return nil
+		}
+		return fmt.Errorf("failed to find pod controller: %w", err)
 	}
 
 	patcher, ok := c.patchers.Get(ref.Kind)

@@ -15,8 +15,8 @@ import (
 	"k8s.io/klog/v2"
 
 	config "hybrid/config/collector"
-	"hybrid/pkg/collector/prometheus"
 	"hybrid/pkg/constants"
+	"hybrid/pkg/simple/prometheus"
 )
 
 // exportToExcel export metrics data to local file(excel)

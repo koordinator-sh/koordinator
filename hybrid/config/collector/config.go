@@ -65,8 +65,9 @@ type LocalConfig struct {
 	// OutputDir directory to store exported files
 	OutputDir string `yaml:"outputDir"`
 	// Format export format, supported: "timestamp" or "daily"
-	Format         string `yaml:"format"`
-	RetentionHours int64  `yaml:"retentionHours"`
+	Format string `yaml:"format"`
+	// RetentionHours retention hours
+	RetentionHours time.Duration `yaml:"retentionHours"`
 }
 
 type WebSocketConfig struct {
@@ -90,6 +91,28 @@ type QueryConfig struct {
 	Description string            `yaml:"description"` // 查询描述
 	ValueColumn string            `yaml:"valueColumn"` // 值列名称
 	Metadata    map[string]string `yaml:"metadata"`    // 额外的元数据
+}
+
+func LoadConfig(path string) (*Config, error) {
+	var cfg *Config
+	var err error
+
+	if path != "" {
+		cfg, err = LoadFromFile(path)
+	} else {
+		cfg, err = InitConfig()
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Validate configuration after loading
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("failed to validate configuration: %w", err)
+	}
+
+	return cfg, nil
 }
 
 // LoadFromFile load config from specified file path

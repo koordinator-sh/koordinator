@@ -7,80 +7,165 @@
 package upload
 
 import (
-	"archive/tar"
-	"bytes"
-	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
-	"mime/multipart"
-	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"hybrid/pkg/constants"
-
 	"k8s.io/klog/v2"
+
+	"hybrid/pkg/simple/algorithm"
 )
 
 const (
-	CompressDir = "/tmp/hybrid-output"
+	cleanupInterval = 8 * time.Hour // 1天
 )
 
 type Service struct {
-	url       string
-	mu        sync.Mutex
-	authToken string
-	dataReady chan string
-	stopChan  chan struct{}
+	client  *algorithm.Client
+	watcher *algorithm.Watcher // watcher 监听算法运行的状态,成功之后发送信号
+	mgrCtx  context.Context    // Manager 生命周期 ctx, 绑定 watcher goroutine
+	mu      sync.Mutex
+	beginCh chan string
+	stopCh  chan struct{}
+	readyCh chan algorithm.Signal
 }
 
-func NewService(url string, token string) *Service {
+func NewService(client *algorithm.Client, watcher *algorithm.Watcher, mgrCtx context.Context) *Service {
 	return &Service{
-		url:       url,
-		authToken: token,
-		dataReady: make(chan string, 10),
-		stopChan:  make(chan struct{}),
+		client:  client,
+		watcher: watcher,
+		mgrCtx:  mgrCtx,
+		beginCh: make(chan string, 1),
+		readyCh: make(chan algorithm.Signal, len(algorithm.Models)),
+		stopCh:  make(chan struct{}),
 	}
 }
 
-func (s *Service) Start() {
-	go s.uploadWorker()
-	klog.Infof("Upload service started")
+func (s *Service) Run() {
+	klog.Info("Upload service starting...")
+	go s.worker()
+	// 启动定时清理任务,每12h清理一次所有模型数据
+	go s.startCleanupTicker()
+	klog.Info("Upload service started")
 }
 
 func (s *Service) Stop() {
-	close(s.stopChan)
+	klog.Info("Upload service stopping...")
+	close(s.stopCh)
 }
 
-func (s *Service) NotifyDataReady(dataPath string) {
+// startCleanupTicker 启动定时清理任务,每24h清理一次所有模型的数据
+func (s *Service) startCleanupTicker() {
+	// 首次清理在启动后 8 小时执行,避免刚启动就清理
+	initialDelay := 4 * time.Hour
+	klog.InfoS("Cleanup ticker started", "interval", cleanupInterval, "firstCleanupIn", initialDelay)
+
+	// 等待初始延迟
 	select {
-	case s.dataReady <- dataPath:
-		klog.Infof("Data ready notify sent for: %s", dataPath)
-	default:
-		klog.Warningf("Notify channel has full, skipping notification")
+	case <-time.After(initialDelay):
+		klog.Info("Initial cleanup delay completed, starting first cleanup")
+	case <-s.mgrCtx.Done():
+		klog.Info("Cleanup ticker stopped before first cleanup (context cancelled)")
+		return
 	}
-}
 
-func (s *Service) uploadWorker() {
+	// 执行首次清理
+	s.cleanupAllModels()
+
+	// 创建定时器,按固定间隔清理
+	ticker := time.NewTicker(cleanupInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case <-s.stopChan:
-			klog.Infof("Upload worker stopped")
+		case <-s.mgrCtx.Done():
+			klog.Info("Cleanup ticker stopped (context cancelled)")
 			return
-
-		case dataPath := <-s.dataReady:
-			if err := s.processAndUpload(dataPath); err != nil {
-				klog.Errorf("Failed to process and upload: %v", err)
-			}
+		case <-ticker.C:
+			klog.Info("Scheduled cleanup triggered")
+			s.cleanupAllModels()
 		}
 	}
 }
 
-func (s *Service) processAndUpload(dataPath string) error {
+// cleanupAllModels 清理所有模型的数据和输出文件,避免占用磁盘空间
+func (s *Service) cleanupAllModels() {
+	klog.Info("Starting cleanup for all models...")
+
+	ctx, cancel := context.WithTimeout(s.mgrCtx, 10*time.Minute)
+	defer cancel()
+
+	var successCount, failCount int
+
+	// 遍历所有模型,清理数据和输出文件
+	for _, model := range algorithm.Models {
+		klog.InfoS("Cleaning up model", "model", model)
+
+		resp, err := s.client.CleanDirectories(ctx, model, model)
+		if err != nil {
+			klog.ErrorS(err, "Failed to cleanup model", "model", model)
+			failCount++
+			continue
+		}
+
+		if resp.Status == algorithm.StatusSuccess {
+			klog.InfoS("Model cleanup succeeded", "model", model, "status", resp.Status, "message", resp.Message)
+			successCount++
+		} else {
+			klog.ErrorS(nil, "Model cleanup failed", "model", model, "status", resp.Status, "message", resp.Message)
+			failCount++
+		}
+	}
+
+	klog.InfoS("Cleanup completed", "totalModels", len(algorithm.Models), "success", successCount, "failed", failCount)
+}
+
+func (s *Service) NotifyBegin(path string) {
+	select {
+	case s.beginCh <- path:
+		klog.V(4).Infof("Notified upload service of new data: %s", path)
+	default:
+		klog.Warningf("Upload notification channel is full, skipping notification for: %s", path)
+	}
+}
+
+func (s *Service) notifyReady(signal algorithm.Signal) {
+	select {
+	case s.readyCh <- signal:
+		klog.Infof("Upload file ready, notify running for model: %s", signal.Model)
+	default:
+		klog.Warningf("Notify readyCh has full, skipping notification")
+	}
+}
+
+func (s *Service) worker() {
+	for {
+		select {
+		// 接收数据收集完成信号,启动数据上传
+		case dataPath := <-s.beginCh:
+			if err := s.process(dataPath); err != nil {
+				klog.Errorf("Failed to process and upload: %v", err)
+			}
+
+		// 数据上传成功, 通知触发对应模型训练的任务
+		case sig := <-s.readyCh:
+			if err := s.triggerAlgorithm(sig); err != nil {
+				klog.Errorf("Failed to trigger algorithm for model %s: %v", sig.Model, err)
+			}
+
+		case <-s.stopCh:
+			klog.Infof("Upload worker stopped")
+			return
+		}
+	}
+}
+
+func (s *Service) process(dataPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -92,173 +177,221 @@ func (s *Service) processAndUpload(dataPath string) error {
 	return nil
 }
 
-func (s *Service) compressTo7z(sourceDir, outputFile string) error {
-	// 7z a -t7z output.7z sourceDir
-	cmd := exec.Command("7z", "a", "-t7z", outputFile, sourceDir)
+func (s *Service) uploadFile(filePath string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	fileName := filepath.Base(filePath)
+	var errs []error
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("7z command failed: %w, stderr: %s", err, stderr.String())
+	for _, model := range algorithm.Models {
+		tempFile, err := s.createTempCopy(filePath, model)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("model %s: failed to create temp copy: %w", model, err))
+			continue
+		}
+		tempPath := tempFile.Name()
+		defer os.Remove(tempPath)
+
+		// 每个 Model 使用唯一的文件名, 避免服务端同名覆盖
+		modelFileName := fmt.Sprintf("%s_%s", strings.ToLower(string(model)), fileName)
+
+		if err := s.uploadModelFile(ctx, tempFile, modelFileName, model); err != nil {
+			errs = append(errs, fmt.Errorf("model %s: %w", model, err))
+			tempFile.Close()
+			continue
+		}
+		tempFile.Close()
 	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("upload partial failure: %v", errs)
+	}
+	return nil
+}
+
+// createTempCopy 创建文件的临时副本
+func (s *Service) createTempCopy(srcPath string, model algorithm.ModelType) (*os.File, error) {
+	// 创建临时文件
+	tempDir := filepath.Dir(srcPath)
+	tempFile, err := os.CreateTemp(tempDir, fmt.Sprintf("upload-%s-*.gz", model))
+	if err != nil {
+		return nil, fmt.Errorf("create temp file: %w", err)
+	}
+
+	// 打开源文件
+	srcFile, err := os.Open(srcPath)
+	if err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return nil, fmt.Errorf("open source file: %w", err)
+	}
+	defer srcFile.Close()
+
+	// 复制内容
+	if _, err := io.Copy(tempFile, srcFile); err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return nil, fmt.Errorf("copy file content: %w", err)
+	}
+
+	// 重置临时文件指针到开头,准备上传
+	if _, err := tempFile.Seek(0, io.SeekStart); err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return nil, fmt.Errorf("seek temp file: %w", err)
+	}
+
+	klog.V(5).InfoS("Created temp copy", "source", srcPath, "temp", tempFile.Name())
+	return tempFile, nil
+}
+
+func (s *Service) uploadModelFile(ctx context.Context, f io.Reader, fileName string, modelType algorithm.ModelType) error {
+	klog.Infof("Uploading metrics data (file: %s) to the algorithm model %s.", fileName, modelType)
+
+	resp, err := s.client.UploadFile(ctx, f, fileName, modelType, true)
+	if err != nil {
+		return fmt.Errorf("failed to upload: %w", err)
+	}
+
+	klog.Infof("Model %s upload accepted, taskID=%s", modelType, resp.TaskID)
+
+	// 启动异步协程轮询上传状态,文件上传成功后发送模型
+	go s.watchUploadStatus(s.mgrCtx, modelType, resp.TaskID)
 
 	return nil
 }
 
-func (s *Service) compressDirToTarGz(sourceDir string) (string, error) {
-	timestamp := time.Now().Format("20060102_150405")
-	compressedFile := filepath.Join(CompressDir, fmt.Sprintf("hybrid-output-%s.tar.gz", timestamp))
+// watchUploadStatus 异步轮询上传任务状态,直到上传成功或失败
+func (s *Service) watchUploadStatus(ctx context.Context, modelType algorithm.ModelType, taskID string) {
+	const (
+		pollInterval = 10 * time.Second // 轮询间隔
+		pollTimeout  = 10 * time.Minute // 上传超时时间
+	)
 
-	// make sure the compressed directory exists
-	if err := os.MkdirAll(CompressDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create compress dir: %s", err)
-	}
+	timeoutCtx, cancel := context.WithTimeout(ctx, pollTimeout)
+	defer cancel()
 
-	if _, err := os.Stat(sourceDir); os.IsNotExist(err) {
-		return "", fmt.Errorf("source directory does not exist: %s\n", sourceDir)
-	}
-	// create output file
-	file, err := os.Create(compressedFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer file.Close()
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
 
-	// create gzip writer
-	gzipWriter := gzip.NewWriter(file)
-	defer gzipWriter.Close()
+	klog.InfoS("Watching upload status", "model", modelType, "taskID", taskID)
 
-	// create tar writer
-	tarWriter := tar.NewWriter(gzipWriter)
-	defer tarWriter.Close()
+	for {
+		select {
+		case <-timeoutCtx.Done():
+			if ctx.Err() != nil {
+				klog.V(4).InfoS("Upload watcher context cancelled", "model", modelType, "taskID", taskID)
+			} else {
+				klog.ErrorS(nil, "Upload watcher timed out", "model", modelType, "taskID", taskID, "timeout", pollTimeout)
+			}
+			return
 
-	// 获取源目录的基础名称,用于在 tar 中正确设置路径
-	baseDir := filepath.Base(sourceDir)
-
-	// 遍历源目录
-	err = filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// 计算相对于源目录的路径
-		relPath, err := filepath.Rel(sourceDir, path)
-		if err != nil {
-			return err
-		}
-
-		// 跳过根目录本身
-		if relPath == "." {
-			return nil
-		}
-
-		// 在 tar 中使用基础目录名 + 相对路径
-		tarPath := filepath.Join(baseDir, relPath)
-		// 确保路径分隔符为 /
-		tarPath = strings.ReplaceAll(tarPath, string(filepath.Separator), "/")
-
-		// 创建 tar header
-		header, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return fmt.Errorf("failed to create tar header: %w", err)
-		}
-
-		header.Name = tarPath
-
-		// 写入 header
-		if err := tarWriter.WriteHeader(header); err != nil {
-			return fmt.Errorf("failed to write tar header: %w", err)
-		}
-
-		// 如果是普通文件,读取并写入内容
-		if !info.IsDir() {
-			file, err := os.Open(path)
+		case <-ticker.C:
+			status, err := s.queryUploadStatus(timeoutCtx, taskID)
 			if err != nil {
-				return fmt.Errorf("failed to open file %s: %w", path, err)
+				klog.ErrorS(err, "Failed to query upload status, will retry", "model", modelType, "taskID", taskID)
+				continue
 			}
-			defer file.Close()
 
-			if _, err := io.Copy(tarWriter, file); err != nil {
-				return fmt.Errorf("failed to copy file content: %w", err)
+			klog.V(5).InfoS("Polled upload status", "model", modelType, "taskID", taskID, "status", status)
+
+			switch status {
+			case algorithm.StatusSuccess:
+				klog.InfoS("Upload succeeded, notifying triggerAlgorithm", "model", modelType, "taskID", taskID)
+				// 上传成功, 通知触发算法运行
+				s.notifyReady(algorithm.Signal{Model: string(modelType), Ready: true})
+				return
+
+			case algorithm.StatusFailure:
+				klog.ErrorS(nil, "Upload failed on server side", "model", modelType, "taskID", taskID, "status", status)
+				return
+
+			default:
+				// PENDING / PROGRESS  继续等待
+				klog.V(4).InfoS("Upload still in progress", "model", modelType, "taskID", taskID, "status", status)
 			}
 		}
-
-		return nil
-	})
-
-	if err != nil {
-		return "", fmt.Errorf("failed to walk directory: %w", err)
 	}
-
-	// all data is written
-	if err := tarWriter.Close(); err != nil {
-		return "", fmt.Errorf("failed to close tar writer: %w", err)
-	}
-	if err := gzipWriter.Close(); err != nil {
-		return "", fmt.Errorf("failed to close gzip writer: %w", err)
-	}
-
-	return compressedFile, nil
 }
 
-func (s *Service) uploadFile(filePath string) error {
-	file, err := os.Open(filePath)
+// queryUploadStatus 查询上传任务状态
+func (s *Service) queryUploadStatus(ctx context.Context, taskID string) (string, error) {
+	resp, err := s.client.UploadStatus(ctx, taskID)
 	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	// create multipart writer
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// add param
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-	if err != nil {
-		return fmt.Errorf("failed to create form file: %w", err)
+		return "", err
 	}
 
-	if _, err := io.Copy(part, file); err != nil {
-		return fmt.Errorf("failed to copy file content: %w", err)
+	// 任务已完成(无论成功还是失败), 根据内层处理的 result 判断
+	if resp.Status == algorithm.StatusSuccess {
+		if resp.Result.Success {
+			return algorithm.StatusSuccess, nil
+		}
+		// 任务完成但处理失败,提取错误信息
+		klog.ErrorS(nil, "Upload task completed with error", "taskID", taskID, "error", resp.Result.Error) // 需在 Result struct 加 Error 字段
+		return algorithm.StatusFailure, nil
 	}
 
-	// close writer
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("failed to close writer: %w", err)
+	if resp.Status == algorithm.StatusFailure {
+		return algorithm.StatusFailure, nil
 	}
 
-	// create HTTP request
-	endpoint := fmt.Sprintf("%s%s", s.url, constants.UploadFileEndpoint)
-	req, err := http.NewRequest(http.MethodPost, endpoint, body)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+	return algorithm.StatusPending, nil
+}
+
+func (s *Service) triggerAlgorithm(sig algorithm.Signal) error {
+	// skip if not ready
+	if !sig.Ready {
+		return nil
 	}
 
-	// set Header
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("accept", "application/json")
-	req.Header.Set("x-token", s.authToken)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 
-	// send request
-	client := &http.Client{
-		Timeout: 5 * time.Minute, // 5min
+	klog.Infof("Running algorithm for model: %s", sig.Model)
+
+	switch algorithm.ModelType(sig.Model) {
+	case algorithm.Model4:
+		resp, err := s.client.RunAlgorithm4(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to run model4 algorithm: %w", err)
+		}
+		klog.Infof("model4 algorithm started, taskID=%s", resp.TaskID)
+		// 启动异步状态轮询
+		s.watcher.Watch(s.mgrCtx, algorithm.Model4, resp.TaskID)
+
+	case algorithm.Model5:
+		respShort, err := s.client.RunAlgorithm5Short(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to run model5 algorithm for short: %w", err)
+		}
+		klog.Infof("model5 algorithm for short started, taskID=%s", respShort.TaskID)
+		// 启动异步状态轮询
+		s.watcher.Watch(s.mgrCtx, algorithm.Model5, respShort.TaskID)
+
+		respLong, err := s.client.RunAlgorithm5Long(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to run model5 algorithm for long: %w", err)
+		}
+		klog.Infof("model5 algorithm for long started, taskID=%s", respLong.TaskID)
+
+		// Model5 Short 和 Long 各自独立监听,任意一个完成都会触发 Controller sync
+		// Watcher 内同一 model 同时只跑一个协程, long 的 Watch 在 short 完成后才开始生效
+		// 启动异步状态轮询
+		s.watcher.Watch(s.mgrCtx, algorithm.Model5, respShort.TaskID)
+
+	case algorithm.Model6:
+		resp, err := s.client.RunAlgorithm6(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to run model6 algorithm: %w", err)
+		}
+		klog.Infof("model6 algorithm started, taskID=%s", resp.TaskID)
+		// 启动异步状态轮询
+		s.watcher.Watch(s.mgrCtx, algorithm.Model6, resp.TaskID)
+
+	default:
+		return fmt.Errorf("unknown model type: %s", sig.Model)
 	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// check http status
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to upload file with status %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	klog.Infof("Successfully upload metrics data, status: %d\n", resp.StatusCode)
 
 	return nil
 }

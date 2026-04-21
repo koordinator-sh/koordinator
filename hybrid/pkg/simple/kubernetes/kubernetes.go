@@ -4,7 +4,7 @@
  * 2026-03-02 @author yangwanjin
  */
 
-package client
+package kubernetes
 
 import (
 	"fmt"

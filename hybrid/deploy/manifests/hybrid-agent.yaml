@@ -1,0 +1,227 @@
+---
+# ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hybrid-agent
+  namespace: hybrid-system
+
+---
+# ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hybrid-agent
+rules:
+  - apiGroups: [ "" ]
+    resources: [ "pods" ]
+    verbs: [ "get", "list", "watch" ]
+  - apiGroups: [ "apps" ]
+    resources: [ "deployments", "statefulsets", "daemonsets", "replicasets" ]
+    verbs: [ "get", "list", "watch", "update", "patch" ]
+  - apiGroups: [ "batch" ]
+    resources: [ "jobs", "cronjobs" ]
+    verbs: [ "get", "list", "watch", "update", "patch" ]
+
+---
+# ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hybrid-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hybrid-agent
+subjects:
+  - kind: ServiceAccount
+    name: hybrid-agent
+    namespace: hybrid-system
+
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: hybrid-system
+data:
+  collector.yaml: |
+    prometheus:
+      url: "http://localhost:9090"
+      timeout: 30s
+      auth:
+        type: none
+    export:
+      mode: "local"
+      localConfig:
+        outputDir: "/data/hybrid-output"
+        format: "timestamp"
+      interval: 2h
+    queries:
+      - name: "cpu_usage"
+        query: 'container_cpu_usage_seconds_total{__name__!=""}'
+        range: "24h"                  # 查询时间范围
+        step: "3m"                    # 数据点间隔
+      - name: "cpu_quota"
+        query: 'container_spec_cpu_quota{__name__!=""}'
+        range: "24h"                  # 查询时间范围
+        step: "3m"
+      - name: "cpu_period"
+        query: 'container_spec_cpu_period{__name__!=""}'
+        range: "24h"                  # 查询时间范围
+        step: "3m"
+      - name: "memory_usage"
+        query: 'container_memory_usage_bytes{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "memory_limit"
+        query: 'container_spec_memory_limit_bytes{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "fs_reads"
+        query: 'container_fs_reads_bytes_total{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "fs_writes"
+        query: 'container_fs_writes_bytes_total{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "fs_io_time"
+        query: 'container_fs_io_time_seconds_total{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "network_receive"
+        query: 'container_network_receive_bytes_total{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "network_transmit"
+        query: 'container_network_transmit_bytes_total{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "psi_collector"
+        query: 'koordlet_container_psi{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "cpi_collector"
+        query: 'koordlet_container_cpi{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "node_cpu_usage"
+        query: 'node_cpu_seconds_total{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "node_memory_total"
+        query: 'node_memory_MemTotal_bytes{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "node_memory_available"
+        query: 'node_memory_MemAvailable_bytes{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "node_disk_reads"
+        query: 'node_disk_read_bytes_total{__name__!=""}'
+        range: "24h"
+        step: "3m"
+      - name: "node_disk_writes"
+        query: 'node_disk_written_bytes_total{__name__!=""}'
+        range: "24h"
+        step: "3m"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hybrid-pvc
+  namespace: hybrid-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: nfs
+
+---
+# Mock API Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: hybrid-service
+  namespace: hybrid-system
+spec:
+  selector:
+    app: hybrid-agent
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+---
+# Controller Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hybrid-agent
+  namespace: hybrid-system
+  labels:
+    app: hybrid-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hybrid-agent
+  template:
+    metadata:
+      labels:
+        app: hybrid-agent
+    spec:
+      serviceAccountName: hybrid-agent
+      securityContext:
+        fsGroup: 65534
+      containers:
+        - name: agent
+          image: rvm:5100/hybrid-system/hybrid-agent:v1.1
+          imagePullPolicy: IfNotPresent
+          command: [ "hybrid-agent" ]
+          args:
+            - --exclude-namespaces=hybrid-system
+          env:
+            - name: AI_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: hybrid-ai-credentials
+                  key: AI_SERVER
+            - name: AI_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hybrid-ai-credentials
+                  key: AI_TOKEN
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/hybrid
+              readOnly: true
+            - name: output-storage
+              mountPath: /data
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            limits:
+              cpu: 500m
+              memory: 2048Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+      volumes:
+        - name: config-volume
+          configMap:
+            name: agent-config
+        - name: output-storage
+          persistentVolumeClaim:
+            claimName: hybrid-pvc
+      restartPolicy: Always

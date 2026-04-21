@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    app.kubernetes.io/name: {{ include "hybrid.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: agent
+data:
+  collector.yaml: |
+    prometheus:
+      url: {{ .Values.config.prometheus.url | quote }}
+      timeout: {{ .Values.config.prometheus.timeout | quote }}
+      auth:
+         type: {{ .Values.config.prometheus.auth.type | quote }}
+         {{- if eq .Values.config.prometheus.auth.type "basic" }}
+         username: {{ .Values.config.prometheus.auth.username | quote }}
+         password: {{ .Values.config.prometheus.auth.password | quote }}
+         {{- else if eq .Values.config.prometheus.auth.type "bearer" }}
+         token: {{ .Values.config.prometheus.auth.token | quote }}
+         {{- end }}
+    export:
+      mode: {{ .Values.config.export.mode | quote }}
+      localConfig:
+        outputDir: {{ .Values.config.export.outputDir | quote }}
+        format: {{ .Values.config.export.format | quote }}
+      interval: {{ .Values.config.export.exportInterval | quote }}
+    queries:
+{{- range $name, $query := .Values.config.queries }}
+      - name: {{ $query.name | quote }}
+        query: {{ $query.query | quote }}
+        range: {{ $query.range | quote }}
+        step: {{ $query.step | quote }}
+{{- end }}

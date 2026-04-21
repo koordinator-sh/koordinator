@@ -13,7 +13,7 @@ A Helm chart for deploying Hybrid Manager and Collector on Kubernetes.
 ### Install into a specific namespace
 
 ```bash
-helm upgrade --install --namespace hybrid-system hybrid ./hybrid/  --create-namespace --set collector.prometheus.url=http://localhost:9090 --set aiCredentials.server=http://localhost:8000
+helm upgrade --install --namespace hybrid-system hybrid ./hybrid/  --create-namespace --set config.prometheus.url=http://localhost:9090 --set aiCredentials.server=http://localhost:8000
 ```
 
 ### Install with custom values
@@ -32,12 +32,8 @@ helm upgrade --install --namespace hybrid-system hybrid ./hybrid/  --create-name
 |-----------|-------------|-------------------------|
 | `namespace.name` | Namespace to deploy | `hybrid-system`         |
 | `namespace.create` | Create namespace if not exists | `false`                 |
-| `manager.enabled` | Enable Hybrid Manager | `true`                  |
-| `manager.replicas` | Number of manager replicas | `1`                     |
-| `manager.syncInterval` | Sync interval for manager | `5m`                    |
-| `collector.enabled` | Enable Hybrid Collector | `true`                  |
-| `collector.replicas` | Number of collector replicas | `1`                     |
-| `collector.prometheus.url` | Prometheus server URL | `http://localhost:9090` |
+| `agent.replicas` | Number of manager replicas | `1`                     |
+| `config.prometheus.url` | Prometheus server URL | `http://localhost:9090` |
 | `persistence.enabled` | Enable persistent storage | `true`                  |
 | `persistence.size` | PVC size | `10Gi`                  |
 | `aiCredentials.server` | AI server URL | `http://localhost:8000` |
@@ -69,7 +65,7 @@ To use a specific storage class:
 ```yaml
 persistence:
   enabled: true
-  storageClass: ""  # Storage class name
+  storageClass: "" # Storage class name
   size: 10Gi
 ```
 
@@ -87,15 +83,18 @@ helm upgrade hybrid ./hybrid --namespace hybrid-system
 
 ## Components
 
-### Hybrid Manager
+### Hybrid Agent
+
+#### Hybrid Collector Model
+- Collects metrics from Prometheus or VictoriaMetrics
+- Exports data for AI analysis
+- Supports CPU, Memory, I/O, and Network metrics
+
+#### Hybrid Manager Model
 - Manages Kubernetes workloads
 - Syncs with AI server for intelligent decisions
 - Requires RBAC permissions for pods, deployments, statefulsets, daemonsets, replicasets, jobs, and cronjobs
 
-### Hybrid Collector
-- Collects metrics from Prometheus or VictoriaMetrics
-- Exports data for AI analysis
-- Supports CPU, Memory, I/O, and Network metrics
 
 ## Troubleshooting
 
@@ -108,11 +107,8 @@ kubectl get pods -n hybrid-system
 ### View logs
 
 ```bash
-# Manager logs
-kubectl logs -n hybrid-system deployment/hybrid-manager
+kubectl logs -n hybrid-system deployment/hybrid-agent
 
-# Collector logs
-kubectl logs -n hybrid-system deployment/hybrid-collector
 ```
 
 ### Check events

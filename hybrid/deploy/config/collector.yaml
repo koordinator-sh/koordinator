@@ -28,46 +28,100 @@ export:
   localConfig:
     outputDir: "./hybrid-output"             # 输出目录
     format: "timestamp"                      # 文件名格式: "timestamp" or "daily"
-  interval: 2h                               # 数据导出间隔(支持: s, m, h)
-
-# 查询指标配置
+    retentionHours: 4h
+  interval: 2h                               # 数据导出间隔(支持: s, m, h),部分模型运行时间过长不建议配置太短(30m-2h)
+# 查询指标配置: range 配置支持: 12h, 24h, 72h, 1d, 7d, 14d, 30d等(长期预测必须大于 72h)
+# step 配置支持: 3m, 5m, 10m, 30m, 1h, 2h, 6h; range 较长时 step 配置不宜过小, 否则数据量太大
 queries:
   # CPU 指标
   - name: "cpu_usage"
     query: 'container_cpu_usage_seconds_total{__name__!=""}'
-    range: "24h"                  # 查询时间范围
-    step: "3m"                    # 数据点间隔
+    range: "72h"                  # 查询时间范围
+    step: "5m"                    # 数据点间隔
+
+  - name: "cpu_quota"
+    query: 'container_spec_cpu_quota{__name__!=""}'
+    range: "72h"                  # 查询时间范围
+    step: "5m"
+
+  - name: "cpu_period"
+    query: 'container_spec_cpu_period{__name__!=""}'
+    range: "72h"                  # 查询时间范围
+    step: "5m"
 
   # 内存指标
   - name: "memory_usage"
     query: 'container_memory_usage_bytes{__name__!=""}'
-    range: "24h"
-    step: "3m"
+    range: "72h"
+    step: "5m"
 
   - name: "memory_limit"
     query: 'container_spec_memory_limit_bytes{__name__!=""}'
-    range: "24h"
-    step: "3m"
-
+    range: "72h"
+    step: "5m"
 
   # IO 指标
   - name: "fs_reads"
     query: 'container_fs_reads_bytes_total{__name__!=""}'
-    range: "24h"
-    step: "3m"
+    range: "72h"
+    step: "5m"
 
   - name: "fs_writes"
     query: 'container_fs_writes_bytes_total{__name__!=""}'
-    range: "24h"
-    step: "3m"
+    range: "72h"
+    step: "5m"
+
+  - name: "fs_io_time"
+    query: 'container_fs_io_time_seconds_total{__name__!=""}'
+    range: "72h"
+    step: "5m"
 
   # 网络指标
   - name: "network_receive"
     query: 'container_network_receive_bytes_total{__name__!=""}'
-    range: "24h"
-    step: "3m"
+    range: "72h"
+    step: "5m"
 
   - name: "network_transmit"
     query: 'container_network_transmit_bytes_total{__name__!=""}'
-    range: "24h"
-    step: "3m"
+    range: "72h"
+    step: "5m"
+
+  - name: "psi_collector"
+    query: "koordlet_container_psi{__name__!=""}"
+    range: "72h"
+    step: "5m"
+
+  - name: "cpi_collector"
+    query: "koordlet_container_cpi{__name__!=""}"
+    range: "72h"
+    step: "5m"
+
+  # 节点 CPU 指标
+  - name: "node_cpu_usage"
+    query: 'node_cpu_seconds_total{__name__!=""}'
+    range: "72h"
+    step: "5m"
+
+  # 节点内存总量
+  - name: "node_memory_total"
+    query: 'node_memory_MemTotal_bytes{__name__!=""}'
+    range: "72h"
+    step: "5m"
+
+  # 节点内存可用量
+  - name: "node_memory_available"
+    query: 'node_memory_MemAvailable_bytes{__name__!=""}'
+    range: "72h"
+    step: "5m"
+
+  # 节点 IO 指标
+  - name: "node_disk_reads"
+    query: 'node_disk_read_bytes_total{__name__!=""}'
+    range: "72h"
+    step: "5m"
+
+  - name: "node_disk_writes"
+    query: 'node_disk_written_bytes_total{__name__!=""}'
+    range: "72h"
+    step: "5m"
