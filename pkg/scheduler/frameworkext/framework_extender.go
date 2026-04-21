@@ -464,7 +464,14 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 		if diagnosis != nil && diagnosis.IsRootCausePod && diagnosis.AuditType != "" && ext.workloadAuditor != nil {
 			ext.workloadAuditor.RecordDiagnosis(pod, diagnosis.QuestionedKey, diagnosis.AuditType, diagnosis.AuditMessage)
 		}
-
+		if diagnosis != nil {
+			if suggestion := diagnosis.GetSuggestion(); suggestion != nil {
+				if status == nil {
+					status = fwktype.NewStatus(fwktype.Success)
+				}
+				status.AppendReason(fmt.Sprintf("Suggestion: {type: %s, message: %s}", suggestion.Type, suggestion.Message))
+			}
+		}
 	}()
 
 	return ext.Framework.RunPostFilterPlugins(ctx, state, pod, filteredNodeStatusMap)

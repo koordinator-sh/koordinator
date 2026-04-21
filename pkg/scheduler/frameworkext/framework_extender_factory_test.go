@@ -317,7 +317,7 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 		name          string
 		pod           *corev1.Pod
 		err           error
-		wantDiagnosis Diagnosis
+		wantDiagnosis *Diagnosis
 	}{
 		{
 			name: "prefilterFailed",
@@ -346,7 +346,7 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 					),
 				},
 			},
-			wantDiagnosis: Diagnosis{
+			wantDiagnosis: &Diagnosis{
 				Timestamp:     metav1.Time{},
 				QuestionedKey: "default/test-pod",
 				TargetPod: &corev1.Pod{
@@ -397,7 +397,7 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 					),
 				},
 			},
-			wantDiagnosis: Diagnosis{
+			wantDiagnosis: &Diagnosis{
 				Timestamp:     metav1.Time{},
 				QuestionedKey: "default/test-pod",
 				TargetPod: &corev1.Pod{
@@ -435,7 +435,7 @@ func Test_recordScheduleDiagnosis(t *testing.T) {
 			InitDiagnosis(cycleState, tt.pod)
 			recordScheduleDiagnosis(cycleState, tt.err)
 			diagnosis := GetDiagnosis(cycleState)
-			assert.Equal(t, tt.wantDiagnosis, *diagnosis)
+			assert.Equal(t, tt.wantDiagnosis, diagnosis)
 		})
 	}
 }
