@@ -186,22 +186,33 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	}, nil
 }
 
-// SignPod captures every pod-level input the plugin reads in PreFilter
-// (utils.go:preparePod) so opportunistic batching only groups pods whose
-// scheduling outcome through this plugin is equivalent (KEP-5598).
+// SignPod captures the pod-level inputs the plugin reads in PreFilter
+// (utils.go:preparePod) that are NOT already signed by another
+// in-profile plugin. Each plugin contributes its own fragments and the
+// per-pod signature is the union, so redundant markers are skipped:
 //
-// The fragments mirror preparePod's reads:
+//   - reservation-affinity presence: the Reservation plugin's SignPod
+//     already signs the affinity annotation itself. The parse call
+//     here stays only to mirror PreFilter's
+//     UnschedulableAndUnresolvable status on malformed input.
 //
-//   - Device requests (GPU/RDMA/FPGA type and amount).
+// The plugin-unique inputs are:
+//
+//   - Device requests (GPU/RDMA/FPGA type + amount) — carries the
+//     DeviceType categorization that upstream fit.SignPod's flat
+//     resource list does not expose, and feeds every downstream
+//     device-allocation decision.
 //   - Designated DeviceAllocations annotation (already-allocated minors).
 //   - DeviceAllocateHint annotation (placement preferences).
 //   - DeviceJointAllocate annotation (multi-device co-location).
 //   - GPUPartitionSpec annotation (partition requirements).
-//   - Reservation affinity presence (drives isReservationRequired).
 //   - Pre-allocation-required label (drives isReservationRequired).
 //
-// JSON-shaped annotations are canonicalized so semantically equal values
-// produce the same signature regardless of formatting.
+// JSON-shaped annotations are strict-parsed with the same helpers
+// PreFilter uses; malformed input yields the identical
+// UnschedulableAndUnresolvable Status. The parsed struct (not the raw
+// annotation) is marshaled for the fragment value so semantically equal
+// values collapse.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	requests, err := GetPodDeviceRequests(pod)
 	if err != nil {
@@ -210,14 +221,14 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 		// identically whether opportunistic batching is on or off.
 		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
-	// Resolve reservation affinity up front so we can mirror PreFilter's
-	// failure mode and so the resulting fragment is deterministic when valid.
-	affinity, err := reservationutil.GetRequiredReservationAffinity(pod)
-	if err != nil {
+	// Parse reservation affinity only to mirror PreFilter's failure mode on
+	// malformed input; the presence bit is not emitted as a fragment because
+	// the Reservation plugin's SignPod already signs the affinity annotation.
+	if _, err := reservationutil.GetRequiredReservationAffinity(pod); err != nil {
 		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 
-	fragments := make([]fwktype.SignFragment, 0, 7)
+	fragments := make([]fwktype.SignFragment, 0, 6)
 	if len(requests) > 0 {
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.DeviceShare.deviceRequests",
@@ -289,17 +300,14 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: string(b),
 		})
 	}
-	if affinity != nil {
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.DeviceShare.hasReservationAffinity",
-			Value: true,
-		})
-	}
 	if apiext.IsPreAllocationRequired(pod.Labels) {
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.DeviceShare.preAllocationRequired",
 			Value: true,
 		})
+	}
+	if len(fragments) == 0 {
+		return nil, nil
 	}
 	return fragments, nil
 }

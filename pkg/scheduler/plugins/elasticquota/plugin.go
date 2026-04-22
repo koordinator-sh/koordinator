@@ -262,7 +262,7 @@ func (g *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 func (g *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
 	if quotaName == "" {
-		return []fwktype.SignFragment{}, nil
+		return nil, nil
 	}
 	return []fwktype.SignFragment{{
 		Key:   "koord.ElasticQuota.quota",

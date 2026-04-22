@@ -289,11 +289,15 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 //     UID, Controller, Name, Kind and APIVersion of every OwnerReference.
 //
 // Including pod.UID and pod.Name effectively prevents batching across two
-// real pods, but that is the correct trade-off: KEP-5598 requires that
-// pods sharing a signature receive the same scheduling outcome. If a
-// reservation matches by ObjectReference UID, two pods with different
-// UIDs would resolve to different reservations and must not reuse a
-// cached scheduling decision.
+// distinct pods whenever this plugin is in the scheduler profile: every
+// real pod has a unique UID, so the Reservation fragment is unique
+// per-pod, and the overall per-pod signature (the union across plugins)
+// can never collide between two different pods. That is the correct
+// trade-off under KEP-5598: pods sharing a signature MUST receive the
+// same scheduling outcome, and reservation matching by ObjectReference
+// UID means two pods with different UIDs can resolve to different
+// reservations. Correctness beats batching; maintainers agreed on this
+// scope in koordinator-sh/koordinator#2863.
 func canonicalOwnerInputs(pod *corev1.Pod) string {
 	parts := make([]string, 0, 6+len(pod.Labels)+len(pod.OwnerReferences))
 	parts = append(parts, "ns="+pod.Namespace)

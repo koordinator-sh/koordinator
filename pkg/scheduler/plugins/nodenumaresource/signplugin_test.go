@@ -127,14 +127,17 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Nil(t, fragments)
 	})
 
-	t.Run("reservation affinity adds a dedicated fragment", func(t *testing.T) {
+	t.Run("reservation affinity does not add a nodenumaresource fragment", func(t *testing.T) {
+		// The Reservation plugin's SignPod already signs the affinity
+		// annotation, so nodenumaresource deliberately does not emit a
+		// redundant "hasReservationAffinity" fragment here.
 		base := mkPod("plain", nil)
 		withAff := mkPod("with-aff", map[string]string{
 			apiext.AnnotationReservationAffinity: `{"reservationSelector":{"app":"demo"}}`,
 		})
 		fa, _ := pl.SignPod(context.TODO(), base)
 		fb, _ := pl.SignPod(context.TODO(), withAff)
-		assert.NotEqual(t, fa, fb)
+		assert.Equal(t, fa, fb, "affinity presence must not be re-signed here")
 	})
 
 	t.Run("malformed reservation affinity returns UnschedulableAndUnresolvable", func(t *testing.T) {

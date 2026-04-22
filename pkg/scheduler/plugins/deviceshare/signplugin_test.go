@@ -213,14 +213,17 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Nil(t, fragments)
 	})
 
-	t.Run("reservation affinity adds a dedicated fragment", func(t *testing.T) {
+	t.Run("reservation affinity does not add a deviceshare fragment", func(t *testing.T) {
+		// The Reservation plugin's SignPod already signs the affinity
+		// annotation, so deviceshare deliberately does not emit a redundant
+		// "hasReservationAffinity" fragment here.
 		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
 		withAff := mkPodWithAnno("aff", map[string]string{
 			apiext.AnnotationReservationAffinity: `{"reservationSelector":{"app":"demo"}}`,
 		})
 		fa, _ := pl.SignPod(context.TODO(), base)
 		fb, _ := pl.SignPod(context.TODO(), withAff)
-		assert.NotEqual(t, fa, fb)
+		assert.Equal(t, fa, fb, "affinity presence must not be re-signed here")
 	})
 
 	t.Run("pre-allocation-required label adds a dedicated fragment", func(t *testing.T) {

@@ -119,7 +119,7 @@ func (cs *Coscheduling) EventsToRegister(_ context.Context) ([]fwktype.ClusterEv
 func (cs *Coscheduling) SignPod(_ context.Context, pod *v1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	gangName := util.GetGangNameByPod(pod)
 	if gangName == "" {
-		return []fwktype.SignFragment{}, nil
+		return nil, nil
 	}
 	return []fwktype.SignFragment{{
 		Key:   "koord.Coscheduling.gang",

@@ -265,20 +265,24 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 }
 
 // SignPod captures the pod-level inputs the plugin reads in PreFilter,
-// Filter and Score that are NOT already signed by an upstream in-tree
-// plugin. Each plugin in the profile contributes its own fragments and
-// the per-pod signature is the union, so inputs already covered by
-// default k8s plugins are skipped here to keep the signature minimal:
+// Filter and Score that are NOT already signed by another in-profile
+// plugin. Each plugin contributes its own fragments and the per-pod
+// signature is the union, so inputs already covered elsewhere are
+// skipped here to keep the signature minimal:
 //
 //   - pod resource requests (feeds numCPUsNeeded): upstream
 //     noderesources/fit.SignPod already signs pod requests via
 //     computePodResourceRequest.
+//   - reservation-affinity presence: the Reservation plugin's SignPod
+//     already signs the affinity annotation itself, so a presence bit
+//     here is redundant. The parse call is still performed to mirror
+//     PreFilter's UnschedulableAndUnresolvable status on malformed
+//     input.
 //
 // The plugin-unique inputs are:
 //
 //   - numa-topology-spec annotation drives policy / exclusivity.
 //   - resource-spec annotation drives CPU bind policy.
-//   - reservation-affinity presence drives hasReservationAffinity.
 //   - pre-allocation-required label drives isPreAllocationRequired.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	fragments := make([]fwktype.SignFragment, 0, 4)
@@ -314,25 +318,22 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: string(b),
 		})
 	}
-	affinity, err := reservationutil.GetRequiredReservationAffinity(pod)
-	if err != nil {
-		// PreFilter treats this parse failure as UnschedulableAndUnresolvable
-		// (plugin.go around line 322); mirror that so a malformed-affinity pod
-		// is handled identically with or without opportunistic batching, and
-		// cannot share a signature with a clean affinity-less pod.
+	// Parse reservation affinity only to mirror PreFilter's failure mode on
+	// malformed input; the resulting presence bit is NOT emitted as a
+	// fragment because the Reservation plugin's SignPod already signs the
+	// affinity annotation, so a "hasReservationAffinity=true" marker here
+	// is redundant.
+	if _, err := reservationutil.GetRequiredReservationAffinity(pod); err != nil {
 		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
-	}
-	if affinity != nil {
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.NodeNUMAResource.hasReservationAffinity",
-			Value: true,
-		})
 	}
 	if extension.IsPreAllocationRequired(pod.Labels) {
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.NodeNUMAResource.preAllocationRequired",
 			Value: true,
 		})
+	}
+	if len(fragments) == 0 {
+		return nil, nil
 	}
 	return fragments, nil
 }
