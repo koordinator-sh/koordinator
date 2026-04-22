@@ -23,7 +23,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -126,31 +125,6 @@ func TestPlugin_SignPod(t *testing.T) {
 		require.NotNil(t, status)
 		assert.Equal(t, fwktype.Error, status.Code())
 		assert.Nil(t, fragments)
-	})
-
-	mkPodWithRequests := func(name string, cpu, mem string) *corev1.Pod {
-		return &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", UID: types.UID(name)},
-			Spec: corev1.PodSpec{Containers: []corev1.Container{{
-				Name: "c",
-				Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse(cpu),
-					corev1.ResourceMemory: resource.MustParse(mem),
-				}},
-			}}},
-		}
-	}
-
-	t.Run("different aggregate requests yield different signatures", func(t *testing.T) {
-		fa, _ := pl.SignPod(context.TODO(), mkPodWithRequests("small", "1", "1Gi"))
-		fb, _ := pl.SignPod(context.TODO(), mkPodWithRequests("large", "4", "8Gi"))
-		assert.NotEqual(t, fa, fb)
-	})
-
-	t.Run("identical requests share a request fragment", func(t *testing.T) {
-		fa, _ := pl.SignPod(context.TODO(), mkPodWithRequests("a", "2", "4Gi"))
-		fb, _ := pl.SignPod(context.TODO(), mkPodWithRequests("b", "2", "4Gi"))
-		assert.Equal(t, fa, fb)
 	})
 
 	t.Run("reservation affinity adds a dedicated fragment", func(t *testing.T) {

@@ -106,35 +106,45 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Equal(t, false, findFragment(fragments, "koord.LoadAware.daemonSetOwned"))
 	})
 
-	mkPodWithRequests := func(name, cpu, mem string) *corev1.Pod {
+	mkPodWithLimits := func(name, cpuReq, memReq, cpuLim, memLim string) *corev1.Pod {
 		return &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", UID: types.UID(name)},
 			Spec: corev1.PodSpec{Containers: []corev1.Container{{
 				Name: "c",
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse(cpu),
-						corev1.ResourceMemory: resource.MustParse(mem),
+						corev1.ResourceCPU:    resource.MustParse(cpuReq),
+						corev1.ResourceMemory: resource.MustParse(memReq),
 					},
 					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse(cpu),
-						corev1.ResourceMemory: resource.MustParse(mem),
+						corev1.ResourceCPU:    resource.MustParse(cpuLim),
+						corev1.ResourceMemory: resource.MustParse(memLim),
 					},
 				},
 			}}},
 		}
 	}
 
-	t.Run("different requests yield different signatures (EstimatePod input)", func(t *testing.T) {
-		fa, _ := pl.SignPod(context.TODO(), mkPodWithRequests("small", "1", "1Gi"))
-		fb, _ := pl.SignPod(context.TODO(), mkPodWithRequests("large", "4", "8Gi"))
+	t.Run("different limits yield different signatures (EstimatePod input)", func(t *testing.T) {
+		fa, _ := pl.SignPod(context.TODO(), mkPodWithLimits("small", "1", "1Gi", "2", "2Gi"))
+		fb, _ := pl.SignPod(context.TODO(), mkPodWithLimits("large", "1", "1Gi", "8", "16Gi"))
 		assert.NotEqual(t, fa, fb,
-			"DefaultEstimator.EstimatePod keys on resourceapi.PodRequests; different requests must not share a signature")
+			"DefaultEstimator.EstimatePod uses resourceapi.PodLimits when limit>request; upstream fit does not sign limits so this plugin must")
 	})
 
-	t.Run("identical requests and limits share a signature", func(t *testing.T) {
-		fa, _ := pl.SignPod(context.TODO(), mkPodWithRequests("a", "2", "4Gi"))
-		fb, _ := pl.SignPod(context.TODO(), mkPodWithRequests("b", "2", "4Gi"))
+	t.Run("identical limits share the limits fragment", func(t *testing.T) {
+		fa, _ := pl.SignPod(context.TODO(), mkPodWithLimits("a", "2", "4Gi", "4", "8Gi"))
+		fb, _ := pl.SignPod(context.TODO(), mkPodWithLimits("b", "2", "4Gi", "4", "8Gi"))
+		assert.Equal(t, fa, fb)
+	})
+
+	t.Run("same-limits pods with different requests share this plugin's signature", func(t *testing.T) {
+		// Upstream noderesources/fit.SignPod already signs requests, so this
+		// plugin must not double-sign; two pods with identical limits but
+		// different requests should appear identical through koord.LoadAware
+		// alone (fit will still differentiate them in the overall signature).
+		fa, _ := pl.SignPod(context.TODO(), mkPodWithLimits("r1", "1", "1Gi", "4", "8Gi"))
+		fb, _ := pl.SignPod(context.TODO(), mkPodWithLimits("r2", "2", "2Gi", "4", "8Gi"))
 		assert.Equal(t, fa, fb)
 	})
 

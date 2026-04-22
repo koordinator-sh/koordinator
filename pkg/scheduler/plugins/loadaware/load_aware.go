@@ -139,19 +139,28 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	}, nil
 }
 
-// SignPod captures the pod-level inputs the plugin reads in Filter and
-// Score so opportunistic batching only groups pods whose scheduling
-// outcome is equivalent (KEP-5598). The inputs that feed Filter/Score are:
+// SignPod captures the pod-level inputs this plugin reads in Filter and
+// Score that are NOT already signed by an upstream in-tree plugin. Each
+// plugin in the profile contributes its own fragments and the per-pod
+// signature is the union, so inputs already covered by default k8s
+// plugins are skipped here:
+//
+//   - pod resource requests: upstream noderesources/fit.SignPod already
+//     signs pod requests, and DefaultEstimator.EstimatePod reads the
+//     same aggregate via resourceapi.PodRequests; any request-driven
+//     differentiation is therefore already reflected in the overall
+//     pod signature without a duplicate fragment here.
+//
+// The plugin-unique inputs are:
 //
 //   - Priority class chooses between Prod and general usage thresholds
 //     and also translates ResourceCPU/Memory names inside estimation.
 //   - DaemonSet ownership short-circuits Filter (load_aware.go:168), so
 //     a DaemonSet pod and a non-DaemonSet pod with the same priority
 //     would otherwise share a signature but be filtered differently.
-//   - Aggregate pod requests and limits: DefaultEstimator.EstimatePod
-//     (estimator/default_estimator.go) derives the estimated-used vector
-//     from resourceapi.PodRequests and resourceapi.PodLimits, and the
-//     filterNodeUsage threshold check keys on that vector.
+//   - Aggregate pod limits: DefaultEstimator.EstimatePod uses
+//     resourceapi.PodLimits when a container sets a larger limit than
+//     request, and upstream fit.SignPod does not sign limits.
 //   - Custom estimated-scaling-factors annotation: when allowCustomize
 //     is on, GetCustomEstimatedScalingFactors overrides the plugin-level
 //     factors per pod.
@@ -165,13 +174,6 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Key:   "koord.LoadAware.daemonSetOwned",
 			Value: isDaemonSetPod(pod.OwnerReferences),
 		},
-	}
-	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
-	if len(requests) > 0 {
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.LoadAware.requests",
-			Value: canonicalResourceList(requests),
-		})
 	}
 	limits := resourceapi.PodLimits(pod, resourceapi.PodResourcesOptions{})
 	if len(limits) > 0 {
@@ -190,8 +192,8 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 }
 
 // canonicalResourceList serializes a ResourceList into a sorted slice so
-// two pods with equal request maps produce identical fragment values
-// regardless of map iteration order.
+// two pods with equal maps produce identical fragment values regardless
+// of iteration order.
 func canonicalResourceList(rl corev1.ResourceList) []string {
 	names := make([]string, 0, len(rl))
 	for n := range rl {

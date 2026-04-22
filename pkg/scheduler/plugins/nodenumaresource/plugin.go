@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"sync"
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -265,19 +264,24 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	}, nil
 }
 
-// SignPod captures every pod-level input the plugin reads in PreFilter,
-// Filter and Score so opportunistic batching only groups pods whose
-// scheduling outcome through this plugin is equivalent (KEP-5598). The
-// fragments mirror the fields that PreFilter packs into preFilterState
-// (plugin.go:316-336):
+// SignPod captures the pod-level inputs the plugin reads in PreFilter,
+// Filter and Score that are NOT already signed by an upstream in-tree
+// plugin. Each plugin in the profile contributes its own fragments and
+// the per-pod signature is the union, so inputs already covered by
+// default k8s plugins are skipped here to keep the signature minimal:
+//
+//   - pod resource requests (feeds numCPUsNeeded): upstream
+//     noderesources/fit.SignPod already signs pod requests via
+//     computePodResourceRequest.
+//
+// The plugin-unique inputs are:
 //
 //   - numa-topology-spec annotation drives policy / exclusivity.
 //   - resource-spec annotation drives CPU bind policy.
-//   - aggregate pod resource requests drive numCPUsNeeded.
 //   - reservation-affinity presence drives hasReservationAffinity.
 //   - pre-allocation-required label drives isPreAllocationRequired.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
-	fragments := make([]fwktype.SignFragment, 0, 5)
+	fragments := make([]fwktype.SignFragment, 0, 4)
 	// Parse numa-topology-spec / resource-spec with the same helpers PreFilter
 	// uses (see PreFilter below) so malformed input produces the identical
 	// Error Status instead of silently canonicalizing the raw bytes and
@@ -310,14 +314,6 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: string(b),
 		})
 	}
-	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
-	requests = quotav1.RemoveZeros(requests)
-	if len(requests) > 0 {
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.NodeNUMAResource.requests",
-			Value: canonicalResourceList(requests),
-		})
-	}
 	affinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 	if err != nil {
 		// PreFilter treats this parse failure as UnschedulableAndUnresolvable
@@ -339,23 +335,6 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 		})
 	}
 	return fragments, nil
-}
-
-// canonicalResourceList serializes a ResourceList into a sorted slice so two
-// equal request maps produce identical fragment values regardless of map
-// iteration order.
-func canonicalResourceList(rl corev1.ResourceList) []string {
-	names := make([]string, 0, len(rl))
-	for n := range rl {
-		names = append(names, string(n))
-	}
-	sort.Strings(names)
-	out := make([]string, 0, len(rl))
-	for _, n := range names {
-		q := rl[corev1.ResourceName(n)]
-		out = append(out, n+"="+q.String())
-	}
-	return out
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
