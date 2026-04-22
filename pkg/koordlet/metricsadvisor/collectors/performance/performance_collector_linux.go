@@ -305,9 +305,8 @@ func (p *performanceCollector) collectSingleContainerPSI(podParentCgroupDir stri
 
 	if err01 != nil || err02 != nil || err03 != nil || err04 != nil || err05 != nil ||
 		err06 != nil || err07 != nil {
-		klog.Warningf(
-			"failed to collect Container %s/%s/%s PSI failed, cpuSomeAvg10 err: %s, memSomeAvg10 err: %s, ioSomeAvg10 err: %s, cpuFullAvg10 err: %s, memFullAvg10 err: %s, ioFullAvg10 err: %s, cpuFullSupported err: %s",
-			pod.GetNamespace(), pod.GetName(), containerStatus.Name, err02, err03, err04, err05, err06, err07)
+		klog.Warningf("failed to collect Container %s/%s/%s PSI failed, cpuSomeAvg10 err: %s, memSomeAvg10 err: %s, ioSomeAvg10 err: %s, cpuFullAvg10 err: %s, memFullAvg10 err: %s, ioFullAvg10 err: %s, cpuFullSupported err: %s",
+			pod.GetNamespace(), pod.GetName(), containerStatus.Name, err01, err02, err03, err04, err05, err06, err07)
 		return psiMetrics
 	}
 	psiMetrics = append(psiMetrics, cpuSomeAvg10, memSomeAvg10, ioSomeAvg10, cpuFullAvg10, memFullAvg10, ioFullAvg10, cpuFullSupported)
@@ -375,9 +374,8 @@ func (p *performanceCollector) collectSinglePodPSI(pod *corev1.Pod, podCgroupDir
 
 	if err01 != nil || err02 != nil || err03 != nil || err04 != nil || err05 != nil ||
 		err06 != nil || err07 != nil {
-		klog.Warningf(
-			"failed to collect pod %s/%s PSI, cpuSomeAvg10 err: %s, memSomeAvg10 err: %s, ioSomeAvg10 err: %s, cpuFullAvg10 err: %s, memFullAvg10 err: %s, ioFullAvg10 err: %s, cpuFullSupported err: %s",
-			pod.GetNamespace(), pod.GetName(), err02, err03, err04, err05, err06, err07)
+		klog.Warningf("failed to collect pod %s/%s PSI, cpuSomeAvg10 err: %s, memSomeAvg10 err: %s, ioSomeAvg10 err: %s, cpuFullAvg10 err: %s, memFullAvg10 err: %s, ioFullAvg10 err: %s, cpuFullSupported err: %s",
+			pod.GetNamespace(), pod.GetName(), err01, err02, err03, err04, err05, err06, err07)
 		return psiMetrics
 	}
 	psiMetrics = append(psiMetrics, cpuSomeAvg10, memSomeAvg10, ioSomeAvg10, cpuFullAvg10, memFullAvg10, ioFullAvg10, cpuFullSupported)

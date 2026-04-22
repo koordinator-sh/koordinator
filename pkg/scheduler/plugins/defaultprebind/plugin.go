@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
@@ -37,7 +37,7 @@ const (
 	Name = "DefaultPreBind"
 )
 
-var _ framework.PreBindPlugin = &Plugin{}
+var _ fwktype.PreBindPlugin = &Plugin{}
 var _ frameworkext.PreBindExtensions = &Plugin{}
 
 type Plugin struct {
@@ -49,10 +49,10 @@ type koordClientSetHandle interface {
 	KoordinatorClientSet() koordinatorclientset.Interface
 }
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 	koordClientSetHandle, _ := handle.(koordClientSetHandle)
 	if koordClientSetHandle == nil {
-		return nil, fmt.Errorf("framework.Handle cannot provide koordinator clientset")
+		return nil, fmt.Errorf("fwktype.Handle cannot provide koordinator clientset")
 	}
 	return &Plugin{
 		clientSet:      handle.ClientSet(),
@@ -64,11 +64,15 @@ func (pl *Plugin) Name() string {
 	return Name
 }
 
-func (pl *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+func (pl *Plugin) PreBindPreFlight(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
 	return nil
 }
 
-func (pl *Plugin) ApplyPatch(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status {
+func (pl *Plugin) PreBind(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
+	return nil
+}
+
+func (pl *Plugin) ApplyPatch(ctx context.Context, cycleState fwktype.CycleState, originalObj, modifiedObj metav1.Object) *fwktype.Status {
 	if originalPod, ok := originalObj.(*corev1.Pod); ok {
 		return pl.applyPodPatch(ctx, originalPod, modifiedObj.(*corev1.Pod))
 	}
@@ -80,7 +84,7 @@ func (pl *Plugin) ApplyPatch(ctx context.Context, cycleState *framework.CycleSta
 	return nil
 }
 
-func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *corev1.Pod) *framework.Status {
+func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *corev1.Pod) *fwktype.Status {
 	var patchedPod *corev1.Pod
 	err := util.RetryOnConflictOrTooManyRequestsOrConnectionClose(func() error {
 		got, err := util.PatchPodSafe(ctx, pl.clientSet, originalPod, modifiedPod)
@@ -94,21 +98,21 @@ func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *c
 
 	if err != nil {
 		klog.ErrorS(err, "Failed to apply patch for Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID)
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 	// NOTE: Patch might succeed for a deleting object without updating the data when the apiserver receive a Delete earlier.
 	// In this case, we should clean up the reserved resources to avoid cache leak.
 	if patchedPod.DeletionTimestamp != nil {
 		err = fmt.Errorf("pod is being deleted")
 		klog.ErrorS(err, "Failed to apply patch for Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID, "deletionTimestamp", patchedPod.DeletionTimestamp)
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 
 	klog.V(4).InfoS("Successfully apply patch for Pod", "pod", klog.KObj(originalPod))
 	return nil
 }
 
-func (pl *Plugin) applyReservationPatch(ctx context.Context, originalReservation, modifiedReservation *schedulingv1alpha1.Reservation) *framework.Status {
+func (pl *Plugin) applyReservationPatch(ctx context.Context, originalReservation, modifiedReservation *schedulingv1alpha1.Reservation) *fwktype.Status {
 	var patchedReservation *schedulingv1alpha1.Reservation
 	err := util.RetryOnConflictOrTooManyRequestsOrConnectionClose(func() error {
 		got, err := util.PatchReservationSafe(ctx, pl.koordClientSet, originalReservation, modifiedReservation)
@@ -121,14 +125,14 @@ func (pl *Plugin) applyReservationPatch(ctx context.Context, originalReservation
 	})
 	if err != nil {
 		klog.ErrorS(err, "Failed to apply patch for Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 	// NOTE: Patch might succeed for a deleting object without updating the data when the apiserver receive a Delete earlier.
 	// In this case, we should clean up the reserved resources to avoid cache leak.
 	if patchedReservation.DeletionTimestamp != nil {
 		err = fmt.Errorf("pod is being deleted")
 		klog.ErrorS(err, "Failed to apply patch for Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID, "deletionTimestamp", patchedReservation.DeletionTimestamp)
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 
 	klog.V(4).InfoS("Successfully apply patch for Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)

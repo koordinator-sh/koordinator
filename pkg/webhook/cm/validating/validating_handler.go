@@ -41,10 +41,10 @@ type ConfigMapValidatingHandler struct {
 	Client client.Client
 
 	// Decoder decodes objects
-	Decoder *admission.Decoder
+	Decoder admission.Decoder
 }
 
-func NewConfigMapValidatingHandler(c client.Client, d *admission.Decoder) *ConfigMapValidatingHandler {
+func NewConfigMapValidatingHandler(c client.Client, d admission.Decoder) *ConfigMapValidatingHandler {
 	handler := &ConfigMapValidatingHandler{
 		Client:  c,
 		Decoder: d,
@@ -130,7 +130,7 @@ func (h *ConfigMapValidatingHandler) InjectClient(c client.Client) error {
 // var _ admission.DecoderInjector = &ConfigMapValidatingHandler{}
 
 // InjectDecoder injects the decoder into the ValidatingHandler
-func (h *ConfigMapValidatingHandler) InjectDecoder(d *admission.Decoder) error {
+func (h *ConfigMapValidatingHandler) InjectDecoder(d admission.Decoder) error {
 	h.Decoder = d
 	return nil
 }

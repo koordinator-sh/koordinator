@@ -26,9 +26,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
 	"k8s.io/utils/ptr"
 
@@ -43,6 +46,21 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
+
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	// In k8s v1.35, WatchListClient defaults to true (Beta), but fake clients
+	// don't support bookmark events required by WatchList, causing WaitForCacheSync to hang.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 type Mgr struct {
 	pgMgr      *PodGroupManager
@@ -474,20 +492,20 @@ func TestPermit(t *testing.T) {
 }
 
 type fakeEvaluator struct {
-	result *framework.PostFilterResult
-	status *framework.Status
+	result *fwktype.PostFilterResult
+	status *fwktype.Status
 }
 
-func (f *fakeEvaluator) Preempt(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, m framework.NodeToStatusMap) (*framework.PostFilterResult, *framework.Status) {
+func (f *fakeEvaluator) Preempt(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, m fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status) {
 	return f.result, f.status
 }
 
 func TestPodGroupManager_PostFilter(t *testing.T) {
 	type args struct {
 		ctx   context.Context
-		state *framework.CycleState
+		state fwktype.CycleState
 		pod   *corev1.Pod
-		m     framework.NodeToStatusMap
+		m     fwktype.NodeToStatusReader
 	}
 	tests := []struct {
 		name                  string
@@ -495,8 +513,8 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 		enablePreemption      bool
 		preemptionEvaluator   PreemptionEvaluator
 		gangSchedulingContext *GangSchedulingContext
-		wantPostFilterResult  *framework.PostFilterResult
-		wantStatus            *framework.Status
+		wantPostFilterResult  *fwktype.PostFilterResult
+		wantStatus            *fwktype.Status
 		wantFailedMessage     string
 	}{
 		{
@@ -505,8 +523,8 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 				state: framework.NewCycleState(),
 				pod:   st.MakePod().Name("pod").UID("pod").Obj(),
 			},
-			wantPostFilterResult: &framework.PostFilterResult{},
-			wantStatus:           framework.NewStatus(framework.Unschedulable),
+			wantPostFilterResult: &fwktype.PostFilterResult{},
+			wantStatus:           fwktype.NewStatus(fwktype.Unschedulable),
 		},
 		{
 			name: "bare pod",
@@ -516,11 +534,11 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 			},
 			enablePreemption: true,
 			preemptionEvaluator: &fakeEvaluator{
-				result: &framework.PostFilterResult{},
-				status: framework.NewStatus(framework.Unschedulable),
+				result: &fwktype.PostFilterResult{},
+				status: fwktype.NewStatus(fwktype.Unschedulable),
 			},
-			wantPostFilterResult: &framework.PostFilterResult{},
-			wantStatus:           framework.NewStatus(framework.Unschedulable),
+			wantPostFilterResult: &fwktype.PostFilterResult{},
+			wantStatus:           fwktype.NewStatus(fwktype.Unschedulable),
 		},
 		{
 			name: "gang pod",
@@ -542,12 +560,39 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 				gangGroup:   sets.New[string]("default/gangA"),
 			},
 			preemptionEvaluator: &fakeEvaluator{
-				result: &framework.PostFilterResult{},
-				status: framework.NewStatus(framework.Unschedulable, "some message"),
+				result: &fwktype.PostFilterResult{},
+				status: fwktype.NewStatus(fwktype.Unschedulable, "some message"),
 			},
-			wantPostFilterResult: &framework.PostFilterResult{},
-			wantStatus:           framework.NewStatus(framework.Unschedulable, "preemption: some message"),
+			wantPostFilterResult: &fwktype.PostFilterResult{},
+			wantStatus:           fwktype.NewStatus(fwktype.Unschedulable, "preemption: some message"),
 			wantFailedMessage:    `GangGroup "default/gangA" gets rejected due to member Pod "default/pod1" is unschedulable with reason "0/0 nodes are available:", alreadyWaitForBound: 0`,
+		},
+		{
+			name: "gang pod with suggestion propagated to gangSchedulingContext",
+			args: args{
+				state: framework.NewCycleState(),
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod2",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: "gangB",
+						},
+					},
+				},
+			},
+			enablePreemption: true,
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID: "default/gangB",
+				gangGroup:   sets.New[string]("default/gangB"),
+			},
+			preemptionEvaluator: &fakeEvaluator{
+				result: &fwktype.PostFilterResult{},
+				status: fwktype.NewStatus(fwktype.Unschedulable, "preemption failed"),
+			},
+			wantPostFilterResult: &fwktype.PostFilterResult{},
+			wantStatus:           fwktype.NewStatus(fwktype.Unschedulable, "preemption: preemption failed"),
+			wantFailedMessage:    `GangGroup "default/gangB" gets rejected due to member Pod "default/pod2" is unschedulable with reason "0/0 nodes are available:", alreadyWaitForBound: 0`,
 		},
 	}
 	for _, tt := range tests {
@@ -570,6 +615,151 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 			if tt.gangSchedulingContext != nil {
 				assert.Equalf(t, tt.wantFailedMessage, tt.gangSchedulingContext.failedMessage, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
 			}
+		})
+	}
+}
+
+func TestAfterPostFilter_SuggestionPropagation(t *testing.T) {
+	tests := []struct {
+		name                  string
+		pod                   *corev1.Pod
+		gangSchedulingContext *GangSchedulingContext
+		suggestion            *frameworkext.ScheduleSuggestion
+		wantSuggestion        *frameworkext.ScheduleSuggestion
+	}{
+		{
+			name: "suggestion propagated to gangSchedulingContext via AfterPostFilter",
+			pod:  st.MakePod().Name("pod-af").UID("pod-af").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangAF").Obj(),
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID:   "default/gangAF",
+				gangGroup:     sets.New[string]("default/gangAF"),
+				failedMessage: "already failed",
+			},
+			suggestion: &frameworkext.ScheduleSuggestion{
+				Type:    frameworkext.SuggestionEvictWorkloadSelf,
+				Message: "job is unschedulable, please resubmit",
+			},
+			wantSuggestion: &frameworkext.ScheduleSuggestion{
+				Type:    frameworkext.SuggestionEvictWorkloadSelf,
+				Message: "job is unschedulable, please resubmit",
+			},
+		},
+		{
+			name: "no suggestion when diagnosis has none",
+			pod:  st.MakePod().Name("pod-af2").UID("pod-af2").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangAF2").Obj(),
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID:   "default/gangAF2",
+				gangGroup:     sets.New[string]("default/gangAF2"),
+				failedMessage: "already failed",
+			},
+			suggestion:     nil,
+			wantSuggestion: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handle := NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil)
+			gangCache := NewGangCache(nil, nil, nil, nil, handle)
+			gangCache.onPodAdd(tt.pod)
+			pgMgr := &PodGroupManager{
+				handle: handle,
+				holder: GangSchedulingContextHolder{
+					gangSchedulingContext: tt.gangSchedulingContext,
+				},
+				args:  &config.CoschedulingArgs{},
+				cache: gangCache,
+			}
+
+			cycleState := framework.NewCycleState()
+			frameworkext.InitDiagnosis(cycleState, tt.pod)
+			if tt.suggestion != nil {
+				diagnosis := frameworkext.GetDiagnosis(cycleState)
+				diagnosis.SetSuggestion(tt.suggestion)
+			}
+
+			pgMgr.AfterPostFilter(context.TODO(), cycleState, tt.pod, pgMgr.handle, "coscheduling", nil)
+			assert.Equal(t, tt.wantSuggestion, tt.gangSchedulingContext.suggestion, "suggestion propagation")
+		})
+	}
+}
+
+func TestBeforePreFilter_SuggestionPropagation(t *testing.T) {
+	gangCreatedTime := time.Now()
+	tests := []struct {
+		name                  string
+		pod                   *corev1.Pod
+		pg                    *v1alpha1.PodGroup
+		gangSchedulingContext *GangSchedulingContext
+		wantSuggestion        *frameworkext.ScheduleSuggestion
+		wantIsRootCausePod    bool
+		wantErr               bool
+	}{
+		{
+			name: "subsequent pod gets suggestion from gangSchedulingContext",
+			pod:  st.MakePod().Name("pod-follower").UID("pod-follower").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangX").Obj(),
+			pg:   makePg("gangX", "default", 1, &gangCreatedTime, nil),
+			gangSchedulingContext: &GangSchedulingContext{
+				firstPod:      st.MakePod().Name("pod-leader").UID("pod-leader").Namespace("default").Obj(),
+				gangGroupID:   "default/gangX",
+				gangGroup:     sets.New[string]("default/gangX"),
+				failedMessage: "GangGroup failed",
+				suggestion: &frameworkext.ScheduleSuggestion{
+					Type:    frameworkext.SuggestionWaitingVictimReleased,
+					Message: "waiting for victim pods to be deleted",
+				},
+			},
+			wantSuggestion: &frameworkext.ScheduleSuggestion{
+				Type:    frameworkext.SuggestionWaitingVictimReleased,
+				Message: "waiting for victim pods to be deleted",
+			},
+			wantIsRootCausePod: false,
+			wantErr:            true,
+		},
+		{
+			name: "subsequent pod with no suggestion in gangSchedulingContext",
+			pod:  st.MakePod().Name("pod-follower2").UID("pod-follower2").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangY").Obj(),
+			pg:   makePg("gangY", "default", 1, &gangCreatedTime, nil),
+			gangSchedulingContext: &GangSchedulingContext{
+				firstPod:      st.MakePod().Name("pod-leader2").UID("pod-leader2").Namespace("default").Obj(),
+				gangGroupID:   "default/gangY",
+				gangGroup:     sets.New[string]("default/gangY"),
+				failedMessage: "GangGroup failed",
+			},
+			wantSuggestion:     nil,
+			wantIsRootCausePod: false,
+			wantErr:            true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mgr := NewManagerForTest().pgMgr
+			if tt.pg != nil {
+				mgr.cache.onPodGroupAdd(tt.pg)
+				// Mark gang as initialized so BeforePreFilter reaches the failedMessage check
+				gangId := util.GetId(tt.pg.Namespace, tt.pg.Name)
+				gang := mgr.cache.getGangFromCacheByGangId(gangId, false)
+				if gang != nil {
+					gang.HasGangInit = true
+				}
+			}
+			mgr.cache.onPodAdd(tt.pod)
+			if tt.gangSchedulingContext != nil {
+				mgr.holder.setGangSchedulingContext(tt.gangSchedulingContext, "test")
+			}
+
+			cycleState := framework.NewCycleState()
+			frameworkext.InitDiagnosis(cycleState, tt.pod)
+			err := mgr.BeforePreFilter(context.TODO(), cycleState, tt.pod)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			diagnosis := frameworkext.GetDiagnosis(cycleState)
+			assert.Equal(t, tt.wantIsRootCausePod, diagnosis.IsRootCausePod)
+			assert.Equal(t, tt.wantSuggestion, diagnosis.Suggestion)
 		})
 	}
 }

@@ -35,7 +35,7 @@ import (
 
 type QuotaMetaChecker struct {
 	client.Client
-	*admission.Decoder
+	admission.Decoder
 	QuotaTopo     *quotaTopology
 	QuotaInformer cache.Informer
 }
@@ -50,7 +50,7 @@ func (c *QuotaMetaChecker) Name() string {
 	return "QuotaMetaChecker"
 }
 
-func NewPlugin(decoder *admission.Decoder, client client.Client) *QuotaMetaChecker {
+func NewPlugin(decoder admission.Decoder, client client.Client) *QuotaMetaChecker {
 	quotaMetaCheck.Client = client
 	quotaMetaCheck.Decoder = decoder
 	if quotaMetaCheck.QuotaTopo == nil {

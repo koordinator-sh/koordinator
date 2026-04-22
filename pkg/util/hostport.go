@@ -18,7 +18,7 @@ package util
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kube-scheduler/framework"
 )
 
 func RequestedHostPorts(pod *corev1.Pod) framework.HostPortInfo {

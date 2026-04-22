@@ -525,13 +525,13 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 
 		// http://docs.nvidia.com/deploy/xid-errors/index.html#topic_4
 		// Application errors: the GPU should still be healthy
-		if e.EventData == 13 || e.EventData == 31 || e.EventData == 43 || e.EventData == 45 || e.EventData == 68 {
+		if e.EventData == 13 || e.EventData == 31 || e.EventData == 43 || e.EventData == 45 || e.EventData == 68 || e.EventData == 109 {
 			continue
 		}
 
 		pciInfo, ret := e.Device.GetPciInfo()
 		if ret != nvml.SUCCESS {
-			klog.Errorf("failed to get pci info of device %s, err: %v", e.ComputeInstanceId, nvml.ErrorString(ret))
+			klog.Errorf("failed to get pci info of device %v, err: %v", e.ComputeInstanceId, nvml.ErrorString(ret))
 			continue
 		}
 		busIDBuilder := &strings.Builder{}
@@ -544,7 +544,7 @@ func checkHealth(stopCh <-chan struct{}, devs []string, xids chan<- gpuHealthEve
 
 		uuid, ret := e.Device.GetUUID()
 		if ret != nvml.SUCCESS {
-			klog.Errorf("failed to get uuid of device %s, err: %v", e.ComputeInstanceId, nvml.ErrorString(ret))
+			klog.Errorf("failed to get uuid of device %v, err: %v", e.ComputeInstanceId, nvml.ErrorString(ret))
 			continue
 		}
 

@@ -23,6 +23,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
@@ -30,6 +31,7 @@ import (
 	pglister "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 	koordutil "github.com/koordinator-sh/koordinator/pkg/util"
 )
@@ -42,10 +44,12 @@ type GangCache struct {
 	podLister        listerv1.PodLister
 	pgLister         pglister.PodGroupLister
 	pgClient         pgclientset.Interface
-	handle           framework.Handle
+	handle           fwktype.Handle
+
+	workloadAuditor workloadauditor.WorkloadAuditor
 }
 
-func NewGangCache(args *config.CoschedulingArgs, podLister listerv1.PodLister, pgLister pglister.PodGroupLister, client pgclientset.Interface, handle framework.Handle) *GangCache {
+func NewGangCache(args *config.CoschedulingArgs, podLister listerv1.PodLister, pgLister pglister.PodGroupLister, client pgclientset.Interface, handle fwktype.Handle) *GangCache {
 	return &GangCache{
 		gangItems:        make(map[string]*Gang),
 		gangGroupInfoMap: make(map[string]*GangGroupInfo),
@@ -58,23 +62,23 @@ func NewGangCache(args *config.CoschedulingArgs, podLister listerv1.PodLister, p
 	}
 }
 
-func (gangCache *GangCache) getGangGroupInfo(gangGroupId string, gangGroup []string, createIfNotExist bool) *GangGroupInfo {
+func (gangCache *GangCache) getGangGroupInfo(gangGroupId string, gangGroup []string, createIfNotExist bool) (gangGroupInfo *GangGroupInfo, created bool) {
 	gangCache.lock.Lock()
 	defer gangCache.lock.Unlock()
 
-	var gangGroupInfo *GangGroupInfo
 	if gangCache.gangGroupInfoMap[gangGroupId] == nil {
 		if createIfNotExist {
 			gangGroupInfo = NewGangGroupInfo(gangGroupId, gangGroup)
 			gangGroupInfo.SetInitialized()
 			gangCache.gangGroupInfoMap[gangGroupId] = gangGroupInfo
 			klog.Infof("add gangGroupInfo to cache, gangGroupId: %v", gangGroupId)
+			return gangGroupInfo, true
 		}
 	} else {
 		gangGroupInfo = gangCache.gangGroupInfoMap[gangGroupId]
 	}
 
-	return gangGroupInfo
+	return gangGroupInfo, false
 }
 
 func (gangCache *GangCache) deleteGangGroupInfo(gangGroupId string) {
@@ -142,26 +146,38 @@ func (gangCache *GangCache) onPodAddInternal(obj interface{}, action string) {
 
 		gangGroup := gang.getGangGroup()
 		gangGroupId := util.GetGangGroupId(gangGroup)
-		gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
+		gangGroupInfo, created := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
 		gang.SetGangGroupInfo(gangGroupInfo)
+		if created && pod.Spec.NodeName == "" && gangCache.isResponsibleForPod(pod) && gangCache.workloadAuditor != nil {
+			gangCache.workloadAuditor.AddGangGroup(gangGroupId)
+		}
 	}
 
 	gang.setChild(pod)
 	if pod.Spec.NodeName != "" {
 		gang.addBoundPod(pod)
 		gang.setResourceSatisfied()
-	} else if action == "create" && gang.isGangWorthRequeue() {
-		if gangCache.handle == nil {
-			// only UT will go here
-			return
+	} else if action == "create" {
+		// Detect initial gating state for the newly added pod
+		if gang.GangGroupId != "" && gangCache.workloadAuditor != nil {
+			gangCache.workloadAuditor.RecordGangGating(gang.GangGroupId, pod, workloadauditor.PodIsGated(pod))
 		}
-		if extendedHandle := gangCache.handle.(frameworkext.ExtendedHandle); extendedHandle != nil && extendedHandle.Scheduler() != nil && extendedHandle.Scheduler().GetSchedulingQueue() != nil {
-			addedPod, ok := obj.(*v1.Pod)
-			if !ok {
+		if gang.isGangWorthRequeue() {
+			if gangCache.handle == nil {
+				// only UT will go here
 				return
 			}
-			klog.V(4).Infof("gang basic check pass, delivery an activate for gang: %s, pod: %s", gangId, addedPod.Name)
-			extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{util.GetId(addedPod.Namespace, addedPod.Name): addedPod})
+			if extendedHandle := gangCache.handle.(frameworkext.ExtendedHandle); extendedHandle != nil && extendedHandle.Scheduler() != nil && extendedHandle.Scheduler().GetSchedulingQueue() != nil {
+				addedPod, ok := obj.(*v1.Pod)
+				if !ok {
+					return
+				}
+				klog.V(4).Infof("gang basic check pass, delivery an activate for gang: %s, pod: %s", gangId, addedPod.Name)
+				if gangCache.workloadAuditor != nil {
+					gangCache.workloadAuditor.RecordGangGroup(gang.GangGroupId, addedPod, workloadauditor.RecordTypeGangMinMemberSatisfied, gangId)
+				}
+				extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{util.GetId(addedPod.Namespace, addedPod.Name): addedPod})
+			}
 		}
 	}
 
@@ -181,6 +197,18 @@ func (gangCache *GangCache) onPodUpdate(oldObj, newObj interface{}) {
 
 	if koordutil.IsPodTerminated(pod) {
 		return
+	}
+
+	// Detect gating transitions for gang pods
+	if oldPod, ok := oldObj.(*v1.Pod); ok {
+		oldGated := workloadauditor.PodIsGated(oldPod)
+		newGated := workloadauditor.PodIsGated(pod)
+		if oldGated != newGated {
+			gangId := util.GetId(pod.Namespace, gangName)
+			if gang := gangCache.getGangFromCacheByGangId(gangId, false); gang != nil && gang.GangGroupId != "" && gangCache.workloadAuditor != nil {
+				gangCache.workloadAuditor.RecordGangGating(gang.GangGroupId, pod, newGated)
+			}
+		}
 	}
 
 	gangCache.onPodAddInternal(newObj, "update")
@@ -216,6 +244,9 @@ func (gangCache *GangCache) onPodDelete(obj interface{}) {
 		}
 		if allGangDeleted {
 			gangCache.deleteGangGroupInfo(gang.GangGroupInfo.GangGroupId)
+			if gangCache.workloadAuditor != nil {
+				gangCache.workloadAuditor.DeleteGangGroup(gang.GangGroupInfo.GangGroupId)
+			}
 		}
 	}
 
@@ -233,6 +264,12 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	gangId := util.GetId(gangNamespace, gangName)
 	gang := gangCache.getGangFromCacheByGangId(gangId, true)
 	gang.tryInitByPodGroup(pg, gangCache.pluginArgs)
+	if gangCache.workloadAuditor != nil {
+		phase := pg.Status.Phase
+		if isPodGroupPendingPhase(phase) {
+			gangCache.workloadAuditor.AddGangGroup(gang.GangGroupId)
+		}
+	}
 	if gang.isGangWorthRequeue() {
 		if gangCache.handle == nil {
 			// only UT will go here
@@ -243,6 +280,9 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 			if someChildren == nil {
 				return
 			}
+			if gangCache.workloadAuditor != nil {
+				gangCache.workloadAuditor.RecordGangGroup(gang.GangGroupId, someChildren, workloadauditor.RecordTypeGangMinMemberSatisfied, gangId)
+			}
 			klog.V(4).Infof("gang basic check pass, delivery an activate for gang: %s, pod: %s", gangId, someChildren.Name)
 			extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{util.GetId(someChildren.Namespace, someChildren.Name): someChildren})
 		}
@@ -250,7 +290,7 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 
 	gangGroup := gang.getGangGroup()
 	gangGroupId := util.GetGangGroupId(gangGroup)
-	gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
+	gangGroupInfo, _ := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
 	gang.SetGangGroupInfo(gangGroupInfo)
 
 	klog.Infof("watch podGroup created, Name:%v", pg.Name)
@@ -270,6 +310,16 @@ func (gangCache *GangCache) onPodGroupUpdate(oldObj interface{}, newObj interfac
 		klog.Errorf("Gang object isn't exist when got Update Event")
 		return
 	}
+
+	// When PodGroup transitions from a pending phase to a non-pending phase,
+	// delete the gang record from the workload auditor.
+	if gangCache.workloadAuditor != nil {
+		oldPg, ok := oldObj.(*v1alpha1.PodGroup)
+		if ok && isPodGroupPendingPhase(oldPg.Status.Phase) && !isPodGroupPendingPhase(pg.Status.Phase) {
+			gangCache.workloadAuditor.DeleteGangGroup(gang.GangGroupId)
+		}
+	}
+
 	isGangWorthRequeueBefore := gang.isGangWorthRequeue()
 	gang.tryInitByPodGroup(pg, gangCache.pluginArgs)
 	if !isGangWorthRequeueBefore && gang.isGangWorthRequeue() {
@@ -283,12 +333,15 @@ func (gangCache *GangCache) onPodGroupUpdate(oldObj interface{}, newObj interfac
 				return
 			}
 			klog.V(4).Infof("gang basic check pass, delivery an activate for gang: %s, pod: %s", gangId, someChildren.Name)
+			if gangCache.workloadAuditor != nil {
+				gangCache.workloadAuditor.RecordGangGroup(gang.GangGroupId, someChildren, workloadauditor.RecordTypeGangMinMemberSatisfied, gangId)
+			}
 			extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{util.GetId(someChildren.Namespace, someChildren.Name): someChildren})
 		}
 	}
 	gangGroup := gang.getGangGroup()
 	gangGroupId := util.GetGangGroupId(gangGroup)
-	gangGroupInfo := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
+	gangGroupInfo, _ := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
 	gang.SetGangGroupInfo(gangGroupInfo)
 }
 
@@ -317,6 +370,9 @@ func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
 	}
 	if allGangDeleted {
 		gangCache.deleteGangGroupInfo(gang.GangGroupInfo.GangGroupId)
+		if gangCache.workloadAuditor != nil {
+			gangCache.workloadAuditor.DeleteGangGroup(gang.GangGroupInfo.GangGroupId)
+		}
 	}
 
 	klog.Infof("watch podGroup deleted, Name:%v", pg.Name)
@@ -368,4 +424,19 @@ func (gangCache *GangCache) getWaitingPodsNum(gangGroup []string) int {
 		waitingPodsNum += gang.getGangWaitingPods()
 	}
 	return waitingPodsNum
+}
+
+// isPodGroupPendingPhase returns true if the PodGroup phase indicates
+// it has not yet finished scheduling (empty, Pending, PreScheduling, Scheduling).
+func isPodGroupPendingPhase(phase v1alpha1.PodGroupPhase) bool {
+	return phase == "" || phase == v1alpha1.PodGroupPending || phase == v1alpha1.PodGroupPreScheduling || phase == v1alpha1.PodGroupScheduling
+}
+
+// isResponsibleForPod returns true if the pod's scheduler name matches
+// the profile name of this scheduler instance.
+func (gangCache *GangCache) isResponsibleForPod(pod *v1.Pod) bool {
+	if fwk, ok := gangCache.handle.(framework.Framework); ok {
+		return pod.Spec.SchedulerName == fwk.ProfileName()
+	}
+	return true
 }

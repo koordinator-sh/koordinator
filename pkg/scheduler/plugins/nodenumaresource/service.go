@@ -43,7 +43,7 @@ func (p *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 		nodeLister := p.handle.SharedInformerFactory().Core().V1().Nodes().Lister()
 		node, err := nodeLister.Get(nodeName)
 		if err != nil {
-			services.ResponseErrorMessage(c, http.StatusInternalServerError, err.Error())
+			services.ResponseErrorMessage(c, http.StatusInternalServerError, "%s", err.Error())
 			return
 		}
 

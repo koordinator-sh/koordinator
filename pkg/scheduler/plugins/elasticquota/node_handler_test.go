@@ -17,6 +17,7 @@ limitations under the License.
 package elasticquota
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -76,7 +77,7 @@ func TestPlugin_OnNodeAdd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 			plugin := p.(*Plugin)
@@ -209,7 +210,7 @@ func TestPlugin_OnNodeUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			plugin := p.(*Plugin)
 
@@ -265,7 +266,7 @@ func TestPlugin_OnNodeDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
 			assert.Nil(t, err)
 			plugin := p.(*Plugin)
 

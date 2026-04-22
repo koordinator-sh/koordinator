@@ -22,6 +22,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	fwk "k8s.io/kube-scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -35,15 +37,15 @@ const (
 )
 
 var (
-	_ framework.ScorePlugin = &Plugin{}
+	_ fwk.ScorePlugin = &Plugin{}
 )
 
 type Plugin struct {
-	handle framework.Handle
+	handle fwk.Handle
 	args   *config.NodeResourcesFitPlusArgs
 }
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, args runtime.Object, handle fwk.Handle) (fwk.Plugin, error) {
 	nodeResourcesFitPlusArgs, ok := args.(*config.NodeResourcesFitPlusArgs)
 
 	if !ok {
@@ -66,19 +68,19 @@ type preScoreState struct {
 }
 
 // Clone the prefilter state.
-func (s *preScoreState) Clone() framework.StateData {
+func (s *preScoreState) Clone() fwk.StateData {
 	return s
 }
 
-func (s *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *v1.Pod, nodes []*v1.Node) *framework.Status {
+func (s *Plugin) PreScore(ctx context.Context, cycleState fwk.CycleState, pod *v1.Pod, nodes []fwk.NodeInfo) *fwk.Status {
 	cycleState.Write(preScoreStateKey, computePodResourceRequest(pod))
 	return nil
 }
 
-func (s *Plugin) Score(ctx context.Context, state *framework.CycleState, p *v1.Pod, nodeName string) (int64, *framework.Status) {
-	nodeInfo, err := s.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
-	if err != nil {
-		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+func (s *Plugin) Score(ctx context.Context, state fwk.CycleState, p *v1.Pod, nodeInfo fwk.NodeInfo) (int64, *fwk.Status) {
+	n, ok := nodeInfo.(fwktype.NodeInfo)
+	if !ok {
+		return 0, fwk.NewStatus(fwk.Error, fmt.Sprintf("nodeInfo type assertion failed for node %v", nodeInfo))
 	}
 
 	r := ResourceAllocationPriority{
@@ -87,14 +89,14 @@ func (s *Plugin) Score(ctx context.Context, state *framework.CycleState, p *v1.P
 
 	scoreState, err := getPreScoreState(state)
 	if err != nil {
-		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("get state node %q from PreScore: %v", nodeName, err))
+		return 0, fwk.NewStatus(fwk.Error, fmt.Sprintf("get state node %q from PreScore: %v", n.Node().Name, err))
 	}
-	scores := r.getResourceScore(s.args, scoreState.ResourceName, p, nodeInfo, nodeName)
+	scores := r.getResourceScore(s.args, scoreState.ResourceName, p, n, n.Node().Name)
 
-	return scores, framework.NewStatus(framework.Success, "")
+	return scores, fwk.NewStatus(fwk.Success, "")
 }
 
-func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
+func (p *Plugin) ScoreExtensions() fwk.ScoreExtensions {
 	return nil
 }
 
@@ -122,7 +124,7 @@ func fitsPodRequestName(podRequest framework.Resource) []v1.ResourceName {
 	return podRequestResource
 }
 
-func getPreScoreState(cycleState *framework.CycleState) (*preScoreState, error) {
+func getPreScoreState(cycleState fwk.CycleState) (*preScoreState, error) {
 	c, err := cycleState.Read(preScoreStateKey)
 	if err != nil {
 		// preFilterState doesn't exist, likely PreFilter wasn't invoked.

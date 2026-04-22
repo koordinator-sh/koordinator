@@ -64,12 +64,14 @@ import (
 
 	schedulerserverconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/options"
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/informer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util/asynclog"
 	utilroutes "github.com/koordinator-sh/koordinator/pkg/util/routes"
@@ -117,6 +119,7 @@ for cost reduction and efficiency enhancement.
 	verflag.AddFlags(nfs.FlagSet("global"))
 	AddSyncBarrierFlags(nfs.FlagSet("global"))
 	globalflag.AddGlobalFlags(nfs.FlagSet("global"), cmd.Name(), logs.SkipLoggingConfigurationFlags())
+	workloadauditor.AddFlags(nfs.FlagSet("extend"))
 	frameworkext.AddFlags(nfs.FlagSet("extend"))
 	fs := cmd.Flags()
 	for _, f := range nfs.FlagSets {
@@ -340,9 +343,7 @@ func newHealthzAndMetricsHandler(config *kubeschedulerconfig.KubeSchedulerConfig
 	pathRecorderMux := mux.NewPathRecorderMux("koord-scheduler")
 	healthz.InstallHandler(pathRecorderMux, checks...)
 	installMetricHandler(pathRecorderMux, informers, isLeader)
-	if utilfeature.DefaultFeatureGate.Enabled(features.ComponentSLIs) {
-		slis.SLIMetricsWithReset{}.Install(pathRecorderMux)
-	}
+	slis.SLIMetricsWithReset{}.Install(pathRecorderMux)
 	if config.EnableProfiling {
 		routes.Profiling{}.Install(pathRecorderMux)
 		if config.EnableContentionProfiling {
@@ -402,6 +403,17 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	networkTopologyManager := networktopology.NewTreeManager(cc.KoordinatorSharedInformerFactory, cc.InformerFactory, cc.KoordinatorClient)
 
+	// When CrossSchedulerNomination feature gate is enabled, create a CrossSchedulerPodNominator
+	// to track nominated pods from other schedulers for cross-scheduler resource accounting.
+	// Profile names are registered lazily in NewFrameworkExtender after each framework profile is built,
+	// so that the actual schedulerName (which may be overridden at runtime) is captured correctly.
+	var crossSchedulerNominator *frameworkext.CrossSchedulerPodNominator
+	if utilfeature.DefaultFeatureGate.Enabled(koordfeatures.CrossSchedulerNomination) {
+		crossSchedulerNominator = frameworkext.NewCrossSchedulerPodNominator()
+	}
+
+	workloadAuditor := workloadauditor.NewWorkloadAuditor()
+
 	// NOTE(joseph): K8s scheduling framework does not provide extension point for initialization.
 	// Currently, only by copying the initialization code and implementing custom initialization.
 	frameworkExtenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
@@ -410,6 +422,8 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 		frameworkext.WithKoordinatorSharedInformerFactory(cc.KoordinatorSharedInformerFactory),
 		frameworkext.WithNodeResourceTopologySharedInformerFactory(cc.NodeResourceTopologyInformerFactory),
 		frameworkext.WithNetworkTopologyManager(networkTopologyManager),
+		frameworkext.WithCrossSchedulerPodNominator(crossSchedulerNominator),
+		frameworkext.WithWorkloadAuditor(workloadAuditor),
 	)
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -465,7 +479,8 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	frameworkExtenderFactory.InitScheduler(&frameworkext.SchedulerAdapter{Scheduler: sched})
 	schedAdapter := frameworkExtenderFactory.Scheduler()
 
-	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
+	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, cc.InformerFactory, cc.KoordinatorSharedInformerFactory, crossSchedulerNominator)
+	workloadauditor.AddEventHandler(sched, workloadAuditor, cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
 	reservationErrorHandler := eventhandlers.MakeReservationErrorHandler(
 		sched,
 		schedAdapter,

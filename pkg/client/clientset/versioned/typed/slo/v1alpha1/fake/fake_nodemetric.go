@@ -19,114 +19,32 @@ limitations under the License.
 package fake
 
 import (
-	"context"
-
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
+	gentype "k8s.io/client-go/gentype"
 )
 
-// FakeNodeMetrics implements NodeMetricInterface
-type FakeNodeMetrics struct {
+// fakeNodeMetrics implements NodeMetricInterface
+type fakeNodeMetrics struct {
+	*gentype.FakeClientWithList[*v1alpha1.NodeMetric, *v1alpha1.NodeMetricList]
 	Fake *FakeSloV1alpha1
 }
 
-var nodemetricsResource = v1alpha1.SchemeGroupVersion.WithResource("nodemetrics")
-
-var nodemetricsKind = v1alpha1.SchemeGroupVersion.WithKind("NodeMetric")
-
-// Get takes name of the nodeMetric, and returns the corresponding nodeMetric object, and an error if there is any.
-func (c *FakeNodeMetrics) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.NodeMetric, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(nodemetricsResource, name), &v1alpha1.NodeMetric{})
-	if obj == nil {
-		return nil, err
+func newFakeNodeMetrics(fake *FakeSloV1alpha1) slov1alpha1.NodeMetricInterface {
+	return &fakeNodeMetrics{
+		gentype.NewFakeClientWithList[*v1alpha1.NodeMetric, *v1alpha1.NodeMetricList](
+			fake.Fake,
+			"",
+			v1alpha1.SchemeGroupVersion.WithResource("nodemetrics"),
+			v1alpha1.SchemeGroupVersion.WithKind("NodeMetric"),
+			func() *v1alpha1.NodeMetric { return &v1alpha1.NodeMetric{} },
+			func() *v1alpha1.NodeMetricList { return &v1alpha1.NodeMetricList{} },
+			func(dst, src *v1alpha1.NodeMetricList) { dst.ListMeta = src.ListMeta },
+			func(list *v1alpha1.NodeMetricList) []*v1alpha1.NodeMetric { return gentype.ToPointerSlice(list.Items) },
+			func(list *v1alpha1.NodeMetricList, items []*v1alpha1.NodeMetric) {
+				list.Items = gentype.FromPointerSlice(items)
+			},
+		),
+		fake,
 	}
-	return obj.(*v1alpha1.NodeMetric), err
-}
-
-// List takes label and field selectors, and returns the list of NodeMetrics that match those selectors.
-func (c *FakeNodeMetrics) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.NodeMetricList, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(nodemetricsResource, nodemetricsKind, opts), &v1alpha1.NodeMetricList{})
-	if obj == nil {
-		return nil, err
-	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &v1alpha1.NodeMetricList{ListMeta: obj.(*v1alpha1.NodeMetricList).ListMeta}
-	for _, item := range obj.(*v1alpha1.NodeMetricList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
-}
-
-// Watch returns a watch.Interface that watches the requested nodeMetrics.
-func (c *FakeNodeMetrics) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(nodemetricsResource, opts))
-}
-
-// Create takes the representation of a nodeMetric and creates it.  Returns the server's representation of the nodeMetric, and an error, if there is any.
-func (c *FakeNodeMetrics) Create(ctx context.Context, nodeMetric *v1alpha1.NodeMetric, opts v1.CreateOptions) (result *v1alpha1.NodeMetric, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(nodemetricsResource, nodeMetric), &v1alpha1.NodeMetric{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.NodeMetric), err
-}
-
-// Update takes the representation of a nodeMetric and updates it. Returns the server's representation of the nodeMetric, and an error, if there is any.
-func (c *FakeNodeMetrics) Update(ctx context.Context, nodeMetric *v1alpha1.NodeMetric, opts v1.UpdateOptions) (result *v1alpha1.NodeMetric, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(nodemetricsResource, nodeMetric), &v1alpha1.NodeMetric{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.NodeMetric), err
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeNodeMetrics) UpdateStatus(ctx context.Context, nodeMetric *v1alpha1.NodeMetric, opts v1.UpdateOptions) (*v1alpha1.NodeMetric, error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(nodemetricsResource, "status", nodeMetric), &v1alpha1.NodeMetric{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.NodeMetric), err
-}
-
-// Delete takes name of the nodeMetric and deletes it. Returns an error if one occurs.
-func (c *FakeNodeMetrics) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteActionWithOptions(nodemetricsResource, name, opts), &v1alpha1.NodeMetric{})
-	return err
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *FakeNodeMetrics) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(nodemetricsResource, listOpts)
-
-	_, err := c.Fake.Invokes(action, &v1alpha1.NodeMetricList{})
-	return err
-}
-
-// Patch applies the patch and returns the patched nodeMetric.
-func (c *FakeNodeMetrics) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.NodeMetric, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(nodemetricsResource, name, pt, data, subresources...), &v1alpha1.NodeMetric{})
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.NodeMetric), err
 }

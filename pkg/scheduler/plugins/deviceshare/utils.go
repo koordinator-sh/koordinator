@@ -26,9 +26,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	resourceapi "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -353,7 +353,7 @@ func mustAllocateVF(hint *apiext.DeviceHint) bool {
 	return hint != nil && hint.VFSelector != nil
 }
 
-func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResourceTemplatesCache, templateMatchedResources []corev1.ResourceName) (state *preFilterState, status *framework.Status) {
+func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResourceTemplatesCache, templateMatchedResources []corev1.ResourceName) (state *preFilterState, status *fwktype.Status) {
 	state = &preFilterState{
 		skip:               true,
 		preemptibleDevices: map[string]map[schedulingv1alpha1.DeviceType]deviceResources{},
@@ -362,12 +362,12 @@ func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResou
 
 	requests, err := GetPodDeviceRequests(pod)
 	if err != nil {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 
 	recordedDeviceAllocations, err := apiext.GetDeviceAllocations(pod.Annotations)
 	if err != nil {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 	state.designatedAllocation = recordedDeviceAllocations
 	state.designatedVF = constructDesignatedVF(state.designatedAllocation)
@@ -377,19 +377,19 @@ func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResou
 	if !state.skip {
 		err = parsePodDeviceShareExtensions(pod, requests, state)
 		if err != nil {
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 		}
 		if state.jointAllocate != nil && len(state.jointAllocate.DeviceTypes) >= 1 {
 			state.primaryDeviceType = state.jointAllocate.DeviceTypes[0]
 		}
 		state.gpuRequirements, err = parseGPURequirements(pod, requests, state.hints[schedulingv1alpha1.GPU], gpuSharedResourceTemplatesCache, templateMatchedResources)
 		if err != nil {
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 		}
 		state.podFitsSecondaryDeviceWellPlanned = state.gpuRequirements != nil && !state.gpuRequirements.gpuShared
 		reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 		if err != nil {
-			return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 		}
 		state.isReservationRequired = reservationAffinity != nil || apiext.IsPreAllocationRequired(pod.Labels)
 	}

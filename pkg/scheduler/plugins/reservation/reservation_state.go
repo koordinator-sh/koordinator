@@ -21,12 +21,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
-var _ framework.StateData = &stateData{}
+var _ fwktype.StateData = &stateData{}
 
 type stateData struct {
 	// scheduling cycle data
@@ -52,7 +52,7 @@ type schedulingStateData struct {
 	hasAffinity          bool
 	reservationName      string
 	podRequests          corev1.ResourceList
-	podRequestsResources *framework.Resource
+	podRequestsResources fwktype.Resource
 	podResourceNames     []corev1.ResourceName
 
 	isPreAllocationRequired bool
@@ -77,9 +77,9 @@ type nodeReservationState struct {
 
 	// podRequested represents all Pods(including matched reservation) requested resources
 	// but excluding the already allocated from unmatched reservations
-	podRequested *framework.Resource
+	podRequested fwktype.Resource
 	// rAllocated represents the allocated resources of matched reservations
-	rAllocated *framework.Resource
+	rAllocated fwktype.Resource
 
 	unmatched []*frameworkext.ReservationInfo
 
@@ -108,7 +108,7 @@ type nodeDiagnosisState struct {
 	errUnmatched             int // unmatched due to parse ownership or affinity error
 }
 
-func (s *stateData) Clone() framework.StateData {
+func (s *stateData) Clone() fwktype.StateData {
 	ns := &stateData{
 		schedulingStateData: schedulingStateData{
 			hasAffinity:              s.hasAffinity,
@@ -158,7 +158,7 @@ func (s *stateData) CleanSchedulingData() {
 	s.schedulingStateData = schedulingStateData{}
 }
 
-func getStateData(cycleState *framework.CycleState) *stateData {
+func getStateData(cycleState fwktype.CycleState) *stateData {
 	v, err := cycleState.Read(stateKey)
 	if err != nil {
 		return &stateData{}

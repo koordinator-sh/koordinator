@@ -34,7 +34,7 @@ import (
 // - Reservation event handlers for the scheduler just like pods'. One special case is that reservations have expiration, which the scheduler should clean up expired ones from the
 // cache and queue.
 // - Pod and reservation event handlers for multi-scheduler clean up.
-func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, informerFactory informers.SharedInformerFactory, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
+func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworkext.Scheduler, informerFactory informers.SharedInformerFactory, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory, crossSchedulerNominator *frameworkext.CrossSchedulerPodNominator) {
 	podInformer := informerFactory.Core().V1().Pods().Informer()
 	if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
 		// Clean up irresponsible pods for scheduling queue
@@ -49,6 +49,23 @@ func AddScheduleEventHandler(sched *scheduler.Scheduler, schedAdapter frameworke
 	_, err := reservationInformer.AddEventHandler(reservationEventHandlers(sched, schedAdapter))
 	if err != nil {
 		klog.Fatalf("failed to add reservation handler, err: %s", err)
+	}
+
+	// Register cross-scheduler pod nominator event handler when feature is enabled.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.CrossSchedulerNomination) && crossSchedulerNominator != nil {
+		_, err := podInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+			FilterFunc: func(obj interface{}) bool {
+				return crossSchedulerNominator.ShouldHandle(obj)
+			},
+			Handler: cache.ResourceEventHandlerFuncs{
+				AddFunc:    crossSchedulerNominator.OnAdd,
+				UpdateFunc: crossSchedulerNominator.OnUpdate,
+				DeleteFunc: crossSchedulerNominator.OnDelete,
+			},
+		})
+		if err != nil {
+			klog.Fatalf("failed to add cross-scheduler pod nominator handler, err: %s", err)
+		}
 	}
 }
 
@@ -68,9 +85,7 @@ func irresponsibleUnscheduledPodEventHandler(sched *scheduler.Scheduler, schedAd
 				return
 			}
 			klog.V(3).InfoS("Delete event for irresponsible unscheduled pod", "pod", klog.KObj(pod))
-			if err := schedAdapter.GetSchedulingQueue().Delete(pod); err != nil {
-				klog.Errorf("failed to dequeue irresponsible pod %s, err: %s", klog.KObj(pod), err)
-			}
+			schedAdapter.GetSchedulingQueue().Delete(pod)
 			// FIXME: proactively reject waiting pod if it has handled by a responsible profile
 		},
 	}

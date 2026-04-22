@@ -32,8 +32,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/client-go/util/workqueue"
+	apiresource "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/utils/clock"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"

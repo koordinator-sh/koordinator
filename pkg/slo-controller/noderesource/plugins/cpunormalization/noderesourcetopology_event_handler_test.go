@@ -191,13 +191,13 @@ func Test_isNRTCPUBasicInfoChanged(t *testing.T) {
 func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 	tests := []struct {
 		name      string
-		fn        func(handler *nrtHandler, q workqueue.RateLimitingInterface)
+		fn        func(handler *nrtHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request])
 		hasEvent  bool
 		eventName string
 	}{
 		{
 			name: "create NRT event",
-			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler *nrtHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &topologyv1alpha1.NodeResourceTopology{
 						ObjectMeta: metav1.ObjectMeta{
@@ -215,7 +215,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		},
 		{
 			name: "create event not NRT",
-			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler *nrtHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -228,7 +228,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		},
 		{
 			name: "delete NRT event",
-			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler *nrtHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &topologyv1alpha1.NodeResourceTopology{
 						ObjectMeta: metav1.ObjectMeta{
@@ -246,7 +246,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		},
 		{
 			name: "delete event not NRT",
-			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler *nrtHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -259,7 +259,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		},
 		{
 			name: "update NRT event",
-			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler *nrtHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &topologyv1alpha1.NodeResourceTopology{
 						ObjectMeta: metav1.ObjectMeta{
@@ -286,7 +286,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		},
 		{
 			name: "update node event ignore",
-			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler *nrtHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &topologyv1alpha1.NodeResourceTopology{
 						ObjectMeta: metav1.ObjectMeta{
@@ -304,7 +304,7 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 		},
 		{
 			name: "generic node event ignore",
-			fn: func(handler *nrtHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler *nrtHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Generic(context.TODO(), event.GenericEvent{}, q)
 			},
 			hasEvent: false,
@@ -312,14 +312,14 @@ func Test_EnqueueRequestForNodeResourceTopology(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+			queue := workqueue.NewTypedRateLimitingQueue[reconcile.Request](workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 			handler := &nrtHandler{}
 			tt.fn(handler, queue)
 			if tt.hasEvent {
 				assert.True(t, queue.Len() > 0)
 				e, shutdown := queue.Get()
 				assert.False(t, shutdown)
-				assert.Equal(t, tt.eventName, e.(reconcile.Request).Name)
+				assert.Equal(t, tt.eventName, e.Name)
 			}
 			if !tt.hasEvent && queue.Len() > 0 {
 				e, shutdown := queue.Get()

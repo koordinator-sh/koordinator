@@ -29,7 +29,7 @@ type FakeQuotaV1alpha1 struct {
 }
 
 func (c *FakeQuotaV1alpha1) ElasticQuotaProfiles(namespace string) v1alpha1.ElasticQuotaProfileInterface {
-	return &FakeElasticQuotaProfiles{c, namespace}
+	return newFakeElasticQuotaProfiles(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

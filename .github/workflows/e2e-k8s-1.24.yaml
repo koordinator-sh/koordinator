@@ -1,4 +1,4 @@
-name: E2E-K8S-1.22
+name: E2E-K8S-1.24
 
 on:
   push:
@@ -10,12 +10,13 @@ on:
 
 env:
   # Common versions
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.25'
   KIND_ACTION_VERSION: 'v1.5.0'
-  KIND_VERSION: 'v0.20.0'
-  KIND_IMAGE: 'kindest/node:v1.22.17'
+  KIND_VERSION: 'v0.22.0'
+  KIND_IMAGE: 'kindest/node:v1.24.17'
   KIND_CLUSTER_NAME: 'ci-testing'
   COMPONENT_NS: "koordinator-system"
+  KUBERNETES_VERSION: '1.24'
 
 jobs:
 
@@ -75,7 +76,7 @@ jobs:
         run: |
           set -ex
           kubectl cluster-info
-          KUBERNETES_VERSION="1.22" MANAGER_IMG=koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID} KOORDLET_IMG=koordinator-sh/koordlet:e2e-${GITHUB_RUN_ID} SCHEDULER_IMG=koordinator-sh/koord-scheduler:e2e-${GITHUB_RUN_ID} ./hack/deploy_kind.sh
+          MANAGER_IMG=koordinator-sh/koord-manager:e2e-${GITHUB_RUN_ID} KOORDLET_IMG=koordinator-sh/koordlet:e2e-${GITHUB_RUN_ID} SCHEDULER_IMG=koordinator-sh/koord-scheduler:e2e-${GITHUB_RUN_ID} ./hack/deploy_kind.sh
           NODES=$(kubectl get node | wc -l)
           for ((i=1;i<10;i++));
           do

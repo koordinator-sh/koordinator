@@ -28,9 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	resourceapi "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -61,14 +61,14 @@ const (
 )
 
 var (
-	_ framework.EnqueueExtensions = &Plugin{}
+	_ fwktype.EnqueueExtensions = &Plugin{}
 
-	_ framework.PreFilterPlugin = &Plugin{}
-	_ framework.FilterPlugin    = &Plugin{}
-	_ framework.PreScorePlugin  = &Plugin{}
-	_ framework.ScorePlugin     = &Plugin{}
-	_ framework.ReservePlugin   = &Plugin{}
-	_ framework.PreBindPlugin   = &Plugin{}
+	_ fwktype.PreFilterPlugin = &Plugin{}
+	_ fwktype.FilterPlugin    = &Plugin{}
+	_ fwktype.PreScorePlugin  = &Plugin{}
+	_ fwktype.ScorePlugin     = &Plugin{}
+	_ fwktype.ReservePlugin   = &Plugin{}
+	_ fwktype.PreBindPlugin   = &Plugin{}
 
 	_ frameworkext.ReservationRestorePlugin              = &Plugin{}
 	_ frameworkext.ReservationPreAllocationRestorePlugin = &Plugin{}
@@ -107,7 +107,7 @@ func WithResourceManager(resourceManager ResourceManager) Option {
 	}
 }
 
-func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option) (framework.Plugin, error) {
+func NewWithOptions(args runtime.Object, handle fwktype.Handle, opts ...Option) (fwktype.Plugin, error) {
 	pluginArgs, ok := args.(*schedulingconfig.NodeNUMAResourceArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type NodeNUMAResourceArgs, got %T", args)
@@ -165,7 +165,7 @@ func NewWithOptions(args runtime.Object, handle framework.Handle, opts ...Option
 	}, nil
 }
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 	return NewWithOptions(args, handle)
 }
 
@@ -210,7 +210,7 @@ type allocation struct {
 	cpuset           cpuset.CPUSet
 }
 
-func (s *preFilterState) Clone() framework.StateData {
+func (s *preFilterState) Clone() fwktype.StateData {
 	ns := &preFilterState{
 		skip:                        s.skip,
 		requestCPUBind:              s.requestCPUBind,
@@ -243,33 +243,33 @@ func (s *preFilterState) CleanSchedulingData() {
 	s.schedulingStateData = schedulingStateData{}
 }
 
-func getPreFilterState(cycleState *framework.CycleState) (*preFilterState, *framework.Status) {
+func getPreFilterState(cycleState fwktype.CycleState) (*preFilterState, *fwktype.Status) {
 	value, err := cycleState.Read(stateKey)
 	if err != nil {
-		return nil, framework.AsStatus(err)
+		return nil, fwktype.AsStatus(err)
 	}
 	state := value.(*preFilterState)
 	return state, nil
 }
 
-func (p *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
+func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWithHint, error) {
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("noderesourcetopologies.%v.%v", nrtv1alpha1.SchemeGroupVersion.Version, nrtv1alpha1.SchemeGroupVersion.Group)
-	return []framework.ClusterEventWithHint{
-		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
-		{Event: framework.ClusterEvent{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete}},
-	}
+	return []fwktype.ClusterEventWithHint{
+		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
+		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
+	}, nil
 }
 
-func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
 	resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
 	if err != nil {
-		return nil, framework.NewStatus(framework.Error, err.Error())
+		return nil, fwktype.NewStatus(fwktype.Error, err.Error())
 	}
 	numaSpec, err := extension.GetNUMATopologySpec(pod.Annotations)
 	if err != nil {
-		return nil, framework.NewStatus(framework.Error, err.Error())
+		return nil, fwktype.NewStatus(fwktype.Error, err.Error())
 	}
 
 	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
@@ -277,11 +277,11 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		cycleState.Write(stateKey, &preFilterState{
 			skip: true,
 		})
-		return nil, framework.NewStatus(framework.Skip)
+		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
 	reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 	if err != nil {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 	requestedCPU := requests.Cpu().MilliValue()
 	state := &preFilterState{
@@ -298,7 +298,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		if _, ok := schedulingHint.Extensions[Name]; ok {
 			resourceStatus, err := extension.GetResourceStatus(pod.Annotations)
 			if err != nil {
-				return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+				return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 			}
 			if resourceStatus.NUMANodeResources != nil || resourceStatus.CPUSet != "" {
 				alloc := &allocation{
@@ -329,7 +329,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 		if cpuBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs ||
 			cpuBindPolicy == schedulingconfig.CPUBindPolicySpreadByPCPUs {
 			if requestedCPU%1000 != 0 {
-				return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidRequestedCPUs)
+				return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidRequestedCPUs)
 			}
 
 			if requestedCPU > 0 {
@@ -346,11 +346,11 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState *framework.CycleState
 	return nil, nil
 }
 
-func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
+func (p *Plugin) PreFilterExtensions() fwktype.PreFilterExtensions {
 	return p
 }
 
-func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) *fwktype.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -364,7 +364,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 	numaTopologyPolicy, err := mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
 	if err != nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNotMatchNUMATopology)
+		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNotMatchNUMATopology)
 	}
 	if state.designatedAllocation != nil {
 		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node(), numaTopologyPolicy)
@@ -387,7 +387,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 		// We must satisfy the user's CPUSet request. Even if some nodes in the cluster have resources,
 		// they cannot be allocated without valid CPU topology.
 		if !topologyOptions.CPUTopology.IsValid() {
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
+			return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
 		}
 
 		requiredCPUBindPolicy := state.requiredCPUBindPolicy
@@ -397,19 +397,19 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 			requiredCPUBindPolicy = schedulingconfig.CPUBindPolicySpreadByPCPUs
 		}
 		if state.requiredCPUBindPolicy != "" && state.requiredCPUBindPolicy != requiredCPUBindPolicy {
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrCPUBindPolicyConflict)
+			return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrCPUBindPolicyConflict)
 		}
 
 		if requiredCPUBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs {
 			if state.numCPUsNeeded%topologyOptions.CPUTopology.CPUsPerCore() != 0 {
-				return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
+				return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrSMTAlignmentError)
 			}
 		}
 
 		if requiredCPUBindPolicy != "" && numaTopologyPolicy == extension.NUMATopologyPolicyNone {
 			resourceOptions, err := p.getResourceOptions(state, node, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
 			if err != nil {
-				return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+				return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 			}
 
 			reservationRestoreState := getReservationRestoreState(cycleState)
@@ -445,7 +445,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState *framework.CycleState, p
 	return nil
 }
 
-func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo *framework.NodeInfo, requestCPUBind bool) *framework.Status {
+func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.NodeInfo, requestCPUBind bool) *fwktype.Status {
 	if podRequestMilliCPU == 0 {
 		return nil
 	}
@@ -453,7 +453,7 @@ func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo *framewo
 	node := nodeInfo.Node()
 	cpuAmplificationRatio, err := extension.GetNodeResourceAmplificationRatio(node.Annotations, corev1.ResourceCPU)
 	if err != nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUAmplificationRatio)
+		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidCPUAmplificationRatio)
 	}
 	if cpuAmplificationRatio <= 1 {
 		return nil
@@ -467,25 +467,25 @@ func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo *framewo
 	// TODO: support allocate reserved cpus with amplified ratios
 	_, allocated, err := p.resourceManager.GetAvailableCPUs(node.Name, cpuset.CPUSet{})
 	if err != nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 	allocatedMilliCPU := int64(allocated.CPUs().Size() * 1000)
-	requestedMilliCPU := nodeInfo.Requested.MilliCPU
+	requestedMilliCPU := nodeInfo.GetRequested().GetMilliCPU()
 	if requestedMilliCPU >= allocatedMilliCPU && allocatedMilliCPU > 0 {
 		requestedMilliCPU = requestedMilliCPU - allocatedMilliCPU
 		requestedMilliCPU += extension.Amplify(allocatedMilliCPU, cpuAmplificationRatio)
 	}
-	if podRequestMilliCPU > nodeInfo.Allocatable.MilliCPU-requestedMilliCPU {
-		return framework.NewStatus(framework.Unschedulable, ErrInsufficientAmplifiedCPU)
+	if podRequestMilliCPU > nodeInfo.GetAllocatable().GetMilliCPU()-requestedMilliCPU {
+		return fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientAmplifiedCPU)
 	}
 	return nil
 }
 
-func (p *Plugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (p *Plugin) FilterReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeInfo fwktype.NodeInfo) *fwktype.Status {
 	return nil
 }
 
-func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *framework.Status {
+func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, nodeName string) *fwktype.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -496,11 +496,11 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState *fram
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
-		return framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	node := nodeInfo.Node()
 	if node == nil {
-		return framework.NewStatus(framework.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
 	}
 
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
@@ -519,7 +519,7 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState *fram
 
 	if requestCPUBind {
 		if !topologyOptions.CPUTopology.IsValid() {
-			return framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
+			return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidCPUTopology)
 		}
 	}
 
@@ -530,7 +530,7 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState *fram
 	affinity, _ := store.GetAffinity(nodeName)
 	resourceOptions, err := p.getResourceOptions(state, node, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 
 	// Here we want to filter if the pod can fit the reservation by this plugin, no matter the reservation is scheduled or not.
@@ -556,7 +556,7 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState *fram
 	return status
 }
 
-func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	// ReservationRestoreState is O(n) complexity of node number of the cluster.
 	// clearData clears all nodes' data in the cycleState to reduce memory cost before entering the binding cycle.
@@ -572,7 +572,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	if state.allocation == nil {
 		nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 		if err != nil {
-			return framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 		}
 		node := nodeInfo.Node()
 		topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
@@ -605,7 +605,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState *framework.CycleState, 
 	return nil
 }
 
-func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node, numaTopologyPolicy extension.NUMATopologyPolicy) *framework.Status {
+func (p *Plugin) allocate(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, node *corev1.Node, numaTopologyPolicy extension.NUMATopologyPolicy) *fwktype.Status {
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	// ReservationRestoreState is O(n) complexity of node number of the cluster.
 	// clearData clears all nodes' data in the cycleState to reduce memory cost before entering the binding cycle.
@@ -629,7 +629,7 @@ func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState,
 
 	if requestCPUBind {
 		if !topologyOptions.CPUTopology.IsValid() {
-			return framework.NewStatus(framework.Error, ErrInvalidCPUTopology)
+			return fwktype.NewStatus(fwktype.Error, ErrInvalidCPUTopology)
 		}
 	}
 
@@ -638,7 +638,7 @@ func (p *Plugin) allocate(ctx context.Context, cycleState *framework.CycleState,
 	affinity, _ := store.GetAffinity(node.Name)
 	resourceOptions, err := p.getResourceOptions(state, node, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 
 	restoreState := reservationRestoreState.getNodeState(node.Name)
@@ -668,7 +668,7 @@ func getDesignatedNUMAHints(alloc *allocation) bitmask.BitMask {
 	return bitMask
 }
 
-func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) {
+func (p *Plugin) Unreserve(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return
@@ -678,15 +678,19 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState *framework.CycleState
 	}
 }
 
-func (p *Plugin) PreBind(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+func (p *Plugin) PreBindPreFlight(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
+	return nil
+}
+
+func (p *Plugin) PreBind(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
 	return p.preBindObject(ctx, cycleState, pod, nodeName)
 }
 
-func (p *Plugin) PreBindReservation(ctx context.Context, cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+func (p *Plugin) PreBindReservation(ctx context.Context, cycleState fwktype.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *fwktype.Status {
 	return p.preBindObject(ctx, cycleState, reservation, nodeName)
 }
 
-func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleState, object metav1.Object, nodeName string) *framework.Status {
+func (p *Plugin) preBindObject(ctx context.Context, cycleState fwktype.CycleState, object metav1.Object, nodeName string) *fwktype.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -697,7 +701,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 
 	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
-		return framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	node := nodeInfo.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
@@ -709,7 +713,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 
 	if requestCPUBind {
 		if err := appendResourceSpecIfMissed(object, state, node, &topologyOptions); err != nil {
-			return framework.AsStatus(err)
+			return fwktype.AsStatus(err)
 		}
 	}
 
@@ -723,7 +727,7 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState *framework.CycleS
 		})
 	}
 	if err := extension.SetResourceStatus(object, resourceStatus); err != nil {
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 	return nil
 }
@@ -777,7 +781,7 @@ func tryAllocateFromNode(
 	resourceOptions *ResourceOptions,
 	pod *corev1.Pod,
 	node *corev1.Node,
-) (allocation *PodAllocation, status *framework.Status) {
+) (allocation *PodAllocation, status *fwktype.Status) {
 	if preFilterState != nil && preFilterState.designatedAllocation != nil {
 		resourceOptions.requiredResources = preFilterState.designatedAllocation.numaNodeResource
 		resourceOptions.preferredCPUs = preFilterState.designatedAllocation.cpuset
@@ -790,7 +794,7 @@ func tryAllocateFromNode(
 		defer func() {
 			if allocation != nil && !allocation.CPUSet.Equals(preFilterState.designatedAllocation.cpuset) {
 				allocation = nil
-				status = framework.NewStatus(framework.Unschedulable, ErrNotEnoughCPUs)
+				status = fwktype.NewStatus(fwktype.Unschedulable, ErrNotEnoughCPUs)
 			}
 		}()
 	} else {

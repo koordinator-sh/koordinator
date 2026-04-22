@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.20.0
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: podmigrationjobs.scheduling.koordinator.sh
 spec:
   group: scheduling.koordinator.sh
@@ -90,6 +90,7 @@ spec:
                     items:
                       type: string
                     type: array
+                    x-kubernetes-list-type: atomic
                   gracePeriodSeconds:
                     description: |-
                       The duration in seconds before the object should be deleted. Value must be non-negative integer.
@@ -98,6 +99,21 @@ spec:
                       Defaults to a per object value if not specified. zero means delete immediately.
                     format: int64
                     type: integer
+                  ignoreStoreReadErrorWithClusterBreakingPotential:
+                    description: |-
+                      if set to true, it will trigger an unsafe deletion of the resource in
+                      case the normal deletion flow fails with a corrupt object error.
+                      A resource is considered corrupt if it can not be retrieved from
+                      the underlying storage successfully because of a) its data can
+                      not be transformed e.g. decryption failure, or b) it fails
+                      to decode into an object.
+                      NOTE: unsafe deletion ignores finalizer constraints, skips
+                      precondition checks, and removes the object from the storage.
+                      WARNING: This may potentially break the cluster if the workload
+                      associated with the resource being unsafe-deleted relies on normal
+                      deletion flow. Use only if you REALLY know what you are doing.
+                      The default value is false, and the user must opt in to enable it
+                    type: boolean
                   kind:
                     description: |-
                       Kind is a string value representing the REST resource this object represents.

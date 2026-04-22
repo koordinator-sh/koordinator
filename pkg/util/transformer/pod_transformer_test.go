@@ -599,3 +599,63 @@ func TestTransformPod(t *testing.T) {
 		})
 	}
 }
+
+func TestTransformSchedulerName(t *testing.T) {
+	tests := []struct {
+		name              string
+		pod               *corev1.Pod
+		wantSchedulerName string
+		wantOriginalSaved bool
+		wantOriginalValue string
+	}{
+		{
+			name: "label overrides spec, saves original",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelSchedulerName: "koord-scheduler",
+					},
+				},
+				Spec: corev1.PodSpec{SchedulerName: "default-scheduler"},
+			},
+			wantSchedulerName: "koord-scheduler",
+			wantOriginalSaved: true,
+			wantOriginalValue: "default-scheduler",
+		},
+		{
+			name: "no label, no change, no annotation",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{SchedulerName: "default-scheduler"},
+			},
+			wantSchedulerName: "default-scheduler",
+			wantOriginalSaved: false,
+		},
+		{
+			name: "label same as spec, no annotation needed",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelSchedulerName: "default-scheduler",
+					},
+				},
+				Spec: corev1.PodSpec{SchedulerName: "default-scheduler"},
+			},
+			wantSchedulerName: "default-scheduler",
+			wantOriginalSaved: false,
+		},
+	}
+	transform := TransformSchedulerName()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := tt.pod.DeepCopy()
+			transform(pod)
+			assert.Equal(t, tt.wantSchedulerName, pod.Spec.SchedulerName)
+			if tt.wantOriginalSaved {
+				assert.Equal(t, tt.wantOriginalValue, pod.Annotations[apiext.AnnotationOriginalSchedulerName])
+			} else {
+				_, exists := pod.Annotations[apiext.AnnotationOriginalSchedulerName]
+				assert.False(t, exists)
+			}
+		})
+	}
+}

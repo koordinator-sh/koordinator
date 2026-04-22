@@ -19,9 +19,9 @@ package qosmanager
 import (
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	"go.uber.org/mock/gomock"
+	policyv1 "k8s.io/api/policy/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 
@@ -44,7 +44,7 @@ func TestNewResManager(t *testing.T) {
 		statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
 		metricCache := mock_metriccache.NewMockMetricCache(ctrl)
 
-		r := NewQOSManager(framework.NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, maframework.NewDefaultConfig(), policyv1beta1.SchemeGroupVersion.String())
+		r := NewQOSManager(framework.NewDefaultConfig(), scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, maframework.NewDefaultConfig(), policyv1.SchemeGroupVersion.String())
 		assert.NotNil(t, r)
 	})
 }

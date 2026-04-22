@@ -21,11 +21,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	corev1helper "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 )
 
 const (
@@ -36,80 +39,97 @@ type NominatedPodsOfTheSameJob struct {
 	UIDs sets.Set[string]
 }
 
-func (s *NominatedPodsOfTheSameJob) Clone() framework.StateData {
+func (s *NominatedPodsOfTheSameJob) Clone() fwktype.StateData {
 	return s
 }
 
-func MakeNominatedPodsOfTheSameJob(cycleState *framework.CycleState, uids []string) {
+func MakeNominatedPodsOfTheSameJob(cycleState fwktype.CycleState, uids []string) {
 	cycleState.Write(nominatedPodsOfTheSameJob, &NominatedPodsOfTheSameJob{
 		UIDs: sets.New[string](uids...),
 	})
 }
 
-func getNominatedPodsOfTheSameJob(cycleState *framework.CycleState) sets.Set[string] {
+func getNominatedPodsOfTheSameJob(cycleState fwktype.CycleState) sets.Set[string] {
 	s, err := cycleState.Read(nominatedPodsOfTheSameJob)
 	if err != nil || s == nil {
 		return nil
 	}
 	return s.(*NominatedPodsOfTheSameJob).UIDs
-
 }
 
-func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPodsIgnoreSameJob(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, info *framework.NodeInfo, podsOfSameJob sets.Set[string]) *framework.Status {
-	var status *framework.Status
+// runFilterPluginsWithNominatedPods is the unified implementation for running filter plugins
+// with nominated pods. It handles all feature gate combinations:
+//   - CrossSchedulerNomination: controls whether cross-scheduler nominated pods are included.
+//     When enabled, uses addMergedNominatedPods (native >= + cross-scheduler >).
+//     When disabled, uses addNominatedPods (native >= only).
+//   - SkipFilterWithNominatedPods: controls the number of filter passes.
+//     When enabled, runs a single pass with nominated pods (skipping the second pass without
+//     nominated pods that handles the pod affinity corner case).
+//     When disabled, runs two passes (with and without nominated pods) for conservative scheduling.
+//
+// It also excludes same-job nominated pods and includes NominatedNodeName diagnostic logging,
+// compatible with the previous runFilterPluginsWithNominatedPodsIgnoreSameJob behavior.
+func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPods(
+	ctx context.Context,
+	state fwktype.CycleState,
+	pod *corev1.Pod,
+	info fwktype.NodeInfo,
+) *fwktype.Status {
+	podsOfSameJob := getNominatedPodsOfTheSameJob(state)
+	singlePass := k8sfeature.DefaultFeatureGate.Enabled(features.SkipFilterWithNominatedPods)
 
+	var status *fwktype.Status
 	podsAdded := false
-	// We run filters twice in some cases. If the node has greater or equal priority
-	// nominated pods, we run them when those pods are added to PreFilter state and nodeInfo.
-	// If all filters succeed in this pass, we run them again when these
-	// nominated pods are not added. This second pass is necessary because some
-	// filters such as inter-pod affinity may not pass without the nominated pods.
-	// If there are no nominated pods for the node or if the first run of the
-	// filters fail, we don't run the second pass.
-	// We consider only equal or higher priority pods in the first pass, because
-	// those are the current "pod" must yield to them and not take a space opened
-	// for running them. It is ok if the current "pod" take resources freed for
-	// lower priority pods.
-	// Requiring that the new pod is schedulable in both circumstances ensures that
-	// we are making a conservative decision: filters like resources and inter-pod
-	// anti-affinity are more likely to fail when the nominated pods are treated
-	// as running, while filters like pod affinity are more likely to fail when
-	// the nominated pods are treated as not running. We can't just assume the
-	// nominated pods are running because they are not running right now and in fact,
-	// they may end up getting scheduled to a different node.
-	logger := klog.FromContext(ctx)
-	logger = klog.LoggerWithName(logger, "FilterWithNominatedPods")
-	ctx = klog.NewContext(ctx, logger)
+
 	for i := 0; i < 2; i++ {
 		stateToUse := state
 		nodeInfoToUse := info
 		var addedPods []string
+
 		if i == 0 {
+			// Pass 1: add nominated pods to nodeInfo overlay.
 			var err error
-			podsAdded, stateToUse, nodeInfoToUse, err, addedPods = addNominatedPods(ctx, ext, pod, state, info, podsOfSameJob)
+			if k8sfeature.DefaultFeatureGate.Enabled(features.CrossSchedulerNomination) && ext.crossSchedulerNominator != nil {
+				podsAdded, stateToUse, nodeInfoToUse, err, addedPods = addMergedNominatedPods(ctx, ext, pod, state, info, podsOfSameJob)
+			} else {
+				podsAdded, stateToUse, nodeInfoToUse, err, addedPods = addNominatedPods(ctx, ext, pod, state, info, podsOfSameJob)
+			}
 			if err != nil {
-				return framework.AsStatus(err)
+				return fwktype.AsStatus(err)
 			}
 		} else if !podsAdded || !status.IsSuccess() {
+			// Pass 2: only needed if pass 1 added pods AND pass 1 succeeded.
 			break
 		}
 
 		status = ext.RunFilterPlugins(ctx, stateToUse, pod, nodeInfoToUse)
-		if !status.IsSuccess() && pod.Status.NominatedNodeName == nodeInfoToUse.Node().Name && klog.V(4).Enabled() {
-			existingPods := make([]string, 0, len(nodeInfoToUse.Pods))
-			for _, podInfo := range nodeInfoToUse.Pods {
-				if len(podInfo.Pod.OwnerReferences) != 0 && podInfo.Pod.OwnerReferences[0].Kind == "DaemonSet" {
-					// Normally, the daemonset on the node does not occupy resources, so when collecting the existing Pods, the daemonset Pods are ignored to reduce the number of logs.
-					continue
-				}
-				existingPods = append(existingPods, framework.GetNamespacedName(podInfo.Pod.Namespace, podInfo.Pod.Name))
+		if !status.IsSuccess() {
+			if debugFilterFailure {
+				klog.Infof("Failed to filter for Pod %q on Node %q (pass %d), failedPlugin: %s, reason: %s",
+					klog.KObj(pod), klog.KObj(info.Node()), i, status.Plugin(), status.Message())
 			}
-			klog.V(4).Infof("Pod %s/%s is nominated to run on node %q, but failed to scheduling cause some existingPods: %+v, addedPods: %+v, status: %+v", pod.Namespace, pod.Name, nodeInfoToUse.Node().Name, existingPods, addedPods, status)
+			// NominatedNodeName diagnostic logging.
+			if pod.Status.NominatedNodeName == info.Node().Name && klog.V(4).Enabled() {
+				existingPods := make([]string, 0, len(nodeInfoToUse.GetPods()))
+				for _, podInfo := range nodeInfoToUse.GetPods() {
+					piPod := podInfo.GetPod()
+					if len(piPod.OwnerReferences) != 0 && piPod.OwnerReferences[0].Kind == "DaemonSet" {
+						continue
+					}
+					existingPods = append(existingPods, framework.GetNamespacedName(piPod.Namespace, piPod.Name))
+				}
+				klog.V(4).Infof("Pod %s/%s is nominated to run on node %q, but failed to scheduling (pass %d), existingPods: %+v, addedPods: %+v, status: %+v",
+					pod.Namespace, pod.Name, info.Node().Name, i, existingPods, addedPods, status)
+			}
 		}
-		if !status.IsSuccess() && !status.IsUnschedulable() {
+		if !status.IsSuccess() && !status.IsRejected() {
 			return status
 		}
 
+		// In single-pass mode, skip the second pass.
+		if singlePass {
+			break
+		}
 	}
 
 	return status
@@ -118,7 +138,7 @@ func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPodsIgnoreSameJob
 // addNominatedPods adds pods with equal or greater priority which are nominated
 // to run on the node. It returns 1) whether any pod was added, 2) augmented cycleState,
 // 3) augmented nodeInfo.
-func addNominatedPods(ctx context.Context, fh framework.Handle, pod *corev1.Pod, state *framework.CycleState, nodeInfo *framework.NodeInfo, podsOfSameJob sets.Set[string]) (bool, *framework.CycleState, *framework.NodeInfo, error, []string) {
+func addNominatedPods(ctx context.Context, fh fwktype.Handle, pod *corev1.Pod, state fwktype.CycleState, nodeInfo fwktype.NodeInfo, podsOfSameJob sets.Set[string]) (bool, fwktype.CycleState, fwktype.NodeInfo, error, []string) {
 	if fh == nil {
 		// This may happen only in tests.
 		return false, state, nodeInfo, nil, nil
@@ -127,26 +147,114 @@ func addNominatedPods(ctx context.Context, fh framework.Handle, pod *corev1.Pod,
 	if len(nominatedPodInfos) == 0 {
 		return false, state, nodeInfo, nil, nil
 	}
-	nodeInfoOut := nodeInfo.Clone()
+
+	nodeInfoOut := nodeInfo.Snapshot()
 	stateOut := state.Clone()
-	podsAdded := false
+	isLoggingAdded := klog.V(5).Enabled() || pod.Status.NominatedNodeName == nodeInfo.Node().Name
 	var addedPods []string
+	podsAdded := false
 
 	for _, pi := range nominatedPodInfos {
-		if corev1helper.PodPriority(pi.Pod) >= corev1helper.PodPriority(pod) && pi.Pod.UID != pod.UID && !podsOfSameJob.Has(string(pi.Pod.UID)) {
+		piPod := pi.GetPod()
+		if corev1helper.PodPriority(piPod) >= corev1helper.PodPriority(pod) &&
+			piPod.UID != pod.UID &&
+			(podsOfSameJob == nil || !podsOfSameJob.Has(string(piPod.UID))) {
 			nodeInfoOut.AddPodInfo(pi)
-			if klog.V(5).Enabled() || pod.Status.NominatedNodeName == nodeInfo.Node().Name {
-				addedPods = append(addedPods, framework.GetNamespacedName(pi.Pod.Namespace, pi.Pod.Name))
-			}
 			status := fh.RunPreFilterExtensionAddPod(ctx, stateOut, pod, pi, nodeInfoOut)
 			if !status.IsSuccess() {
 				return false, state, nodeInfo, status.AsError(), nil
 			}
 			podsAdded = true
+			if isLoggingAdded {
+				addedPods = append(addedPods, framework.GetNamespacedName(piPod.Namespace, piPod.Name))
+			}
 		}
 	}
-	if len(addedPods) > 0 {
-		klog.V(5).Infof("Added %v pods with equal or higher priority to the node %q when schedule pod %s/%s", addedPods, nodeInfo.Node().Name, pod.Namespace, pod.Name)
+
+	if podsAdded {
+		if isLoggingAdded {
+			klog.Infof("Added %v nominated responsible pods to the node %q when schedule pod %s/%s", addedPods, nodeInfo.Node().Name, pod.Namespace, pod.Name)
+		}
+		return true, stateOut, nodeInfoOut, nil, addedPods
 	}
-	return podsAdded, stateOut, nodeInfoOut, nil, addedPods
+
+	return false, state, nodeInfo, nil, nil
+}
+
+// addMergedNominatedPods adds both native and cross-scheduler nominated pods to a cloned nodeInfo.
+// For native nominated pods: uses priority >= (consistent with k8s native behavior).
+// For cross-scheduler nominated pods: uses priority > (strictly greater than, to avoid same-priority deadlock).
+func addMergedNominatedPods(
+	ctx context.Context,
+	ext *frameworkExtenderImpl,
+	pod *corev1.Pod,
+	state fwktype.CycleState,
+	nodeInfo fwktype.NodeInfo,
+	podsOfSameJob sets.Set[string],
+) (bool, fwktype.CycleState, fwktype.NodeInfo, error, []string) {
+	nodeName := nodeInfo.Node().Name
+	podPriority := corev1helper.PodPriority(pod)
+
+	// Get native nominated pods via the embedded framework handle.
+	nativeNominated := ext.Framework.NominatedPodsForNode(nodeName)
+	// Get cross-scheduler nominated pods.
+	var crossNominated []fwktype.PodInfo
+	if ext.crossSchedulerNominator != nil {
+		crossNominated = ext.crossSchedulerNominator.NominatedPodsForNode(nodeName)
+	}
+
+	if len(nativeNominated) == 0 && len(crossNominated) == 0 {
+		return false, state, nodeInfo, nil, nil
+	}
+
+	nodeInfoOut := nodeInfo.Snapshot()
+	stateOut := state.Clone()
+	isLoggingAdded := klog.V(5).Enabled() || pod.Status.NominatedNodeName == nodeInfo.Node().Name
+	var addedPods []string
+	podsAdded := false
+
+	// Add responsible nominated pods not in the same job (priority >= current pod, consistent with k8s native behavior).
+	for _, pi := range nativeNominated {
+		piPod := pi.GetPod()
+		if corev1helper.PodPriority(piPod) >= podPriority &&
+			piPod.UID != pod.UID &&
+			(podsOfSameJob == nil || !podsOfSameJob.Has(string(piPod.UID))) {
+			nodeInfoOut.AddPodInfo(pi)
+			status := ext.RunPreFilterExtensionAddPod(ctx, stateOut, pod, pi, nodeInfoOut)
+			if !status.IsSuccess() {
+				return false, state, nodeInfo, status.AsError(), nil
+			}
+			podsAdded = true
+			if isLoggingAdded {
+				addedPods = append(addedPods, framework.GetNamespacedName(piPod.Namespace, piPod.Name))
+			}
+		}
+	}
+
+	// Add cross-scheduler nominated pods not in the same job (priority > current pod, strictly greater to avoid same-priority deadlock).
+	for _, pi := range crossNominated {
+		piPod := pi.GetPod()
+		if corev1helper.PodPriority(piPod) > podPriority &&
+			piPod.UID != pod.UID &&
+			(podsOfSameJob == nil || !podsOfSameJob.Has(string(piPod.UID))) {
+			nodeInfoOut.AddPodInfo(pi)
+			status := ext.RunPreFilterExtensionAddPod(ctx, stateOut, pod, pi, nodeInfoOut)
+			if !status.IsSuccess() {
+				return false, state, nodeInfo, status.AsError(), nil
+			}
+			podsAdded = true
+			if isLoggingAdded {
+				addedPods = append(addedPods, framework.GetNamespacedName(piPod.Namespace, piPod.Name))
+			}
+		}
+	}
+
+	if podsAdded {
+		if isLoggingAdded {
+			klog.Infof("Added %v nominated responsible and cross-scheduler high-priority pods to the node %q when schedule pod %s/%s", addedPods, nodeName, pod.Namespace, pod.Name)
+		}
+		return true, stateOut, nodeInfoOut, nil, addedPods
+	}
+
+	return false, state, nodeInfo, nil, nil
 }

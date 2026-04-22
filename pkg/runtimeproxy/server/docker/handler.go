@@ -156,7 +156,7 @@ func (d *RuntimeManagerDockerServer) HandleCreateContainer(ctx context.Context, 
 	req.ContentLength = newLength
 	resp := d.Direct(wr, req)
 
-	createResp := &container.ContainerCreateCreatedBody{}
+	createResp := &container.CreateResponse{}
 	err = json.Unmarshal([]byte(resp), createResp)
 	if err != nil {
 		klog.Errorf("Failed to Unmarshal create resp,  resp: %s, err: %v", resp, err)

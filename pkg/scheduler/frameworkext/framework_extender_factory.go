@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -43,6 +44,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	koordschedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
@@ -72,6 +74,8 @@ type extendedHandleOptions struct {
 	reservationCache                    ReservationCache
 	reservationNominator                ReservationNominator
 	networkTopologyManager              networktopology.TreeManager
+	crossSchedulerNominator             *CrossSchedulerPodNominator
+	workloadAuditor                     workloadauditor.WorkloadAuditor
 }
 
 type Option func(*extendedHandleOptions)
@@ -118,6 +122,18 @@ func WithNetworkTopologyManager(manager networktopology.TreeManager) Option {
 	}
 }
 
+func WithCrossSchedulerPodNominator(nominator *CrossSchedulerPodNominator) Option {
+	return func(options *extendedHandleOptions) {
+		options.crossSchedulerNominator = nominator
+	}
+}
+
+func WithWorkloadAuditor(auditor workloadauditor.WorkloadAuditor) Option {
+	return func(options *extendedHandleOptions) {
+		options.workloadAuditor = auditor
+	}
+}
+
 // FrameworkExtenderFactory is a factory for creating a FrameworkExtender.
 // NOTE: DO NOT put framework-level data here.
 type FrameworkExtenderFactory struct {
@@ -132,10 +148,13 @@ type FrameworkExtenderFactory struct {
 	profiles                            map[string]FrameworkExtender
 	monitor                             *SchedulerMonitor
 	scheduler                           Scheduler
-	schedulePod                         func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
+	schedulePod                         func(ctx context.Context, fwk framework.Framework, state fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 	*errorHandlerDispatcher
 
 	networkTopologyTreeManager networktopology.TreeManager
+	crossSchedulerNominator    *CrossSchedulerPodNominator
+
+	workloadAuditor workloadauditor.WorkloadAuditor
 
 	metricsRecorder *metrics.MetricAsyncRecorder
 }
@@ -162,6 +181,8 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		monitor:                             NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
 		errorHandlerDispatcher:              newErrorHandlerDispatcher(),
 		networkTopologyTreeManager:          handleOptions.networkTopologyManager,
+		crossSchedulerNominator:             handleOptions.crossSchedulerNominator,
+		workloadAuditor:                     handleOptions.workloadAuditor,
 		metricsRecorder:                     metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
 	}, nil
 }
@@ -207,7 +228,7 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 		adaptor.Scheduler.SchedulePod = f.scheduleOne
 		f.CollectSchedulePodResult(adaptor.Scheduler)
 		nextPod := adaptor.Scheduler.NextPod
-		adaptor.Scheduler.NextPod = func() (*framework.QueuedPodInfo, error) {
+		adaptor.Scheduler.NextPod = func(logger klog.Logger) (*framework.QueuedPodInfo, error) {
 			podInfo, err := f.runNextPodPlugin()
 			if err != nil {
 				klog.Errorf("run next pod plugin failed, err: %v", err)
@@ -215,7 +236,7 @@ func (f *FrameworkExtenderFactory) InitScheduler(sched Scheduler) {
 			}
 			// NextPodPlugin but has no suggestion for which Pod to dequeue next and falls back to the original nextPod logic
 			if podInfo == nil {
-				podInfo, err = nextPod()
+				podInfo, err = nextPod(logger)
 				if err != nil {
 					return podInfo, err
 				}
@@ -241,7 +262,7 @@ func (f *FrameworkExtenderFactory) runNextPodPlugin() (*framework.QueuedPodInfo,
 		if pod != nil {
 			klog.Infof("run next pod plugin, pod: %s/%s", pod.Namespace, pod.Name)
 			startTime = time.Now()
-			_ = f.scheduler.GetSchedulingQueue().Delete(&corev1.Pod{
+			f.scheduler.GetSchedulingQueue().Delete(&corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					// should not delete it from nominator, so use a fake UID
 					UID:       uuid.NewUUID(),
@@ -314,10 +335,12 @@ func makePodInfoFromPod(pod *corev1.Pod) (*framework.QueuedPodInfo, error) {
 	}, nil
 }
 
-func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
 	InitDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
-
+	if f.workloadAuditor != nil {
+		f.workloadAuditor.RecordAttemptPod(pod)
+	}
 	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
 		recordScheduleDiagnosis(cycleState, err)
@@ -352,7 +375,7 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 	return scheduleResult, nil
 }
 
-func recordScheduleDiagnosis(cycleState *framework.CycleState, err error) {
+func recordScheduleDiagnosis(cycleState fwktype.CycleState, err error) {
 	var fitError *framework.FitError
 	if errors.As(err, &fitError) {
 		diagnosis := GetDiagnosis(cycleState)
@@ -363,14 +386,20 @@ func recordScheduleDiagnosis(cycleState *framework.CycleState, err error) {
 			}
 		}
 		if diagnosis.PreFilterMessage == "" && diagnosis.ScheduleDiagnosis.NodeToStatusMap == nil {
-			diagnosis.ScheduleDiagnosis.NodeToStatusMap = fitError.Diagnosis.NodeToStatusMap
+			if fitError.Diagnosis.NodeToStatus != nil {
+				nodeToStatusMap := make(map[string]*fwktype.Status)
+				fitError.Diagnosis.NodeToStatus.ForEachExplicitNode(func(nodeName string, status *fwktype.Status) {
+					nodeToStatusMap[nodeName] = status
+				})
+				diagnosis.ScheduleDiagnosis.NodeToStatusMap = nodeToStatusMap
+			}
 		}
 	}
 }
 
 func (f *FrameworkExtenderFactory) CollectSchedulePodResult(sched *scheduler.Scheduler) {
 	schedulePod := sched.SchedulePod
-	sched.SchedulePod = func(ctx context.Context, fwk framework.Framework, state *framework.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+	sched.SchedulePod = func(ctx context.Context, fwk framework.Framework, state fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
 		scheduleResult, err := schedulePod(ctx, fwk, state, pod)
 		// avoid recording metrics when there is no feasible node or internal error in scheduling
 		if scheduleResult.SuggestedHost != "" {
@@ -383,9 +412,12 @@ func (f *FrameworkExtenderFactory) CollectSchedulePodResult(sched *scheduler.Sch
 
 func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Scheduler) {
 	f.errorHandlerDispatcher.setDefaultHandler(sched.FailureHandler)
-	sched.FailureHandler = func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) {
+	sched.FailureHandler = func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) {
 		f.errorHandlerDispatcher.Error(ctx, fwk, podInfo, status, nominatingInfo, start)
 		f.monitor.Complete(podInfo.Pod, status)
+		if f.workloadAuditor != nil {
+			f.workloadAuditor.RecordPodScheduleResult(podInfo.Pod, workloadauditor.RecordTypeScheduleFailure, "")
+		}
 	}
 }
 
@@ -396,7 +428,7 @@ func (f *FrameworkExtenderFactory) Run(ctx context.Context) {
 	}
 }
 
-func (f *FrameworkExtenderFactory) updatePlugins(pl framework.Plugin, profileName string) {
+func (f *FrameworkExtenderFactory) updatePlugins(pl fwktype.Plugin, profileName string) {
 	if nextPodPlugin, ok := pl.(NextPodPlugin); ok {
 		pluginName := pl.Name()
 		if f.nextPodPlugin != nil && f.nextPodPlugin.Name() != pluginName {
@@ -416,10 +448,10 @@ func (f *FrameworkExtenderFactory) updatePlugins(pl framework.Plugin, profileNam
 
 // PluginFactoryProxy is used to proxy the call to the PluginFactory function and pass in the ExtendedHandle for the custom plugin
 func PluginFactoryProxy(extenderFactory *FrameworkExtenderFactory, factoryFn frameworkruntime.PluginFactory) frameworkruntime.PluginFactory {
-	return func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	return func(ctx context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 		fw := handle.(framework.Framework)
 		frameworkExtender := extenderFactory.NewFrameworkExtender(fw)
-		plugin, err := factoryFn(args, frameworkExtender)
+		plugin, err := factoryFn(ctx, args, frameworkExtender)
 		if err != nil {
 			return nil, err
 		}

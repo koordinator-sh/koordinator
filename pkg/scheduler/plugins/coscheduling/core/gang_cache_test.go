@@ -33,7 +33,7 @@ import (
 	fakepgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	pgformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -44,10 +44,10 @@ var fakeTimeNowFn = func() time.Time {
 }
 
 func getTestDefaultCoschedulingArgs(t *testing.T) *config.CoschedulingArgs {
-	var v1beta3args v1beta3.CoschedulingArgs
-	v1beta3.SetDefaults_CoschedulingArgs(&v1beta3args)
+	var v1args v1.CoschedulingArgs
+	v1.SetDefaults_CoschedulingArgs(&v1args)
 	var args config.CoschedulingArgs
-	err := v1beta3.Convert_v1beta3_CoschedulingArgs_To_config_CoschedulingArgs(&v1beta3args, &args, nil)
+	err := v1.Convert_v1_CoschedulingArgs_To_config_CoschedulingArgs(&v1args, &args, nil)
 	assert.NoError(t, err)
 	return &args
 }
@@ -1289,24 +1289,24 @@ func TestGetGangGroupInfo_DeleteGangGroupInfo(t *testing.T) {
 	pglister := pgInformer.Lister()
 	cache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, pglister, pgClient, nil)
 
-	gangGroupInfo := cache.getGangGroupInfo("aa", []string{"aa"}, false)
+	gangGroupInfo, _ := cache.getGangGroupInfo("aa", []string{"aa"}, false)
 	assert.True(t, gangGroupInfo == nil)
 	assert.Equal(t, 0, len(cache.gangGroupInfoMap))
 
-	gangGroupInfo = cache.getGangGroupInfo("aa", []string{"aa"}, true)
+	gangGroupInfo, _ = cache.getGangGroupInfo("aa", []string{"aa"}, true)
 	assert.True(t, gangGroupInfo != nil)
 	assert.Equal(t, gangGroupInfo.GangGroupId, "aa")
 	assert.Equal(t, gangGroupInfo.GangGroup, []string{"aa"})
 	assert.Equal(t, 1, len(cache.gangGroupInfoMap))
 
-	gangGroupInfo = cache.getGangGroupInfo("aa", []string{"aa"}, false)
+	gangGroupInfo, _ = cache.getGangGroupInfo("aa", []string{"aa"}, false)
 	assert.True(t, gangGroupInfo != nil)
 	assert.Equal(t, gangGroupInfo.GangGroupId, "aa")
 	assert.Equal(t, gangGroupInfo.GangGroup, []string{"aa"})
 	assert.Equal(t, 1, len(cache.gangGroupInfoMap))
 
 	cache.deleteGangGroupInfo("aa")
-	gangGroupInfo = cache.getGangGroupInfo("aa", []string{"aa"}, false)
+	gangGroupInfo, _ = cache.getGangGroupInfo("aa", []string{"aa"}, false)
 	assert.True(t, gangGroupInfo == nil)
 	assert.Equal(t, 0, len(cache.gangGroupInfoMap))
 }

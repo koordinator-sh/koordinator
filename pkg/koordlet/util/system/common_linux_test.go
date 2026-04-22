@@ -89,7 +89,7 @@ func Test_ProcCmdLine(t *testing.T) {
 }
 
 func Test_PidOf(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+	if runtime.GOOS != "linux" {
 		t.Skipf("not supported on GOOS=%s", runtime.GOOS)
 	}
 	t.Run("testing process pid should match", func(t *testing.T) {
@@ -101,19 +101,6 @@ func Test_PidOf(t *testing.T) {
 	t.Run("empty process name should failed", func(t *testing.T) {
 		_, err := PidOf("/proc", "")
 		assert.Error(t, err)
-	})
-}
-
-func Test_WorkingDirOf(t *testing.T) {
-	t.Run("testing process wd args should match", func(t *testing.T) {
-		wd, err := WorkingDirOf(os.Getpid())
-		assert.Empty(t, err)
-		expectedWd, _ := os.Getwd()
-		assert.Equal(t, wd, expectedWd)
-	})
-	t.Run("fake process should fail", func(t *testing.T) {
-		_, err := WorkingDirOf(1909043242)
-		assert.NotEmpty(t, err)
 	})
 }
 

@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -122,7 +123,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 		name                          string
 		stateData                     *stateData
 		enableSkipReservationFitsNode bool
-		wantStatus                    *framework.Status
+		wantStatus                    *fwktype.Status
 	}{
 		{
 			name: "filter aligned reservation with nodeInfo",
@@ -216,7 +217,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "filter restricted reservation with nodeInfo",
@@ -407,7 +408,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "failed to filter restricted reservation since exceeding max pods",
@@ -433,7 +434,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Too many pods"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Too many pods"),
 		},
 		{
 			name: "failed to filter restricted reservation since unmatched resources are insufficient",
@@ -484,7 +485,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable,
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable,
 				"Insufficient kubernetes.io/batch-cpu by node"),
 		},
 		{
@@ -586,7 +587,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter default reservations with preemption",
@@ -771,7 +772,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "failed to filter default reservations with preempt from node",
@@ -821,7 +822,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Insufficient cpu by node"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu by node"),
 		},
 		{
 			name: "filter restricted reservations with preempt from reservation",
@@ -936,7 +937,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "failed to filter multiple restricted reservations with preempt from node",
@@ -1005,7 +1006,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "failed to filter restricted reservations with preempt from reservation and node",
@@ -1064,7 +1065,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter restricted reservations with reservation name and preempt from reservation",
@@ -1252,7 +1253,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Too many pods, "+
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Too many pods, "+
 				"requested: 1, used: 2, capacity: 2"),
 		},
 		{
@@ -1288,7 +1289,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu, "+
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu, "+
 				"requested: 6000, used: 1000, capacity: 6000"),
 		},
 		{
@@ -1341,7 +1342,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 				},
 			},
 			enableSkipReservationFitsNode: true,
-			wantStatus:                    framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu"),
+			wantStatus:                    fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "skipped to filter aligned reservations with preempt from node",
@@ -1462,7 +1463,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 				},
 			},
 			enableSkipReservationFitsNode: true,
-			wantStatus:                    framework.NewStatus(framework.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
+			wantStatus:                    fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient cpu", "Reservation(s) Insufficient cpu"),
 		},
 		{
 			name: "filter nothing",
@@ -1493,7 +1494,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, ErrReasonNoReservationsMeetRequirements),
 		},
 		{
 			name: "filter nothing with enableSkipReservationFitsNode",
@@ -1525,7 +1526,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 				},
 			},
 			enableSkipReservationFitsNode: true,
-			wantStatus:                    framework.NewStatus(framework.Unschedulable, ErrReasonNoReservationsMeetRequirements),
+			wantStatus:                    fwktype.NewStatus(fwktype.Unschedulable, ErrReasonNoReservationsMeetRequirements),
 		},
 	}
 	for _, tt := range tests {
