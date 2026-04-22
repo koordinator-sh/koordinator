@@ -345,6 +345,9 @@ func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, cycleState fw
 	}
 	if gangSchedulingContext.failedMessage != "" {
 		diagnosis.IsRootCausePod = false
+		if gangSchedulingContext.suggestion != nil {
+			diagnosis.SetSuggestion(gangSchedulingContext.suggestion)
+		}
 		return fmt.Errorf("%s", gangSchedulingContext.failedMessage)
 	}
 	return nil
@@ -384,6 +387,15 @@ func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state fwktype
 	}
 
 	message := pgMgr.summaryAndRecordFailedMessage(state, pod, filteredNodeStatusMap)
+	diagnosis := frameworkext.GetDiagnosis(state)
+	if diagnosis != nil {
+		if suggestion := diagnosis.GetSuggestion(); suggestion != nil {
+			gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
+			if gangSchedulingContext != nil {
+				gangSchedulingContext.suggestion = suggestion
+			}
+		}
+	}
 	if gang.getGangMode() == extension.GangModeStrict {
 		gang.clearWaitingGang()
 		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)

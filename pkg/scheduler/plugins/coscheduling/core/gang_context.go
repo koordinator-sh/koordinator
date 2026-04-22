@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
@@ -94,6 +95,7 @@ type GangSchedulingContext struct {
 	triggerPod        *corev1.Pod
 	failedMessage     string
 	preemptionMessage string
+	suggestion        *frameworkext.ScheduleSuggestion
 
 	networkTopologySpec         *extension.NetworkTopologySpec
 	networkTopologySnapshot     *networktopology.TreeSnapshot
