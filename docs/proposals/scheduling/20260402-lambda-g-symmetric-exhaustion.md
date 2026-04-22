@@ -5,7 +5,7 @@ authors:
 reviewers:
   - TBD
 creation-date: 2026-04-02
-last-updated: 2026-04-03
+last-updated: 2026-04-22
 status: provisional
 see-also:
   - "/docs/proposals/scheduling/20220510-load-aware-scheduling.md"
@@ -86,7 +86,7 @@ In GPU clusters running mixed inference workloads, cross-dimensional fragmentati
 
 - Replacing `LoadAwareScheduling` -- the two plugins solve different problems. LoadAware controls utilization ceilings, Lambda-G optimizes balance below those ceilings.
 - Descheduler integration -- detection of existing imbalance for rebalancing is a follow-up proposal.
-- IOPS and Network metrics collection -- these dimensions default to neutral (0.5) until metrics sources are available.
+- IOPS and Network metrics collection -- these dimensions are excluded from the active vector until metrics sources are available.
 
 ## Proposal
 
@@ -113,12 +113,16 @@ The plugin implements `framework.ScorePlugin` with a single `Score` method. No P
 For each candidate node, compute five components:
 
 ```
-score = 0.6 * variance_score
-      + 0.2 * alignment_score
-      + 0.1 * headroom_score
-      - pressure_penalty
-      - strand_penalty
+raw_score = 0.6 * variance_score
+          + 0.2 * alignment_score
+          + 0.1 * headroom_score
+          - pressure_penalty
+          - strand_penalty
+
+score = clamp(raw_score, 0, framework.MaxNodeScore)
 ```
+
+The raw score is clamped to `[0, framework.MaxNodeScore]` before return. Penalties can drive the value negative (clamped to 0). The maximum raw score is 0.6*100 + 0.2*100 + 0.1*100 = 90 before penalties, which fits within MaxNodeScore (100).
 
 ##### Component 1: Post-Placement Variance Score (weight: 0.6)
 
@@ -225,7 +229,7 @@ gpuCoreFree := getExtendedResourceFree(nodeInfo, "koordinator.sh/gpu-core")
 gpuMemFree  := getExtendedResourceFree(nodeInfo, "koordinator.sh/gpu-memory")
 ```
 
-For nodes without GPU resources, both dimensions default to 0.5 (neutral), so the plugin degrades gracefully to 4D or effectively 2D (CPU, Memory) scoring.
+For nodes without GPU resources, both GPU dimensions are excluded from the active vector entirely. The plugin scores over only the currently active dimensions (CPU and Memory until IOPS/Network metrics are available), so absent dimensions do not affect variance, headroom, or cosine similarity.
 
 #### Integration Point
 
@@ -288,7 +292,7 @@ Simulation benchmark scheduling N pods onto M heterogeneous nodes across 6 resou
 | **Total Stranded Nodes** | 92 | 0 | 44 | 59 | **34** |
 | **Total Monthly Waste** | $205,249 | $0 | $144,588 | $116,304 | **$67,975** |
 
-Note: MostAllocated shows 0 stranded and $0 waste because it packs so aggressively that most pods cannot schedule at all (660 pending out of 660 total). Its zeros are an artifact of having no placed pods to strand, not evidence of good scheduling.
+Note: MostAllocated shows 0 stranded and $0 waste because it packs so aggressively that most pods cannot schedule (schedule_rate near 0% in these scenarios). Its zeros are an artifact of having no placed pods to strand, not evidence of good scheduling. The Balance Score formula already incorporates schedule_rate (0.3 * schedule_rate * 100), which is why MostAllocated scores 70.0 across all scenarios -- a floor from the schedule_rate term, not genuine balance.
 
 ##### Key Observations
 
@@ -328,7 +332,7 @@ type LambdaGSymmetricExhaustionArgs struct {
 |------|------------|
 | Scoring adds latency to scheduling cycle | Pure arithmetic on resource vectors. Benchmarked at sub-microsecond per node -- negligible vs. API calls in Filter plugins. |
 | Fixed weights may not be optimal for all clusters | Grid search over 120 combinations shows the top 10 all cluster near 0.6/0.2/0.1, suggesting the optimum is broad and stable. Weights can be made configurable later. |
-| Inactive dimensions (IOPS, Network) are placeholders | Neutral values (0.5) mean these dimensions do not affect scoring until real metrics are available. No harm, no benefit. |
+| IOPS/Network dimensions not yet active | These dimensions are excluded from the active vector until metrics sources are available. They do not affect scoring, variance, or cosine similarity. |
 | Interaction with LoadAwareScheduling | Different concerns -- LoadAware caps utilization, Lambda-G balances within those caps. Tested running both together without conflict. |
 
 ## Alternatives
@@ -399,7 +403,7 @@ Unit tests covering:
 
 Benchmark: sub-microsecond per scoring call on Apple M-series.
 
-All tests implemented in `lambda_g_test.go`.
+Tests will be implemented in `lambda_g_test.go` as part of the follow-up implementation PR.
 
 ## Implementation History
 
@@ -407,7 +411,6 @@ All tests implemented in `lambda_g_test.go`.
 - [x] 2026-04-02: Open proposal PR with V1 scoring (cosine + entropy + phi)
 - [x] 2026-04-03: Update to V3 hybrid scoring (variance + alignment)
 - [x] 2026-04-04: Community feedback: residual usability, continuous strand penalty, weight adaptation (incorporated as future phases)
-- [ ] Present proposal at community meeting
 - [ ] Present proposal at community meeting
 - [ ] Open implementation PR with plugin code and tests
 
