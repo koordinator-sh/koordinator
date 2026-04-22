@@ -18,6 +18,7 @@ package loadaware
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -182,11 +183,19 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: canonicalResourceList(limits),
 		})
 	}
-	if v, ok := pod.Annotations[extension.AnnotationCustomEstimatedScalingFactors]; ok {
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.LoadAware.customScalingFactors",
-			Value: v,
-		})
+	// Parse and re-marshal the custom scaling factors so two pods with
+	// semantically equal factors (e.g. different whitespace) share a
+	// signature. Mirror GetCustomEstimatedScalingFactors' leniency: a
+	// malformed annotation silently falls back to plugin defaults inside
+	// EstimatePod, so it must fall back to "no fragment" here too to
+	// match a no-annotation pod's signature.
+	if factors := extension.GetCustomEstimatedScalingFactors(pod); len(factors) > 0 {
+		if b, err := json.Marshal(factors); err == nil {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.LoadAware.customScalingFactors",
+				Value: string(b),
+			})
+		}
 	}
 	return fragments, nil
 }

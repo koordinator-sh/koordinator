@@ -148,20 +148,42 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Equal(t, fa, fb)
 	})
 
-	t.Run("custom estimated scaling factors annotation produces a different signature", func(t *testing.T) {
-		plain := mkPod("plain", nil)
-		withFactors := &corev1.Pod{
+	mkPodWithFactors := func(name, anno string) *corev1.Pod {
+		return &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "with-factors", Namespace: "default", UID: "with-factors",
+				Name: name, Namespace: "default", UID: types.UID(name),
 				Annotations: map[string]string{
-					apiext.AnnotationCustomEstimatedScalingFactors: `{"cpu":80}`,
+					apiext.AnnotationCustomEstimatedScalingFactors: anno,
 				},
 			},
 		}
+	}
+
+	t.Run("custom estimated scaling factors annotation produces a different signature", func(t *testing.T) {
+		plain := mkPod("plain", nil)
 		fa, _ := pl.SignPod(context.TODO(), plain)
-		fb, _ := pl.SignPod(context.TODO(), withFactors)
+		fb, _ := pl.SignPod(context.TODO(), mkPodWithFactors("with-factors", `{"cpu":80}`))
 		assert.NotEqual(t, fa, fb,
 			"custom scaling factors override EstimatePod output; different factors must not share a signature")
+	})
+
+	t.Run("custom scaling factors canonicalize across whitespace", func(t *testing.T) {
+		fa, _ := pl.SignPod(context.TODO(), mkPodWithFactors("a", `{"cpu":80}`))
+		fb, _ := pl.SignPod(context.TODO(), mkPodWithFactors("b", `{ "cpu" : 80 }`))
+		assert.Equal(t, fa, fb,
+			"semantically equal factors with different formatting must share a signature")
+	})
+
+	t.Run("malformed custom scaling factors behave like no annotation", func(t *testing.T) {
+		// GetCustomEstimatedScalingFactors silently falls back to plugin
+		// defaults on parse error, so EstimatePod output matches a
+		// no-annotation pod's; the signature must match too.
+		plain := mkPod("plain", nil)
+		bad := mkPodWithFactors("bad", "not-json")
+		fa, _ := pl.SignPod(context.TODO(), plain)
+		fb, _ := pl.SignPod(context.TODO(), bad)
+		assert.Equal(t, fa, fb,
+			"malformed scaling factors fall back to defaults in EstimatePod; the signature must follow")
 	})
 
 	t.Run("prod-priority pod differs from default-priority pod", func(t *testing.T) {
