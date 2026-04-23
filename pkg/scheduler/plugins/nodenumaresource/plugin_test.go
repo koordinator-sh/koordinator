@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	nrtfake "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
@@ -54,6 +55,7 @@ import (
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
@@ -177,9 +179,12 @@ type pluginTestSuit struct {
 	KoordClientSet       *koordfake.Clientset
 	proxyNew             runtime.PluginFactory
 	nodeNUMAResourceArgs *schedulingconfig.NodeNUMAResourceArgs
+	plugin               fwktype.Plugin
 }
 
 func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
 	var v1args v1.NodeNUMAResourceArgs
 	v1.SetDefaults_NodeNUMAResourceArgs(&v1args)
 	var nodeNUMAResourceArgs schedulingconfig.NodeNUMAResourceArgs
@@ -227,7 +232,7 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 
 	extender := extenderFactory.NewFrameworkExtender(fh)
 
-	return &pluginTestSuit{
+	suit := &pluginTestSuit{
 		Handle:               fh,
 		ExtenderFactory:      extenderFactory,
 		Extender:             extender,
@@ -236,12 +241,41 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 		proxyNew:             proxyNew,
 		nodeNUMAResourceArgs: &nodeNUMAResourceArgs,
 	}
+	// Wrap proxyNew so that the created plugin is saved for start() to access.
+	originalProxyNew := suit.proxyNew
+	suit.proxyNew = func(ctx context.Context, configuration apiruntime.Object, f fwktype.Handle) (fwktype.Plugin, error) {
+		pl, err := originalProxyNew(ctx, configuration, f)
+		if err == nil {
+			suit.plugin = pl
+		}
+		return pl, err
+	}
+	return suit
 }
 
-func (p *pluginTestSuit) start() {
-	ctx := context.TODO()
-	p.Handle.SharedInformerFactory().Start(ctx.Done())
-	p.Handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
+func (p *pluginTestSuit) start(t testing.TB) {
+	// Use a test-lifetime stop channel so informers keep delivering events for
+	// objects created/updated by the test AFTER start() returns. A stop channel
+	// bound to a short-lived context would be closed the moment start() returns
+	// and silently stop the informer watchers.
+	stopCh := make(chan struct{})
+	t.Cleanup(func() { close(stopCh) })
+	p.Handle.SharedInformerFactory().Start(stopCh)
+	p.ExtenderFactory.KoordinatorSharedInformerFactory().Start(stopCh)
+	p.Handle.SharedInformerFactory().WaitForCacheSync(stopCh)
+	p.ExtenderFactory.KoordinatorSharedInformerFactory().WaitForCacheSync(stopCh)
+	// Start the NRT informer factory if the plugin has been created.
+	if np, ok := p.plugin.(*Plugin); ok && np.nrtInformerFactory != nil {
+		np.nrtInformerFactory.Start(stopCh)
+		np.nrtInformerFactory.WaitForCacheSync(stopCh)
+	}
+	// Use a separate bounded context only for the handler-sync wait so a hang
+	// doesn't block the whole test.
+	syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := frameworkexthelper.WaitForHandlersSync(syncCtx); err != nil {
+		t.Fatalf("timed out waiting for handler registrations to sync: %v", err)
+	}
 }
 
 func TestNew(t *testing.T) {
@@ -606,7 +640,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
-			suit.start()
+			suit.start(t)
 			cycleState := framework.NewCycleState()
 
 			if tt.pod.Annotations != nil && tt.pod.Annotations[extension.AnnotationSchedulingHint] != "" {
@@ -1076,7 +1110,7 @@ func TestPlugin_Filter(t *testing.T) {
 				manager.nodeAllocations[tt.allocationState.nodeName] = tt.allocationState
 			}
 
-			suit.start()
+			suit.start(t)
 
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
@@ -1179,7 +1213,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 
 			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NoError(t, err)
-			suit.start()
+			suit.start(t)
 			pl := p.(*Plugin)
 
 			if tt.nodeHasNRT {
@@ -1687,7 +1721,7 @@ func TestPlugin_Reserve(t *testing.T) {
 			cpuManager := plg.resourceManager.(*resourceManager)
 			cpuManager.nodeAllocations[nodeAllocation.nodeName] = nodeAllocation
 
-			suit.start()
+			suit.start(t)
 
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
@@ -1810,7 +1844,7 @@ func TestPlugin_PreBind(t *testing.T) {
 	_, status := suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod, metav1.CreateOptions{})
 	assert.Nil(t, status)
 
-	suit.start()
+	suit.start(t)
 
 	plg := p.(*Plugin)
 
@@ -1857,7 +1891,7 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 	_, status := suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod, metav1.CreateOptions{})
 	assert.Nil(t, status)
 
-	suit.start()
+	suit.start(t)
 
 	plg := p.(*Plugin)
 
@@ -1911,7 +1945,7 @@ func TestPlugin_PreBindReservation(t *testing.T) {
 	_, status := suit.KoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
 	assert.Nil(t, status)
 
-	suit.start()
+	suit.start(t)
 
 	plg := p.(*Plugin)
 

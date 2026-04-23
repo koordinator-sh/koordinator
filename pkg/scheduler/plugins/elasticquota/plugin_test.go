@@ -66,6 +66,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
@@ -136,6 +137,8 @@ var (
 type PluginTestOption func(elasticQuotaArgs *config.ElasticQuotaArgs)
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pluginTestOpts ...PluginTestOption) *pluginTestSuit {
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
 	setLoglevel("5")
 	var v1args v1.ElasticQuotaArgs
 	v1.SetDefaults_ElasticQuotaArgs(&v1args)
@@ -210,6 +213,8 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pluginTestOpts ...Plu
 }
 
 func newPluginTestSuitWithPod(t *testing.T, nodes []*corev1.Node, pods []*corev1.Pod) *pluginTestSuit {
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
 	setLoglevel("5")
 	var v1args v1.ElasticQuotaArgs
 	v1.SetDefaults_ElasticQuotaArgs(&v1args)
@@ -354,13 +359,105 @@ type pluginTestSuit struct {
 	proxyNew                         runtime.PluginFactory
 	elasticQuotaArgs                 *config.ElasticQuotaArgs
 	client                           *pgfake.Clientset
+	// plugin holds a reference to the created plugin instance so that start() can
+	// discover and start any additional informer factories owned by the plugin.
+	plugin fwktype.Plugin
+}
+
+// createPlugin creates the plugin via proxyNew, stores it in s.plugin, and starts its informer
+// factories so that informer-backed listers and event handlers are operational immediately.
+//
+// Startup order matters: plugin-owned factories (e.g. scheSharedInformerFactory for quota CRD)
+// must be fully synced before pod/node informers start delivering OnAdd events, because pod
+// handlers call GetQuotaName which reads from the quota lister.
+func (s *pluginTestSuit) createPlugin(t testing.TB) fwktype.Plugin {
+	// Reset global handler registrations so WaitForHandlersSync only tracks handlers from this
+	// plugin instance (the framework may have created an internal instance during NewFramework).
+	frameworkexthelper.ResetRegistrations()
+	p, err := s.proxyNew(context.TODO(), s.elasticQuotaArgs, s.Handle)
+	if err != nil {
+		t.Fatalf("failed to create plugin: %v", err)
+	}
+	s.plugin = p
+	// Use a background stop channel so all informers remain running for the whole test.
+	stopCh := make(chan struct{})
+	t.Cleanup(func() { close(stopCh) })
+
+	syncCtx, syncCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer syncCancel()
+
+	// Step 1: start and sync plugin-owned informer factories first (e.g. quota CRD informer).
+	// This ensures the quota lister is populated before pod/node OnAdd events fire.
+	if provider, ok := p.(frameworkext.InformerFactoryProvider); ok {
+		for _, f := range provider.GetInformerFactories() {
+			f.Start(stopCh)
+			f.WaitForCacheSync(syncCtx.Done())
+		}
+	}
+
+	// Step 1b: run AfterPluginInformersSynced hooks (e.g. ElasticQuota's ReplaceQuotas)
+	// BEFORE starting pod/node informers. Otherwise the rebuild races with pod/node
+	// OnAdd handlers that read the same plugin state.
+	//
+	// This mirrors the production startup sequence in cmd/koord-scheduler/app/server.go.
+	if err := frameworkexthelper.RunAfterPluginInformersSynced(syncCtx); err != nil {
+		t.Fatalf("AfterPluginInformersSynced hook failed: %v", err)
+	}
+
+	// Step 2: start and sync the shared informer factories (pod, node, etc.).
+	s.Handle.SharedInformerFactory().Start(stopCh)
+	s.koordinatorSharedInformerFactory.Start(stopCh)
+	s.Handle.SharedInformerFactory().WaitForCacheSync(syncCtx.Done())
+	s.koordinatorSharedInformerFactory.WaitForCacheSync(syncCtx.Done())
+
+	// Step 3: wait for all handler registrations to have processed their initial list.
+	if err := frameworkexthelper.WaitForHandlersSync(syncCtx); err != nil {
+		t.Fatalf("timed out waiting for handler registrations to sync: %v", err)
+	}
+	return p
+}
+
+// start starts all informer factories and waits for caches and handler registrations to sync.
+// Call this after creating the plugin so that ForceSyncFromInformer handlers receive OnAdd events.
+// If s.plugin is set and implements InformerFactoryProvider, its extra factories are also started.
+func (s *pluginTestSuit) start(t testing.TB) {
+	// Start informer factories with a background stop channel so they remain running after start() returns.
+	stopCh := make(chan struct{})
+	t.Cleanup(func() { close(stopCh) })
+
+	s.Handle.SharedInformerFactory().Start(stopCh)
+	s.koordinatorSharedInformerFactory.Start(stopCh)
+
+	// Start plugin informer factories (e.g. scheSharedInformerFactory for ElasticQuota CRD).
+	if provider, ok := s.plugin.(frameworkext.InformerFactoryProvider); ok {
+		for _, f := range provider.GetInformerFactories() {
+			f.Start(stopCh)
+		}
+	}
+
+	// Wait for cache sync and handler sync with a bounded timeout.
+	syncCtx, syncCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer syncCancel()
+
+	s.Handle.SharedInformerFactory().WaitForCacheSync(syncCtx.Done())
+	s.koordinatorSharedInformerFactory.WaitForCacheSync(syncCtx.Done())
+
+	// WaitForCacheSync for plugin informer factories.
+	if provider, ok := s.plugin.(frameworkext.InformerFactoryProvider); ok {
+		for _, f := range provider.GetInformerFactories() {
+			f.WaitForCacheSync(syncCtx.Done())
+		}
+	}
+
+	if err := frameworkexthelper.WaitForHandlersSync(syncCtx); err != nil {
+		t.Fatalf("timed out waiting for handler registrations to sync: %v", err)
+	}
 }
 
 func TestNew(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
+	p := suit.createPlugin(t)
 	assert.NotNil(t, p)
-	assert.Nil(t, err)
 	assert.Equal(t, Name, p.Name())
 }
 
@@ -398,9 +495,7 @@ func createResourceList(cpu, mem int64) corev1.ResourceList {
 
 func TestPlugin_OnQuotaAdd(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	pl := p.(*Plugin)
+	pl := suit.createPlugin(t).(*Plugin)
 	pl.groupQuotaManager.UpdateClusterTotalResource(createResourceList(501952056, 0))
 	gqm := pl.groupQuotaManager
 	quota := suit.AddQuota("1", "", 0, 0, 0, 0, 0, 0, false, "")
@@ -474,9 +569,7 @@ func CreateQuota2(name string, parentName string, maxCpu, maxMem int64, minCpu, 
 
 func TestPlugin_OnQuotaUpdate(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 	gqm := plugin.groupQuotaManager
 	// test2 Max[96, 160]  Min[100,160] request[20,40]
 	//   `-- test2-a Max[96, 160]  Min[50,80] request[20,40]
@@ -570,9 +663,7 @@ func TestPlugin_OnQuotaUpdate(t *testing.T) {
 
 func TestPlugin_OnPodAdd_Update_Delete(t *testing.T) {
 	suit := newPluginTestSuitWithPod(t, nil, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 	gqm := plugin.groupQuotaManager
 	plugin.addQuota("test1", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "", "")
 	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "", "")
@@ -698,9 +789,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 			gp.pluginArgs.EnableRuntimeQuota = !tt.disableRuntimeQuota
 			qi := gp.groupQuotaManager.GetQuotaInfoByName(tt.quotaInfo.Name)
 			qi.Lock()
@@ -761,9 +850,7 @@ func TestPlugin_PreFilter_CheckParent(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 			gp.pluginArgs.EnableCheckParentQuota = true
 			gp.OnQuotaAdd(tt.parQuotaInfo)
 			gp.OnQuotaAdd(tt.quotaInfo)
@@ -869,8 +956,7 @@ func TestPlugin_Prefilter_QuotaNonPreempt(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, _ := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 			gp.groupQuotaManager.UpdateClusterTotalResource(tt.totalResource)
 			for _, qis := range tt.quotaInfos {
 				gp.OnQuotaAdd(qis)
@@ -913,9 +999,7 @@ func TestPlugin_Reserve(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
 			gp.OnPodAdd(pod)
 			gp.OnPodAdd(tt.pod)
@@ -950,9 +1034,7 @@ func TestPlugin_Unreserve(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 			ctx := context.TODO()
 			gp.OnPodAdd(tt.pod)
 			gp.Reserve(ctx, framework.NewCycleState(), tt.pod, "")
@@ -994,9 +1076,7 @@ func TestPlugin_AddPod(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 			pod := makePod2("test", tt.quotaInfo.CalculateInfo.Used)
 			gp.OnPodAdd(pod)
 			if tt.shouldAdd {
@@ -1045,9 +1125,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 			pod := makePod2("pod", tt.quotaInfo.CalculateInfo.Used)
 			gp.OnPodAdd(pod)
 			if tt.shouldAdd {
@@ -1256,10 +1334,7 @@ func TestPlugin_Recover(t *testing.T) {
 		suit.Handle.ClientSet().CoreV1().Pods("").Create(context.TODO(), pod, metav1.CreateOptions{})
 	}
 	time.Sleep(100 * time.Millisecond)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	pl := p.(*Plugin)
-	time.Sleep(100 * time.Millisecond)
+	pl := suit.createPlugin(t).(*Plugin)
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetRequest(), createResourceList(40, 40))
 	assert.Equal(t, pl.groupQuotaManager.GetQuotaInfoByName("test1").GetUsed(), createResourceList(40, 40))
 	assert.True(t, quotav1.IsZero(pl.groupQuotaManager.GetQuotaInfoByName(extension.DefaultQuotaName).GetRequest()))
@@ -1268,9 +1343,7 @@ func TestPlugin_Recover(t *testing.T) {
 
 func TestPlugin_migrateDefaultQuotaGroupsPod(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 	gqm := plugin.groupQuotaManager
 	plugin.addQuota("test2", extension.RootQuotaName, 96, 160, 100, 160, 96, 160, true, "", "")
 	pods := []*corev1.Pod{
@@ -1910,9 +1983,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
 
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 			gp.pluginArgs.EnableCheckParentQuota = tt.enableCheckParent
 
 			// Add quota infos - add parent quota first if it exists
@@ -1971,9 +2042,7 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 			suit := newPluginTestSuit(t, nil, func(args *config.ElasticQuotaArgs) {
 				args.EnableQueueHint = tt.enableQueueHint
 			})
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 
 			events, err := gp.EventsToRegister(context.TODO())
 			assert.NoError(t, err)
@@ -2274,9 +2343,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
 
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 			gp.pluginArgs.EnableCheckParentQuota = tt.enableCheckParent
 
 			// Add quota infos - add parent quota first if it exists
@@ -2373,9 +2440,7 @@ func TestPlugin_updateQuotaSnapshot(t *testing.T) {
 			suit := newPluginTestSuit(t, nil, func(args *config.ElasticQuotaArgs) {
 				args.EnableQueueHint = true
 			})
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			gp := p.(*Plugin)
+			gp := suit.createPlugin(t).(*Plugin)
 
 			// Setup quotas
 			quotas := tt.setupQuotas(gp)

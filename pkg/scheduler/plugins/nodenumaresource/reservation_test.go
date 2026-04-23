@@ -134,7 +134,7 @@ func TestPlugin_RestoreReservationPreAllocation(t *testing.T) {
 			assert.NotNil(t, p)
 
 			pl := p.(*Plugin)
-			suit.start()
+			suit.start(t)
 
 			// Setup CPU topology
 			pl.topologyOptionsManager.UpdateTopologyOptions("test-node", func(options *TopologyOptions) {
@@ -285,7 +285,7 @@ func TestPlugin_AllocateReservationPreAllocationFromPreAllocatablePods(t *testin
 	assert.NotNil(t, p)
 
 	pl := p.(*Plugin)
-	suit.start()
+	suit.start(t)
 
 	// Setup CPU topology: 1 NUMA node, 2 sockets, 4 cores per socket, 2 threads per core
 	// Total: 16 logical CPUs (0-15)
@@ -507,7 +507,7 @@ func TestPlugin_PreAllocationWithMultiplePreAllocatablePods(t *testing.T) {
 	assert.NotNil(t, p)
 
 	pl := p.(*Plugin)
-	suit.start()
+	suit.start(t)
 
 	// Setup CPU topology
 	pl.topologyOptionsManager.UpdateTopologyOptions("test-node", func(options *TopologyOptions) {
@@ -660,7 +660,7 @@ func TestPlugin_FilterNominateReservationPreAllocation(t *testing.T) {
 	assert.NotNil(t, p)
 
 	pl := p.(*Plugin)
-	suit.start()
+	suit.start(t)
 
 	// Setup CPU topology
 	pl.topologyOptionsManager.UpdateTopologyOptions("test-node", func(options *TopologyOptions) {
@@ -802,7 +802,7 @@ func TestPlugin_GetNominatedReusableAlloc(t *testing.T) {
 	assert.NotNil(t, p)
 
 	pl := p.(*Plugin)
-	suit.start()
+	suit.start(t)
 
 	// Setup CPU topology
 	pl.topologyOptionsManager.UpdateTopologyOptions("test-node", func(options *TopologyOptions) {

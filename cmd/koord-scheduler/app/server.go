@@ -68,6 +68,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/informer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
@@ -170,6 +171,12 @@ func runCommand(cmd *cobra.Command, opts *options.Options, registryOptions ...Op
 
 // Run executes the scheduler based on the given configuration. It only returns on error or when context is done.
 func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *scheduler.Scheduler, extenderFactory *frameworkext.FrameworkExtenderFactory, customWorkflow CustomWorkflow) error {
+	// Wrap the incoming ctx so that Run itself owns a cancel function; this lets
+	// leader-election callbacks trigger a graceful shutdown (e.g. when plugin
+	// initialization fails) by canceling the scheduler context instead of
+	// abruptly terminating via klog.Fatalf.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	logger := klog.FromContext(ctx)
 	// To help debugging, immediately log version
 	logger.Info("Starting Koordinator Scheduler version", "version", version.Get())
@@ -232,8 +239,38 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 		}
 	}
 
-	startInformersAndWaitForSync := func(ctx context.Context) {
-		// Start all informers.
+	startInformersAndWaitForSync := func(ctx context.Context) error {
+		// Startup order matters for data-race freedom: some plugins register
+		// AfterPluginInformersSynced hooks (via frameworkexthelper) that rebuild
+		// internal state from an initial-list snapshot of their private informers
+		// (e.g. ElasticQuota's ReplaceQuotas rebuilding groupQuotaManager). Those
+		// hooks must complete before the main informers (pods/nodes/etc.) start
+		// delivering events whose handlers read the same plugin state, so we
+		// sequence the pipeline as: (1) start+sync plugin informer factories,
+		// (2) run AfterPluginInformersSynced hooks, (3) start+sync main informer
+		// factories, (4) run AfterAllInformersSynced hooks.
+
+		// Step 1: start plugin informer factories registered via InformerFactoryProvider.
+		for _, f := range extenderFactory.GetPluginInformerFactories() {
+			f.Start(ctx.Done())
+		}
+		for _, f := range extenderFactory.GetPluginInformerFactories() {
+			f.WaitForCacheSync(ctx.Done())
+		}
+		// Step 2: run plugin-registered AfterPluginInformersSynced hooks. A hook
+		// failure is surfaced as a startup error so the caller can shut down
+		// gracefully (releasing the leader lease, running registered shutdown
+		// hooks) instead of abruptly terminating. A ctx cancellation (normal
+		// shutdown) is not treated as an error.
+		if err := frameworkexthelper.RunAfterPluginInformersSynced(ctx); err != nil {
+			if ctx.Err() != nil {
+				logger.Info("AfterPluginInformersSynced hooks interrupted", "err", err)
+				return nil
+			}
+			return fmt.Errorf("AfterPluginInformersSynced hook failed: %w", err)
+		}
+
+		// Step 3: start the remaining informer factories.
 		cc.InformerFactory.Start(ctx.Done())
 		// DynInformerFactory can be nil in tests.
 		if cc.DynInformerFactory != nil {
@@ -256,10 +293,30 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 			logger.Error(err, "waiting for handlers to sync")
 		}
 
+		// Wait for koordinator plugin handlers (registrations collected via
+		// ForceSyncFromInformer) to complete their initial list sync. These are
+		// not visible to sched.WaitForHandlersSync, so we check them separately.
+		if err := frameworkexthelper.WaitForHandlersSync(ctx); err != nil {
+			logger.Error(err, "waiting for koordinator handlers to sync")
+		}
+
 		logger.V(3).Info("Handlers synced")
+
+		// Step 4: run plugin-registered AfterAllInformersSynced hooks. Same
+		// error/shutdown contract as Step 2.
+		if err := frameworkexthelper.RunAfterAllInformersSynced(ctx); err != nil {
+			if ctx.Err() != nil {
+				logger.Info("AfterAllInformersSynced hooks interrupted", "err", err)
+				return nil
+			}
+			return fmt.Errorf("AfterAllInformersSynced hook failed: %w", err)
+		}
+		return nil
 	}
 	if !cc.ComponentConfig.DelayCacheUntilActive || cc.LeaderElection == nil {
-		startInformersAndWaitForSync(ctx)
+		if err := startInformersAndWaitForSync(ctx); err != nil {
+			return err
+		}
 	}
 	// If leader election is enabled, runCommand via LeaderElector until done and exit.
 	if cc.LeaderElection != nil {
@@ -268,7 +325,15 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 				close(waitingForLeader)
 				if cc.ComponentConfig.DelayCacheUntilActive {
 					logger.Info("Starting informers and waiting for sync...")
-					startInformersAndWaitForSync(ctx)
+					if err := startInformersAndWaitForSync(ctx); err != nil {
+						// Trigger graceful shutdown by canceling the outer context:
+						// the leader elector observes ctx.Done() and invokes
+						// OnStoppedLeading, which runs gracefulShutdownSecureServer
+						// and exits cleanly.
+						logger.Error(err, "Failed to initialize plugin state; releasing leader lease for graceful shutdown")
+						cancel()
+						return
+					}
 					logger.Info("Sync completed")
 				} else {
 					waitForLatestSynced(ctx, cc, sched)

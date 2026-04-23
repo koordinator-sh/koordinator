@@ -688,6 +688,7 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 
 	p, err := suit.pluginFactory()
 	assert.NoError(t, err)
+	suit.start(t)
 	pl := p.(*Plugin)
 
 	nominatedReservationCount := map[types.UID]int{}
@@ -749,6 +750,7 @@ func TestReservationsNominator(t *testing.T) {
 
 	p, err := suit.pluginFactory()
 	assert.NoError(t, err)
+	suit.start(t)
 	pl := p.(*Plugin)
 
 	nominatorImpl := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()

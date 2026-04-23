@@ -591,8 +591,21 @@ func (n *nodeDeviceCache) getAllNodeDeviceSummary() map[string]*NodeDeviceSummar
 }
 
 func (n *nodeDeviceCache) gcNodeDevice(ctx context.Context, informerFactory informers.SharedInformerFactory, period time.Duration) {
-	nodeInformer := informerFactory.Core().V1().Nodes().Informer()
-	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), informerFactory, nodeInformer, nil)
+	// Wait for all koord plugin event handlers (pod / device / reservation /
+	// node, etc.) to finish processing their initial list before starting GC.
+	// A bare cache.WaitForCacheSync(nodeInformer.HasSynced) only guarantees the
+	// underlying store is populated; it does NOT guarantee that OnAdd callbacks
+	// (which build nodeDeviceInfos) have run to completion. Without this wait
+	// the first GC tick may operate on a half-populated nodeDeviceInfos map
+	// (or, worse, see a warm nodeDeviceInfos but an empty node lister) and
+	// mistakenly evict entries that are about to be recreated.
+	// WaitForHandlersSync defers on ResourceEventHandlerRegistration.HasSynced
+	// for every registration collected by ForceSyncFromInformer, which is the
+	// same signal the scheduler's Run() waits on before accepting scheduling
+	// cycles -- effectively delaying GC until "after scheduler Run".
+	if err := frameworkexthelper.WaitForHandlersSync(ctx); err != nil {
+		return
+	}
 
 	wait.UntilWithContext(ctx, func(ctx context.Context) {
 		nodeLister := informerFactory.Core().V1().Nodes().Lister()

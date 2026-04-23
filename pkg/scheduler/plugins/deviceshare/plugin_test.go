@@ -60,6 +60,7 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
@@ -160,6 +161,7 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
+	frameworkexthelper.ResetRegistrations()
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
@@ -3228,6 +3230,14 @@ func Test_Plugin_FilterNominateReservation(t *testing.T) {
 	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
+
+	// Start the informer factory and wait for cache sync so that the Node object is
+	// visible to the node lister used by gcNodeDevice. Without this, the GC goroutine
+	// may delete the device cache entry because the node is not found in the lister.
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	suit.Framework.SharedInformerFactory().Start(stopCh)
+	suit.Framework.SharedInformerFactory().WaitForCacheSync(stopCh)
 
 	cycleState := framework.NewCycleState()
 	pod := &corev1.Pod{
