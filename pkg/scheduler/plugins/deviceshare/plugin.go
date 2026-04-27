@@ -40,6 +40,7 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
@@ -772,7 +773,7 @@ func (p *Plugin) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
 	return p.nodeDeviceCache.getAllNodeDeviceSummary()
 }
 
-func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 	args, ok := obj.(*schedulerconfig.DeviceShareArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type DeviceShareArgs, got %T", obj)
@@ -798,7 +799,16 @@ func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.
 	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
 	registerPodEventHandler(deviceCache, handle.SharedInformerFactory(), extendedHandle.KoordinatorSharedInformerFactory())
 	extendedHandle.RegisterForgetPodHandler(deviceCache.deletePod)
-	go deviceCache.gcNodeDevice(context.TODO(), handle.SharedInformerFactory(), defaultGCPeriod)
+	// Register the node informer synchronously during New so that the registration
+	// is visible to the framework's WaitForHandlersSync. If we registered it inside
+	// the gcNodeDevice goroutine, the framework might start scheduling before the
+	// handler registration is collected. Using a no-op handler because gcNodeDevice
+	// only reads from the node lister.
+	nodeInformer := handle.SharedInformerFactory().Core().V1().Nodes().Informer()
+	if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), nodeInformer, nil); err != nil {
+		return nil, err
+	}
+	go deviceCache.gcNodeDevice(ctx, handle.SharedInformerFactory(), defaultGCPeriod)
 
 	gpuSharedResourceTemplatesCache := newGPUSharedResourceTemplatesCache()
 	registerGPUSharedResourceTemplatesConfigMapEventHandler(gpuSharedResourceTemplatesCache,

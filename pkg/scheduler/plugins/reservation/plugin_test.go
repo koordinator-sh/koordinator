@@ -62,6 +62,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -156,6 +157,8 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuitWith(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node, setArgs ...func(*config.ReservationArgs)) *pluginTestSuit {
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
 	var v1args v1.ReservationArgs
 	v1.SetDefaults_ReservationArgs(&v1args)
 	var reservationArgs config.ReservationArgs
@@ -218,11 +221,24 @@ func newPluginTestSuit(t testing.TB) *pluginTestSuit {
 	return newPluginTestSuitWith(t, nil, nil)
 }
 
-func (s *pluginTestSuit) start() {
-	s.fw.SharedInformerFactory().Start(nil)
-	s.extenderFactory.KoordinatorSharedInformerFactory().Start(nil)
-	s.fw.SharedInformerFactory().WaitForCacheSync(nil)
-	s.extenderFactory.KoordinatorSharedInformerFactory().WaitForCacheSync(nil)
+func (s *pluginTestSuit) start(t testing.TB) {
+	// Use a test-lifetime stop channel so informers keep delivering events for
+	// objects created/updated by the test AFTER start() returns. A stop channel
+	// bound to a short-lived context would be closed the moment start() returns
+	// and silently stop the informer watchers.
+	stopCh := make(chan struct{})
+	t.Cleanup(func() { close(stopCh) })
+	s.fw.SharedInformerFactory().Start(stopCh)
+	s.extenderFactory.KoordinatorSharedInformerFactory().Start(stopCh)
+	s.fw.SharedInformerFactory().WaitForCacheSync(stopCh)
+	s.extenderFactory.KoordinatorSharedInformerFactory().WaitForCacheSync(stopCh)
+	// Use a separate bounded context only for the handler-sync wait so a hang
+	// doesn't block the whole test.
+	syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := frameworkexthelper.WaitForHandlersSync(syncCtx); err != nil {
+		t.Fatalf("timed out waiting for handler registrations to sync: %v", err)
+	}
 }
 
 func TestNew(t *testing.T) {
@@ -409,9 +425,9 @@ func TestPreFilter(t *testing.T) {
 			}
 
 			p, err := suit.pluginFactory()
-
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
+			suit.start(t)
 
 			reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(tt.pod)
 			assert.NoError(t, err)
@@ -959,7 +975,7 @@ func TestFilter(t *testing.T) {
 				tt.stateData.podResourceNames = quotav1.ResourceNames(tt.stateData.podRequests)
 				cycleState.Write(stateKey, tt.stateData)
 			}
-			suit.start()
+			suit.start(t)
 
 			got := pl.Filter(context.TODO(), cycleState, tt.pod, tt.nodeInfo)
 			assert.Equal(t, tt.want, got)
@@ -2511,7 +2527,7 @@ func Test_filterWithReservations(t *testing.T) {
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
 			pl.enableSkipReservationFitsNode = tt.enableSkipReservationFitsNode
-			suit.start()
+			suit.start(t)
 			cycleState := framework.NewCycleState()
 			if tt.stateData.podRequestsResources == nil {
 				tt.stateData.podRequestsResources = framework.NewResource(tt.stateData.podRequests)
@@ -3059,7 +3075,7 @@ func Test_filterWithPreAllocatablePods(t *testing.T) {
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
-			suit.start()
+			suit.start(t)
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, tt.stateData)
 			nodeInfo := framework.NewNodeInfo()
@@ -3225,7 +3241,7 @@ func TestPreFilterExtensionAddPod(t *testing.T) {
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
-			suit.start()
+			suit.start(t)
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, tt.state)
 			if tt.withR {
@@ -4314,6 +4330,7 @@ func TestReserve(t *testing.T) {
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
+			suit.start(t)
 			state := &stateData{}
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
@@ -4446,6 +4463,7 @@ func TestUnreserve(t *testing.T) {
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
+			suit.start(t)
 			state := &stateData{}
 			cycleState := framework.NewCycleState()
 			cycleState.Write(stateKey, state)
@@ -4578,7 +4596,7 @@ func TestPreBind(t *testing.T) {
 
 			pl := p.(*Plugin)
 
-			suit.start()
+			suit.start(t)
 
 			cycleState := framework.NewCycleState()
 			var assumedRInfo *frameworkext.ReservationInfo
@@ -4709,7 +4727,7 @@ func TestBind(t *testing.T) {
 			p, err := suit.pluginFactory()
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
-			suit.start()
+			suit.start(t)
 
 			if tt.fakeClient != nil {
 				pl.client = tt.fakeClient.SchedulingV1alpha1()
@@ -6097,6 +6115,7 @@ func TestPreAllocation(t *testing.T) {
 		p, err := suit.pluginFactory()
 		assert.NoError(t, err)
 		pl := p.(*Plugin)
+		suit.start(t)
 
 		reservePod := reservationutil.NewReservePod(reservation)
 		cycleState := framework.NewCycleState()
@@ -6514,7 +6533,7 @@ func testPreAllocationMode(t *testing.T, tt preAllocationTestCase, node *corev1.
 		assert.NoError(t, err)
 	}
 
-	suit.start()
+	suit.start(t)
 
 	// Wait for pre-allocatable pods to be cached
 	ctx := context.TODO()

@@ -48,6 +48,7 @@ import (
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -1049,4 +1050,71 @@ func TestNew(t *testing.T) {
 			assert.Equal(t, tt.expectedGCInterval, controller.gcInterval)
 		})
 	}
+}
+
+// TestControllerStart verifies that controller.Start() registers a pod event handler
+// via ForceSyncFromInformer and that the handler receives OnAdd events after informers start.
+func TestControllerStart(t *testing.T) {
+	// Reset registrations before the test to avoid cross-test pollution.
+	frameworkexthelper.ResetRegistrations()
+	defer frameworkexthelper.ResetRegistrations()
+
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	// Pre-create a pod assigned to a reservation so the OnAdd handler will store it in
+	// the controller's internal cache.
+	testReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  "res-uid-start-test",
+			Name: "test-reservation-start",
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationAvailable,
+		},
+	}
+	testPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "pod-uid-start-test",
+			Name:      "test-pod-start",
+			Namespace: "default",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name":"test-reservation-start","uid":"res-uid-start-test"}`,
+			},
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node",
+		},
+	}
+	_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), testReservation, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	_, err = fakeClientSet.CoreV1().Pods(testPod.Namespace).Create(context.TODO(), testPod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	// Create controller with GC and resync disabled to keep the test focused.
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet,
+		&config.ReservationArgs{DisableGarbageCollection: true, ResyncIntervalSeconds: 0})
+
+	// Start() calls ForceSyncFromInformer for the pod informer, which should add a registration.
+	controller.Start()
+
+	// After Start(), at least one registration must have been collected (the pod handler).
+	regs := frameworkexthelper.GetRegistrations()
+	assert.NotEmpty(t, regs, "expected at least one handler registration after controller.Start()")
+
+	// Wait for all registered handlers to finish their initial list sync so that
+	// OnAdd events have been delivered before we inspect controller state.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = frameworkexthelper.WaitForHandlersSync(ctx)
+	assert.NoError(t, err, "handlers did not sync within timeout")
+
+	// The pod handler's OnAdd must have stored the pod in the controller's internal cache.
+	podsOnNode := controller.getPodsOnNode("test-node")
+	assert.Len(t, podsOnNode, 1, "expected test pod to be recorded in controller cache after OnAdd")
+
+	podsOnReservation := controller.getPodsOnReservation("res-uid-start-test")
+	assert.Len(t, podsOnReservation, 1, "expected test pod to be indexed by reservation UID")
 }

@@ -227,9 +227,7 @@ func TestReplaceQuotasWithHookPlugins(t *testing.T) {
 				},
 			}
 		})
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	// prepare test quotas
 	quotas := []interface{}{
@@ -241,7 +239,7 @@ func TestReplaceQuotasWithHookPlugins(t *testing.T) {
 	// ReplaceQuotas will conflict with QuotaEventHandler. sleep 1 seconds to avoid it.
 	time.Sleep(time.Second)
 	// call ReplaceQuotas which should trigger ResetQuotasForHookPlugins
-	err = plugin.ReplaceQuotas(quotas)
+	err := plugin.ReplaceQuotas(quotas)
 	assert.Nil(t, err)
 
 	// verify hook plugins were called
@@ -277,9 +275,7 @@ func initPluginSuit(t *testing.T) (*pluginTestSuit, *Plugin) {
 				},
 			}
 		})
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 	return suit, plugin
 }
 

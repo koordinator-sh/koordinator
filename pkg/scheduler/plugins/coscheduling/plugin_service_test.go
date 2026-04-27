@@ -25,10 +25,13 @@ import (
 	fakepgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 )
 
 func newPluginTestSuitForGangAPI(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
 	var v1args v1.CoschedulingArgs
 	v1.SetDefaults_CoschedulingArgs(&v1args)
 	var gangSchedulingArgs config.CoschedulingArgs
@@ -81,8 +84,10 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 	p, err := suit.proxyNew(context.TODO(), suit.gangSchedulingArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
-	suit.start()
 	gp := p.(*Coscheduling)
+	// Assign the plugin so that suit.start() can access pgInformerFactory.
+	suit.plugin = p
+	suit.start(t)
 	gangExpected := core.GangSummary{
 		Name:                   "ganga_ns/ganga",
 		WaitTime:               time.Second * 600,

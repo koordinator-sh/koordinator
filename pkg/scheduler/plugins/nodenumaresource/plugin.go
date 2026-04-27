@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -78,13 +79,13 @@ var (
 )
 
 type Plugin struct {
-	handle          frameworkext.ExtendedHandle
-	pluginArgs      *schedulingconfig.NodeNUMAResourceArgs
-	nrtLister       topologylister.NodeResourceTopologyLister
-	scorer          *resourceAllocationScorer
-	numaScorer      *resourceAllocationScorer
-	resourceManager ResourceManager
-
+	handle                 frameworkext.ExtendedHandle
+	pluginArgs             *schedulingconfig.NodeNUMAResourceArgs
+	nrtInformerFactory     nrtinformers.SharedInformerFactory
+	nrtLister              topologylister.NodeResourceTopologyLister
+	scorer                 *resourceAllocationScorer
+	numaScorer             *resourceAllocationScorer
+	resourceManager        ResourceManager
 	topologyOptionsManager TopologyOptionsManager
 }
 
@@ -157,6 +158,7 @@ func NewWithOptions(args runtime.Object, handle fwktype.Handle, opts ...Option) 
 	return &Plugin{
 		handle:                 handle.(frameworkext.ExtendedHandle),
 		pluginArgs:             pluginArgs,
+		nrtInformerFactory:     nrtInformerFactory,
 		nrtLister:              nrtLister,
 		scorer:                 scorer,
 		numaScorer:             numaScorer,
