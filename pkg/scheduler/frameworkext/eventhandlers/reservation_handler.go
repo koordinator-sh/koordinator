@@ -446,6 +446,19 @@ func updateReservation(sched *scheduler.Scheduler, schedAdapter frameworkext.Sch
 	// Case 2: From unassigned to available (scheduling succeeded)
 	if oldActive && newAvailable {
 		addReservationToSchedulerCache(schedAdapter, newR)
+		// when a node-level reservation transitions to Available, remove the assumed fake pod
+		// from cache since it was added during the scheduling cycle.
+		if k8sfeature.DefaultFeatureGate.Enabled(features.NodeLevelReservationLightweight) &&
+			extension.IsNodeLevelReservation(newR) && newR.Status.NodeName != "" {
+			reservePod := reservationutil.NewReservePod(newR)
+			if err := schedAdapter.GetCache().RemovePod(klog.Background(), reservePod); err != nil {
+				klog.V(4).InfoS("Failed to remove assumed reserve pod from cache during Available transition (may already be removed)",
+					"reservation", klog.KObj(newR), "err", err)
+			} else {
+				klog.V(4).InfoS("Successfully removed assumed reserve pod from cache for node-level reservation",
+					"reservation", klog.KObj(newR))
+			}
+		}
 		if oldResponsible {
 			// Remove from scheduling queue since it's now scheduled
 			deleteReservationFromSchedulingQueue(sched, schedAdapter, oldR)
@@ -530,6 +543,15 @@ func addReservationToSchedulerCache(sched frameworkext.Scheduler, r *schedulingv
 	klog.V(3).InfoS("Try to add reservation into SchedulerCache", "reservation", klog.KObj(r), "reservationUID", r.UID, "node", reservationutil.GetReservationNodeName(r))
 	// update pod cache and trigger pod assigned event for scheduling queue
 	reservePod := reservationutil.NewReservePod(r)
+	// node-level reservation that is already Available should not have fake pod in cache.
+	// Resource visibility is handled by reservation cache + BeforeFilter unmatchedHold injection.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.NodeLevelReservationLightweight) &&
+		extension.IsNodeLevelReservation(r) && r.Status.NodeName != "" {
+		klog.V(4).InfoS("Skip adding node-level reservation fake pod to SchedulerCache (lightweight)",
+			"reservation", klog.KObj(r), "reservationUID", r.UID, "node", r.Status.NodeName)
+		sched.GetSchedulingQueue().AssignedPodAdded(klog.Background(), reservePod)
+		return
+	}
 	if err := sched.GetCache().AddPod(klog.Background(), reservePod); err != nil {
 		klog.ErrorS(err, "Failed to add reservation into SchedulerCache", "reservation", klog.KObj(reservePod))
 	} else {
@@ -565,6 +587,14 @@ func updateReservationInSchedulerCache(sched frameworkext.Scheduler, oldR, newR 
 	}
 	oldReservePod := reservationutil.NewReservePod(oldR)
 	newReservePod := reservationutil.NewReservePod(newR)
+	// node-level reservation fake pod is not in cache, skip UpdatePod.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.NodeLevelReservationLightweight) &&
+		extension.IsNodeLevelReservation(newR) && newR.Status.NodeName != "" {
+		klog.V(4).InfoS("Skip updating node-level reservation fake pod in SchedulerCache (lightweight)",
+			"reservation", klog.KObj(newR), "reservationUID", newR.UID)
+		sched.GetSchedulingQueue().AssignedPodUpdated(klog.Background(), oldReservePod, newReservePod, fwktype.ClusterEvent{})
+		return
+	}
 	if err := sched.GetCache().UpdatePod(klog.Background(), oldReservePod, newReservePod); err != nil {
 		klog.ErrorS(err, "Failed to update reservation into SchedulerCache", "reservation", klog.KObj(newR))
 	} else {
@@ -601,7 +631,15 @@ func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, r *schedu
 
 	reservePod := reservationutil.NewReservePod(r)
 	if _, err := sched.GetCache().GetPod(reservePod); err != nil {
-		klog.V(4).InfoS("Reservation not found in SchedulerCache, skipping deletion", "reservation", klog.KObj(r), "reservationUID", r.UID)
+		// for node-level Available reservations, fake pod is expected to not be in cache.
+		if k8sfeature.DefaultFeatureGate.Enabled(features.NodeLevelReservationLightweight) &&
+			extension.IsNodeLevelReservation(r) && r.Status.NodeName != "" {
+			klog.V(4).InfoS("Reserve pod not found in cache (expected for node-level lightweight)",
+				"reservation", klog.KObj(r), "reservationUID", r.UID)
+		} else {
+			klog.V(4).InfoS("Reservation not found in SchedulerCache, skipping deletion",
+				"reservation", klog.KObj(r), "reservationUID", r.UID)
+		}
 		return
 	}
 	// The ports allocated from the reservation by some owner pods should not be removed from the NodeInfo.

@@ -532,7 +532,22 @@ func (g *Plugin) PostFilter(ctx context.Context, state fwktype.CycleState, pod *
 		metrics.PreemptionAttempts.Inc()
 	}()
 
-	pe := preemption.NewEvaluator(Name, g.handle, g, false)
+	// Create a local handle with decorated snapshot for preemption visibility,
+	// scoped to this evaluator call to avoid global state mutation.
+	handle := g.handle
+	if extHandle, ok := g.handle.(frameworkext.ExtendedHandle); ok {
+		decorators := extHandle.GetPostFilterNodeDecorators()
+		if len(decorators) > 0 {
+			handle = frameworkext.NewPostFilterHandle(g.handle, decorators, ctx, state, pod)
+		}
+	}
+
+	pe := preemption.NewEvaluator(Name, handle, g, false)
+	// wrap PreemptPod to handle reserve pod deletion via Reservation API
+	if extHandle, ok := g.handle.(frameworkext.ExtendedHandle); ok {
+		pe.PreemptPod = frameworkext.WrapPreemptPodForReservation(
+			pe.PreemptPod, extHandle.KoordinatorClientSet())
+	}
 
 	result, status := pe.Preempt(ctx, state, pod, filteredNodeStatusMap)
 	if status.Message() != "" {

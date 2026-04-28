@@ -146,7 +146,8 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 	requiredNodeAffinity := nodeaffinity.GetRequiredNodeAffinity(pod)
 	podRequests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	// check if the node-level preRestore is required for all nodes in the BeforePreFilter
-	isNodePreRestoreRequired := isPodAllNodesPreRestoreRequired(pod)
+	// If NodeLevelReservationLightweight is enabled, we skip the preRestore since the reservations should not have any pod affinities.
+	isNodePreRestoreRequired := !pl.enableNodeLevelReservationLightweight && isPodAllNodesPreRestoreRequired(pod)
 
 	extender, _ := pl.handle.(frameworkext.FrameworkExtender)
 	if extender != nil { // global preRestore
@@ -206,23 +207,14 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 			taintsUnmatchedReasons:   map[string]int{},
 		}
 
-		status := pl.reservationCache.ForEachMatchableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *fwktype.Status) {
-			// check if the reservation matches or can be ignored by the pod
+		rInfos := pl.reservationCache.ListMatchableReservationsOnNode(nodeName)
+		for _, rInfo := range rInfos {
 			isMatchedOrIgnored := checkReservationMatchedOrIgnored(pod, rInfo, diagnosisState, node, podRequests, reservationAffinity, exactMatchReservationSpec, affinityReservationName, isReservationIgnored)
-
-			if isMatchedOrIgnored { // reservation is matched or ignored for the pod
-				matchedOrIgnored = append(matchedOrIgnored, rInfo.Clone())
-			} else if rInfo.GetAllocatedPods() > 0 { // reservation is unmatched and not ignored
-				unmatched = append(unmatched, rInfo.Clone())
+			if isMatchedOrIgnored {
+				matchedOrIgnored = append(matchedOrIgnored, rInfo)
+			} else if rInfo.GetAllocatedPods() > 0 {
+				unmatched = append(unmatched, rInfo)
 			}
-
-			return true, nil
-		})
-		if !status.IsSuccess() {
-			err = status.AsError()
-			klog.ErrorS(err, "Failed to forEach reservations on node", "pod", klog.KObj(pod), "node", nodeName)
-			errCh.SendErrorWithCancel(err, cancel)
-			return
 		}
 
 		if diagnosisState.ignored > 0 || diagnosisState.ownerMatched > 0 {
@@ -247,25 +239,49 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 			unmatched:        unmatched,
 		}
 
-		// LazyReservationRestore indicates whether to restore reserved resources for the scheduling pod lazily.
-		// If it is disabled, the reserved resources are ensured to restore in BeforePreFilter/PreFilter phase, where all
-		// nodes related to reservations will restore reserved resources and refresh node snapshots in the next cycle.
-		// If it is enabled, the reserved resources are delayed to restore in Filter phase when the pod does not specify
-		// any pod affinity/anti-affinity or topologySpreadConstraints, it can reduce resource restoration overhead
-		// especially when there are a large scale of reservations. However, it does not ensure the correctness of the
-		// existing pod affinities, so it is disabled by default.
-		if !pl.enableLazyReservationRestore {
-			_, status = restoreReservationResourcesForNode(ctx, cycleState, extender, pod, nil, nodeInfo, nodeRState, skipRestoreNodeInfo)
-			if !status.IsSuccess() {
-				err = status.AsError()
-				errCh.SendErrorWithCancel(err, cancel)
-				return
+		// Check if all reservations on this node are node-level for lightweight path
+		isNodeLevel := pl.enableNodeLevelReservationLightweight &&
+			allNodeLevelReservation(matchedOrIgnored, unmatched)
+		if isNodeLevel {
+			nodeRState.isNodeLevel = true
+			// compute unmatchedHold instead of restoring.
+			// No fake pods in cache, so no restore (RemovePod/InvalidNodeInfo) is needed.
+			// The unmatchedHold will be explicitly added in Reservation Filter.
+			nodeRState.unmatchedHold = computeUnmatchedHold(unmatched)
+			// Still run extension RestoreReservation for DeviceShare/NUMA independent caches.
+			if extender != nil {
+				_, extStatus := extender.RunReservationExtensionRestoreReservation(
+					ctx, cycleState, pod, matchedOrIgnored, unmatched, nodeInfo)
+				if !extStatus.IsSuccess() {
+					err = extStatus.AsError()
+					errCh.SendErrorWithCancel(err, cancel)
+					return
+				}
 			}
-		} else if isNodePreRestoreRequired { // the pre restoration is required in the BeforePreFilter
-			err = preRestoreReservationResourcesForNode(logger, extender, pod, nil, nodeInfo, nodeRState, skipRestoreNodeInfo)
-			if err != nil {
-				errCh.SendErrorWithCancel(err, cancel)
-				return
+			nodeRState.preRestored = true   // no restore needed, mark both phases as complete
+			nodeRState.finalRestored = true // no more restore needed
+		} else {
+			// Baseline path: restore reserved resources in BeforePreFilter or Filter.
+			// LazyReservationRestore indicates whether to restore reserved resources for the scheduling pod lazily.
+			// If it is disabled, the reserved resources are ensured to restore in BeforePreFilter/PreFilter phase, where all
+			// nodes related to reservations will restore reserved resources and refresh node snapshots in the next cycle.
+			// If it is enabled, the reserved resources are delayed to restore in Filter phase when the pod does not specify
+			// any pod affinity/anti-affinity or topologySpreadConstraints, it can reduce resource restoration overhead
+			// especially when there are a large scale of reservations. However, it does not ensure the correctness of the
+			// existing pod affinities, so it is disabled by default.
+			if !pl.enableLazyReservationRestore {
+				_, status := restoreReservationResourcesForNode(ctx, cycleState, extender, pod, nil, nodeInfo, nodeRState, skipRestoreNodeInfo)
+				if !status.IsSuccess() {
+					err = status.AsError()
+					errCh.SendErrorWithCancel(err, cancel)
+					return
+				}
+			} else if isNodePreRestoreRequired { // the pre restoration is required in the BeforePreFilter
+				err = preRestoreReservationResourcesForNode(logger, extender, pod, nil, nodeInfo, nodeRState, skipRestoreNodeInfo)
+				if err != nil {
+					errCh.SendErrorWithCancel(err, cancel)
+					return
+				}
 			}
 		}
 
@@ -939,11 +955,46 @@ func getDiagnosisTaintKey(taint *corev1.Taint) string {
 	return fmt.Sprintf("{%s: %s}", taint.Key, taint.Value)
 }
 
+// allNodeLevelReservation checks if all reservations are node-level.
+func allNodeLevelReservation(matchedOrIgnored, unmatched []*frameworkext.ReservationInfo) bool {
+	for _, rInfo := range matchedOrIgnored {
+		if !rInfo.IsNodeLevel {
+			return false
+		}
+	}
+	for _, rInfo := range unmatched {
+		if !rInfo.IsNodeLevel {
+			return false
+		}
+	}
+	return len(matchedOrIgnored) > 0 || len(unmatched) > 0
+}
+
+// computeUnmatchedHold calculates the total resources held by unmatched reservations.
+// unmatchedHold = sum(R.Allocatable - R.Allocated) for each unmatched reservation.
+// This represents the resources "reserved" by unmatched reservations that are not available
+// for scheduling pods. It is used in the node-level lightweight path.
+func computeUnmatchedHold(unmatched []*frameworkext.ReservationInfo) *framework.Resource {
+	if len(unmatched) == 0 {
+		return nil
+	}
+	hold := &framework.Resource{}
+	for _, rInfo := range unmatched {
+		// hold += max(Allocatable - Allocated, 0) per resource
+		diff := quotav1.SubtractWithNonNegativeResult(rInfo.Allocatable, rInfo.Allocated)
+		hold.Add(diff)
+	}
+	return hold
+}
+
 func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (*corev1.Pod, fwktype.NodeInfo, bool, *fwktype.Status) {
+	nodeName := nodeInfo.Node().Name
+
 	// Both the reserve pod or the normal pod should consider the nominated reserve pods.
-	nominatedReservationInfos := pl.nominator.NominatedReservePodForNode(nodeInfo.Node().Name)
+	nominatedReservationInfos := pl.nominator.NominatedReservePodForNode(nodeName)
+
 	if len(nominatedReservationInfos) == 0 {
-		return pod, nodeInfo, false, nil
+		return pod, nodeInfo, false, nil // Zero overhead fast path
 	}
 
 	if nodeInfo.Node() == nil {
@@ -951,8 +1002,10 @@ func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState fwktype.CycleStat
 		return pod, nodeInfo, false, nil
 	}
 
+	// Create snapshot only when needed
 	nodeInfoOut := nodeInfo.Snapshot()
 
+	// Existing: add nominated reserve pods.
 	for _, rInfo := range nominatedReservationInfos {
 		if schedulingcorev1.PodPriority(rInfo.Pod) >= schedulingcorev1.PodPriority(pod) && rInfo.Pod.UID != pod.UID {
 			pInfo, _ := framework.NewPodInfo(rInfo.Pod)

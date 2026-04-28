@@ -503,6 +503,26 @@ func (cache *reservationCache) ForEachMatchableReservationOnNode(nodeName string
 	return nil
 }
 
+// ListMatchableReservationsOnNode returns all matchable reservations on the node as a list.
+// Compared to ForEachMatchableReservationOnNode, this reduces lock hold time by moving
+// matching logic outside the lock.
+func (cache *reservationCache) ListMatchableReservationsOnNode(nodeName string) []*frameworkext.ReservationInfo {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	rOnNode := cache.matchableOnNode[nodeName]
+	if len(rOnNode) == 0 {
+		return nil
+	}
+	result := make([]*frameworkext.ReservationInfo, 0, len(rOnNode))
+	for uid := range rOnNode {
+		rInfo := cache.reservationInfos[uid]
+		if rInfo != nil {
+			result = append(result, rInfo.Clone())
+		}
+	}
+	return result
+}
+
 func (cache *reservationCache) ListAvailableReservationInfosOnNode(nodeName string, listAll bool) []*frameworkext.ReservationInfo {
 	var result []*frameworkext.ReservationInfo
 	if !listAll {

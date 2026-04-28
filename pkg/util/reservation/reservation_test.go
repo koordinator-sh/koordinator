@@ -1171,3 +1171,135 @@ func TestTolerateUnschedulable(t *testing.T) {
 		})
 	}
 }
+
+// TestMatchAffinity_NodeSelectorShortCircuit verifies that nodeSelector is evaluated
+// BEFORE labelSelector, so an early mismatch short-circuits and avoids unnecessary
+// labelSelector matching.
+func TestMatchAffinity_NodeSelectorShortCircuit(t *testing.T) {
+	makePodWithAffinity := func(affinity *apiext.ReservationAffinity) *corev1.Pod {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "test-pod",
+				Annotations: map[string]string{},
+			},
+		}
+		if affinity != nil {
+			_ = apiext.SetReservationAffinity(pod, affinity)
+		}
+		return pod
+	}
+
+	nodeA := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "node-a",
+			Labels: map[string]string{"zone": "a", "res-label": "v1"},
+		},
+	}
+	nodeB := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "node-b",
+			Labels: map[string]string{"zone": "b", "res-label": "v1"},
+		},
+	}
+
+	// affinity with both nodeSelector (zone=a) and labelSelector (res-label=v1)
+	affinityBoth := &apiext.ReservationAffinity{
+		RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+			ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+				{
+					MatchExpressions: []corev1.NodeSelectorRequirement{
+						{
+							Key:      "zone",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"a"},
+						},
+					},
+				},
+			},
+		},
+		ReservationSelector: map[string]string{"res-label": "v1"},
+	}
+
+	// affinity with only labelSelector (res-label=v1)
+	affinityLabelOnly := &apiext.ReservationAffinity{
+		ReservationSelector: map[string]string{"res-label": "v1"},
+	}
+
+	// affinity with only nodeSelector (zone=a)
+	affinityNodeOnly := &apiext.ReservationAffinity{
+		RequiredDuringSchedulingIgnoredDuringExecution: &apiext.ReservationAffinitySelector{
+			ReservationSelectorTerms: []corev1.NodeSelectorTerm{
+				{
+					MatchExpressions: []corev1.NodeSelectorRequirement{
+						{
+							Key:      "zone",
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"a"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name      string
+		pod       *corev1.Pod
+		node      *corev1.Node
+		wantMatch bool
+	}{
+		{
+			name:      "nodeSelector match, labelSelector match => true",
+			pod:       makePodWithAffinity(affinityBoth),
+			node:      nodeA,
+			wantMatch: true,
+		},
+		{
+			name:      "nodeSelector mismatch (short-circuit) => false",
+			pod:       makePodWithAffinity(affinityBoth),
+			node:      nodeB,
+			wantMatch: false,
+		},
+		{
+			name:      "labelSelector only, match => true",
+			pod:       makePodWithAffinity(affinityLabelOnly),
+			node:      nodeA,
+			wantMatch: true,
+		},
+		{
+			name: "labelSelector only, mismatch => false",
+			pod:  makePodWithAffinity(affinityLabelOnly),
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-x", Labels: map[string]string{"res-label": "v2"}},
+			},
+			wantMatch: false,
+		},
+		{
+			name:      "nodeSelector only, match => true",
+			pod:       makePodWithAffinity(affinityNodeOnly),
+			node:      nodeA,
+			wantMatch: true,
+		},
+		{
+			name:      "nodeSelector only, mismatch => false",
+			pod:       makePodWithAffinity(affinityNodeOnly),
+			node:      nodeB,
+			wantMatch: false,
+		},
+		{
+			name:      "no affinity => always true",
+			pod:       makePodWithAffinity(nil),
+			node:      nodeA,
+			wantMatch: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ra, err := GetRequiredReservationAffinity(tt.pod)
+			assert.NoError(t, err)
+			got := ra.MatchAffinity(tt.node)
+			assert.Equal(t, tt.wantMatch, got)
+		})
+	}
+}

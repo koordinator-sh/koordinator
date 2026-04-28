@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	fwktype "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
@@ -88,8 +89,15 @@ type nodeReservationState struct {
 	// selectedPreAllocatablePods represents the selected pre-allocated pods for the reservation.
 	selectedPreAllocatablePods []*corev1.Pod
 
+	isNodeLevel   bool // indicates node-level reservation lightweight path
 	preRestored   bool // restore in PreFilter or Filter
 	finalRestored bool // restore in Filter
+
+	// unmatchedHold is the total resources held by unmatched reservations on this node.
+	// node-level lightweight path: unmatchedHold = sum(R.Allocatable - R.Allocated) for each unmatched R.
+	// It is injected into the snapshot's Requested in BeforeFilter to make unmatched reservation
+	// resource usage visible to resource-checking plugins without requiring fake pods in the cache.
+	unmatchedHold *framework.Resource
 }
 
 type nodeDiagnosisState struct {
