@@ -1275,3 +1275,290 @@ func Test_buildGPUMinorsStr(t *testing.T) {
 		})
 	}
 }
+
+func TestHygonDCUDevicePluginAdapter_Adapt(t *testing.T) {
+	now := time.Now()
+	dpAdapterClock = fakeclock.NewFakeClock(now)
+
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "master",
+		},
+	}
+
+	type args struct {
+		object     metav1.Object
+		allocation []*apiext.DeviceAllocation
+	}
+	tests := []struct {
+		name       string
+		args       args
+		wantErr    bool
+		wantObject metav1.Object
+	}{
+		{
+			name: "single DCU device with single container",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "sample-pod-hami",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+						Labels:      map[string]string{},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name: "demo-container",
+							},
+						},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID:    "DCU-TS5V0916070401",
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("50"),
+							apiext.ResourceGPUMemory: resource.MustParse("3072Mi"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "sample-pod-hami",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationHygonDCUDevicesAllocated:  "DCU-TS5V0916070401,DCU,3072,50:0;",
+						AnnotationHygonDCUDevicesToAllocate: ";",
+						AnnotationHygonBindPhase:            "success",
+						AnnotationHygonBindTime:             strconv.FormatInt(now.Unix(), 10),
+						AnnotationHygonVgpuTime:             strconv.FormatInt(now.Unix(), 10),
+						AnnotationHygonContainerIndex:       "0,",
+						"demo-container-hygon.com/dcucores": "50",
+						"demo-container-hygon.com/dcumem":   "3072",
+						"demo-container-hygon.com/dcunum":   "1",
+					},
+					Labels: map[string]string{
+						apiext.LabelHAMIVGPUNodeName: "master",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "demo-container",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "multiple DCU devices with single container",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod-multi",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+						Labels:      map[string]string{},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name: "demo-container",
+							},
+						},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID:    "DCU-DEVICE-0",
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("30"),
+							apiext.ResourceGPUMemory: resource.MustParse("2048Mi"),
+						},
+					},
+					{
+						ID:    "DCU-DEVICE-1",
+						Minor: 1,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("30"),
+							apiext.ResourceGPUMemory: resource.MustParse("2048Mi"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod-multi",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationHygonDCUDevicesAllocated:  "DCU-DEVICE-0,DCU,2048,30:0;DCU-DEVICE-1,DCU,2048,30:0;",
+						AnnotationHygonDCUDevicesToAllocate: ";",
+						AnnotationHygonBindPhase:            "success",
+						AnnotationHygonBindTime:             strconv.FormatInt(now.Unix(), 10),
+						AnnotationHygonVgpuTime:             strconv.FormatInt(now.Unix(), 10),
+						AnnotationHygonContainerIndex:       "0,",
+						"demo-container-hygon.com/dcucores": "60",
+						"demo-container-hygon.com/dcumem":   "4096",
+						"demo-container-hygon.com/dcunum":   "2",
+					},
+					Labels: map[string]string{
+						apiext.LabelHAMIVGPUNodeName: "master",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "demo-container",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "missing gpu core resource",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod-no-core",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+						Labels:      map[string]string{},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name: "demo-container",
+							},
+						},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID:    "DCU-DEVICE-0",
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUMemory: resource.MustParse("3072Mi"),
+						},
+					},
+				},
+			},
+			wantErr: true,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod-no-core",
+					Namespace:   "default",
+					Annotations: map[string]string{},
+					Labels:      map[string]string{},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "demo-container",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "missing gpu memory resource",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod-no-mem",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+						Labels:      map[string]string{},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name: "demo-container",
+							},
+						},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID:    "DCU-DEVICE-0",
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore: resource.MustParse("50"),
+						},
+					},
+				},
+			},
+			wantErr: true,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod-no-mem",
+					Namespace:   "default",
+					Annotations: map[string]string{},
+					Labels:      map[string]string{},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "demo-container",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "empty allocation",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "test-pod-empty",
+						Namespace:   "default",
+						Annotations: map[string]string{},
+						Labels:      map[string]string{},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name: "demo-container",
+							},
+						},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod-empty",
+					Namespace:   "default",
+					Annotations: map[string]string{},
+					Labels:      map[string]string{},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "demo-container",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	adapter := &hygonDCUDevicePluginAdapter{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &DevicePluginAdaptContext{
+				Context: context.TODO(),
+				node:    testNode,
+			}
+			err := adapter.Adapt(ctx, tt.args.object, tt.args.allocation)
+			assert.Equal(t, tt.wantErr, err != nil, err)
+			assert.Equal(t, tt.wantObject, tt.args.object)
+		})
+	}
+}
