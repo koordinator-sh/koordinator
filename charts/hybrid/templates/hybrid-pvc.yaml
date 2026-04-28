@@ -1,13 +1,13 @@
-{{- if and .Values.collector.enabled .Values.persistence.enabled }}
+{{- if .Values.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: hybrid-output-pvc
+  name: hybrid-pvc
   namespace: {{ .Values.namespace.name }}
   labels:
     app.kubernetes.io/name: {{ include "hybrid.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: collector
+    app.kubernetes.io/component: agent
 spec:
   accessModes:
     {{- toYaml .Values.persistence.accessModes | nindent 4 }}

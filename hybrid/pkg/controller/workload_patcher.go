@@ -8,25 +8,22 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-
-	"hybrid/pkg/predictor"
 )
 
-// workloadPatcher abstracts the Get + merge + Update cycle for one workload kind.
-// To add support for a new kind: implement this interface and add one entry to
-// NewWorkloadPatcherRegistry. No other files change.
+// workloadPatcher abstracts annotation patching for one workload kind.
+// To add a new kind: implement this interface, add one entry to NewWorkloadPatcherRegistry.
 type workloadPatcher interface {
 	Patch(ctx context.Context, namespace, name string, annotations map[string]string) error
 }
 
 // WorkloadPatcherRegistry maps workload Kind → its patcher.
-// It also holds the kubernetes client so controllers can call Client()
-// when they need the client for other purposes (e.g. pod owner resolution).
 type WorkloadPatcherRegistry struct {
 	patchers map[string]workloadPatcher
 	client   kubernetes.Interface
@@ -56,33 +53,32 @@ func (r WorkloadPatcherRegistry) Get(kind string) (workloadPatcher, bool) {
 // Client returns the shared kubernetes client.
 func (r WorkloadPatcherRegistry) Client() kubernetes.Interface { return r.client }
 
-// needsAnnotationUpdate returns true when any non-timestamp annotation key differs.
-func needsAnnotationUpdate(existing, desired map[string]string) bool {
-	if existing == nil {
-		return true
-	}
-	for k, v := range desired {
-		if k == predictor.AnnotationTimestamp {
-			continue // timestamp always changes; don't treat it as a diff signal
-		}
-		if existing[k] != v {
-			return true
-		}
-	}
-	return false
+// annotationPatch is the minimal JSON structure sent as a MergePatch body.
+type annotationPatch struct {
+	Metadata struct {
+		Annotations map[string]string `json:"annotations"`
+	} `json:"metadata"`
 }
 
-func mergeAnnotations(dst, src map[string]string) {
-	for k, v := range src {
-		dst[k] = v
+// mergePatch is the single shared implementation used by every patcher.
+// patchFn should call the appropriate typed client Patch method.
+func mergePatch(
+	ctx context.Context,
+	kind, ns, name string,
+	annotations map[string]string,
+	patchFn func(ctx context.Context, ns, name string, data []byte) error,
+) error {
+	var p annotationPatch
+	p.Metadata.Annotations = annotations
+	data, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("build merge patch for %s %s/%s: %w", kind, ns, name, err)
 	}
-}
-
-func patchErr(kind, ns, name string, err error) error {
-	if err == nil {
-		return nil
+	if err := patchFn(ctx, ns, name, data); err != nil {
+		return fmt.Errorf("patch %s %s/%s: %w", kind, ns, name, err)
 	}
-	return fmt.Errorf("patch %s %s/%s: %w", kind, ns, name, err)
+	klog.V(5).InfoS("Annotation patch applied", "kind", kind, "namespace", ns, "name", name)
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -92,20 +88,11 @@ func patchErr(kind, ns, name string, err error) error {
 type deploymentPatcher struct{ client kubernetes.Interface }
 
 func (p *deploymentPatcher) Patch(ctx context.Context, ns, name string, ann map[string]string) error {
-	obj, err := p.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	if !needsAnnotationUpdate(obj.Annotations, ann) {
-		klog.V(5).InfoS("Deployment annotations up-to-date", "namespace", ns, "name", name)
-		return nil
-	}
-	if obj.Annotations == nil {
-		obj.Annotations = make(map[string]string)
-	}
-	mergeAnnotations(obj.Annotations, ann)
-	_, err = p.client.AppsV1().Deployments(ns).Update(ctx, obj, metav1.UpdateOptions{})
-	return patchErr("Deployment", ns, name, err)
+	return mergePatch(ctx, "Deployment", ns, name, ann,
+		func(ctx context.Context, ns, name string, data []byte) error {
+			_, err := p.client.AppsV1().Deployments(ns).Patch(ctx, name, types.MergePatchType, data, metav1.PatchOptions{})
+			return err
+		})
 }
 
 // ---------------------------------------------------------------------------
@@ -115,19 +102,11 @@ func (p *deploymentPatcher) Patch(ctx context.Context, ns, name string, ann map[
 type statefulSetPatcher struct{ client kubernetes.Interface }
 
 func (p *statefulSetPatcher) Patch(ctx context.Context, ns, name string, ann map[string]string) error {
-	obj, err := p.client.AppsV1().StatefulSets(ns).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	if !needsAnnotationUpdate(obj.Annotations, ann) {
-		return nil
-	}
-	if obj.Annotations == nil {
-		obj.Annotations = make(map[string]string)
-	}
-	mergeAnnotations(obj.Annotations, ann)
-	_, err = p.client.AppsV1().StatefulSets(ns).Update(ctx, obj, metav1.UpdateOptions{})
-	return patchErr("StatefulSet", ns, name, err)
+	return mergePatch(ctx, "StatefulSet", ns, name, ann,
+		func(ctx context.Context, ns, name string, data []byte) error {
+			_, err := p.client.AppsV1().StatefulSets(ns).Patch(ctx, name, types.MergePatchType, data, metav1.PatchOptions{})
+			return err
+		})
 }
 
 // ---------------------------------------------------------------------------
@@ -137,19 +116,11 @@ func (p *statefulSetPatcher) Patch(ctx context.Context, ns, name string, ann map
 type daemonSetPatcher struct{ client kubernetes.Interface }
 
 func (p *daemonSetPatcher) Patch(ctx context.Context, ns, name string, ann map[string]string) error {
-	obj, err := p.client.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	if !needsAnnotationUpdate(obj.Annotations, ann) {
-		return nil
-	}
-	if obj.Annotations == nil {
-		obj.Annotations = make(map[string]string)
-	}
-	mergeAnnotations(obj.Annotations, ann)
-	_, err = p.client.AppsV1().DaemonSets(ns).Update(ctx, obj, metav1.UpdateOptions{})
-	return patchErr("DaemonSet", ns, name, err)
+	return mergePatch(ctx, "DaemonSet", ns, name, ann,
+		func(ctx context.Context, ns, name string, data []byte) error {
+			_, err := p.client.AppsV1().DaemonSets(ns).Patch(ctx, name, types.MergePatchType, data, metav1.PatchOptions{})
+			return err
+		})
 }
 
 // ---------------------------------------------------------------------------
@@ -159,19 +130,11 @@ func (p *daemonSetPatcher) Patch(ctx context.Context, ns, name string, ann map[s
 type replicaSetPatcher struct{ client kubernetes.Interface }
 
 func (p *replicaSetPatcher) Patch(ctx context.Context, ns, name string, ann map[string]string) error {
-	obj, err := p.client.AppsV1().ReplicaSets(ns).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	if !needsAnnotationUpdate(obj.Annotations, ann) {
-		return nil
-	}
-	if obj.Annotations == nil {
-		obj.Annotations = make(map[string]string)
-	}
-	mergeAnnotations(obj.Annotations, ann)
-	_, err = p.client.AppsV1().ReplicaSets(ns).Update(ctx, obj, metav1.UpdateOptions{})
-	return patchErr("ReplicaSet", ns, name, err)
+	return mergePatch(ctx, "ReplicaSet", ns, name, ann,
+		func(ctx context.Context, ns, name string, data []byte) error {
+			_, err := p.client.AppsV1().ReplicaSets(ns).Patch(ctx, name, types.MergePatchType, data, metav1.PatchOptions{})
+			return err
+		})
 }
 
 // ---------------------------------------------------------------------------
@@ -181,19 +144,11 @@ func (p *replicaSetPatcher) Patch(ctx context.Context, ns, name string, ann map[
 type jobPatcher struct{ client kubernetes.Interface }
 
 func (p *jobPatcher) Patch(ctx context.Context, ns, name string, ann map[string]string) error {
-	obj, err := p.client.BatchV1().Jobs(ns).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	if !needsAnnotationUpdate(obj.Annotations, ann) {
-		return nil
-	}
-	if obj.Annotations == nil {
-		obj.Annotations = make(map[string]string)
-	}
-	mergeAnnotations(obj.Annotations, ann)
-	_, err = p.client.BatchV1().Jobs(ns).Update(ctx, obj, metav1.UpdateOptions{})
-	return patchErr("Job", ns, name, err)
+	return mergePatch(ctx, "Job", ns, name, ann,
+		func(ctx context.Context, ns, name string, data []byte) error {
+			_, err := p.client.BatchV1().Jobs(ns).Patch(ctx, name, types.MergePatchType, data, metav1.PatchOptions{})
+			return err
+		})
 }
 
 // ---------------------------------------------------------------------------
@@ -203,17 +158,9 @@ func (p *jobPatcher) Patch(ctx context.Context, ns, name string, ann map[string]
 type cronJobPatcher struct{ client kubernetes.Interface }
 
 func (p *cronJobPatcher) Patch(ctx context.Context, ns, name string, ann map[string]string) error {
-	obj, err := p.client.BatchV1().CronJobs(ns).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	if !needsAnnotationUpdate(obj.Annotations, ann) {
-		return nil
-	}
-	if obj.Annotations == nil {
-		obj.Annotations = make(map[string]string)
-	}
-	mergeAnnotations(obj.Annotations, ann)
-	_, err = p.client.BatchV1().CronJobs(ns).Update(ctx, obj, metav1.UpdateOptions{})
-	return patchErr("CronJob", ns, name, err)
+	return mergePatch(ctx, "CronJob", ns, name, ann,
+		func(ctx context.Context, ns, name string, data []byte) error {
+			_, err := p.client.BatchV1().CronJobs(ns).Patch(ctx, name, types.MergePatchType, data, metav1.PatchOptions{})
+			return err
+		})
 }

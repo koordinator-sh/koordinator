@@ -9,7 +9,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"hybrid/pkg/controller/options"
 	"sort"
 	"time"
 
@@ -17,7 +16,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
+	"hybrid/pkg/controller/options"
 	"hybrid/pkg/predictor"
+	"hybrid/pkg/simple/algorithm"
 )
 
 // Controller is the interface every controller must implement to participate in the Manager lifecycle.
@@ -70,14 +71,16 @@ func (r Registry) Keys() []string {
 
 // Manager owns shared dependencies and drives the controller lifecycle.
 // It intentionally does NOT embed controller-runtime Manager to keep the
-// dependency surface minimal — hybrid-manager uses a simple polling model,
+// dependency surface minimal — manager uses a simple polling model,
 // not an event-driven reconcile loop.
 type Manager struct {
 	Client            kubernetes.Interface
-	DownloadService   *predictor.Service
+	DownloadService   *predictor.DownloadService
+	FetchService      *predictor.FetchService
 	SyncInterval      time.Duration
 	ExcludeNamespaces sets.Set[string]
 	OutputDir         string
+	Notifier          *algorithm.Notifier
 	ctx               context.Context
 	cancel            context.CancelFunc
 }
@@ -87,9 +90,11 @@ func NewManager(opts options.ManagerOptions) *Manager {
 	return &Manager{
 		Client:            opts.Client,
 		DownloadService:   opts.DownloadService,
+		FetchService:      opts.FetchService,
 		SyncInterval:      opts.SyncInterval,
 		ExcludeNamespaces: sets.New[string](opts.ExcludeNamespaces...),
 		OutputDir:         opts.OutputDir,
+		Notifier:          opts.Notifier,
 		ctx:               opts.Context,
 		cancel:            opts.Cancel,
 	}

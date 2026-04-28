@@ -13,29 +13,24 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
-	"time"
 
-	"github.com/spf13/pflag"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/util/homedir"
-	"k8s.io/klog/v2"
-
-	"hybrid/pkg/client"
+	config "hybrid/config/collector"
+	"hybrid/pkg/collector"
 	"hybrid/pkg/constants"
 	"hybrid/pkg/controller"
 	"hybrid/pkg/controller/options"
 	"hybrid/pkg/predictor"
+	"hybrid/pkg/simple/algorithm"
+	"hybrid/pkg/simple/kubernetes"
+
+	"github.com/spf13/pflag"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/homedir"
 )
 
-// HybridManagerOptions holds all configuration for hybrid-manager.
-// Fields are populated from flags and environment variables.
-type HybridManagerOptions struct {
-	// Kubeconfig is the path to the kubeconfig file.
-	// Empty string means in-cluster config.
-	Kubeconfig string
-
-	// SyncInterval controls how often classifications are synced to workload annotations.
-	SyncInterval time.Duration
+type AgentOptions struct {
+	// Config is the path for config file. If empty, uses default locations.
+	Config string
 
 	// AIServer is the base URL of the AI prediction service.
 	// Loaded from AI_SERVER env variable.
@@ -44,6 +39,10 @@ type HybridManagerOptions struct {
 	// AIToken is the auth token for the AI prediction service.
 	// Loaded from AI_TOKEN env variable.
 	AIToken string
+
+	// Kubeconfig is the path to the kubeconfig file.
+	// Empty string means in-cluster config.
+	Kubeconfig string
 
 	// ExcludeNamespaces is a list of namespaces whose workloads should never
 	// have prediction annotations written to them.
@@ -54,11 +53,9 @@ type HybridManagerOptions struct {
 	OutputDir string
 }
 
-// NewHybridManagerOptions returns Options with default values applied.
-func NewHybridManagerOptions() *HybridManagerOptions {
-	opts := &HybridManagerOptions{
-		SyncInterval: constants.DefaultSyncInterval,
-		OutputDir:    constants.DefaultOutputDir,
+func NewAgentOptions() *AgentOptions {
+	opts := &AgentOptions{
+		OutputDir: constants.DefaultOutputDir,
 	}
 
 	if home := homedir.HomeDir(); home != "" {
@@ -68,13 +65,12 @@ func NewHybridManagerOptions() *HybridManagerOptions {
 	return opts
 }
 
-// AddFlags binds flags to the option fields.
-func (o *HybridManagerOptions) AddFlags(fs *pflag.FlagSet) {
+func (o *AgentOptions) AddFlags(fs *pflag.FlagSet) {
+	fs.StringVar(&o.Config, "config", o.Config,
+		"The path of the configuration file.")
+
 	fs.StringVar(&o.Kubeconfig, "kubeconfig", o.Kubeconfig,
 		"Path to the kubeconfig file. Leave empty to use in-cluster config.")
-
-	fs.DurationVar(&o.SyncInterval, "sync-interval", o.SyncInterval,
-		"Interval for syncing predictions to workload annotations.")
 
 	fs.StringArrayVar(&o.ExcludeNamespaces, "exclude-namespaces", o.ExcludeNamespaces,
 		"Namespaces to skip when syncing annotations (e.g. --exclude-namespaces=kube-system --exclude-namespaces=koordinator-system).")
@@ -83,8 +79,7 @@ func (o *HybridManagerOptions) AddFlags(fs *pflag.FlagSet) {
 		"Directory to store downloaded prediction CSV files.")
 }
 
-// Validate checks that all required configuration is present.
-func (o *HybridManagerOptions) Validate() error {
+func (o *AgentOptions) Validate() error {
 	// Read secrets from environment (not flags, to avoid leaking in process list)
 	o.AIServer = os.Getenv("AI_SERVER")
 	o.AIToken = os.Getenv("AI_TOKEN")
@@ -95,40 +90,71 @@ func (o *HybridManagerOptions) Validate() error {
 	if o.AIToken == "" {
 		return fmt.Errorf("environment variable AI_TOKEN is required")
 	}
-	if o.SyncInterval <= 0 {
-		return fmt.Errorf("--sync-interval must be positive, got %v", o.SyncInterval)
-	}
 
 	return nil
 }
 
-func (o *HybridManagerOptions) MergeDefaultExcludeNamespaces() *HybridManagerOptions {
+func (o *AgentOptions) MergeDefaultExcludeNamespaces() *AgentOptions {
 	o.ExcludeNamespaces = sets.List(
 		sets.New[string](o.ExcludeNamespaces...).Insert(constants.DefaultExcludeNamespaces...))
 	return o
 }
 
-// NewControllerManager wires all dependencies and returns a ready-to-run Manager.
-func (o *HybridManagerOptions) NewControllerManager() (*controller.Manager, error) {
-	k8sClient, err := client.NewKubernetesClient(o.Kubeconfig)
+type Agent struct {
+	Context    context.Context
+	AlgoClient *algorithm.Client
+	Collector  *collector.Collector
+	Manager    *controller.Manager
+}
+
+func (o *AgentOptions) NewAgent() (*Agent, error) {
+	// load config for collector
+	cfg, err := config.LoadConfig(o.Config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	k8sClient, err := kubernetes.NewKubernetesClient(o.Kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build kubernetes client: %w", err)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
-	downloadService := predictor.NewDownloadService(o.AIServer, o.AIToken, o.OutputDir)
+	algoClient := algorithm.NewClient(algorithm.WithURL(o.AIServer), algorithm.WithToken(o.AIToken))
 
-	mgr := controller.NewManager(options.ManagerOptions{
+	// Notifier: Watcher 写入模型运行任务通知消息, 控制器 Subscribe 负责读取
+	notifier := algorithm.NewNotifier()
+
+	// Watcher: 异步轮询任务状态, 成功后调用 notifier.notify
+	watcher := algorithm.NewWatcher(algoClient, notifier)
+
+	downloadService := predictor.NewDownloadService(algoClient, o.OutputDir)
+
+	fetchService := predictor.NewFetchService(algoClient)
+
+	hybridManager := controller.NewManager(options.ManagerOptions{
 		Client:            k8sClient,
 		DownloadService:   downloadService,
-		SyncInterval:      o.SyncInterval,
+		FetchService:      fetchService,
 		ExcludeNamespaces: o.ExcludeNamespaces,
 		OutputDir:         o.OutputDir,
+		Notifier:          notifier,
 		Context:           ctx,
 		Cancel:            cancel,
 	})
 
-	klog.InfoS("Controller manager created", "syncInterval", o.SyncInterval, "outputDir", o.OutputDir)
-	return mgr, nil
+	hybridCollector, err := collector.NewCollector(ctx, cfg, algoClient, watcher)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build collector: %w", err)
+	}
+
+	agent := &Agent{
+		Context:    ctx,
+		AlgoClient: algoClient,
+		Collector:  hybridCollector,
+		Manager:    hybridManager,
+	}
+
+	return agent, nil
 }

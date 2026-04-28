@@ -11,34 +11,35 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"k8s.io/klog/v2"
 )
 
-// ParsePredictionFile reads the CSV at filePath and returns a map keyed by
+// ParseClassifyFile reads the CSV at filePath and returns a map keyed by
 // "<namespace>/<inferred-workload-name>".
 //
 // Deduplication strategy: the first pod record seen for a given workload wins.
 // This is intentional — all pods of the same workload share one PredictedType.
-func ParsePredictionFile(filePath string) (map[string]PodRecord, error) {
+func ParseClassifyFile(filePath string) (map[string]PodRecord, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("open prediction file %q: %w", filePath, err)
+		return nil, fmt.Errorf("open classify file %q: %w", filePath, err)
 	}
 	defer f.Close()
-	return parsePredictionCSV(f)
+	return parseClassifyCSV(f)
 }
 
-func parsePredictionCSV(r io.Reader) (map[string]PodRecord, error) {
+func parseClassifyCSV(r io.Reader) (map[string]PodRecord, error) {
 	cr := csv.NewReader(r)
 
 	// Consume the header row (pod,namespace,cluster,pod_type,…)
 	header, err := cr.Read()
 	if err != nil {
-		return nil, fmt.Errorf("read CSV header: %w", err)
+		return nil, fmt.Errorf("read classify CSV header: %w", err)
 	}
-	klog.V(5).InfoS("CSV header", "columns", header)
+	klog.V(5).InfoS("Classify CSV header", "columns", header)
 
 	records := make(map[string]PodRecord)
 	lineNum := 1
@@ -58,10 +59,13 @@ func parsePredictionCSV(r io.Reader) (map[string]PodRecord, error) {
 			continue
 		}
 
+		cluster, _ := strconv.Atoi(strings.TrimSpace(row[2]))
 		rec := PodRecord{
-			Name:          strings.TrimSpace(row[0]),
-			Namespace:     strings.TrimSpace(row[1]),
-			Cluster:       strings.TrimSpace(row[2]),
+			Record: Record{
+				Name:      strings.TrimSpace(row[0]),
+				Namespace: strings.TrimSpace(row[1]),
+				Cluster:   cluster,
+			},
 			PredictedType: strings.TrimSpace(row[3]),
 		}
 

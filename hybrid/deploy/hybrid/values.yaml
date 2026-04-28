@@ -6,18 +6,16 @@ namespace:
   name: hybrid-system
 
 # Hybrid Manager configuration
-manager:
-  enabled: true
+agent:
   image:
-    repository: hybrid-system/hybrid-manager
-    tag: v1.0
+    repository: hybrid-system/hybrid-agent
+    tag: v1.1
     pullPolicy: IfNotPresent
   replicas: 1
-  syncInterval: 5m
   resources:
     limits:
       cpu: 500m
-      memory: 1024Mi
+      memory: 2048Mi
     requests:
       cpu: 200m
       memory: 512Mi
@@ -31,15 +29,7 @@ manager:
   extraArgs:
     - "--exclude-namespaces=hybrid-system"
 
-# Hybrid Collector configuration
-collector:
-  enabled: true
-  image:
-    repository: hybrid-system/hybrid-collector
-    tag: v1.0
-    pullPolicy: IfNotPresent
-  replicas: 1
-  exportInterval: 2h
+config:
   prometheus:
     url: http://localhost:9090
     timeout: 30s
@@ -52,59 +42,102 @@ collector:
     mode: local
     outputDir: /data/hybrid-output
     format: timestamp
+    exportInterval: 2h
   queries:
-    cpuUsage:
-      query: container_cpu_usage_seconds_total{__name__!=""}
-      range: 24h
-      step: 3m
-    memoryUsage:
-      query: container_memory_usage_bytes{__name__!=""}
-      range: 24h
-      step: 3m
-    memoryLimit:
-      query: container_spec_memory_limit_bytes{__name__!=""}
-      range: 24h
-      step: 3m
-    fsReads:
-      query: container_fs_reads_bytes_total{__name__!=""}
-      range: 24h
-      step: 3m
-    fsWrites:
-      query: container_fs_writes_bytes_total{__name__!=""}
-      range: 24h
-      step: 3m
-    networkReceive:
-      query: container_network_receive_bytes_total{__name__!=""}
-      range: 24h
-      step: 3m
-    networkTransmit:
-      query: container_network_transmit_bytes_total{__name__!=""}
-      range: 24h
-      step: 3m
-    psiCollector:
-      query: koordlet_container_psi{__name__!=""}
-      range: 24h
-      step: 3m
-    cpiCollector:
-      query: koordlet_container_cpi{__name__!=""}
-      range: 24h
-      step: 3m
-  resources:
-    limits:
-      cpu: 500m
-      memory: 1024Mi
-    requests:
-      cpu: 200m
-      memory: 512Mi
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 1000
-    allowPrivilegeEscalation: false
-    capabilities:
-      drop:
-        - ALL
+    # CPU 指标
+    - name: "cpu_usage"
+      query: 'container_cpu_usage_seconds_total{__name__!=""}'
+      range: "24h"                  # 查询时间范围
+      step: "3m"                    # 数据点间隔
 
-# Persistent volume claim for collector output
+    - name: "cpu_quota"
+      query: 'container_spec_cpu_quota{__name__!=""}'
+      range: "24h"                  # 查询时间范围
+      step: "3m"
+
+    - name: "cpu_period"
+      query: 'container_spec_cpu_period{__name__!=""}'
+      range: "24h"                  # 查询时间范围
+      step: "3m"
+
+    # 内存指标
+    - name: "memory_usage"
+      query: 'container_memory_usage_bytes{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    - name: "memory_limit"
+      query: 'container_spec_memory_limit_bytes{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    # IO 指标
+    - name: "fs_reads"
+      query: 'container_fs_reads_bytes_total{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    - name: "fs_writes"
+      query: 'container_fs_writes_bytes_total{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    - name: "fs_io_time"
+      query: 'container_fs_io_time_seconds_total{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    # 网络指标
+    - name: "network_receive"
+      query: 'container_network_receive_bytes_total{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    - name: "network_transmit"
+      query: 'container_network_transmit_bytes_total{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    - name: "psi_collector"
+      query: 'koordlet_container_psi{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    - name: "cpi_collector"
+      query: 'koordlet_container_cpi{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    # 节点 CPU 指标
+    - name: "node_cpu_usage"
+      query: 'node_cpu_seconds_total{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    # 节点内存总量
+    - name: "node_memory_total"
+      query: 'node_memory_MemTotal_bytes{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    # 节点内存可用量
+    - name: "node_memory_available"
+      query: 'node_memory_MemAvailable_bytes{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    # 节点 IO 指标
+    - name: "node_disk_reads"
+      query: 'node_disk_read_bytes_total{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+    - name: "node_disk_writes"
+      query: 'node_disk_written_bytes_total{__name__!=""}'
+      range: "24h"
+      step: "3m"
+
+# Persistent volume claim
 persistence:
   enabled: true
   accessModes:
@@ -121,7 +154,7 @@ aiCredentials:
 # Service account configuration
 serviceAccount:
   create: true
-  name: hybrid-manager
+  name: hybrid-agent
 
 # RBAC configuration
 rbac:

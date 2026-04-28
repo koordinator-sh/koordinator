@@ -18,3 +18,10 @@ data:
         "enable": true
       }
     }
+  cpu-burst-config: |
+    {
+      "clusterStrategy": {
+        "policy": "auto",
+        "cpuBurstPercent": 200,
+      }
+    }
