@@ -124,7 +124,7 @@ func (m *topologyManager) accumulateProvidersHints(ctx context.Context, cycleSta
 			continue
 		}
 		providersHints = append(providersHints, hints)
-		klog.V(4).Infof("TopologyHints for pod '%v' by provider %T: %+v on node: %v, status: %s/%s", klog.KObj(pod), provider, hints, node, status.Code(), status.Message())
+		klog.V(4).Infof("TopologyHints for pod '%v' by provider %T: %+v on node: %v, status: %s/%s", klog.KObj(pod), provider, hints, node.Name, status.Code(), status.Message())
 	}
 	return providersHints, reasons
 }
