@@ -32,6 +32,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
@@ -753,4 +754,142 @@ func TestOrderedScoreFuncs(t *testing.T) {
 	// OrderedScoreFuncs should always return nil
 	result := pl.preemptionMgr.OrderedScoreFuncs(context.TODO(), nil)
 	assert.Nil(t, result)
+}
+
+func TestDecorateNodeForPostFilter(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+
+	// node-level reservation
+	nodeLevelR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "node-level-r",
+			Labels: map[string]string{
+				apiext.LabelReservationLevel: apiext.ReservationLevelNode,
+			},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: ptr.To[bool](false),
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "tenant"}}},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("16"),
+								corev1.ResourceMemory: resource.MustParse("32Gi"),
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+	nodeLevelR.Status = schedulingv1alpha1.ReservationStatus{
+		Phase:    schedulingv1alpha1.ReservationAvailable,
+		NodeName: node.Name,
+		Allocatable: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("16"),
+			corev1.ResourceMemory: resource.MustParse("32Gi"),
+		},
+	}
+
+	// non-node-level reservation
+	nonNodeLevelR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "non-node-level-r",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: ptr.To[bool](false),
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "other"}}},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("4"),
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+	nonNodeLevelR.Status = schedulingv1alpha1.ReservationStatus{
+		Phase:    schedulingv1alpha1.ReservationAvailable,
+		NodeName: node.Name,
+		Allocatable: corev1.ResourceList{
+			corev1.ResourceCPU: resource.MustParse("4"),
+		},
+	}
+
+	t.Run("feature gate OFF: no-op", func(t *testing.T) {
+		suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node}, func(args *config.ReservationArgs) {
+			args.EnablePreemption = true
+		})
+		p, err := suit.pluginFactory()
+		assert.NoError(t, err)
+		pl := p.(*Plugin)
+		pl.enableNodeLevelReservationLightweight = false
+		pl.reservationCache.updateReservation(nodeLevelR)
+
+		nodeInfo := framework.NewNodeInfo()
+		nodeInfo.SetNode(node)
+		podCountBefore := len(nodeInfo.Pods)
+
+		err = pl.DecorateNodeForPostFilter(context.Background(), nil, nil, nodeInfo)
+		assert.NoError(t, err)
+		assert.Equal(t, podCountBefore, len(nodeInfo.Pods), "no pods should be added when FG is off")
+	})
+
+	t.Run("feature gate ON with node-level reservation: injects reserve pod", func(t *testing.T) {
+		suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node}, func(args *config.ReservationArgs) {
+			args.EnablePreemption = true
+		})
+		p, err := suit.pluginFactory()
+		assert.NoError(t, err)
+		pl := p.(*Plugin)
+		pl.enableNodeLevelReservationLightweight = true
+		pl.reservationCache.updateReservation(nodeLevelR)
+
+		nodeInfo := framework.NewNodeInfo()
+		nodeInfo.SetNode(node)
+
+		err = pl.DecorateNodeForPostFilter(context.Background(), nil, nil, nodeInfo)
+		assert.NoError(t, err)
+		// Should have the reserve pod injected
+		assert.Equal(t, 1, len(nodeInfo.Pods), "reserve pod should be injected for node-level reservation")
+	})
+
+	t.Run("feature gate ON with non-node-level reservation: skips", func(t *testing.T) {
+		suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node}, func(args *config.ReservationArgs) {
+			args.EnablePreemption = true
+		})
+		p, err := suit.pluginFactory()
+		assert.NoError(t, err)
+		pl := p.(*Plugin)
+		pl.enableNodeLevelReservationLightweight = true
+		pl.reservationCache.updateReservation(nonNodeLevelR)
+
+		nodeInfo := framework.NewNodeInfo()
+		nodeInfo.SetNode(node)
+		podCountBefore := len(nodeInfo.Pods)
+
+		err = pl.DecorateNodeForPostFilter(context.Background(), nil, nil, nodeInfo)
+		assert.NoError(t, err)
+		assert.Equal(t, podCountBefore, len(nodeInfo.Pods), "non-node-level reservations should not be injected")
+	})
 }

@@ -134,6 +134,13 @@ const (
 	// resource overcommitment caused by scheduling pods based on a stale cache from the
 	// previous leader's final moments.
 	SyncBarrier featuregate.Feature = "SyncBarrier"
+
+	// owner: @saintube
+	// alpha: v1.9
+	//
+	// NodeLevelReservationLightweight skips expensive nodeInfo restore for node-level reservations
+	// to eliminate per-cycle restore overhead and preserve snapshot incremental updates.
+	NodeLevelReservationLightweight featuregate.Feature = "NodeLevelReservationLightweight"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -162,6 +169,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},
 	SyncBarrier:                               {Default: false, PreRelease: featuregate.Alpha},
 	CrossSchedulerNomination:                  {Default: false, PreRelease: featuregate.Alpha},
+	NodeLevelReservationLightweight:           {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {

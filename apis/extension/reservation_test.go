@@ -258,3 +258,66 @@ func TestExactMatchReservation(t *testing.T) {
 		})
 	}
 }
+
+func TestIsNodeLevelReservation(t *testing.T) {
+	tests := []struct {
+		name string
+		obj  metav1.Object
+		want bool
+	}{
+		{
+			name: "nil object",
+			obj:  nil,
+			want: false,
+		},
+		{
+			name: "object with no labels",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+				},
+			},
+			want: false,
+		},
+		{
+			name: "object with empty labels",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-pod",
+					Labels: map[string]string{},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "object with wrong label value",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Labels: map[string]string{
+						LabelReservationLevel: "cluster",
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "object with node-level label",
+			obj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+					Labels: map[string]string{
+						LabelReservationLevel: ReservationLevelNode,
+					},
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsNodeLevelReservation(tt.obj)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

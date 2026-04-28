@@ -25,6 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,6 +41,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
+	"k8s.io/kubernetes/pkg/scheduler/framework/preemption"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
@@ -2310,4 +2312,286 @@ func buildCrossSchedulerExtenderAndNodeInfo(t *testing.T, node *corev1.Node, cro
 	extender := extenderFactory.NewFrameworkExtender(fh)
 	extender.SetConfiguredPlugins(fh.ListPlugins())
 	return extender, nodeInfo
+}
+
+// --- PostFilter snapshot test helpers ---
+
+type pfTestHandle struct {
+	fwktype.Handle
+	snapshot fwktype.SharedLister
+}
+
+func (h *pfTestHandle) SnapshotSharedLister() fwktype.SharedLister {
+	return h.snapshot
+}
+
+type pfTestSharedLister struct {
+	nodeInfos   []fwktype.NodeInfo
+	nodeInfoMap map[string]fwktype.NodeInfo
+}
+
+func (l *pfTestSharedLister) NodeInfos() fwktype.NodeInfoLister {
+	return &pfTestNodeInfoLister{parent: l}
+}
+
+func (l *pfTestSharedLister) StorageInfos() fwktype.StorageInfoLister {
+	return nil
+}
+
+type pfTestNodeInfoLister struct {
+	parent *pfTestSharedLister
+}
+
+func (nl *pfTestNodeInfoLister) List() ([]fwktype.NodeInfo, error) {
+	return nl.parent.nodeInfos, nil
+}
+
+func (nl *pfTestNodeInfoLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) {
+	return nil, nil
+}
+
+func (nl *pfTestNodeInfoLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
+	return nil, nil
+}
+
+func (nl *pfTestNodeInfoLister) Get(nodeName string) (fwktype.NodeInfo, error) {
+	ni, ok := nl.parent.nodeInfoMap[nodeName]
+	if !ok {
+		return nil, fmt.Errorf("node %s not found", nodeName)
+	}
+	return ni, nil
+}
+
+func pfMakeNodeInfo(name string, cpuAlloc int64) fwktype.NodeInfo {
+	ni := framework.NewNodeInfo()
+	ni.SetNode(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(cpuAlloc, resource.DecimalSI),
+			},
+		},
+	})
+	return ni
+}
+
+type pfTestPodInjector struct {
+	pod *corev1.Pod
+}
+
+func (d *pfTestPodInjector) DecorateNodeForPostFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) error {
+	podInfo, _ := framework.NewPodInfo(d.pod)
+	nodeInfo.AddPodInfo(podInfo)
+	return nil
+}
+
+type pfTestFailingDecorator struct{}
+
+func (d *pfTestFailingDecorator) DecorateNodeForPostFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) error {
+	return fmt.Errorf("decorator failed")
+}
+
+// --- PostFilter snapshot tests ---
+
+func TestNewPostFilterHandle_NoDecorators(t *testing.T) {
+	innerHandle := &pfTestHandle{}
+	result := NewPostFilterHandle(innerHandle, nil, context.Background(), nil, nil)
+	assert.Equal(t, innerHandle, result, "should return original handle when no decorators")
+}
+
+func TestNewPostFilterHandle_WithDecorators(t *testing.T) {
+	ni := pfMakeNodeInfo("node-1", 32000)
+	sl := &pfTestSharedLister{
+		nodeInfos:   []fwktype.NodeInfo{ni},
+		nodeInfoMap: map[string]fwktype.NodeInfo{"node-1": ni},
+	}
+	innerHandle := &pfTestHandle{snapshot: sl}
+
+	injector := &pfTestPodInjector{
+		pod: &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "injected-pod"},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+						},
+					}},
+				},
+			},
+		},
+	}
+
+	result := NewPostFilterHandle(innerHandle, []PostFilterNodeDecorator{injector}, context.Background(), nil, nil)
+	assert.NotEqual(t, innerHandle, result, "should return a different handle when decorators exist")
+
+	decoratedSnapshot := result.SnapshotSharedLister()
+	assert.NotNil(t, decoratedSnapshot)
+
+	nodeInfos, err := decoratedSnapshot.NodeInfos().List()
+	assert.NoError(t, err)
+	assert.Len(t, nodeInfos, 1)
+
+	decoratedNode := nodeInfos[0]
+	originalPodCount := len(ni.(*framework.NodeInfo).Pods)
+	decoratedPodCount := len(decoratedNode.(*framework.NodeInfo).Pods)
+	assert.Greater(t, decoratedPodCount, originalPodCount, "decorated nodeInfo should have more pods than original")
+}
+
+func TestPostFilterDecoratedSnapshot_GetDecoratesNode(t *testing.T) {
+	ni := pfMakeNodeInfo("node-1", 32000)
+	sl := &pfTestSharedLister{
+		nodeInfos:   []fwktype.NodeInfo{ni},
+		nodeInfoMap: map[string]fwktype.NodeInfo{"node-1": ni},
+	}
+	innerHandle := &pfTestHandle{snapshot: sl}
+
+	injector := &pfTestPodInjector{
+		pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "injected-pod"}},
+	}
+
+	result := NewPostFilterHandle(innerHandle, []PostFilterNodeDecorator{injector}, context.Background(), nil, nil)
+
+	decoratedNode, err := result.SnapshotSharedLister().NodeInfos().Get("node-1")
+	assert.NoError(t, err)
+	assert.NotNil(t, decoratedNode)
+
+	originalPods := len(ni.(*framework.NodeInfo).Pods)
+	decoratedPods := len(decoratedNode.(*framework.NodeInfo).Pods)
+	assert.Equal(t, 0, originalPods, "original nodeInfo should not be mutated")
+	assert.Equal(t, 1, decoratedPods, "decorated nodeInfo should have the injected pod")
+}
+
+func TestPostFilterDecoratedSnapshot_DecoratorError(t *testing.T) {
+	ni := pfMakeNodeInfo("node-1", 32000)
+	sl := &pfTestSharedLister{
+		nodeInfos:   []fwktype.NodeInfo{ni},
+		nodeInfoMap: map[string]fwktype.NodeInfo{"node-1": ni},
+	}
+	innerHandle := &pfTestHandle{snapshot: sl}
+
+	result := NewPostFilterHandle(innerHandle, []PostFilterNodeDecorator{&pfTestFailingDecorator{}}, context.Background(), nil, nil)
+
+	_, err := result.SnapshotSharedLister().NodeInfos().List()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "decorator failed")
+
+	_, err = result.SnapshotSharedLister().NodeInfos().Get("node-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "decorator failed")
+}
+
+func TestPostFilterDecoratedSnapshot_StorageInfosPassthrough(t *testing.T) {
+	sl := &pfTestSharedLister{}
+	innerHandle := &pfTestHandle{snapshot: sl}
+
+	injector := &pfTestPodInjector{pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p"}}}
+	result := NewPostFilterHandle(innerHandle, []PostFilterNodeDecorator{injector}, context.Background(), nil, nil)
+
+	decoratedSnapshot := result.SnapshotSharedLister()
+	assert.Nil(t, decoratedSnapshot.StorageInfos(), "StorageInfos should pass through to inner")
+}
+
+// --- WrapPreemptPodForReservation tests ---
+
+func TestWrapPreemptPodForReservation(t *testing.T) {
+	defaultPreemptCalled := false
+	defaultPreemptPod := func(ctx context.Context, c preemption.Candidate, preemptor, victim *corev1.Pod, pluginName string) error {
+		defaultPreemptCalled = true
+		return nil
+	}
+
+	koordClient := koordfake.NewSimpleClientset()
+
+	testReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-reservation"},
+	}
+	_, err := koordClient.SchedulingV1alpha1().Reservations().Create(context.Background(), testReservation, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	wrapped := WrapPreemptPodForReservation(defaultPreemptPod, koordClient)
+
+	reservePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-1", Namespace: "default",
+			Annotations: map[string]string{
+				"scheduling.koordinator.sh/reserve-pod":      "true",
+				"scheduling.koordinator.sh/reservation-name": "test-reservation",
+			},
+		},
+	}
+	preemptorPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "preemptor", Namespace: "default"},
+	}
+
+	t.Run("reserve pod victim: delete reservation via API", func(t *testing.T) {
+		defaultPreemptCalled = false
+		err := wrapped(context.Background(), nil, preemptorPod, reservePod, "test-plugin")
+		assert.NoError(t, err)
+		assert.False(t, defaultPreemptCalled, "default PreemptPod should NOT be called for reserve pod")
+
+		_, getErr := koordClient.SchedulingV1alpha1().Reservations().Get(context.Background(), "test-reservation", metav1.GetOptions{})
+		assert.True(t, apierrors.IsNotFound(getErr), "reservation should be deleted")
+	})
+
+	t.Run("normal pod victim: delegate to default PreemptPod", func(t *testing.T) {
+		defaultPreemptCalled = false
+		normalPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "normal-victim", Namespace: "default"},
+		}
+		err := wrapped(context.Background(), nil, preemptorPod, normalPod, "test-plugin")
+		assert.NoError(t, err)
+		assert.True(t, defaultPreemptCalled, "default PreemptPod should be called for normal pod")
+	})
+
+	t.Run("reserve pod with empty reservation name: return error", func(t *testing.T) {
+		badReservePod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "bad-reserve-pod",
+				Annotations: map[string]string{
+					"scheduling.koordinator.sh/reserve-pod": "true",
+				},
+			},
+		}
+		err := wrapped(context.Background(), nil, preemptorPod, badReservePod, "test-plugin")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get reservation name")
+	})
+
+	t.Run("reserve pod with already-deleted reservation: no error", func(t *testing.T) {
+		r2 := &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: "already-deleted-r"},
+		}
+		_, err := koordClient.SchedulingV1alpha1().Reservations().Create(context.Background(), r2, metav1.CreateOptions{})
+		assert.NoError(t, err)
+		err = koordClient.SchedulingV1alpha1().Reservations().Delete(context.Background(), "already-deleted-r", metav1.DeleteOptions{})
+		assert.NoError(t, err)
+
+		reservePod2 := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "reserve-pod-2",
+				Annotations: map[string]string{
+					"scheduling.koordinator.sh/reserve-pod":      "true",
+					"scheduling.koordinator.sh/reservation-name": "already-deleted-r",
+				},
+			},
+		}
+		err = wrapped(context.Background(), nil, preemptorPod, reservePod2, "test-plugin")
+		assert.NoError(t, err, "should not error when reservation is already deleted (NotFound)")
+	})
+
+	t.Run("default PreemptPod error propagated for normal pod", func(t *testing.T) {
+		errWrapped := WrapPreemptPodForReservation(
+			func(ctx context.Context, c preemption.Candidate, preemptor, victim *corev1.Pod, pluginName string) error {
+				return fmt.Errorf("preempt failed")
+			},
+			koordClient,
+		)
+		normalPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "normal-victim-2", Namespace: "default"},
+		}
+		err := errWrapped(context.Background(), nil, preemptorPod, normalPod, "test-plugin")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "preempt failed")
+	})
 }
