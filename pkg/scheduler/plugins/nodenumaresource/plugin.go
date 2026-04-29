@@ -361,6 +361,9 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 		return nil
 	}
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	podNUMATopologyPolicy := state.podNUMATopologyPolicy
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
@@ -453,6 +456,9 @@ func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.
 	}
 
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	cpuAmplificationRatio, err := extension.GetNodeResourceAmplificationRatio(node.Annotations, corev1.ResourceCPU)
 	if err != nil {
 		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidCPUAmplificationRatio)
@@ -577,6 +583,9 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 		}
 		node := nodeInfo.Node()
+		if node == nil {
+			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+		}
 		topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 		podNUMATopologyPolicy := state.podNUMATopologyPolicy
 		numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
@@ -706,6 +715,9 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState fwktype.CycleStat
 		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+	}
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
