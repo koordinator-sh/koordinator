@@ -342,6 +342,35 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 		skipRestoreNodeInfo = hintState.SkipRestoreNodeInfo
 	}
 
+	// Detect resize: if this pod is a fake resize pod, we need to subtract
+	// the owner pods' resources from NodeInfo on the pinned node. The resizing
+	// reservation is locked (removed from matchableOnNode) so
+	// ForEachMatchableReservationOnNode won't find it; we add it to unmatched manually.
+	isResize := reservationutil.IsResizePod(pod)
+	var resizingRInfo *frameworkext.ReservationInfo
+	var resizePinnedNode string
+	if isResize {
+		resizePinnedNode = pod.Annotations[reservationutil.AnnotationReservationNode]
+		targetUID := reservationutil.GetResizeTargetReservationUID(pod)
+		resizingRInfo = pl.reservationCache.getReservationInfoByUID(targetUID)
+		// Ensure the pinned node is in allNodes so processNode runs for it
+		if resizePinnedNode != "" && !hasHint {
+			found := false
+			for _, n := range allNodes {
+				if n == resizePinnedNode {
+					found = true
+					break
+				}
+			}
+			if !found {
+				allNodes = append(allNodes, resizePinnedNode)
+			}
+		}
+		klog.V(4).InfoS("Detected resize pod, will subtract owner pod resources",
+			"pod", klog.KObj(pod), "reservation", rName, "pinnedNode", resizePinnedNode,
+			"hasResizingRInfo", resizingRInfo != nil)
+	}
+
 	preAllocationMode := schedulingv1alpha1.PreAllocationModeDefault
 	preAllocatableCandidatesOnNode := map[string][]*corev1.Pod{}
 	extender, _ := pl.handle.(frameworkext.FrameworkExtender)
@@ -419,6 +448,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 		}
 
 		var unmatched []*frameworkext.ReservationInfo
+		var matchedOrIgnored []*frameworkext.ReservationInfo
 		diagnosisState := &nodeDiagnosisState{
 			nodeName:                 nodeName,
 			ignored:                  0,
@@ -441,6 +471,35 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 			klog.ErrorS(err, "Failed to forEach reservations on node", "pod", klog.KObj(pod), "node", nodeName)
 			errCh.SendErrorWithCancel(err, cancel)
 			return
+		}
+
+		// For resize: remove the old ReservePod from NodeInfo and subtract owner pod resources.
+		// The reservation is locked (removed from matchableOnNode) during resize, so
+		// ForEachMatchableReservationOnNode won't find it. We add it to:
+		//   - matchedOrIgnored: so restoreMatchedReservation calls RemovePod to remove the old
+		//     ReservePod from NodeInfo (frees the old allocatable resources)
+		//   - unmatched: so restoreUnmatchedReservations subtracts owner pod allocated resources
+		//     (corrects double-counting of owner pods that are listed separately in NodeInfo)
+		// Together, this clears ALL reservation-related resources from NodeInfo, allowing the
+		// fake resize pod (with new allocatable) to be accurately validated against the node.
+		// This follows the same pattern as Pod InPlace Update (BeforePreFilter removes target pod).
+		if isResize && nodeName == resizePinnedNode && resizingRInfo != nil {
+			matchedOrIgnored = append(matchedOrIgnored, resizingRInfo.Clone())
+			if resizingRInfo.GetAllocatedPods() > 0 {
+				alreadyPresent := false
+				for _, u := range unmatched {
+					if u.UID() == resizingRInfo.UID() {
+						alreadyPresent = true
+						break
+					}
+				}
+				if !alreadyPresent {
+					unmatched = append(unmatched, resizingRInfo.Clone())
+				}
+			}
+			klog.V(5).InfoS("Added resizing reservation for resource restoration",
+				"pod", klog.KObj(pod), "node", nodeName, "reservation", resizingRInfo.GetName(),
+				"allocatedPods", resizingRInfo.GetAllocatedPods())
 		}
 
 		// handle pre-allocation
@@ -468,7 +527,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 			allNodeDiagnosisStates[idx-1] = diagnosisState
 		}
 
-		if len(unmatched) == 0 && len(preAllocatablePods) == 0 {
+		if len(unmatched) == 0 && len(matchedOrIgnored) == 0 && len(preAllocatablePods) == 0 {
 			return
 		}
 
@@ -479,7 +538,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 
 		nodeRState := &nodeReservationState{
 			nodeName:           nodeName,
-			matchedOrIgnored:   nil,
+			matchedOrIgnored:   matchedOrIgnored,
 			unmatched:          unmatched,
 			preAllocatablePods: preAllocatablePods,
 		}
