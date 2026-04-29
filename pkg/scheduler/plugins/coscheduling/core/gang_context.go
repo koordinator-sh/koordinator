@@ -28,6 +28,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
+	schedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -65,6 +66,16 @@ func (h *GangSchedulingContextHolder) clearGangSchedulingContext(reason string) 
 	defer h.Unlock()
 	if h.gangSchedulingContext != nil {
 		firstPod := h.gangSchedulingContext.firstPod
+		h.gangSchedulingContext.RLock()
+		attemptedSize := h.gangSchedulingContext.alreadyAttemptedPods.Len()
+		h.gangSchedulingContext.RUnlock()
+		if !h.gangSchedulingContext.startTime.IsZero() {
+			schedulermetrics.RecordGangScheduleCycleDuration(
+				reason,
+				schedulermetrics.GangJobSizeBucket(attemptedSize),
+				time.Since(h.gangSchedulingContext.startTime),
+			)
+		}
 		klog.V(4).Infof("gangSchedulingConetxtHolder: clear gang scheduling context, gangGroup: %+v, reason: %s, firstPod: %s/%s/%s, alreadyAttemptedPods: %+v, startTime: %s", h.gangSchedulingContext.gangGroup, reason, firstPod.Namespace, firstPod.Name, firstPod.UID, h.gangSchedulingContext.alreadyAttemptedPods, h.gangSchedulingContext.startTime)
 	}
 	h.gangSchedulingContext = nil
@@ -74,7 +85,7 @@ func (h *GangSchedulingContextHolder) setGangSchedulingContext(gangSchedulingCon
 	firstPod := gangSchedulingContext.firstPod
 	if gangSchedulingContext.alreadyAttemptedPods == nil {
 		gangSchedulingContext.alreadyAttemptedPods = sets.New[string](util.GetId(firstPod.Namespace, firstPod.Name))
-		gangSchedulingContext.startTime = time.Now().String()
+		gangSchedulingContext.startTime = time.Now()
 	}
 	h.Lock()
 	defer h.Unlock()
@@ -83,7 +94,7 @@ func (h *GangSchedulingContextHolder) setGangSchedulingContext(gangSchedulingCon
 }
 
 type GangSchedulingContext struct {
-	startTime   string
+	startTime   time.Time
 	gangGroup   sets.Set[string]
 	gangGroupID string
 	firstPod    *corev1.Pod
