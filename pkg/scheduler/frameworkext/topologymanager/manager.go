@@ -72,11 +72,11 @@ func (m *topologyManager) Admit(ctx context.Context, cycleState framework.CycleS
 	policy := createNUMATopologyPolicy(policyType, numaNodes)
 	bestHint, ok := store.GetAffinity(node.Name)
 	extensionPointBeingExecuted := schedulingphase.GetExtensionPointBeingExecuted(cycleState)
-	klog.V(5).Infof("extensionPointBeingExecuted: %v, bestHint: %v, nodeName: %v, pod: %v", extensionPointBeingExecuted, bestHint, node.Name, pod.Name)
+	klog.V(5).Infof("extensionPointBeingExecuted: %v, bestHint: %v, nodeName: %v, pod: %v", extensionPointBeingExecuted, bestHint, klog.KObj(node), pod.Name)
 	if !ok || extensionPointBeingExecuted == schedulingphase.PostFilter {
 		bestHint, admit, reasons := m.calculateAffinity(ctx, cycleState, policy, pod, node, exclusivePolicy, allNUMANodeStatus)
 		klog.V(4).Infof("Best TopologyHint for (pod: %v): %+v on node %s, policy %T, exclusivePolicy %s, admit %v, reasons %v",
-			klog.KObj(pod), bestHint, node.Name, policy, exclusivePolicy, admit, reasons)
+			klog.KObj(pod), bestHint, klog.KObj(node), policy, exclusivePolicy, admit, reasons)
 		if !admit {
 			if len(reasons) != 0 {
 				return fwktype.NewStatus(fwktype.Unschedulable, reasons...)
@@ -105,7 +105,7 @@ func (m *topologyManager) calculateAffinity(ctx context.Context, cycleState fram
 	bestHint, admit, reasons := policy.Merge(providersHints, exclusivePolicy, allNUMANodeStatus)
 	if !checkExclusivePolicy(bestHint, exclusivePolicy, allNUMANodeStatus) {
 		klog.V(5).Infof("bestHint violated the exclusivePolicy requirement: bestHint: %v, policy: %v, numaStatus: %v, nodeName: %v, pod: %v",
-			bestHint, exclusivePolicy, allNUMANodeStatus, node.Name, pod.Name)
+			bestHint, exclusivePolicy, allNUMANodeStatus, klog.KObj(node), pod.Name)
 	}
 	klog.V(5).Infof("PodTopologyHint: %v", bestHint)
 	return bestHint, admit, reasons
@@ -124,7 +124,7 @@ func (m *topologyManager) accumulateProvidersHints(ctx context.Context, cycleSta
 			continue
 		}
 		providersHints = append(providersHints, hints)
-		klog.V(4).Infof("TopologyHints for pod '%v' by provider %T: %+v on node: %v, status: %s/%s", klog.KObj(pod), provider, hints, node, status.Code(), status.Message())
+		klog.V(4).Infof("TopologyHints for pod '%v' by provider %T: %+v on node: %v, status: %s/%s", klog.KObj(pod), provider, hints, klog.KObj(node), status.Code(), status.Message())
 	}
 	return providersHints, reasons
 }

@@ -221,6 +221,9 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState fwktype.CycleState, podT
 	}
 
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	nd := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nd == nil {
 		return nil
@@ -280,6 +283,9 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState fwktype.CycleState, p
 	}
 
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	nd := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nd == nil {
 		return nil
@@ -422,6 +428,10 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 	if err != nil {
 		return fwktype.AsStatus(err)
 	}
+	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+	}
 
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(nodeName)
@@ -434,13 +444,13 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 	var affinity topologymanager.NUMATopologyHint
 	if !p.disableDeviceNUMATopologyAlignment {
 		store := topologymanager.GetStore(cycleState)
-		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
+		affinity, _ = store.GetAffinity(node.Name)
 	}
 
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nodeDeviceInfo,
-		node:       nodeInfo.Node(),
+		node:       node,
 		pod:        pod,
 		numaNodes:  affinity.NUMANodeAffinity,
 	}
@@ -463,7 +473,7 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 
 		nodeDeviceInfo.lock.RLock()
 		defer nodeDeviceInfo.lock.RUnlock()
-		_, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], reservationInfo.GetReservePod(), nodeInfo.Node(), preemptible, true)
+		_, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], reservationInfo.GetReservePod(), node, preemptible, true)
 		return status
 	}
 
@@ -481,7 +491,7 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	_, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], pod, nodeInfo.Node(), preemptible, true)
+	_, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], pod, node, preemptible, true)
 	return status
 }
 
@@ -505,7 +515,11 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 		if err != nil {
 			return fwktype.AsStatus(err)
 		}
-		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+		node := nodeInfo.Node()
+		if node == nil {
+			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+		}
+		status = p.allocate(ctx, cycleState, pod, node)
 		if !status.IsSuccess() {
 			return status
 		}
@@ -654,7 +668,11 @@ func (p *Plugin) ResizePod(ctx context.Context, cycleState fwktype.CycleState, p
 		if err != nil {
 			return fwktype.AsStatus(err)
 		}
-		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+		node := nodeInfo.Node()
+		if node == nil {
+			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+		}
+		status = p.allocate(ctx, cycleState, pod, node)
 		if !status.IsSuccess() {
 			return status
 		}
