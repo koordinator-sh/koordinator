@@ -93,6 +93,15 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 	}
 
 	if !assignedPod(newPod) {
+		// When NominatedNodeName is cleared for an unassigned pod (e.g., by the k8s
+		// preemption's clearNominatedNodeName), sync the ReservationNominator to prevent
+		// stale nominations. With the NominatedNodeNameForExpectation feature gate (k8s 1.35+,
+		// Beta by default), NNN is also set during the binding cycle for pods awaiting
+		// WaitOnPermit or PreBind, so more pods will now have NNN set and may be subject
+		// to clearing by a concurrent preemption cycle.
+		if oldPod != nil && oldPod.Status.NominatedNodeName != "" && newPod.Status.NominatedNodeName == "" {
+			h.nominator.DeleteNominatedReservePodOrReservation(newPod)
+		}
 		return
 	}
 

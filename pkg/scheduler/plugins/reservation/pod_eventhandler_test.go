@@ -425,6 +425,176 @@ func TestPodEventHandler_PreAllocatableCacheSync(t *testing.T) {
 	}
 }
 
+// TestPodEventHandler_NominatedNodeNameClearing tests that when an unassigned pod's
+// NominatedNodeName is cleared (e.g., by preemption's clearNominatedNodeName, or after a
+// binding-cycle failure with the NominatedNodeNameForExpectation feature), the
+// ReservationNominator is updated to prevent stale nominations from causing scheduling conflicts.
+func TestPodEventHandler_NominatedNodeNameClearing(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupFunc   func(handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo)
+		oldPod      func(pod *corev1.Pod) *corev1.Pod
+		newPod      func(pod *corev1.Pod) *corev1.Pod
+		verifyFunc  func(t *testing.T, handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo)
+		isReserve   bool
+	}{
+		{
+			name: "reserve pod NNN cleared while unassigned removes reservation nomination",
+			setupFunc: func(handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				handler.nominator.AddNominatedReservePod(podInfo, "test-node-1")
+			},
+			oldPod: func(pod *corev1.Pod) *corev1.Pod {
+				p := pod.DeepCopy()
+				p.Status.NominatedNodeName = "test-node-1"
+				return p
+			},
+			newPod: func(pod *corev1.Pod) *corev1.Pod {
+				p := pod.DeepCopy()
+				p.Status.NominatedNodeName = "" // NNN cleared by preemption or binding failure
+				return p
+			},
+			verifyFunc: func(t *testing.T, handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				// Nomination should be cleared after NNN is cleared for unassigned reserve pod
+				assert.Equal(t, "", handler.nominator.nominatedReservePodToNode[pod.UID],
+					"nominatedReservePodToNode should be cleared")
+				assert.Empty(t, handler.nominator.nominatedReservePod["test-node-1"],
+					"nominatedReservePod should be empty for the node")
+			},
+			isReserve: true,
+		},
+		{
+			name: "reserve pod NNN unchanged while unassigned keeps nomination",
+			setupFunc: func(handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				handler.nominator.AddNominatedReservePod(podInfo, "test-node-1")
+			},
+			oldPod: func(pod *corev1.Pod) *corev1.Pod {
+				p := pod.DeepCopy()
+				p.Status.NominatedNodeName = "test-node-1"
+				return p
+			},
+			newPod: func(pod *corev1.Pod) *corev1.Pod {
+				p := pod.DeepCopy()
+				p.Status.NominatedNodeName = "test-node-1" // NNN unchanged
+				return p
+			},
+			verifyFunc: func(t *testing.T, handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				// Nomination should remain when NNN is not cleared
+				assert.Equal(t, "test-node-1", handler.nominator.nominatedReservePodToNode[pod.UID],
+					"nominatedReservePodToNode should remain")
+				assert.NotEmpty(t, handler.nominator.nominatedReservePod["test-node-1"],
+					"nominatedReservePod should remain for the node")
+			},
+			isReserve: true,
+		},
+		{
+			name: "reserve pod NNN set from empty while unassigned does not affect nomination",
+			setupFunc: func(handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				// no initial nomination
+			},
+			oldPod: func(pod *corev1.Pod) *corev1.Pod {
+				p := pod.DeepCopy()
+				p.Status.NominatedNodeName = ""
+				return p
+			},
+			newPod: func(pod *corev1.Pod) *corev1.Pod {
+				p := pod.DeepCopy()
+				p.Status.NominatedNodeName = "test-node-1" // NNN set by expectation mechanism
+				return p
+			},
+			verifyFunc: func(t *testing.T, handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				// No nomination was set up, nothing should change
+				assert.Empty(t, handler.nominator.nominatedReservePodToNode,
+					"nominatedReservePodToNode should be empty")
+			},
+			isReserve: true,
+		},
+		{
+			name: "regular pod NNN cleared while unassigned removes pod reservation nomination",
+			setupFunc: func(handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				rUID := types.UID("test-reservation-uid")
+				nodeToReservation := map[string]types.UID{"test-node-1": rUID}
+				handler.nominator.nominatedPodToNode[pod.UID] = nodeToReservation
+			},
+			oldPod: func(pod *corev1.Pod) *corev1.Pod {
+				p := pod.DeepCopy()
+				p.Status.NominatedNodeName = "test-node-1"
+				return p
+			},
+			newPod: func(pod *corev1.Pod) *corev1.Pod {
+				p := pod.DeepCopy()
+				p.Status.NominatedNodeName = "" // NNN cleared
+				return p
+			},
+			verifyFunc: func(t *testing.T, handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				// Pod's reservation nomination should be cleared
+				assert.Empty(t, handler.nominator.nominatedPodToNode[pod.UID],
+					"nominatedPodToNode should be cleared for the pod")
+			},
+			isReserve: false,
+		},
+		{
+			name: "nil oldPod NNN cleared does not panic",
+			setupFunc: func(handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				handler.nominator.AddNominatedReservePod(podInfo, "test-node-1")
+			},
+			oldPod: func(pod *corev1.Pod) *corev1.Pod {
+				return nil // no old pod (e.g. first add event)
+			},
+			newPod: func(pod *corev1.Pod) *corev1.Pod {
+				p := pod.DeepCopy()
+				p.Status.NominatedNodeName = "" // unassigned pod with no NNN
+				return p
+			},
+			verifyFunc: func(t *testing.T, handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo) {
+				// Nomination should remain - nil oldPod means NNN was not "cleared"
+				assert.Equal(t, "test-node-1", handler.nominator.nominatedReservePodToNode[pod.UID],
+					"nomination should remain when oldPod is nil")
+			},
+			isReserve: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &podEventHandler{
+				cache:     newReservationCache(nil),
+				nominator: newNominator(nil, nil),
+			}
+
+			var pod *corev1.Pod
+			if tt.isReserve {
+				reservation := &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-reservation",
+						UID:  uuid.NewUUID(),
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						Template: &corev1.PodTemplateSpec{},
+					},
+				}
+				pod = reservationutil.NewReservePod(reservation)
+			} else {
+				pod = &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+						UID:       uuid.NewUUID(),
+					},
+				}
+			}
+
+			podInfo, _ := framework.NewPodInfo(pod)
+			tt.setupFunc(handler, pod, podInfo)
+
+			oldPod := tt.oldPod(pod)
+			newPod := tt.newPod(pod)
+			handler.updatePod(oldPod, newPod)
+
+			tt.verifyFunc(t, handler, pod, podInfo)
+		})
+	}
+}
+
 // Helper functions for test pod creation
 
 func createPodWithLabels(uid, nodeName string, labels map[string]string) *corev1.Pod {
