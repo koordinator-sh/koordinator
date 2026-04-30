@@ -431,12 +431,12 @@ func TestPodEventHandler_PreAllocatableCacheSync(t *testing.T) {
 // ReservationNominator is updated to prevent stale nominations from causing scheduling conflicts.
 func TestPodEventHandler_NominatedNodeNameClearing(t *testing.T) {
 	tests := []struct {
-		name        string
-		setupFunc   func(handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo)
-		oldPod      func(pod *corev1.Pod) *corev1.Pod
-		newPod      func(pod *corev1.Pod) *corev1.Pod
-		verifyFunc  func(t *testing.T, handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo)
-		isReserve   bool
+		name       string
+		setupFunc  func(handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo)
+		oldPod     func(pod *corev1.Pod) *corev1.Pod
+		newPod     func(pod *corev1.Pod) *corev1.Pod
+		verifyFunc func(t *testing.T, handler *podEventHandler, pod *corev1.Pod, podInfo *framework.PodInfo)
+		isReserve  bool
 	}{
 		{
 			name: "reserve pod NNN cleared while unassigned removes reservation nomination",
