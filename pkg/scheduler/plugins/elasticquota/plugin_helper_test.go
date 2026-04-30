@@ -93,10 +93,7 @@ func TestGetQuotaName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.NotNil(t, p)
-			assert.Nil(t, err)
-			eQP := p.(*Plugin)
+			eQP := suit.createPlugin(t).(*Plugin)
 			for _, eq := range tt.elasticQuotas {
 				_, err := eQP.client.SchedulingV1alpha1().ElasticQuotas(eq.Namespace).Create(context.TODO(), eq, metav1.CreateOptions{})
 				assert.NoError(t, err)

@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -78,13 +79,13 @@ var (
 )
 
 type Plugin struct {
-	handle          frameworkext.ExtendedHandle
-	pluginArgs      *schedulingconfig.NodeNUMAResourceArgs
-	nrtLister       topologylister.NodeResourceTopologyLister
-	scorer          *resourceAllocationScorer
-	numaScorer      *resourceAllocationScorer
-	resourceManager ResourceManager
-
+	handle                 frameworkext.ExtendedHandle
+	pluginArgs             *schedulingconfig.NodeNUMAResourceArgs
+	nrtInformerFactory     nrtinformers.SharedInformerFactory
+	nrtLister              topologylister.NodeResourceTopologyLister
+	scorer                 *resourceAllocationScorer
+	numaScorer             *resourceAllocationScorer
+	resourceManager        ResourceManager
 	topologyOptionsManager TopologyOptionsManager
 }
 
@@ -157,6 +158,7 @@ func NewWithOptions(args runtime.Object, handle fwktype.Handle, opts ...Option) 
 	return &Plugin{
 		handle:                 handle.(frameworkext.ExtendedHandle),
 		pluginArgs:             pluginArgs,
+		nrtInformerFactory:     nrtInformerFactory,
 		nrtLister:              nrtLister,
 		scorer:                 scorer,
 		numaScorer:             numaScorer,
@@ -359,6 +361,9 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 		return nil
 	}
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	podNUMATopologyPolicy := state.podNUMATopologyPolicy
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
@@ -451,6 +456,9 @@ func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.
 	}
 
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	cpuAmplificationRatio, err := extension.GetNodeResourceAmplificationRatio(node.Annotations, corev1.ResourceCPU)
 	if err != nil {
 		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidCPUAmplificationRatio)
@@ -575,6 +583,9 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 		}
 		node := nodeInfo.Node()
+		if node == nil {
+			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+		}
 		topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 		podNUMATopologyPolicy := state.podNUMATopologyPolicy
 		numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
@@ -704,6 +715,9 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState fwktype.CycleStat
 		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+	}
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)

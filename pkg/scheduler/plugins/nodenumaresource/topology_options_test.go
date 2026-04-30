@@ -30,11 +30,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 func TestTopologyOptionsManager(t *testing.T) {
 	suit := newPluginTestSuit(t, nil, nil)
+
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
 
 	expectCPUTopology := buildCPUTopologyForTest(2, 1, 4, 2)
 
@@ -139,7 +143,23 @@ func TestTopologyOptionsManager(t *testing.T) {
 	err = registerNodeResourceTopologyEventHandler(nrtInformerFactory, topologyOptionsManager)
 	assert.NoError(t, err)
 
-	suit.start()
+	// Start the NRT informer factory so that ForceSyncFromInformer handlers receive OnAdd events.
+	// Use a test-lifetime stop channel (closed via t.Cleanup) instead of
+	// context.TODO().Done(), which would be nil and could hang the test
+	// indefinitely if cache sync never completes, leaking goroutines across tests.
+	stopCh := make(chan struct{})
+	t.Cleanup(func() { close(stopCh) })
+	nrtInformerFactory.Start(stopCh)
+	nrtInformerFactory.WaitForCacheSync(stopCh)
+
+	suit.start(t)
+
+	// Wait for all ForceSyncFromInformer handler registrations to sync.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := frameworkexthelper.WaitForHandlersSync(ctx); err != nil {
+		t.Fatalf("timed out waiting for handler registrations to sync: %v", err)
+	}
 
 	topologyOptions := topologyOptionsManager.GetTopologyOptions(nodeName)
 	assert.NotNil(t, topologyOptions.CPUTopology)

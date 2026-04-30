@@ -42,6 +42,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 )
 
@@ -186,7 +187,7 @@ func Test_Run(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			ctrl, kubeClient, pgClient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.previousPhase, c.podGroupCreateTime, nil)
+			ctrl, kubeClient, pgClient := setUp(t, ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.previousPhase, c.podGroupCreateTime, nil)
 			// 0 means not set
 			if len(c.podNextPhase) != 0 {
 				ps := makePods(c.podNames, c.pgName, c.podNextPhase, nil)
@@ -269,7 +270,7 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			ctrl, _, pgClient := setUp(ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.groupPhase, nil, c.podOwnerReference)
+			ctrl, _, pgClient := setUp(t, ctx, c.podNames, c.pgName, c.podPhase, c.minMember, c.groupPhase, nil, c.podOwnerReference)
 			ctrl.Start()
 			err := wait.PollUntilContextTimeout(ctx, 200*time.Millisecond, 1*time.Second, false, func(ctx context.Context) (done bool, err error) {
 				pg, err := pgClient.SchedulingV1alpha1().PodGroups("default").Get(ctx, c.pgName, metav1.GetOptions{})
@@ -290,7 +291,9 @@ func TestFillGroupStatusOccupied(t *testing.T) {
 	}
 }
 
-func setUp(ctx context.Context, podNames []string, pgName string, podPhase v1.PodPhase, minMember int32, groupPhase v1alpha1.PodGroupPhase, podGroupCreateTime *metav1.Time, podOwnerReference []metav1.OwnerReference) (*PodGroupController, *fake.Clientset, *pgfake.Clientset) {
+func setUp(t testing.TB, ctx context.Context, podNames []string, pgName string, podPhase v1.PodPhase, minMember int32, groupPhase v1alpha1.PodGroupPhase, podGroupCreateTime *metav1.Time, podOwnerReference []metav1.OwnerReference) (*PodGroupController, *fake.Clientset, *pgfake.Clientset) {
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
 	var kubeClient *fake.Clientset
 	if len(podNames) == 0 {
 		kubeClient = fake.NewSimpleClientset()
@@ -318,6 +321,27 @@ func setUp(ctx context.Context, podNames []string, pgName string, podPhase v1.Po
 	args := &config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}
 	pgMgr := core.NewPodGroupManager(nil, args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	ctrl := NewPodGroupController(pgInformer, podInformer, pgClient, pgMgr, 1)
+
+	// Start informer factories with a test-lifetime stop channel so that
+	// callers can keep mutating the client after setUp returns. Note: the
+	// incoming ctx may be context.TODO(), whose Done() is nil; using it as a
+	// stop channel would disable cancellation entirely.
+	stopCh := make(chan struct{})
+	t.Cleanup(func() { close(stopCh) })
+	informerFactory.Start(stopCh)
+	pgInformerFactory.Start(stopCh)
+	koordInformerFactory.Start(stopCh)
+	informerFactory.WaitForCacheSync(stopCh)
+	pgInformerFactory.WaitForCacheSync(stopCh)
+	koordInformerFactory.WaitForCacheSync(stopCh)
+	// Use a bounded context for handler sync so the test fails fast if a
+	// registration never reaches HasSynced instead of hanging indefinitely.
+	syncCtx, syncCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer syncCancel()
+	if err := frameworkexthelper.WaitForHandlersSync(syncCtx); err != nil {
+		t.Fatalf("timed out waiting for handler registrations to sync: %v", err)
+	}
+
 	return ctrl, kubeClient, pgClient
 }
 

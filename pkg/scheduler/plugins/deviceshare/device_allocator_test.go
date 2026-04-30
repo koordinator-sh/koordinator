@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,7 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 )
 
 var (
@@ -1194,12 +1196,18 @@ func TestAutopilotAllocator(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
+			frameworkexthelper.ResetRegistrations()
 			deviceCache := newNodeDeviceCache()
 			registerDeviceEventHandler(deviceCache, koordShareInformerFactory)
 			registerPodEventHandler(deviceCache, sharedInformerFactory, koordShareInformerFactory)
 
-			sharedInformerFactory.Start(nil)
-			sharedInformerFactory.WaitForCacheSync(nil)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			sharedInformerFactory.Start(ctx.Done())
+			koordShareInformerFactory.Start(ctx.Done())
+			if err := frameworkexthelper.WaitForHandlersSync(ctx); err != nil {
+				t.Fatalf("WaitForHandlersSync failed: %v", err)
+			}
 
 			nodeDevice := deviceCache.getNodeDevice("test-node-1", false)
 			assert.NotNil(t, nodeDevice)
@@ -1255,7 +1263,9 @@ func TestAutopilotAllocator(t *testing.T) {
 				pod:        pod,
 			}
 
+			nodeDevice.lock.RLock()
 			allocations, status := allocator.Allocate(nil, nil, nil, nil)
+			nodeDevice.lock.RUnlock()
 			if !status.IsSuccess() != tt.wantErr {
 				t.Errorf("Allocate() error = %v, wantErr %v", status.AsError(), tt.wantErr)
 				return
@@ -2006,12 +2016,18 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
+			frameworkexthelper.ResetRegistrations()
 			deviceCache := newNodeDeviceCache()
 			registerDeviceEventHandler(deviceCache, koordShareInformerFactory)
 			registerPodEventHandler(deviceCache, sharedInformerFactory, koordShareInformerFactory)
 
-			sharedInformerFactory.Start(nil)
-			sharedInformerFactory.WaitForCacheSync(nil)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			sharedInformerFactory.Start(ctx.Done())
+			koordShareInformerFactory.Start(ctx.Done())
+			if err := frameworkexthelper.WaitForHandlersSync(ctx); err != nil {
+				t.Fatalf("WaitForHandlersSync failed: %v", err)
+			}
 
 			nodeDevice := deviceCache.getNodeDevice("test-node-1", false)
 			assert.NotNil(t, nodeDevice)
@@ -2072,7 +2088,9 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 				pod:        pod,
 			}
 
+			nodeDevice.lock.RLock()
 			allocations, status := allocator.Allocate(nil, nil, nil, nil)
+			nodeDevice.lock.RUnlock()
 			if !status.IsSuccess() != tt.wantErr {
 				t.Errorf("Allocate() error = %v, wantErr %v", status.AsError(), tt.wantErr)
 				return

@@ -526,7 +526,7 @@ func TestPlugin_Score(t *testing.T) {
 			cpuManager := plg.resourceManager.(*resourceManager)
 			cpuManager.nodeAllocations[allocateState.nodeName] = allocateState
 
-			suit.start()
+			suit.start(t)
 
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
@@ -784,7 +784,7 @@ func TestScoreWithAmplifiedCPUs(t *testing.T) {
 			suit.nodeNUMAResourceArgs.ScoringStrategy = tt.args.ScoringStrategy
 			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NoError(t, err)
-			suit.start()
+			suit.start(t)
 
 			pl := p.(*Plugin)
 

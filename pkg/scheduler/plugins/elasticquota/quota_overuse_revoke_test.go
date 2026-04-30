@@ -31,8 +31,7 @@ import (
 
 func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, _ := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	pg := p.(*Plugin)
+	pg := suit.createPlugin(t).(*Plugin)
 	pg.groupQuotaManager.UpdateClusterTotalResource(MakeResourceList().CPU(100).Mem(100).GPU(100).Obj())
 	suit.AddQuota("test1", extension.RootQuotaName, 4797411900, 0, 1085006000, 0, 4797411900, 0, true, "extended")
 	gqm := pg.groupQuotaManager
@@ -95,8 +94,7 @@ func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
 
 func TestQuotaOverUsedRevokeController_GetToRevokePodList(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, _ := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 	gqm := plugin.groupQuotaManager
 	suit.AddQuota("test1", extension.RootQuotaName, 4797411900, 0, 1085006000, 0, 4797411900, 0, false, "extended")
 	time.Sleep(10 * time.Millisecond)
@@ -142,8 +140,7 @@ func TestQuotaOverUsedRevokeController_GetToRevokePodList(t *testing.T) {
 
 func TestQuotaOverUsedRevokeController_GetToMonitorQuotas(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, _ := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 	plugin.pluginArgs.DelayEvictTime.Duration = 0 * time.Second
 	plugin.pluginArgs.MonitorAllQuotas = true
 

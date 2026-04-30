@@ -76,15 +76,16 @@ func (p *PostFilterState) Clone() fwktype.StateData {
 }
 
 type Plugin struct {
-	handle            fwktype.Handle
-	client            versioned.Interface
-	pluginArgs        *config.ElasticQuotaArgs
-	quotaLister       v1alpha1.ElasticQuotaLister
-	quotaInformer     cache.SharedIndexInformer
-	podLister         v1.PodLister
-	pdbLister         policylisters.PodDisruptionBudgetLister
-	nodeLister        v1.NodeLister
-	groupQuotaManager *core.GroupQuotaManager
+	handle                    fwktype.Handle
+	client                    versioned.Interface
+	pluginArgs                *config.ElasticQuotaArgs
+	scheSharedInformerFactory externalversions.SharedInformerFactory
+	quotaLister               v1alpha1.ElasticQuotaLister
+	quotaInformer             cache.SharedIndexInformer
+	podLister                 v1.PodLister
+	pdbLister                 policylisters.PodDisruptionBudgetLister
+	nodeLister                v1.NodeLister
+	groupQuotaManager         *core.GroupQuotaManager
 
 	quotaManagerLock sync.RWMutex
 	// groupQuotaManagersForQuotaTree store the GroupQuotaManager of all quota trees. The key is the quota tree id
@@ -108,13 +109,14 @@ type Plugin struct {
 }
 
 var (
-	_ fwktype.EnqueueExtensions = &Plugin{}
-	_ fwktype.PreFilterPlugin   = &Plugin{}
-	_ fwktype.PostFilterPlugin  = &Plugin{}
-	_ fwktype.ReservePlugin     = &Plugin{}
+	_ fwktype.EnqueueExtensions            = &Plugin{}
+	_ fwktype.PreFilterPlugin              = &Plugin{}
+	_ fwktype.PostFilterPlugin             = &Plugin{}
+	_ fwktype.ReservePlugin                = &Plugin{}
+	_ frameworkext.InformerFactoryProvider = &Plugin{}
 )
 
-func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
+func New(ctx context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 	pluginArgs, ok := args.(*config.ElasticQuotaArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type ElasticQuotaArgs, got %T", args)
@@ -154,6 +156,7 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 		handle:                         handle,
 		client:                         client,
 		pluginArgs:                     pluginArgs,
+		scheSharedInformerFactory:      scheSharedInformerFactory,
 		podLister:                      handle.SharedInformerFactory().Core().V1().Pods().Lister(),
 		quotaInformer:                  informer,
 		quotaLister:                    elasticQuotaInformer.Lister(),
@@ -174,8 +177,6 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 	elasticQuota.quotaToTreeMap[extension.DefaultQuotaName] = ""
 	elasticQuota.quotaToTreeMap[extension.SystemQuotaName] = ""
 
-	ctx := context.TODO()
-
 	elasticQuota.createRootQuotaIfNotPresent()
 	elasticQuota.createSystemQuotaIfNotPresent()
 	elasticQuota.createDefaultQuotaIfNotPresent()
@@ -187,7 +188,6 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 	if err != nil {
 		return nil, err
 	}
-
 	nodeInformer := handle.SharedInformerFactory().Core().V1().Nodes().Informer()
 	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), nodeInformer, cache.ResourceEventHandlerFuncs{
 		AddFunc:    elasticQuota.OnNodeAdd,
@@ -573,6 +573,11 @@ func (g *Plugin) Unreserve(ctx context.Context, state fwktype.CycleState, p *cor
 
 func (g *Plugin) GetQuotaInformer() cache.SharedIndexInformer { // expose for extensions
 	return g.quotaInformer
+}
+
+// GetInformerFactories returns the ElasticQuota informer factory for central startup management.
+func (g *Plugin) GetInformerFactories() []frameworkext.SharedInformerFactory {
+	return []frameworkext.SharedInformerFactory{g.scheSharedInformerFactory}
 }
 
 // updateQuotaSnapshot periodically updates quota snapshot for all quota trees

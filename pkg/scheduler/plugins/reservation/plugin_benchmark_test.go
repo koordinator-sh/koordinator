@@ -1536,7 +1536,7 @@ func Benchmark_filterWithReservations(b *testing.B) {
 			assert.NoError(b, err)
 			pl := p.(*Plugin)
 			pl.enableSkipReservationFitsNode = tt.enableSkipReservationFitsNode
-			suit.start()
+			suit.start(b)
 			cycleState := framework.NewCycleState()
 			if tt.stateData.podRequestsResources == nil {
 				tt.stateData.podRequestsResources = framework.NewResource(tt.stateData.podRequests)

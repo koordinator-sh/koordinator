@@ -52,6 +52,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -188,6 +189,8 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclientset.Interface, cs kubernetes.Interface) *pluginTestSuit {
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
 	var v1args v1.CoschedulingArgs
 	v1.SetDefaults_CoschedulingArgs(&v1args)
 	var gangSchedulingArgs config.CoschedulingArgs
@@ -226,10 +229,34 @@ func newPluginTestSuit(t *testing.T, nodes []*corev1.Node, pgClientSet pgclients
 	}
 }
 
-func (p *pluginTestSuit) start() {
-	ctx := context.TODO()
-	p.Handle.SharedInformerFactory().Start(ctx.Done())
-	p.Handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
+func (p *pluginTestSuit) start(t testing.TB) {
+	// Use a test-lifetime stop channel so informers keep delivering events for
+	// objects created/updated by the test AFTER start() returns. A stop channel
+	// bound to a short-lived context would be closed the moment start() returns
+	// and silently stop the informer watchers, making later informer-driven
+	// assertions flaky.
+	stopCh := make(chan struct{})
+	t.Cleanup(func() { close(stopCh) })
+	// Start the shared informer factory for k8s resources (pods, etc.)
+	p.Handle.SharedInformerFactory().Start(stopCh)
+	p.Handle.SharedInformerFactory().WaitForCacheSync(stopCh)
+	// Start the pg informer factory and koordinator informer factory via the plugin.
+	if gp, ok := p.plugin.(*Coscheduling); ok {
+		gp.pgInformerFactory.Start(stopCh)
+		gp.pgInformerFactory.WaitForCacheSync(stopCh)
+		if extHandle, ok := gp.frameworkHandler.(frameworkext.ExtendedHandle); ok {
+			extHandle.KoordinatorSharedInformerFactory().Start(stopCh)
+			extHandle.KoordinatorSharedInformerFactory().WaitForCacheSync(stopCh)
+		}
+	}
+	// Use a separate bounded context only for the handler-sync wait so a hang
+	// doesn't block the whole test; surface the failure via t.Fatalf so it is
+	// attributed to the offending test rather than panicking.
+	syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := frameworkexthelper.WaitForHandlersSync(syncCtx); err != nil {
+		t.Fatalf("timed out waiting for handler registrations to sync: %v", err)
+	}
 }
 
 func NewPodInfo(t *testing.T, pod *corev1.Pod) *framework.PodInfo {
@@ -311,7 +338,7 @@ func TestPostFilter(t *testing.T) {
 
 			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
 			gp := suit.plugin.(*Coscheduling)
-			suit.start()
+			suit.start(t)
 			gangId := util.GetId(tt.pod.Namespace, util.GetGangNameByPod(tt.pod))
 			if tt.resourceSatisfied {
 				gp.PostBind(context.TODO(), nil, tt.pod, "test")
@@ -482,7 +509,7 @@ func TestPermit(t *testing.T) {
 			cs.CoreV1().Pods(tt.pod.Namespace).Create(context.TODO(), tt.pod, metav1.CreateOptions{})
 
 			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
-			suit.start()
+			suit.start(t)
 			gp := suit.plugin.(*Coscheduling)
 
 			// add assumed pods
@@ -585,7 +612,7 @@ func TestUnreserve(t *testing.T) {
 
 			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
 			gp := suit.plugin.(*Coscheduling)
-			suit.start()
+			suit.start(t)
 
 			ctx := context.TODO()
 			cycleState := framework.NewCycleState()
@@ -724,7 +751,7 @@ func TestPreBind(t *testing.T) {
 			}
 
 			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
-			suit.start()
+			suit.start(t)
 			gp := suit.plugin.(*Coscheduling)
 
 			ctx := context.TODO()
@@ -896,7 +923,7 @@ func TestPreBindReservation(t *testing.T) {
 			}
 
 			suit := newPluginTestSuit(t, nil, pgClientSet, cs)
-			suit.start()
+			suit.start(t)
 			gp := suit.plugin.(*Coscheduling)
 
 			ctx := context.TODO()

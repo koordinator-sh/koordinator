@@ -156,6 +156,8 @@ type FrameworkExtenderFactory struct {
 
 	workloadAuditor workloadauditor.WorkloadAuditor
 
+	pluginInformerFactories []SharedInformerFactory
+
 	metricsRecorder *metrics.MetricAsyncRecorder
 }
 
@@ -444,6 +446,15 @@ func (f *FrameworkExtenderFactory) updatePlugins(pl fwktype.Plugin, profileName 
 	if f.controllerMaps != nil {
 		f.controllerMaps.RegisterControllers(pl, profileName)
 	}
+	if provider, ok := pl.(InformerFactoryProvider); ok {
+		f.pluginInformerFactories = append(f.pluginInformerFactories, provider.GetInformerFactories()...)
+	}
+}
+
+// GetPluginInformerFactories returns all informer factories registered by plugins
+// via the InformerFactoryProvider interface.
+func (f *FrameworkExtenderFactory) GetPluginInformerFactories() []SharedInformerFactory {
+	return f.pluginInformerFactories
 }
 
 // PluginFactoryProxy is used to proxy the call to the PluginFactory function and pass in the ExtendedHandle for the custom plugin

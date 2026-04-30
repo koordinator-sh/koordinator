@@ -274,7 +274,7 @@ func TestScore(t *testing.T) {
 			cycleState.Write(stateKey, state)
 
 			// the usage of the lister requires the informers started
-			suit.start()
+			suit.start(t)
 
 			nodeInfoForScore := framework.NewNodeInfo()
 			nodeInfoForScore.SetNode(node)
@@ -412,7 +412,7 @@ func TestScoreWithOrder(t *testing.T) {
 		cycleState.Write(stateKey, state)
 
 		// the usage of the lister requires the informers started
-		suit.start()
+		suit.start(t)
 		// verify if the cache synced
 		podLister := suit.fw.SharedInformerFactory().Core().V1().Pods().Lister()
 		assert.NotNil(t, podLister)
@@ -867,7 +867,7 @@ func TestPreScoreWithNominateReservation(t *testing.T) {
 			cycleState.Write(stateKey, state)
 
 			// the usage of the lister requires the informers started
-			suit.start()
+			suit.start(t)
 
 			nodeInfos := make([]fwktype.NodeInfo, 0, len(nodes))
 			for _, n := range nodes {
