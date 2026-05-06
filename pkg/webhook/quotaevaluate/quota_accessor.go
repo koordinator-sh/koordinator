@@ -82,12 +82,14 @@ func (q *quotaAccessor) UpdateQuotaStatus(newQuota *v1alpha1.ElasticQuota) error
 			return freshQuota, nil
 		})
 		if getErr != nil {
+			klog.ErrorS(getErr, "Failed to get fresh quota on conflict", "key", key)
 			return err
 		}
 		newQuota = result.(*v1alpha1.ElasticQuota)
 	}
 	q.updatedQuotas.Add(key, newQuota)
-	klog.V(4).InfoS("Quota accessor updated", "key", key, "usage", newQuota.Annotations[extension.AnnotationChildRequest])
+	klog.V(4).InfoS("Quota accessor cache updated", "key", key, "resourceVersion", newQuota.ResourceVersion,
+		"usage", newQuota.Annotations[extension.AnnotationChildRequest], "updateErr", err)
 	return err
 }
 
