@@ -609,7 +609,29 @@ func (p *Plugin) allocateWithNominated(
 	if !status.IsSuccess() {
 		return nil, status
 	}
-	return tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, nominatedReusableAllocMap, pod, node)
+
+	result, status := tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, nominatedReusableAllocMap, pod, node)
+	if !status.IsSuccess() {
+		return nil, status
+	}
+	// When the pod has a concrete nominated reservation but tryAllocateFromReusable
+	// did not produce an allocation (e.g. Restricted alloc failed in both probe and
+	// formal Allocate), refuse to fall back to tryAllocateFromNode. Falling back
+	// here would let the pod silently bypass the reservation and steal node
+	// capacity that is still reserved for the nominated R, and would desynchronize
+	// with the reservation plugin which will still write annotation
+	// scheduling.koordinator.sh/reservation-allocated = <nominated R> in PreBind,
+	// resulting in an annotation/cpuset mismatch.
+	if result == nil && len(nominatedReusableAllocMap) > 0 {
+		if klog.V(5).Enabled() {
+			klog.InfoS("allocateWithNominated: refuse fallback, reservation nominated but no allocation produced",
+				"pod", klog.KObj(pod), "node", node.Name,
+				"nominatedCount", len(nominatedReusableAllocMap))
+		}
+		return nil, fwktype.NewStatus(fwktype.Unschedulable,
+			"pod has a nominated reservation but cannot be allocated within its NUMA scope")
+	}
+	return result, nil
 }
 
 func (p *Plugin) getPodNominatedReservationInfo(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {

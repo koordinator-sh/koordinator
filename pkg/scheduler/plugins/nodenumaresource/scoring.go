@@ -108,12 +108,20 @@ func (p *Plugin) Score(ctx context.Context, cycleState fwktype.CycleState, pod *
 	restoreState := reservationRestoreState.getNodeState(nodeName)
 	podAllocation, status := p.allocateWithNominated(restoreState, resourceOptions, pod, node)
 	if !status.IsSuccess() {
-		return 0, status
+		// Score-layer contract: the pod has already passed Filter on this node, so returning a
+		// non-Success status here would be upgraded to framework.Error by the scheduling framework
+		// and surface as SchedulerError on the Pod condition. Degrade to score=0 with nil status
+		// so the scheduler can continue selecting other candidates naturally, and record a warning
+		// for later investigation (it implies a mismatch between Filter and Score strictness).
+		klog.Warningf("Score: allocateWithNominated failed after Filter passed, degrading to score=0; pod=%s node=%s reason=%s", klog.KObj(pod), node.Name, status.Message())
+		return 0, nil
 	}
 	if podAllocation == nil {
 		podAllocation, status = tryAllocateFromNode(p.resourceManager, nil, restoreState, resourceOptions, pod, node)
 		if !status.IsSuccess() {
-			return 0, status
+			// Same reasoning as above: degrade to score=0 instead of propagating Unschedulable/Error.
+			klog.Warningf("Score: tryAllocateFromNode failed after Filter passed, degrading to score=0; pod=%s node=%s reason=%s", klog.KObj(pod), node.Name, status.Message())
+			return 0, nil
 		}
 	}
 
