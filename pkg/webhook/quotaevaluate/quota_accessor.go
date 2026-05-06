@@ -19,6 +19,8 @@ package quotaevaluate
 import (
 	"context"
 
+	"golang.org/x/sync/singleflight"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/storage"
 	"k8s.io/client-go/tools/cache"
@@ -26,6 +28,7 @@ import (
 	"k8s.io/utils/lru"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
@@ -41,31 +44,51 @@ type QuotaAccessor interface {
 }
 
 type quotaAccessor struct {
-	client client.Client
+	client    client.Client
+	apiReader client.Reader // non-cached reader for conflict recovery
+
 	// updatedQuotas holds a cache of quotas that we've updated.  This is used to pull the "really latest" during back to
 	// back quota evaluations that touch the same quota doc.  This only works because we can compare etcd resourceVersions
 	// for the same resource as integers.  Before this change: 22 updates with 12 conflicts.  after this change: 15 updates with 0 conflicts
 	updatedQuotas *lru.Cache
+	group         singleflight.Group
 }
 
 // NewQuotaAccessor creates an object that conforms to the QuotaAccessor interface to be used to retrieve quota objects.
-func NewQuotaAccessor(c client.Client) *quotaAccessor {
+func NewQuotaAccessor(c client.Client, apiReader client.Reader) *quotaAccessor {
 	updatedCache := lru.New(100)
 	return &quotaAccessor{
 		client:        c,
+		apiReader:     apiReader,
 		updatedQuotas: updatedCache,
 	}
 }
 
 func (q *quotaAccessor) UpdateQuotaStatus(newQuota *v1alpha1.ElasticQuota) error {
 	err := q.client.Update(context.TODO(), newQuota)
-	if err != nil {
-		return err
-	}
 	key := newQuota.Namespace + "/" + newQuota.Name
+	if err != nil {
+		if !apierrors.IsConflict(err) {
+			return err
+		}
+		result, getErr, _ := q.group.Do(key, func() (any, error) {
+			freshQuota := &v1alpha1.ElasticQuota{}
+			if getErr := q.apiReader.Get(context.TODO(), types.NamespacedName{
+				Namespace: newQuota.Namespace,
+				Name:      newQuota.Name,
+			}, freshQuota); getErr != nil {
+				return nil, getErr
+			}
+			return freshQuota, nil
+		})
+		if getErr != nil {
+			return err
+		}
+		newQuota = result.(*v1alpha1.ElasticQuota)
+	}
 	q.updatedQuotas.Add(key, newQuota)
-	klog.Infof("quota acessor update status for: %v, usage: %v", key, newQuota.Status.Used)
-	return nil
+	klog.V(4).InfoS("Quota accessor updated", "key", key, "usage", newQuota.Annotations[extension.AnnotationChildRequest])
+	return err
 }
 
 var etcdVersioner = storage.APIObjectVersioner{}
