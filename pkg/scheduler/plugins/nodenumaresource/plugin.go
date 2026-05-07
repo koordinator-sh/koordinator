@@ -560,8 +560,18 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 		return nil
 	}
 
-	_, status = tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, map[types.UID]reusableAlloc{reservationInfo.UID(): matchedReservationAlloc}, pod, node)
-	return status
+	result, status := tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, map[types.UID]reusableAlloc{reservationInfo.UID(): matchedReservationAlloc}, pod, node)
+	if !status.IsSuccess() {
+		return status
+	}
+	if result == nil {
+		// tryAllocateFromReusable returned nil/nil ("no reservation satisfied, but fallback allowed").
+		// In the FilterNominateReservation context, this means the reservation's NUMA scope is
+		// incompatible with the current best topology hint; treat it as unschedulable so this
+		// reservation is excluded from the nominator candidate pool.
+		return fwktype.NewStatus(fwktype.Unschedulable, "reservation NUMA scope is incompatible with the best topology hint")
+	}
+	return nil
 }
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
@@ -813,7 +823,13 @@ func tryAllocateFromNode(
 		}()
 	} else {
 		resourceOptions.requiredResources = nil
-		resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed)
+		// Return both unmatched and matched reservation owner usage to eliminate double accounting.
+		// For each reservation, the fake reservation pod occupies R.Spec.Resources while its owner
+		// pods are independently accounted in the node cache. Only the second-layer owner usage
+		// (already consumed inside the reservation) should be returned here; R.Spec.Resources remain
+		// deducted as they are still reserved from the pod's perspective when going through the
+		// node-free path, so the pod cannot steal any reservation capacity.
+		resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocated)
 		resourceOptions.preferredCPUs = cpuset.NewCPUSet()
 		resourceOptions.preemptibleCPUs = cpuset.NewCPUSet()
 	}
