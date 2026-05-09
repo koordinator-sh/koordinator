@@ -34,6 +34,10 @@ import (
 // resetState resets package-level globals between tests.
 func resetState() {
 	initMu.Lock()
+	if currentWatcher != nil {
+		_ = currentWatcher.Close()
+		currentWatcher = nil
+	}
 	initialized = false
 	initMu.Unlock()
 	lock.Lock()
@@ -96,7 +100,10 @@ func TestCheckerRetryAfterFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on first call with missing cert")
 	}
-	if initialized {
+	initMu.Lock()
+	initDone := initialized
+	initMu.Unlock()
+	if initDone {
 		t.Fatal("initialized must be false after failed init attempt")
 	}
 
@@ -109,7 +116,10 @@ func TestCheckerRetryAfterFailure(t *testing.T) {
 	if err := tryInit(); err != nil {
 		t.Fatalf("expected tryInit to succeed after cert written, got: %v", err)
 	}
-	if !initialized {
+	initMu.Lock()
+	initDone = initialized
+	initMu.Unlock()
+	if !initDone {
 		t.Fatal("initialized must be true after successful init")
 	}
 }

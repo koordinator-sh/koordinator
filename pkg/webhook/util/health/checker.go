@@ -34,10 +34,11 @@ import (
 var (
 	caCertFilePath = path.Join(webhookutil.GetCertDir(), "ca-cert.pem")
 
-	initMu      sync.Mutex
-	initialized bool
-	lock        sync.Mutex
-	client      *http.Client
+	initMu         sync.Mutex
+	initialized    bool
+	currentWatcher *fsnotify.Watcher
+	lock           sync.Mutex
+	client         *http.Client
 )
 
 func tryInit() error {
@@ -47,17 +48,18 @@ func tryInit() error {
 		return nil
 	}
 	if err := loadHTTPClientWithCACert(); err != nil {
-		return fmt.Errorf("failed to load ca-cert for the first time: %v", err)
+		return fmt.Errorf("failed to load ca-cert for the first time: %w", err)
 	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		return fmt.Errorf("failed to new ca-cert watcher: %v", err)
+		return fmt.Errorf("failed to create ca-cert watcher: %w", err)
 	}
 	if err = watcher.Add(caCertFilePath); err != nil {
 		_ = watcher.Close()
-		return fmt.Errorf("failed to add %v into watcher: %v", caCertFilePath, err)
+		return fmt.Errorf("failed to add %v into watcher: %w", caCertFilePath, err)
 	}
 	go watchCACert(watcher)
+	currentWatcher = watcher
 	initialized = true
 	return nil
 }
