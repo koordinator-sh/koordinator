@@ -172,7 +172,7 @@ total_unevictable 0
 					"test-host-app": 209715200,
 				},
 				hostAppCPUUsage:    &metriccache.Point{Value: 1},
-				hostAPpMemoryUsage: &metriccache.Point{Value: 209715200},
+				hostAPpMemoryUsage: &metriccache.Point{Value: 104857600},
 			},
 		},
 		{
@@ -510,6 +510,12 @@ total_unevictable 0
 				// TODO mock time
 				assert.Equal(t, tt.wants.hostAppCPUUsage.Value, cpuUsage.Value)
 				assert.Equal(t, tt.wants.hostAPpMemoryUsage.Value, memoryUsage.Value)
+
+				if tt.name == "collect with policy UsageWithPageCache" {
+					memWithPageCache := c.sharedState.GetHostAppMemoryWithPageCache()
+					assert.NotNil(t, memWithPageCache)
+					assert.Equal(t, float64(209715200), memWithPageCache.Value)
+				}
 			}
 		})
 	}

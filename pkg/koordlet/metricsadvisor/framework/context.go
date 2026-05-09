@@ -67,8 +67,10 @@ type SharedState struct {
 func NewSharedState() *SharedState {
 	return &SharedState{
 		LatestMetric: LatestMetric{
-			podsCPUByCollector:    make(map[string]metriccache.Point),
-			podsMemoryByCollector: make(map[string]metriccache.Point),
+			podsCPUByCollector:                    make(map[string]metriccache.Point),
+			podsMemoryByCollector:                 make(map[string]metriccache.Point),
+			podsMemoryWithPageCacheByCollector:    make(map[string]metriccache.Point),
+			podsMemoryWithHotPageCacheByCollector: make(map[string]metriccache.Point),
 		},
 	}
 }
