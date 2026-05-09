@@ -467,6 +467,13 @@ total_unevictable 0
 				c.collectHostAppResUsed()
 			})
 
+			if tt.fields.getNodeSLO != nil && len(tt.fields.getNodeSLO.Spec.HostApplications) > 0 && tt.name == "get host app metric" {
+				cpuPoint, memPoint := c.sharedState.GetHostAppUsage()
+				assert.NotNil(t, cpuPoint)
+				assert.NotNil(t, memPoint)
+				assert.NotNil(t, c.sharedState.GetHostAppMemoryWithPageCache())
+			}
+
 			querier, err := metricCache.Querier(testNow.Add(-time.Minute), testNow)
 			assert.NoError(t, err)
 

@@ -352,10 +352,13 @@ DirectMap1G:           0 kB`
 					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
 					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
 					helper.WriteProcSubFileContents(system.ProcMemInfoName, meminfo)
+					helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
+					helper.WriteCgroupFileContents(testHostAppParentDir, system.MemoryStat, testMemStat)
+					helper.WriteCgroupFileContents(testHostAppParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 				},
 			},
 			wantstrated: false,

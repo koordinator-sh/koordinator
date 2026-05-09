@@ -1276,7 +1276,8 @@ func Test_nodeMetricInformer_collectSystemMetric(t *testing.T) {
 	startTime := now.Add(-time.Second * 120)
 
 	type args struct {
-		queryparam metriccache.QueryParam
+		queryparam          metriccache.QueryParam
+		memoryCollectPolicy slov1alpha1.NodeMemoryCollectPolicy
 	}
 	type samples struct {
 		CPUUsed float64
@@ -1290,9 +1291,10 @@ func Test_nodeMetricInformer_collectSystemMetric(t *testing.T) {
 		want1   time.Duration
 	}{
 		{
-			name: "test-1",
+			name: "test-1 usageWithoutPageCache",
 			args: args{
-				queryparam: metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				memoryCollectPolicy: slov1alpha1.UsageWithoutPageCache,
 			},
 			samples: samples{
 				CPUUsed: 2,
@@ -1301,6 +1303,38 @@ func Test_nodeMetricInformer_collectSystemMetric(t *testing.T) {
 			want: v1.ResourceList{
 				v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
 				v1.ResourceMemory: *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+			},
+			want1: now.Sub(startTime),
+		},
+		{
+			name: "test-2 usageWithPageCache",
+			args: args{
+				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				memoryCollectPolicy: slov1alpha1.UsageWithPageCache,
+			},
+			samples: samples{
+				CPUUsed: 2,
+				MemUsed: 15 * 1024 * 1024 * 1024,
+			},
+			want: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(15*1024*1024*1024, resource.BinarySI),
+			},
+			want1: now.Sub(startTime),
+		},
+		{
+			name: "test-3 usageWithHotPageCache",
+			args: args{
+				queryparam:          metriccache.QueryParam{Start: &startTime, End: &now, Aggregate: metriccache.AggregationTypeAVG},
+				memoryCollectPolicy: slov1alpha1.UsageWithHotPageCache,
+			},
+			samples: samples{
+				CPUUsed: 2,
+				MemUsed: 12 * 1024 * 1024 * 1024,
+			},
+			want: v1.ResourceList{
+				v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(12*1024*1024*1024, resource.BinarySI),
 			},
 			want1: now.Sub(startTime),
 		},
@@ -1318,17 +1352,28 @@ func Test_nodeMetricInformer_collectSystemMetric(t *testing.T) {
 			assert.NoError(t, err)
 			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, cpuQueryMeta, tt.samples.CPUUsed, duration)
 
-			memQueryMeta, err := metriccache.SystemMemoryUsageMetric.BuildQueryMeta(nil)
+			var memMetric metriccache.MetricResource
+			switch tt.args.memoryCollectPolicy {
+			case slov1alpha1.UsageWithPageCache:
+				memMetric = metriccache.SystemMemoryUsageWithPageCacheMetric
+			case slov1alpha1.UsageWithHotPageCache:
+				memMetric = metriccache.SystemMemoryWithHotPageUsageMetric
+				system.SetIsStartColdMemory(true)
+			default:
+				memMetric = metriccache.SystemMemoryUsageMetric
+			}
+
+			memQueryMeta, err := memMetric.BuildQueryMeta(nil)
 			assert.NoError(t, err)
 			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, tt.samples.MemUsed, duration)
-			
-			defaultPolicy := slov1alpha1.UsageWithoutPageCache
+
+			policy := tt.args.memoryCollectPolicy
 			r := &nodeMetricInformer{
 				metricCache: mockMetricCache,
 				nodeMetric: &slov1alpha1.NodeMetric{
 					Spec: slov1alpha1.NodeMetricSpec{
 						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
-							NodeMemoryCollectPolicy: &defaultPolicy,
+							NodeMemoryCollectPolicy: &policy,
 						},
 					},
 				},

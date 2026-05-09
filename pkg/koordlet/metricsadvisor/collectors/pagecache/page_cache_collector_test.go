@@ -262,6 +262,11 @@ DirectMap1G:           0 kB`
 			assert.NotPanics(t, func() {
 				c.collectPageCache()
 			})
+			if tt.wantMetrics {
+				assert.NotNil(t, c.sharedState.GetNodeMemoryWithPageCache())
+				podPageCacheUsage := c.sharedState.GetPodsMemoryWithPageCacheByCollector()
+				assert.NotEmpty(t, podPageCacheUsage)
+			}
 			assert.NotPanics(t, func() {
 				c.Setup(&framework.Context{})
 			})

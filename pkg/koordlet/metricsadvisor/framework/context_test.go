@@ -180,3 +180,57 @@ func TestSharedState_UpdateHostAppUsage(t *testing.T) {
 		})
 	}
 }
+
+func TestSharedState_NodeMemoryWithPageCache(t *testing.T) {
+	now := time.Now()
+	r := NewSharedState()
+	p := metriccache.Point{Timestamp: now, Value: 2048}
+	r.UpdateNodeMemoryWithPageCache(p)
+	got := r.GetNodeMemoryWithPageCache()
+	assert.Equal(t, p, *got)
+}
+
+func TestSharedState_NodeMemoryWithHotPageCache(t *testing.T) {
+	now := time.Now()
+	r := NewSharedState()
+	p := metriccache.Point{Timestamp: now, Value: 3072}
+	r.UpdateNodeMemoryWithHotPageCache(p)
+	got := r.GetNodeMemoryWithHotPageCache()
+	assert.Equal(t, p, *got)
+}
+
+func TestSharedState_PodsMemoryWithPageCache(t *testing.T) {
+	now := time.Now()
+	r := NewSharedState()
+	p := metriccache.Point{Timestamp: now, Value: 4096}
+	r.UpdatePodsMemoryWithPageCache("c1", p)
+	got := r.GetPodsMemoryWithPageCacheByCollector()
+	assert.Equal(t, p, got["c1"])
+}
+
+func TestSharedState_PodsMemoryWithHotPageCache(t *testing.T) {
+	now := time.Now()
+	r := NewSharedState()
+	p := metriccache.Point{Timestamp: now, Value: 5120}
+	r.UpdatePodsMemoryWithHotPageCache("c1", p)
+	got := r.GetPodsMemoryWithHotPageCacheByCollector()
+	assert.Equal(t, p, got["c1"])
+}
+
+func TestSharedState_HostAppMemoryWithPageCache(t *testing.T) {
+	now := time.Now()
+	r := NewSharedState()
+	p := metriccache.Point{Timestamp: now, Value: 6144}
+	r.UpdateHostAppMemoryWithPageCache(p)
+	got := r.GetHostAppMemoryWithPageCache()
+	assert.Equal(t, p, *got)
+}
+
+func TestSharedState_HostAppMemoryWithHotPageCache(t *testing.T) {
+	now := time.Now()
+	r := NewSharedState()
+	p := metriccache.Point{Timestamp: now, Value: 7168}
+	r.UpdateHostAppMemoryWithHotPageCache(p)
+	got := r.GetHostAppMemoryWithHotPageCache()
+	assert.Equal(t, p, *got)
+}
