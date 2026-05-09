@@ -952,9 +952,12 @@ func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState fwktype.CycleStat
 	}
 
 	nodeInfoOut := nodeInfo.Snapshot()
+	// Ignore the nominated reservations of the same job
+	podsOfSameJob := frameworkext.GetNominatedPodsOfTheSameJob(cycleState)
 
 	for _, rInfo := range nominatedReservationInfos {
-		if schedulingcorev1.PodPriority(rInfo.Pod) >= schedulingcorev1.PodPriority(pod) && rInfo.Pod.UID != pod.UID {
+		if schedulingcorev1.PodPriority(rInfo.Pod) >= schedulingcorev1.PodPriority(pod) && rInfo.Pod.UID != pod.UID &&
+			(podsOfSameJob == nil || !podsOfSameJob.Has(string(rInfo.Pod.UID))) {
 			pInfo, _ := framework.NewPodInfo(rInfo.Pod)
 			nodeInfoOut.AddPodInfo(pInfo)
 			status := pl.handle.RunPreFilterExtensionAddPod(ctx, cycleState, pod, pInfo, nodeInfoOut)

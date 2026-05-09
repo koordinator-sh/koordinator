@@ -49,7 +49,7 @@ func MakeNominatedPodsOfTheSameJob(cycleState fwktype.CycleState, uids []string)
 	})
 }
 
-func getNominatedPodsOfTheSameJob(cycleState fwktype.CycleState) sets.Set[string] {
+func GetNominatedPodsOfTheSameJob(cycleState fwktype.CycleState) sets.Set[string] {
 	s, err := cycleState.Read(nominatedPodsOfTheSameJob)
 	if err != nil || s == nil {
 		return nil
@@ -75,7 +75,7 @@ func (ext *frameworkExtenderImpl) runFilterPluginsWithNominatedPods(
 	pod *corev1.Pod,
 	info fwktype.NodeInfo,
 ) *fwktype.Status {
-	podsOfSameJob := getNominatedPodsOfTheSameJob(state)
+	podsOfSameJob := GetNominatedPodsOfTheSameJob(state)
 	singlePass := k8sfeature.DefaultFeatureGate.Enabled(features.SkipFilterWithNominatedPods)
 
 	var status *fwktype.Status
