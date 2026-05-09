@@ -17,9 +17,11 @@ limitations under the License.
 package health
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -37,6 +39,11 @@ var (
 	onceWatch sync.Once
 	lock      sync.Mutex
 	client    *http.Client
+	// newWatcher is a variable so tests can override fsnotify.NewWatcher.
+	newWatcher = fsnotify.NewWatcher
+	// watchCancel/watchDone allow tests to stop watcher goroutines safely.
+	watchCancel context.CancelFunc
+	watchDone   chan struct{}
 )
 
 func loadHTTPClientWithCACert() error {
@@ -58,9 +65,11 @@ func loadHTTPClientWithCACert() error {
 	return nil
 }
 
-func watchCACert(watcher *fsnotify.Watcher) {
+func watchCACert(ctx context.Context, watcher *fsnotify.Watcher) {
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case event, ok := <-watcher.Events:
 			// Channel is closed.
 			if !ok {
@@ -110,16 +119,34 @@ func isRemove(event fsnotify.Event) bool {
 func Checker(_ *http.Request) error {
 	onceWatch.Do(func() {
 		if err := loadHTTPClientWithCACert(); err != nil {
-			panic(fmt.Errorf("failed to load ca-cert for the first time: %v", err))
+			klog.Errorf("Failed to load ca-cert for the first time: %v. Falling back to system defaults.", err)
+			// Fall back to default HTTP client (system root CAs) to avoid panic.
+			lock.Lock()
+			client = http.DefaultClient
+			lock.Unlock()
 		}
-		watcher, err := fsnotify.NewWatcher()
+
+		watcher, err := newWatcher()
 		if err != nil {
-			panic(fmt.Errorf("failed to new ca-cert watcher: %v", err))
+			klog.Errorf("Failed to create ca-cert watcher: %v. Continuing without file watcher.", err)
+			return
 		}
+
 		if err = watcher.Add(caCertFilePath); err != nil {
-			panic(fmt.Errorf("failed to add %v into watcher: %v", caCertFilePath, err))
+			klog.Errorf("Failed to watch ca-cert file %v: %v. Continuing without file watcher.", caCertFilePath, err)
+			// Close watcher to avoid leaking OS resources before returning.
+			_ = watcher.Close()
+			return
 		}
-		go watchCACert(watcher)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		watchCancel = cancel
+		watchDone = make(chan struct{})
+		go func() {
+			defer close(watchDone)
+			defer watcher.Close()
+			watchCACert(ctx, watcher)
+		}()
 	})
 
 	url := fmt.Sprintf("https://localhost:%d/healthz", webhookutil.GetPort())
@@ -129,9 +156,31 @@ func Checker(_ *http.Request) error {
 	}
 	req.Header.Add("Content-Type", "application/json")
 
+	// If our shared client is the default fallback, attempt to reload CA once.
 	lock.Lock()
-	defer lock.Unlock()
-	_, err = client.Do(req)
+	curClient := client
+	lock.Unlock()
+
+	if curClient == http.DefaultClient || curClient == nil {
+		if err := loadHTTPClientWithCACert(); err != nil {
+			klog.V(2).Infof("Retry loading ca-cert failed: %v", err)
+		} else {
+			lock.Lock()
+			curClient = client
+			lock.Unlock()
+		}
+	}
+
+	if curClient == nil {
+		curClient = http.DefaultClient
+	}
+
+	resp, err := curClient.Do(req)
+	if resp != nil {
+		// Ensure body is always closed to avoid leaking connections.
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
 	if err != nil {
 		return err
 	}
