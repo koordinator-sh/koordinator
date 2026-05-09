@@ -256,6 +256,9 @@ DirectMap1G:           0 kB`
 				CgroupReader:   resourceexecutor.NewCgroupReader(),
 			})
 			c := collector.(*pageCacheCollector)
+			c.Setup(&framework.Context{
+				State: framework.NewSharedState(),
+			})
 			assert.NotPanics(t, func() {
 				c.collectPageCache()
 			})

@@ -50,6 +50,7 @@ type pageCacheCollector struct {
 	cgroupReader          resourceexecutor.CgroupReader
 	podFilter             framework.PodFilter
 	coldPageCollectorGate bool
+	sharedState           *framework.SharedState
 }
 
 func New(opt *framework.Options) framework.Collector {
@@ -73,7 +74,9 @@ func (p *pageCacheCollector) Enabled() bool {
 	return p.coldPageCollectorGate
 }
 
-func (p *pageCacheCollector) Setup(c *framework.Context) {}
+func (p *pageCacheCollector) Setup(c *framework.Context) {
+	p.sharedState = c.State
+}
 
 func (p *pageCacheCollector) Run(stopCh <-chan struct{}) {
 	go wait.Until(p.collectPageCache, p.collectInterval, stopCh)
@@ -115,6 +118,11 @@ func (p *pageCacheCollector) collectNodePageCache() {
 		return
 	}
 	nodeMetrics = append(nodeMetrics, memUsageWithPageCacheMetric)
+
+	p.sharedState.UpdateNodeMemoryWithPageCache(metriccache.Point{
+		Timestamp: collectTime,
+		Value:     memUsageWithPageCacheValue,
+	})
 
 	appender := p.appendableDB.Appender()
 	if err := appender.Append(nodeMetrics); err != nil {
@@ -167,6 +175,11 @@ func (p *pageCacheCollector) collectPodPageCache() {
 			return
 		}
 		metrics = append(metrics, memUsageWithPageCacheMetric)
+
+		p.sharedState.UpdatePodsMemoryWithPageCache(uid, metriccache.Point{
+			Timestamp: collectTime,
+			Value:     float64(memUsageWithPageCacheValue),
+		})
 
 		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, metrics)
 

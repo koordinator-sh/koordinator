@@ -111,6 +111,7 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 	resourceMetrics := make([]metriccache.MetricSample, 0)
 	allCPUUsageCores := metriccache.Point{Timestamp: timeNow(), Value: 0}
 	allMemoryUsage := metriccache.Point{Timestamp: timeNow(), Value: 0}
+	allMemoryUsageWithPageCache := metriccache.Point{Timestamp: timeNow(), Value: 0}
 	metrics.ResetHostApplicationResourceUsage()
 	for _, hostApp := range nodeSLO.Spec.HostApplications {
 		collectTime := timeNow()
@@ -181,6 +182,8 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 			klog.Warning("unrecognized node memory collect policy, use UsageWithoutPageCache as default")
 			allMemoryUsage.Value += float64(memoryUsageValue)
 		}
+
+		allMemoryUsageWithPageCache.Value += float64(memUsageWithPageCache)
 	}
 
 	appender := h.appendableDB.Appender()
@@ -195,6 +198,7 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 	}
 
 	h.sharedState.UpdateHostAppUsage(allCPUUsageCores, allMemoryUsage)
+	h.sharedState.UpdateHostAppMemoryWithPageCache(allMemoryUsageWithPageCache)
 
 	h.started.Store(true)
 	klog.V(4).Infof("collectHostAppResUsed finished, host application num %d, collected %d",

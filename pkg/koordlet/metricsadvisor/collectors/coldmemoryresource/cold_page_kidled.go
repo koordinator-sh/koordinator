@@ -48,6 +48,7 @@ type kidledcoldPageCollector struct {
 	appendableDB    metriccache.Appendable
 	metricDB        metriccache.MetricCache // TODO remove redundant var
 	coldBoundary    int
+	sharedState     *framework.SharedState
 }
 
 func (k *kidledcoldPageCollector) Run(stopCh <-chan struct{}) {
@@ -79,7 +80,9 @@ func (k *kidledcoldPageCollector) Enabled() bool {
 	return false
 }
 
-func (k *kidledcoldPageCollector) Setup(c1 *framework.Context) {}
+func (k *kidledcoldPageCollector) Setup(c1 *framework.Context) {
+	k.sharedState = c1.State
+}
 
 func (k *kidledcoldPageCollector) collectColdPageInfo() {
 	if k.statesInformer == nil {
@@ -107,12 +110,12 @@ func (k *kidledcoldPageCollector) collectColdPageInfo() {
 
 	appender := k.appendableDB.Appender()
 	if err := appender.Append(coldPageMetrics); err != nil {
-		klog.ErrorS(err, "Append node metrics error")
+		klog.ErrorS(err, "Append cold memory metrics error")
 		return
 	}
 
 	if err := appender.Commit(); err != nil {
-		klog.Warningf("Commit node metrics failed, reason: %v", err)
+		klog.Warningf("Commit cold metrics failed, reason: %v", err)
 		return
 	}
 
@@ -143,6 +146,11 @@ func (k *kidledcoldPageCollector) collectNodeColdPageInfo() ([]metriccache.Metri
 		return nil, err
 	}
 	coldPageMetrics = append(coldPageMetrics, memUsageWithHotPageMetrics)
+
+	k.sharedState.UpdateNodeMemoryWithHotPageCache(metriccache.Point{
+		Timestamp: collectTime,
+		Value:     memUsageWithHotPageValue,
+	})
 
 	klog.V(4).Infof("collectNodeResUsed finished, count %v, memUsageWithHotPage[%v], coldPageSize[%v]",
 		len(coldPageMetrics), memUsageWithHotPageValue, nodeColdPageBytes)
@@ -192,6 +200,12 @@ func (k *kidledcoldPageCollector) collectPodsColdPageInfo() ([]metriccache.Metri
 			return nil, err
 		}
 		coldMetrics = append(coldMetrics, podMemUsageWithHotPageMetrics)
+
+		k.sharedState.UpdatePodsMemoryWithHotPageCache(uid, metriccache.Point{
+			Timestamp: collectTime,
+			Value:     podMemUsageWithHotPageValue,
+		})
+
 		count++
 		containerColdPageMetrics, err := k.collectContainersColdPageInfo(meta)
 		if err != nil {
@@ -258,8 +272,11 @@ func (k *kidledcoldPageCollector) collectHostAppsColdPageInfo() ([]metriccache.M
 	}
 	coldMetrics := make([]metriccache.MetricSample, 0, len(nodeSLO.Spec.HostApplications))
 	count := 0
+	var allMemoryUsageWithHotPageCache float64
+	var allTimestamp time.Time
 	for _, hostApp := range nodeSLO.Spec.HostApplications {
 		collectTime := timeNow()
+		allTimestamp = collectTime
 		cgroupDir := koordletutil.GetHostAppCgroupRelativePath(&hostApp)
 		coldPageBytes, err := k.cgroupReader.ReadMemoryColdPageUsage(cgroupDir)
 		if err != nil {
@@ -287,8 +304,17 @@ func (k *kidledcoldPageCollector) collectHostAppsColdPageInfo() ([]metriccache.M
 			return nil, err
 		}
 		coldMetrics = append(coldMetrics, memUsageWithHotPageMetrics)
+		allMemoryUsageWithHotPageCache += memUsageWithHotPageValue
 		count++
 	}
+
+	if count > 0 {
+		k.sharedState.UpdateHostAppMemoryWithHotPageCache(metriccache.Point{
+			Timestamp: allTimestamp,
+			Value:     allMemoryUsageWithHotPageCache,
+		})
+	}
+
 	klog.V(4).Infof("collectHostAppsColdPageInfo finished, host application num %d, collected %d", len(coldMetrics), count)
 	return coldMetrics, nil
 }

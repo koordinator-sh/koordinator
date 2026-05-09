@@ -134,9 +134,29 @@ func (s *systemResourceCollector) collectSysResUsed() {
 		return
 	}
 
+	metricsToAppend := []metriccache.MetricSample{systemCPUMetric, systemMemoryMetric}
+
+	nodeMemoryWithPageCache := s.sharedState.GetNodeMemoryWithPageCache()
+	hostAppMemoryWithPageCache := s.sharedState.GetHostAppMemoryWithPageCache()
+	if podsMemoryWithPageCache, err := s.getAllPodsMemoryWithPageCache(); err == nil && nodeMemoryWithPageCache != nil && hostAppMemoryWithPageCache != nil {
+		systemMemoryUsageWithPageCache := util.MaxFloat64(nodeMemoryWithPageCache.Value-podsMemoryWithPageCache-hostAppMemoryWithPageCache.Value, 0)
+		if metric, err := metriccache.SystemMemoryUsageWithPageCacheMetric.GenerateSample(nil, collectTime, systemMemoryUsageWithPageCache); err == nil {
+			metricsToAppend = append(metricsToAppend, metric)
+		}
+	}
+
+	nodeMemoryWithHotPageCache := s.sharedState.GetNodeMemoryWithHotPageCache()
+	hostAppMemoryWithHotPageCache := s.sharedState.GetHostAppMemoryWithHotPageCache()
+	if podsMemoryWithHotPageCache, err := s.getAllPodsMemoryWithHotPageCache(); err == nil && nodeMemoryWithHotPageCache != nil && hostAppMemoryWithHotPageCache != nil {
+		systemMemoryUsageWithHotPageCache := util.MaxFloat64(nodeMemoryWithHotPageCache.Value-podsMemoryWithHotPageCache-hostAppMemoryWithHotPageCache.Value, 0)
+		if metric, err := metriccache.SystemMemoryWithHotPageUsageMetric.GenerateSample(nil, collectTime, systemMemoryUsageWithHotPageCache); err == nil {
+			metricsToAppend = append(metricsToAppend, metric)
+		}
+	}
+
 	// commit metric sample
 	appender := s.appendableDB.Appender()
-	if err := appender.Append([]metriccache.MetricSample{systemCPUMetric, systemMemoryMetric}); err != nil {
+	if err := appender.Append(metricsToAppend); err != nil {
 		klog.ErrorS(err, "append system metrics error")
 		return
 	}
@@ -147,6 +167,40 @@ func (s *systemResourceCollector) collectSysResUsed() {
 
 	klog.V(4).Infof("collect system resource usage finished, cpu %v, memory %v", systemCPUUsage, systemMemoryUsage)
 	s.started.Store(true)
+}
+
+func (s *systemResourceCollector) getAllPodsMemoryWithPageCache() (float64, error) {
+	validTime := timeNow().Add(-s.outdatedInterval)
+	var memory float64
+	podMemoryByCollector := s.sharedState.GetPodsMemoryWithPageCacheByCollector()
+	if len(podMemoryByCollector) == 0 {
+		return 0, fmt.Errorf("pod resource memory with page cache is empty")
+	}
+	for collector, podMemory := range podMemoryByCollector {
+		if podMemory.Timestamp.Before(validTime) {
+			return 0, fmt.Errorf("pod collector %v memory with page cache metric is timeout, valid time %v, metric time is %v",
+				collector, validTime.String(), podMemory.Timestamp.String())
+		}
+		memory += podMemory.Value
+	}
+	return memory, nil
+}
+
+func (s *systemResourceCollector) getAllPodsMemoryWithHotPageCache() (float64, error) {
+	validTime := timeNow().Add(-s.outdatedInterval)
+	var memory float64
+	podMemoryByCollector := s.sharedState.GetPodsMemoryWithHotPageCacheByCollector()
+	if len(podMemoryByCollector) == 0 {
+		return 0, fmt.Errorf("pod resource memory with hot page cache is empty")
+	}
+	for collector, podMemory := range podMemoryByCollector {
+		if podMemory.Timestamp.Before(validTime) {
+			return 0, fmt.Errorf("pod collector %v memory with hot page cache metric is timeout, valid time %v, metric time is %v",
+				collector, validTime.String(), podMemory.Timestamp.String())
+		}
+		memory += podMemory.Value
+	}
+	return memory, nil
 }
 
 func (s *systemResourceCollector) getAllPodsResourceUsage() (cpuCore float64, memory float64, err error) {

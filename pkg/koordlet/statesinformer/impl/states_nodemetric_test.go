@@ -1321,8 +1321,17 @@ func Test_nodeMetricInformer_collectSystemMetric(t *testing.T) {
 			memQueryMeta, err := metriccache.SystemMemoryUsageMetric.BuildQueryMeta(nil)
 			assert.NoError(t, err)
 			buildMockQueryResult(ctrl, mockQuerier, mockResultFactory, memQueryMeta, tt.samples.MemUsed, duration)
+			
+			defaultPolicy := slov1alpha1.UsageWithoutPageCache
 			r := &nodeMetricInformer{
 				metricCache: mockMetricCache,
+				nodeMetric: &slov1alpha1.NodeMetric{
+					Spec: slov1alpha1.NodeMetricSpec{
+						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+							NodeMemoryCollectPolicy: &defaultPolicy,
+						},
+					},
+				},
 			}
 			got, got1, err := r.collectSystemMetric(tt.args.queryparam)
 			assert.NoError(t, err)
