@@ -29,6 +29,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 // resetState resets package-level globals between tests.
@@ -112,15 +114,68 @@ func TestCheckerRetryAfterFailure(t *testing.T) {
 		t.Fatalf("failed to write cert: %v", err)
 	}
 
-	// tryInit must succeed now that the cert exists.
-	if err := tryInit(); err != nil {
-		t.Fatalf("expected tryInit to succeed after cert written, got: %v", err)
-	}
+	// Second Checker() call: tryInit succeeds, then the HTTP request to localhost
+	// fails with a connection error (no server running) — that's expected.
+	// The important thing is that tryInit completed successfully.
+	_ = Checker(nil)
 	initMu.Lock()
 	initDone = initialized
 	initMu.Unlock()
 	if !initDone {
-		t.Fatal("initialized must be true after successful init")
+		t.Fatal("initialized must be true after successful init via Checker")
+	}
+}
+
+func TestTryInitFastPath(t *testing.T) {
+	resetState()
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "ca-cert.pem")
+
+	orig := caCertFilePath
+	caCertFilePath = certPath
+	defer func() {
+		caCertFilePath = orig
+		resetState()
+	}()
+
+	if err := os.WriteFile(certPath, generateTestCACert(t), 0644); err != nil {
+		t.Fatalf("failed to write cert: %v", err)
+	}
+
+	// First call: performs full initialization.
+	if err := tryInit(); err != nil {
+		t.Fatalf("first tryInit failed: %v", err)
+	}
+
+	// Second call: must hit the fast path (initialized == true) and return nil.
+	if err := tryInit(); err != nil {
+		t.Fatalf("second tryInit (fast path) failed: %v", err)
+	}
+}
+
+func TestIsWriteCreateRemove(t *testing.T) {
+	writeEvent := fsnotify.Event{Op: fsnotify.Write}
+	createEvent := fsnotify.Event{Op: fsnotify.Create}
+	removeEvent := fsnotify.Event{Op: fsnotify.Remove}
+	noneEvent := fsnotify.Event{Op: fsnotify.Chmod}
+
+	if !isWrite(writeEvent) {
+		t.Error("expected isWrite to return true for Write event")
+	}
+	if isWrite(createEvent) {
+		t.Error("expected isWrite to return false for Create event")
+	}
+	if !isCreate(createEvent) {
+		t.Error("expected isCreate to return true for Create event")
+	}
+	if isCreate(writeEvent) {
+		t.Error("expected isCreate to return false for Write event")
+	}
+	if !isRemove(removeEvent) {
+		t.Error("expected isRemove to return true for Remove event")
+	}
+	if isRemove(noneEvent) {
+		t.Error("expected isRemove to return false for Chmod event")
 	}
 }
 
