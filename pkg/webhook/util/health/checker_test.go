@@ -70,14 +70,8 @@ func makeCertAndServer(t *testing.T) (caPEM []byte, serverCert tls.Certificate, 
 		t.Fatal(err)
 	}
 
-	// find free port by listening on :0
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port = ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
-
+	// Preserve the existing return signature for callers, but avoid probing
+	// the OS for an ephemeral port when the tests do not use it.
 	return caPEM, cert, port
 }
 
