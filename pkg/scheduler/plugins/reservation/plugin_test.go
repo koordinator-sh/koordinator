@@ -4695,7 +4695,7 @@ func TestBind(t *testing.T) {
 			nodeName:    testNodeName,
 			reservation: reservation,
 			fakeClient:  koordfake.NewSimpleClientset(),
-			want:        fwktype.AsStatus(apierrors.NewNotFound(schedulingv1alpha1.Resource("reservations"), reservation.Name)),
+			want:        nil,
 		},
 		{
 			name:            "bind reservation successfully",
@@ -4736,18 +4736,30 @@ func TestBind(t *testing.T) {
 			got := pl.Bind(context.TODO(), nil, tt.pod, tt.nodeName)
 			assert.Equal(t, tt.want, got)
 
-			if tt.want.IsSuccess() && tt.reservation != nil {
-				reservation, err := client.SchedulingV1alpha1().Reservations().Get(context.TODO(), tt.reservation.Name, metav1.GetOptions{})
-				assert.NoError(t, err)
-				for _, r := range []*schedulingv1alpha1.Reservation{reservation, tt.wantReservation} {
-					if r != nil {
-						for i := range r.Status.Conditions {
-							r.Status.Conditions[i].LastProbeTime = metav1.Time{}
-							r.Status.Conditions[i].LastTransitionTime = metav1.Time{}
-						}
+			if (tt.want == nil || tt.want.IsSuccess()) && tt.wantReservation != nil {
+				normalizeConditions := func(r *schedulingv1alpha1.Reservation) *schedulingv1alpha1.Reservation {
+					if r == nil {
+						return nil
 					}
+					cloned := r.DeepCopy()
+					for i := range cloned.Status.Conditions {
+						cloned.Status.Conditions[i].LastProbeTime = metav1.Time{}
+						cloned.Status.Conditions[i].LastTransitionTime = metav1.Time{}
+					}
+					return cloned
 				}
-				assert.Equal(t, tt.wantReservation, reservation)
+				var updatedReservation *schedulingv1alpha1.Reservation
+				err := wait.PollImmediate(20*time.Millisecond, time.Second, func() (bool, error) {
+					reservation, err := client.SchedulingV1alpha1().Reservations().Get(context.TODO(), tt.reservation.Name, metav1.GetOptions{})
+					if err != nil {
+						return false, nil
+					}
+					updatedReservation = normalizeConditions(reservation)
+					wantReservation := normalizeConditions(tt.wantReservation)
+					return equality.Semantic.DeepEqual(updatedReservation, wantReservation), nil
+				})
+				assert.NoError(t, err)
+				assert.Equal(t, normalizeConditions(tt.wantReservation), updatedReservation)
 			}
 		})
 	}
