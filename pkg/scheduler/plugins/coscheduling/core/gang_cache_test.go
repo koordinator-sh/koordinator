@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
@@ -1759,4 +1760,134 @@ func TestGangCache_getWaitingPodsNum(t *testing.T) {
 			assert.Equalf(t, tt.want, gangCache.getWaitingPodsNum(tt.args.gangGroup), "getPendingPods(%v)", tt.args.gangGroup)
 		})
 	}
+}
+
+func TestGangCache_onPodDelete_Tombstone(t *testing.T) {
+	preTimeNowFn := timeNowFn
+	defer func() { timeNowFn = preTimeNowFn }()
+	timeNowFn = fakeTimeNowFn
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "pod1",
+			Annotations: map[string]string{
+				extension.AnnotationGangName:   "ganga",
+				extension.AnnotationGangMinNum: "1",
+			},
+		},
+	}
+
+	t.Run("valid tombstone deletes pod from gang cache", func(t *testing.T) {
+		gangCache := NewGangCache(&config.CoschedulingArgs{
+			DefaultTimeout:     metav1.Duration{Duration: time.Second},
+			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
+		}, nil, nil, nil, nil)
+
+		gangCache.onPodAdd(pod)
+		gangId := util.GetId("default", "ganga")
+		assert.NotNil(t, gangCache.gangItems[gangId])
+		assert.Equal(t, 1, len(gangCache.gangItems[gangId].Children))
+
+		tombstone := cache.DeletedFinalStateUnknown{Key: "default/pod1", Obj: pod}
+		gangCache.onPodDelete(tombstone)
+
+		// annotation-based gang with no children should be removed
+		assert.Nil(t, gangCache.gangItems[gangId])
+	})
+
+	t.Run("non-pod tombstone is ignored without panic", func(t *testing.T) {
+		gangCache := NewGangCache(&config.CoschedulingArgs{
+			DefaultTimeout:     metav1.Duration{Duration: time.Second},
+			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
+		}, nil, nil, nil, nil)
+
+		gangCache.onPodAdd(pod)
+		gangId := util.GetId("default", "ganga")
+		assert.Equal(t, 1, len(gangCache.gangItems[gangId].Children))
+
+		// pass a tombstone wrapping a non-Pod object – should be a no-op
+		tombstone := cache.DeletedFinalStateUnknown{Key: "default/pod1", Obj: "not-a-pod"}
+		gangCache.onPodDelete(tombstone)
+
+		// pod should still be in cache (event was ignored)
+		assert.Equal(t, 1, len(gangCache.gangItems[gangId].Children))
+	})
+
+	t.Run("unknown object type is ignored without panic", func(t *testing.T) {
+		gangCache := NewGangCache(&config.CoschedulingArgs{
+			DefaultTimeout:     metav1.Duration{Duration: time.Second},
+			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
+		}, nil, nil, nil, nil)
+
+		gangCache.onPodAdd(pod)
+		gangId := util.GetId("default", "ganga")
+		assert.Equal(t, 1, len(gangCache.gangItems[gangId].Children))
+
+		gangCache.onPodDelete("totally-wrong-type")
+
+		assert.Equal(t, 1, len(gangCache.gangItems[gangId].Children))
+	})
+}
+
+func TestGangCache_onPodGroupDelete_Tombstone(t *testing.T) {
+	preTimeNowFn := timeNowFn
+	defer func() { timeNowFn = preTimeNowFn }()
+	timeNowFn = fakeTimeNowFn
+
+	pg := &v1alpha1.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "ganga",
+		},
+		Spec: v1alpha1.PodGroupSpec{MinMember: 2},
+	}
+
+	t.Run("valid tombstone removes podgroup gang from cache", func(t *testing.T) {
+		gangCache := NewGangCache(&config.CoschedulingArgs{
+			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
+		}, nil, nil, nil, nil)
+
+		gangId := util.GetId("default", "ganga")
+		gangTmp := gangCache.getGangFromCacheByGangId(gangId, true)
+		gangTmp.GangGroupInfo = NewGangGroupInfo("", nil)
+		assert.Equal(t, 1, len(gangCache.gangItems))
+
+		tombstone := cache.DeletedFinalStateUnknown{Key: "default/ganga", Obj: pg}
+		gangCache.onPodGroupDelete(tombstone)
+
+		assert.Equal(t, 0, len(gangCache.gangItems))
+	})
+
+	t.Run("non-podgroup tombstone is ignored without panic", func(t *testing.T) {
+		gangCache := NewGangCache(&config.CoschedulingArgs{
+			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
+		}, nil, nil, nil, nil)
+
+		gangId := util.GetId("default", "ganga")
+		gangTmp := gangCache.getGangFromCacheByGangId(gangId, true)
+		gangTmp.GangGroupInfo = NewGangGroupInfo("", nil)
+		assert.Equal(t, 1, len(gangCache.gangItems))
+
+		tombstone := cache.DeletedFinalStateUnknown{Key: "default/ganga", Obj: "not-a-podgroup"}
+		gangCache.onPodGroupDelete(tombstone)
+
+		// gang should still be present (event was ignored)
+		assert.Equal(t, 1, len(gangCache.gangItems))
+	})
+
+	t.Run("unknown object type is ignored without panic", func(t *testing.T) {
+		gangCache := NewGangCache(&config.CoschedulingArgs{
+			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
+		}, nil, nil, nil, nil)
+
+		gangId := util.GetId("default", "ganga")
+		gangTmp := gangCache.getGangFromCacheByGangId(gangId, true)
+		gangTmp.GangGroupInfo = NewGangGroupInfo("", nil)
+		assert.Equal(t, 1, len(gangCache.gangItems))
+
+		gangCache.onPodGroupDelete("totally-wrong-type")
+
+		assert.Equal(t, 1, len(gangCache.gangItems))
+	})
 }
