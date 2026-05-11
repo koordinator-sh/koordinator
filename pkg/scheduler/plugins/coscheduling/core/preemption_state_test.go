@@ -20,13 +20,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 func Test_preemptionEvaluatorImpl_placeToSchedulePods_StatePersistence(t *testing.T) {
