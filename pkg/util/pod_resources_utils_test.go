@@ -198,6 +198,128 @@ func Test_GetPodBEMilliCPURequest(t *testing.T) {
 			wantLimit:   8000,
 		},
 		{
+			name: "init container less than app containers and overhead",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("2000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("5000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("7000"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						apiext.BatchCPU: resource.MustParse("500"),
+					},
+				},
+			},
+			wantRequest: 6500,
+			wantLimit:   8500,
+		},
+		{
+			name: "init container greater than app containers and overhead",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("1000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("2000"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("1000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("2000"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("5000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("7000"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						apiext.BatchCPU: resource.MustParse("500"),
+					},
+				},
+			},
+			wantRequest: 5500,
+			wantLimit:   7500,
+		},
+		{
+			name: "init container without limit",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("2000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("3000"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRequest: 3000,
+			wantLimit:   -1,
+		},
+		{
 			name: "empty resource",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
@@ -281,6 +403,128 @@ func Test_GetPodBEMemoryRequest(t *testing.T) {
 			},
 			wantRequest: 4194304,
 			wantLimit:   6291456,
+		},
+		{
+			name: "init container less than app containers and overhead",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("4Mi"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("3Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("5Mi"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						apiext.BatchMemory: resource.MustParse("1Mi"),
+					},
+				},
+			},
+			wantRequest: 5 * 1024 * 1024,
+			wantLimit:   7 * 1024 * 1024,
+		},
+		{
+			name: "init container greater than app containers and overhead",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("1Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("1Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("3Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("5Mi"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						apiext.BatchMemory: resource.MustParse("1Mi"),
+					},
+				},
+			},
+			wantRequest: 4 * 1024 * 1024,
+			wantLimit:   6 * 1024 * 1024,
+		},
+		{
+			name: "init container without limit",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("4Mi"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("3Mi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRequest: 3 * 1024 * 1024,
+			wantLimit:   -1,
 		},
 		{
 			name: "empty resource",
