@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,8 +36,12 @@ func BenchmarkPreFilter(b *testing.B) {
 	const numNodes = 256
 	nodes := makeGPUNodes(numNodes, 8)
 	suit := newPluginTestSuit(b, nodes)
-	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
-	assert.NoError(b, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Cleanup(cancel)
+	p, err := suit.proxyNew(ctx, getDefaultArgs(), suit.Framework)
+	if err != nil {
+		b.Fatalf("failed to create plugin: %v", err)
+	}
 	pl := p.(*Plugin)
 
 	for i := 0; i < numNodes; i++ {
@@ -50,7 +53,7 @@ func BenchmarkPreFilter(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cycleState := framework.NewCycleState()
-		_, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
+		_, status := pl.PreFilter(ctx, cycleState, pod, nil)
 		if !status.IsSuccess() && !status.IsSkip() {
 			b.Fatalf("PreFilter failed: %v", status)
 		}
@@ -63,8 +66,12 @@ func BenchmarkFilter_GPU(b *testing.B) {
 	const numNodes = 256
 	nodes := makeGPUNodes(numNodes, 8)
 	suit := newPluginTestSuit(b, nodes)
-	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
-	assert.NoError(b, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Cleanup(cancel)
+	p, err := suit.proxyNew(ctx, getDefaultArgs(), suit.Framework)
+	if err != nil {
+		b.Fatalf("failed to create plugin: %v", err)
+	}
 	pl := p.(*Plugin)
 
 	for i := 0; i < numNodes; i++ {
@@ -73,18 +80,20 @@ func BenchmarkFilter_GPU(b *testing.B) {
 
 	pod := makeGPUPod(1)
 	nodeInfo, err := suit.Framework.SnapshotSharedLister().NodeInfos().Get("node-0")
-	assert.NoError(b, err)
+	if err != nil {
+		b.Fatalf("failed to get node info: %v", err)
+	}
 
-	_, prefilterStatus := pl.PreFilter(context.TODO(), framework.NewCycleState(), pod, nil)
-	assert.True(b, prefilterStatus.IsSuccess())
+	baseState, status := preparePod(pod, pl.gpuSharedResourceTemplatesCache, pl.gpuSharedResourceTemplatesMatchedResources)
+	if !status.IsSuccess() {
+		b.Fatalf("preparePod failed: %v", status)
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cycleState := framework.NewCycleState()
-		state, status := preparePod(pod, pl.gpuSharedResourceTemplatesCache, pl.gpuSharedResourceTemplatesMatchedResources)
-		assert.True(b, status.IsSuccess())
-		cycleState.Write(stateKey, state)
-		filterStatus := pl.Filter(context.TODO(), cycleState, pod, nodeInfo)
+		cycleState.Write(stateKey, baseState.Clone())
+		filterStatus := pl.Filter(ctx, cycleState, pod, nodeInfo)
 		if !filterStatus.IsSuccess() {
 			b.Fatalf("Filter failed: %v", filterStatus)
 		}
@@ -96,8 +105,12 @@ func BenchmarkFilter_GPUShare(b *testing.B) {
 	const numNodes = 256
 	nodes := makeGPUNodes(numNodes, 8)
 	suit := newPluginTestSuit(b, nodes)
-	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
-	assert.NoError(b, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Cleanup(cancel)
+	p, err := suit.proxyNew(ctx, getDefaultArgs(), suit.Framework)
+	if err != nil {
+		b.Fatalf("failed to create plugin: %v", err)
+	}
 	pl := p.(*Plugin)
 
 	for i := 0; i < numNodes; i++ {
@@ -106,15 +119,20 @@ func BenchmarkFilter_GPUShare(b *testing.B) {
 
 	pod := makeGPUSharePod(50, 50)
 	nodeInfo, err := suit.Framework.SnapshotSharedLister().NodeInfos().Get("node-0")
-	assert.NoError(b, err)
+	if err != nil {
+		b.Fatalf("failed to get node info: %v", err)
+	}
+
+	baseState, status := preparePod(pod, pl.gpuSharedResourceTemplatesCache, pl.gpuSharedResourceTemplatesMatchedResources)
+	if !status.IsSuccess() {
+		b.Fatalf("preparePod failed: %v", status)
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cycleState := framework.NewCycleState()
-		state, status := preparePod(pod, pl.gpuSharedResourceTemplatesCache, pl.gpuSharedResourceTemplatesMatchedResources)
-		assert.True(b, status.IsSuccess())
-		cycleState.Write(stateKey, state)
-		filterStatus := pl.Filter(context.TODO(), cycleState, pod, nodeInfo)
+		cycleState.Write(stateKey, baseState.Clone())
+		filterStatus := pl.Filter(ctx, cycleState, pod, nodeInfo)
 		if !filterStatus.IsSuccess() {
 			b.Fatalf("Filter failed: %v", filterStatus)
 		}
@@ -126,8 +144,12 @@ func BenchmarkFilter_LargeCluster(b *testing.B) {
 	const numNodes = 1024
 	nodes := makeGPUNodes(numNodes, 8)
 	suit := newPluginTestSuit(b, nodes)
-	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
-	assert.NoError(b, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	b.Cleanup(cancel)
+	p, err := suit.proxyNew(ctx, getDefaultArgs(), suit.Framework)
+	if err != nil {
+		b.Fatalf("failed to create plugin: %v", err)
+	}
 	pl := p.(*Plugin)
 
 	for i := 0; i < numNodes; i++ {
@@ -136,15 +158,20 @@ func BenchmarkFilter_LargeCluster(b *testing.B) {
 
 	pod := makeGPUPod(1)
 	nodeInfo, err := suit.Framework.SnapshotSharedLister().NodeInfos().Get("node-0")
-	assert.NoError(b, err)
+	if err != nil {
+		b.Fatalf("failed to get node info: %v", err)
+	}
+
+	baseState, status := preparePod(pod, pl.gpuSharedResourceTemplatesCache, pl.gpuSharedResourceTemplatesMatchedResources)
+	if !status.IsSuccess() {
+		b.Fatalf("preparePod failed: %v", status)
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cycleState := framework.NewCycleState()
-		state, status := preparePod(pod, pl.gpuSharedResourceTemplatesCache, pl.gpuSharedResourceTemplatesMatchedResources)
-		assert.True(b, status.IsSuccess())
-		cycleState.Write(stateKey, state)
-		filterStatus := pl.Filter(context.TODO(), cycleState, pod, nodeInfo)
+		cycleState.Write(stateKey, baseState.Clone())
+		filterStatus := pl.Filter(ctx, cycleState, pod, nodeInfo)
 		if !filterStatus.IsSuccess() {
 			b.Fatalf("Filter failed: %v", filterStatus)
 		}
