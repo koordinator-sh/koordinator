@@ -214,7 +214,7 @@ func Test_jobEligibleToPreemptOthers_Async(t *testing.T) {
 			allPendingPods := []*corev1.Pod{triggerPod, pod2}
 
 			preemptionState := &JobPreemptionState{
-				TriggerPodKey:               framework.GetNamespacedName(triggerPod.Namespace, triggerPod.Name),
+				TriggerPodKey:                 framework.GetNamespacedName(triggerPod.Namespace, triggerPod.Name),
 				TerminatingPodOnNominatedNode: map[string]string{},
 			}
 			ctx := contextWithJobPreemptionState(context.Background(), preemptionState)
