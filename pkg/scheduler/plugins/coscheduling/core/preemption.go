@@ -394,6 +394,7 @@ func (ev *preemptionEvaluatorImpl) podEligibleToPreemptOthers(ctx context.Contex
 				if ev.isPreemptionAllowed(nodeInfo, p, pod) && podTerminatingByPreemption(p.GetPod()) {
 					terminatingPodKey := framework.GetNamespacedName(p.GetPod().Namespace, p.GetPod().Name)
 					jobPreemptionState.TerminatingPodOnNominatedNode[terminatingPodKey] = nomNodeName
+					// There is a terminating pod on the nominated node.
 					klog.V(4).InfoS("There is a terminating pod on the nominated node", "pod", klog.KObj(pod), "terminatingPod", klog.KObj(p.GetPod()), "node", nomNodeName, "enableAsyncPreemption", ev.enableAsyncPreemption)
 					if !ev.enableAsyncPreemption {
 						return false, ReasonTerminatingVictimOnNominatedNode
