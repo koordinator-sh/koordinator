@@ -198,6 +198,62 @@ func Test_GetPodBEMilliCPURequest(t *testing.T) {
 			wantLimit:   8000,
 		},
 		{
+			name: "init containers and overhead",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("3000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("5000"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("7000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("9000"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("2000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						apiext.BatchCPU: resource.MustParse("1000"),
+					},
+				},
+			},
+			wantRequest: 8000,
+			wantLimit:   10000,
+		},
+		{
 			name: "empty resource",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
@@ -281,6 +337,62 @@ func Test_GetPodBEMemoryRequest(t *testing.T) {
 			},
 			wantRequest: 4194304,
 			wantLimit:   6291456,
+		},
+		{
+			name: "init containers and overhead",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("3Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("5Mi"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("7Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("9Mi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("4Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("4Mi"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+							},
+						},
+					},
+					Overhead: corev1.ResourceList{
+						apiext.BatchMemory: resource.MustParse("1Mi"),
+					},
+				},
+			},
+			wantRequest: 8388608,
+			wantLimit:   10485760,
 		},
 		{
 			name: "empty resource",
