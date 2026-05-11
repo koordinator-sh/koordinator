@@ -383,7 +383,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 	if !status.IsSuccess() {
 		return status
 	}
-	if status := p.filterAmplifiedCPUs(state.requests.Cpu().MilliValue(), nodeInfo, requestCPUBind); !status.IsSuccess() {
+	if status := p.filterAmplifiedCPUs(cycleState, state.requests.Cpu().MilliValue(), nodeInfo, requestCPUBind); !status.IsSuccess() {
 		return status
 	}
 
@@ -450,7 +450,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 	return nil
 }
 
-func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.NodeInfo, requestCPUBind bool) *fwktype.Status {
+func (p *Plugin) filterAmplifiedCPUs(cycleState fwktype.CycleState, podRequestMilliCPU int64, nodeInfo fwktype.NodeInfo, requestCPUBind bool) *fwktype.Status {
 	if podRequestMilliCPU == 0 {
 		return nil
 	}
@@ -471,8 +471,6 @@ func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.
 		podRequestMilliCPU = extension.Amplify(podRequestMilliCPU, cpuAmplificationRatio)
 	}
 
-	// TODO(joseph): Reservations and preemption should be considered here.
-	// TODO: support allocate reserved cpus with amplified ratios
 	_, allocated, err := p.resourceManager.GetAvailableCPUs(node.Name, cpuset.CPUSet{})
 	if err != nil {
 		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
@@ -483,6 +481,30 @@ func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.
 		requestedMilliCPU = requestedMilliCPU - allocatedMilliCPU
 		requestedMilliCPU += extension.Amplify(allocatedMilliCPU, cpuAmplificationRatio)
 	}
+
+	// Account for reservation CPUs that can be reused by the pod. When
+	// a reservation holds CPUSet CPUs, those CPUs are already counted in
+	// allocatedMilliCPU and amplified in requestedMilliCPU. If the pod
+	// can reuse these reservation CPUs, the effective requested should be
+	// reduced accordingly since the pod replaces the reservation's usage
+	// rather than adding to it.
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(node.Name)
+	if restoreState != nil && len(restoreState.matched) > 0 {
+		var reusableCPUSetMilliCPU int64
+		for _, alloc := range restoreState.matched {
+			if !alloc.remainedCPUs.IsEmpty() {
+				reusableCPUSetMilliCPU += int64(alloc.remainedCPUs.Size()) * 1000
+			}
+		}
+		if reusableCPUSetMilliCPU > 0 {
+			// The reservation's CPUSet CPUs consume amplified capacity
+			// in requestedMilliCPU. Since the pod will reuse them,
+			// subtract their amplified contribution.
+			requestedMilliCPU -= extension.Amplify(reusableCPUSetMilliCPU, cpuAmplificationRatio)
+		}
+	}
+
 	if podRequestMilliCPU > nodeInfo.GetAllocatable().GetMilliCPU()-requestedMilliCPU {
 		return fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientAmplifiedCPU)
 	}
