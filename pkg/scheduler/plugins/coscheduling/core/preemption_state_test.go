@@ -87,8 +87,11 @@ func Test_preemptionEvaluatorImpl_placeToSchedulePods_StatePersistence(t *testin
 	preemptionCosts := map[string]int{"node1": 0}
 
 	// This addPod mock simulates what happens in real code: it updates nodeInfo
+	// We capture the state here to verify that assumedCycleStates is populated
+	var capturedState fwktype.CycleState
 	addPod := func(state fwktype.CycleState, pod *corev1.Pod, podInfo fwktype.PodInfo, nodeInfo fwktype.NodeInfo) error {
 		nodeInfo.AddPodInfo(podInfo)
+		capturedState = state
 		return nil
 	}
 
@@ -96,6 +99,9 @@ func Test_preemptionEvaluatorImpl_placeToSchedulePods_StatePersistence(t *testin
 	ctx := contextWithJobPreemptionState(context.Background(), &JobPreemptionState{})
 
 	podToNominatedNode, _, unschedulablePods := ev.placeToSchedulePods(ctx, toSchedulePods, cycleStates, potentialNodes, preemptionCosts, addPod, statusMap)
+
+	// Verify that cycle state was captured (meaning it was cloned/assigned)
+	assert.NotNil(t, capturedState)
 
 	// Verify that only pod1 and pod2 were assigned to node1
 	assert.Equal(t, "node1", podToNominatedNode["default/pod1"])
