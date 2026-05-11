@@ -79,14 +79,21 @@ func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 		podCPUMilliReq += containerCPUMilliReq
 	}
 	// Sidecar containers run alongside regular containers and should be summed.
+	// Regular init containers run sequentially, so take the max.
 	for _, container := range pod.Spec.InitContainers {
-		if IsSidecarContainer(container) {
-			containerCPUMilliReq := GetContainerBatchMilliCPURequest(&container)
-			if containerCPUMilliReq <= 0 {
-				containerCPUMilliReq = 0
-			}
-			podCPUMilliReq += containerCPUMilliReq
+		containerCPUMilliReq := GetContainerBatchMilliCPURequest(&container)
+		if containerCPUMilliReq <= 0 {
+			containerCPUMilliReq = 0
 		}
+		if IsSidecarContainer(container) {
+			podCPUMilliReq += containerCPUMilliReq
+		} else {
+			podCPUMilliReq = MaxInt64(podCPUMilliReq, containerCPUMilliReq)
+		}
+	}
+	// Add pod overhead if BE CPU overhead is defined.
+	if overheadCPUMilliReq := GetBatchMilliCPUFromResourceList(pod.Spec.Overhead); overheadCPUMilliReq > 0 {
+		podCPUMilliReq += overheadCPUMilliReq
 	}
 
 	return podCPUMilliReq
@@ -102,17 +109,24 @@ func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
 		podCPUMilliLimit += containerCPUMilliLimit
 	}
 	// Sidecar containers run alongside regular containers and should be summed.
+	// Regular init containers run sequentially, so take the max.
 	for _, container := range pod.Spec.InitContainers {
+		containerCPUMilliLimit := GetContainerBatchMilliCPULimit(&container)
+		if containerCPUMilliLimit <= 0 {
+			return -1
+		}
 		if IsSidecarContainer(container) {
-			containerCPUMilliLimit := GetContainerBatchMilliCPULimit(&container)
-			if containerCPUMilliLimit <= 0 {
-				return -1
-			}
 			podCPUMilliLimit += containerCPUMilliLimit
+		} else {
+			podCPUMilliLimit = MaxInt64(podCPUMilliLimit, containerCPUMilliLimit)
 		}
 	}
 	if podCPUMilliLimit <= 0 {
 		return -1
+	}
+	// Add pod overhead if BE CPU overhead is defined.
+	if overheadCPUMilliLimit := GetBatchMilliCPUFromResourceList(pod.Spec.Overhead); overheadCPUMilliLimit > 0 {
+		podCPUMilliLimit += overheadCPUMilliLimit
 	}
 	return podCPUMilliLimit
 }
@@ -128,14 +142,22 @@ func GetPodBEMemoryByteRequestIgnoreUnlimited(pod *corev1.Pod) int64 {
 		podMemoryByteRequest += containerMemByteRequest
 	}
 	// Sidecar containers run alongside regular containers and should be summed.
+	// Regular init containers run sequentially, so take the max.
 	for _, container := range pod.Spec.InitContainers {
-		if IsSidecarContainer(container) {
-			containerMemByteRequest := GetContainerBatchMemoryByteRequest(&container)
-			if containerMemByteRequest < 0 {
-				continue
-			}
-			podMemoryByteRequest += containerMemByteRequest
+		containerMemByteRequest := GetContainerBatchMemoryByteRequest(&container)
+		if containerMemByteRequest < 0 {
+			// consider request of unlimited container as 0
+			containerMemByteRequest = 0
 		}
+		if IsSidecarContainer(container) {
+			podMemoryByteRequest += containerMemByteRequest
+		} else {
+			podMemoryByteRequest = MaxInt64(podMemoryByteRequest, containerMemByteRequest)
+		}
+	}
+	// Add pod overhead if BE memory overhead is defined.
+	if overheadMemByteRequest := GetBatchMemoryFromResourceList(pod.Spec.Overhead); overheadMemByteRequest > 0 {
+		podMemoryByteRequest += overheadMemByteRequest
 	}
 	return podMemoryByteRequest
 }
@@ -150,17 +172,24 @@ func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
 		podMemoryByteLimit += containerMemByteLimit
 	}
 	// Sidecar containers run alongside regular containers and should be summed.
+	// Regular init containers run sequentially, so take the max.
 	for _, container := range pod.Spec.InitContainers {
+		containerMemByteLimit := GetContainerBatchMemoryByteLimit(&container)
+		if containerMemByteLimit <= 0 {
+			return -1
+		}
 		if IsSidecarContainer(container) {
-			containerMemByteLimit := GetContainerBatchMemoryByteLimit(&container)
-			if containerMemByteLimit <= 0 {
-				return -1
-			}
 			podMemoryByteLimit += containerMemByteLimit
+		} else {
+			podMemoryByteLimit = MaxInt64(podMemoryByteLimit, containerMemByteLimit)
 		}
 	}
 	if podMemoryByteLimit <= 0 {
 		return -1
+	}
+	// Add pod overhead if BE memory overhead is defined.
+	if overheadMemByteLimit := GetBatchMemoryFromResourceList(pod.Spec.Overhead); overheadMemByteLimit > 0 {
+		podMemoryByteLimit += overheadMemByteLimit
 	}
 	return podMemoryByteLimit
 }
