@@ -45,18 +45,18 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 		podUsage     map[string]usageField
 		hostAppUsage *usageField
 
-		nodeUsageWithPageCache *usageField
-		podUsageWithPageCache  map[string]usageField
+		nodeUsageWithPageCache    *usageField
+		podUsageWithPageCache     map[string]usageField
 		hostAppUsageWithPageCache *usageField
 
-		nodeUsageWithHotPageCache *usageField
-		podUsageWithHotPageCache  map[string]usageField
+		nodeUsageWithHotPageCache    *usageField
+		podUsageWithHotPageCache     map[string]usageField
 		hostAppUsageWithHotPageCache *usageField
 	}
 	type want struct {
-		systemCPU                *float64
-		systemMemory             *float64
-		systemMemoryWithPageCache *float64
+		systemCPU                    *float64
+		systemMemory                 *float64
+		systemMemoryWithPageCache    *float64
 		systemMemoryWithHotPageCache *float64
 	}
 	tests := []struct {
@@ -98,34 +98,34 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 		{
 			name: "with page cache metrics",
 			fields: fields{
-				nodeUsage: &usageField{ts: timeNow(), cpu: 1, memory: 1024},
-				podUsage:  map[string]usageField{"test": {ts: timeNow(), cpu: 0.5, memory: 512}},
+				nodeUsage:    &usageField{ts: timeNow(), cpu: 1, memory: 1024},
+				podUsage:     map[string]usageField{"test": {ts: timeNow(), cpu: 0.5, memory: 512}},
 				hostAppUsage: &usageField{ts: timeNow(), cpu: 0, memory: 0},
-				
-				nodeUsageWithPageCache: &usageField{ts: timeNow(), memory: 2048},
-				podUsageWithPageCache:  map[string]usageField{"test": {ts: timeNow(), memory: 1024}},
+
+				nodeUsageWithPageCache:    &usageField{ts: timeNow(), memory: 2048},
+				podUsageWithPageCache:     map[string]usageField{"test": {ts: timeNow(), memory: 1024}},
 				hostAppUsageWithPageCache: &usageField{ts: timeNow(), memory: 256},
 			},
 			want: want{
-				systemCPU:                ptr.To[float64](0.5),
-				systemMemory:             ptr.To[float64](512),
+				systemCPU:                 ptr.To[float64](0.5),
+				systemMemory:              ptr.To[float64](512),
 				systemMemoryWithPageCache: ptr.To[float64](768), // 2048 - 1024 - 256 = 768
 			},
 		},
 		{
 			name: "with hot page cache metrics",
 			fields: fields{
-				nodeUsage: &usageField{ts: timeNow(), cpu: 1, memory: 1024},
-				podUsage:  map[string]usageField{"test": {ts: timeNow(), cpu: 0.5, memory: 512}},
+				nodeUsage:    &usageField{ts: timeNow(), cpu: 1, memory: 1024},
+				podUsage:     map[string]usageField{"test": {ts: timeNow(), cpu: 0.5, memory: 512}},
 				hostAppUsage: &usageField{ts: timeNow(), cpu: 0, memory: 0},
-				
-				nodeUsageWithHotPageCache: &usageField{ts: timeNow(), memory: 3000},
-				podUsageWithHotPageCache:  map[string]usageField{"test": {ts: timeNow(), memory: 1000}},
+
+				nodeUsageWithHotPageCache:    &usageField{ts: timeNow(), memory: 3000},
+				podUsageWithHotPageCache:     map[string]usageField{"test": {ts: timeNow(), memory: 1000}},
 				hostAppUsageWithHotPageCache: &usageField{ts: timeNow(), memory: 500},
 			},
 			want: want{
-				systemCPU:                ptr.To[float64](0.5),
-				systemMemory:             ptr.To[float64](512),
+				systemCPU:                    ptr.To[float64](0.5),
+				systemMemory:                 ptr.To[float64](512),
 				systemMemoryWithHotPageCache: ptr.To[float64](1500), // 3000 - 1000 - 500 = 1500
 			},
 		},
