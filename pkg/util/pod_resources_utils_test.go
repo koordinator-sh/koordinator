@@ -320,6 +320,42 @@ func Test_GetPodBEMilliCPURequest(t *testing.T) {
 			wantLimit:   -1,
 		},
 		{
+			name: "init container without request",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("2000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("3000"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRequest: 2000,
+			wantLimit:   4000,
+		},
+		{
+			name:        "no containers",
+			pod:         &corev1.Pod{},
+			wantRequest: 0,
+			wantLimit:   -1,
+		},
+		{
 			name: "empty resource",
 			pod: &corev1.Pod{
 				Spec: corev1.PodSpec{
@@ -524,6 +560,42 @@ func Test_GetPodBEMemoryRequest(t *testing.T) {
 				},
 			},
 			wantRequest: 3 * 1024 * 1024,
+			wantLimit:   -1,
+		},
+		{
+			name: "init container without request",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("4Mi"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("3Mi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRequest: 2 * 1024 * 1024,
+			wantLimit:   4 * 1024 * 1024,
+		},
+		{
+			name:        "no containers",
+			pod:         &corev1.Pod{},
+			wantRequest: 0,
 			wantLimit:   -1,
 		},
 		{
