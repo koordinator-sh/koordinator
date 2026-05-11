@@ -72,10 +72,12 @@ func TestOnReservationAdd_NonReservationObject(t *testing.T) {
 
 func TestOnReservationAdd_Valid(t *testing.T) {
 	c := newReservationEventHandlerController(t)
+	t.Cleanup(c.queue.ShutDown)
 	r := makeReservation("r1", "uid-1", 1, schedulingv1alpha1.ReservationAvailable, "node1")
 	c.onReservationAdd(r)
 	assert.Equal(t, 1, c.queue.Len())
 	item, _ := c.queue.Get()
+	defer c.queue.Done(item)
 	assert.Equal(t, "r1/uid-1", item)
 }
 
@@ -109,11 +111,13 @@ func TestOnReservationUpdate_NonReservationObjects(t *testing.T) {
 
 func TestOnReservationUpdate_GenerationChanged(t *testing.T) {
 	c := newReservationEventHandlerController(t)
+	t.Cleanup(c.queue.ShutDown)
 	oldR := makeReservation("r1", "uid-1", 1, schedulingv1alpha1.ReservationAvailable, "node1")
 	newR := makeReservation("r1", "uid-1", 2, schedulingv1alpha1.ReservationAvailable, "node1")
 	c.onReservationUpdate(oldR, newR)
 	assert.Equal(t, 1, c.queue.Len())
 	item, _ := c.queue.Get()
+	defer c.queue.Done(item)
 	assert.Equal(t, "r1/uid-1", item)
 }
 
@@ -147,20 +151,24 @@ func TestOnReservationUpdate_NoRelevantChange(t *testing.T) {
 
 func TestOnReservationDelete_Direct(t *testing.T) {
 	c := newReservationEventHandlerController(t)
+	t.Cleanup(c.queue.ShutDown)
 	r := makeReservation("r1", "uid-1", 1, schedulingv1alpha1.ReservationAvailable, "node1")
 	c.onReservationDelete(r)
 	assert.Equal(t, 1, c.queue.Len())
 	item, _ := c.queue.Get()
+	defer c.queue.Done(item)
 	assert.Equal(t, "r1/uid-1", item)
 }
 
 func TestOnReservationDelete_Tombstone(t *testing.T) {
 	c := newReservationEventHandlerController(t)
+	t.Cleanup(c.queue.ShutDown)
 	r := makeReservation("r1", "uid-1", 1, schedulingv1alpha1.ReservationAvailable, "node1")
 	tombstone := cache.DeletedFinalStateUnknown{Key: "r1", Obj: r}
 	c.onReservationDelete(tombstone)
 	assert.Equal(t, 1, c.queue.Len())
 	item, _ := c.queue.Get()
+	defer c.queue.Done(item)
 	assert.Equal(t, "r1/uid-1", item)
 }
 
