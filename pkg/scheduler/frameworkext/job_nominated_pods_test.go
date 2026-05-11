@@ -698,3 +698,34 @@ func Test_addMergedNominatedPods(t *testing.T) {
 		})
 	}
 }
+
+func TestMakeAndGetNominatedPodsOfTheSameJob(t *testing.T) {
+	t.Run("set and get", func(t *testing.T) {
+		state := framework.NewCycleState()
+		uids := []string{"uid-1", "uid-2", "uid-3"}
+		MakeNominatedPodsOfTheSameJob(state, uids)
+
+		result := GetNominatedPodsOfTheSameJob(state)
+		assert.NotNil(t, result, "should return non-nil set when data exists")
+		assert.Equal(t, 3, result.Len())
+		for _, uid := range uids {
+			assert.True(t, result.Has(uid), "set should contain uid %s", uid)
+		}
+		assert.False(t, result.Has("uid-not-exist"))
+	})
+
+	t.Run("not set returns nil", func(t *testing.T) {
+		state := framework.NewCycleState()
+		result := GetNominatedPodsOfTheSameJob(state)
+		assert.Nil(t, result, "should return nil when no data stored")
+	})
+
+	t.Run("empty list returns empty set", func(t *testing.T) {
+		state := framework.NewCycleState()
+		MakeNominatedPodsOfTheSameJob(state, []string{})
+
+		result := GetNominatedPodsOfTheSameJob(state)
+		assert.NotNil(t, result, "should return non-nil set even for empty list")
+		assert.Equal(t, 0, result.Len())
+	})
+}
