@@ -17,7 +17,6 @@ limitations under the License.
 package elasticquota
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -38,11 +37,8 @@ import (
 
 func TestEndpointsQueryQuotaInfo(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.NotNil(t, p)
-	assert.Nil(t, err)
-
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
+	var err error
 	quota := CreateQuota2("test1", "", 100, 100, 10, 10, 20, 20, false, "")
 	plugin.OnQuotaAdd(quota)
 

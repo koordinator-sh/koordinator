@@ -256,7 +256,7 @@ func TestPostFilterWithPreemption(t *testing.T) {
 				_, err = pl.handle.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
-			suit.start()
+			suit.start(t)
 
 			cycleState := framework.NewCycleState()
 			if tt.args.hasStateData {
@@ -467,7 +467,7 @@ func TestPreemptionMgrSelectVictimsOnNode(t *testing.T) {
 				_, err = pl.handle.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
 				assert.NoError(t, err)
 			}
-			suit.start()
+			suit.start(t)
 
 			got, got1, got2 := pl.preemptionMgr.SelectVictimsOnNode(context.TODO(), tt.args.state, tt.args.pod, tt.args.nodeInfo, tt.args.pdbs)
 			assert.Equal(t, tt.want, got)

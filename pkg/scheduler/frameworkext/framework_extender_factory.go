@@ -44,6 +44,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	koordschedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
@@ -73,6 +74,8 @@ type extendedHandleOptions struct {
 	reservationCache                    ReservationCache
 	reservationNominator                ReservationNominator
 	networkTopologyManager              networktopology.TreeManager
+	crossSchedulerNominator             *CrossSchedulerPodNominator
+	workloadAuditor                     workloadauditor.WorkloadAuditor
 }
 
 type Option func(*extendedHandleOptions)
@@ -119,6 +122,18 @@ func WithNetworkTopologyManager(manager networktopology.TreeManager) Option {
 	}
 }
 
+func WithCrossSchedulerPodNominator(nominator *CrossSchedulerPodNominator) Option {
+	return func(options *extendedHandleOptions) {
+		options.crossSchedulerNominator = nominator
+	}
+}
+
+func WithWorkloadAuditor(auditor workloadauditor.WorkloadAuditor) Option {
+	return func(options *extendedHandleOptions) {
+		options.workloadAuditor = auditor
+	}
+}
+
 // FrameworkExtenderFactory is a factory for creating a FrameworkExtender.
 // NOTE: DO NOT put framework-level data here.
 type FrameworkExtenderFactory struct {
@@ -137,6 +152,11 @@ type FrameworkExtenderFactory struct {
 	*errorHandlerDispatcher
 
 	networkTopologyTreeManager networktopology.TreeManager
+	crossSchedulerNominator    *CrossSchedulerPodNominator
+
+	workloadAuditor workloadauditor.WorkloadAuditor
+
+	pluginInformerFactories []SharedInformerFactory
 
 	metricsRecorder *metrics.MetricAsyncRecorder
 }
@@ -163,6 +183,8 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		monitor:                             NewSchedulerMonitor(schedulerMonitorPeriod, schedulingTimeout),
 		errorHandlerDispatcher:              newErrorHandlerDispatcher(),
 		networkTopologyTreeManager:          handleOptions.networkTopologyManager,
+		crossSchedulerNominator:             handleOptions.crossSchedulerNominator,
+		workloadAuditor:                     handleOptions.workloadAuditor,
 		metricsRecorder:                     metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
 	}, nil
 }
@@ -318,7 +340,9 @@ func makePodInfoFromPod(pod *corev1.Pod) (*framework.QueuedPodInfo, error) {
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
 	InitDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
-
+	if f.workloadAuditor != nil {
+		f.workloadAuditor.RecordAttemptPod(pod)
+	}
 	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
 		recordScheduleDiagnosis(cycleState, err)
@@ -393,6 +417,9 @@ func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Sche
 	sched.FailureHandler = func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) {
 		f.errorHandlerDispatcher.Error(ctx, fwk, podInfo, status, nominatingInfo, start)
 		f.monitor.Complete(podInfo.Pod, status)
+		if f.workloadAuditor != nil {
+			f.workloadAuditor.RecordPodScheduleResult(podInfo.Pod, workloadauditor.RecordTypeScheduleFailure, "")
+		}
 	}
 }
 
@@ -419,6 +446,15 @@ func (f *FrameworkExtenderFactory) updatePlugins(pl fwktype.Plugin, profileName 
 	if f.controllerMaps != nil {
 		f.controllerMaps.RegisterControllers(pl, profileName)
 	}
+	if provider, ok := pl.(InformerFactoryProvider); ok {
+		f.pluginInformerFactories = append(f.pluginInformerFactories, provider.GetInformerFactories()...)
+	}
+}
+
+// GetPluginInformerFactories returns all informer factories registered by plugins
+// via the InformerFactoryProvider interface.
+func (f *FrameworkExtenderFactory) GetPluginInformerFactories() []SharedInformerFactory {
+	return f.pluginInformerFactories
 }
 
 // PluginFactoryProxy is used to proxy the call to the PluginFactory function and pass in the ExtendedHandle for the custom plugin

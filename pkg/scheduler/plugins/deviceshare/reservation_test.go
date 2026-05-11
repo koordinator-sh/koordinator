@@ -38,10 +38,18 @@ import (
 )
 
 func Test_Plugin_ReservationRestore(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
+	suit := newPluginTestSuit(t, []*corev1.Node{
+		{ObjectMeta: metav1.ObjectMeta{Name: "test-node-1"}},
+	})
 	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
+
+	// Start informer factory to prevent gcNodeDevice goroutine from deleting device cache entries.
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	suit.Framework.SharedInformerFactory().Start(stopCh)
+	suit.Framework.SharedInformerFactory().WaitForCacheSync(stopCh)
 
 	cycleState := framework.NewCycleState()
 	pod := &corev1.Pod{
@@ -225,10 +233,18 @@ func Test_Plugin_ReservationRestore(t *testing.T) {
 }
 
 func Test_Plugin_RestoreReservationPreAllocation(t *testing.T) {
-	suit := newPluginTestSuit(t, nil)
+	suit := newPluginTestSuit(t, []*corev1.Node{
+		{ObjectMeta: metav1.ObjectMeta{Name: "test-node-1"}},
+	})
 	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
+
+	// Start informer factory to prevent gcNodeDevice goroutine from deleting device cache entries.
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	suit.Framework.SharedInformerFactory().Start(stopCh)
+	suit.Framework.SharedInformerFactory().WaitForCacheSync(stopCh)
 
 	cycleState := framework.NewCycleState()
 	reservation := &schedulingv1alpha1.Reservation{
@@ -1255,10 +1271,20 @@ func Test_allocateWithNominated(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Each subtest gets its own isolated plugin instance, device cache, and rInfo
 			// to avoid any shared-state races between subtests or background goroutines.
-			suit := newPluginTestSuit(t, nil)
+			// Pass node so that the fake client's node lister includes "test-node",
+			// preventing gcNodeDevice from GC-ing it once the informer syncs.
+			suit := newPluginTestSuit(t, []*corev1.Node{node})
 			p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 			pl := p.(*Plugin)
+
+			// Start and sync the informer factory so the node lister is warm.
+			// gcNodeDevice waits for the informer to sync before starting GC;
+			// since "test-node" is in the node lister, GC will not remove it.
+			stopCh := make(chan struct{})
+			defer close(stopCh)
+			suit.Framework.SharedInformerFactory().Start(stopCh)
+			suit.Framework.SharedInformerFactory().WaitForCacheSync(stopCh)
 
 			pl.nodeDeviceCache.updateNodeDevice("test-node", newDevice())
 

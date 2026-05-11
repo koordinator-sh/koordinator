@@ -28,12 +28,10 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-// NOTE(joseph): When the K8s Scheduler Framework starts, the thread that constructs NodeInfo
-// and the scheduling thread are not synchronized. In this way, when the Pod on a Node is not
-// filled in the NodeInfo, the Node is scheduled for a new Pod. This behavior is not expected.
-// The K8s community itself has also noticed this issue https://github.com/kubernetes/kubernetes/issues/116717,
-// but it was only fixed in the K8s v1.28 version https://github.com/kubernetes/kubernetes/pull /116729.
-// So we need to fix it ourselves.
+// forceSyncSharedInformerFactory wraps SharedInformerFactory so that every informer
+// obtained via InformerFor is wrapped with forceSyncsharedIndexInformer, which
+// intercepts AddEventHandler / AddEventHandlerWithResyncPeriod calls and collects
+// the returned ResourceEventHandlerRegistration for WaitForHandlersSync.
 
 var _ informers.SharedInformerFactory = &forceSyncSharedInformerFactory{}
 
@@ -54,7 +52,7 @@ func NewForceSyncSharedInformerFactory(factory informers.SharedInformerFactory) 
 
 func (f *forceSyncSharedInformerFactory) InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer {
 	informer := f.SharedInformerFactory.InformerFor(obj, newFunc)
-	return newForceSyncSharedIndexInformer(informer, f.defaultResync, f.SharedInformerFactory)
+	return newForceSyncSharedIndexInformer(informer, f.defaultResync)
 }
 
 func (f *forceSyncSharedInformerFactory) Core() core.Interface {

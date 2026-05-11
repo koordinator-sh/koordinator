@@ -17,6 +17,8 @@ limitations under the License.
 package core
 
 import (
+	"math/bits"
+	"sort"
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
@@ -148,15 +150,21 @@ func (qt *quotaTree) redistribution(totalResource int64) {
 }
 
 func (qt *quotaTree) iterationForRedistribution(totalRes, totalSharedWeight int64, nodes []*quotaNode) {
-	if totalSharedWeight <= 0 {
+	if totalSharedWeight <= 0 || totalRes <= 0 || len(nodes) == 0 {
 		// if totalSharedWeight is not larger than 0, no need to iterate anymore.
 		return
 	}
+
+	// Use the largest remainder (Hamilton) method so that the integer residual left
+	// by per-node rounding is redistributed deterministically, guaranteeing that the
+	// sum of deltas equals totalRes (no resources lost or double-allocated due to
+	// fractional rounding).
+	deltas := computeHamiltonDeltas(totalRes, totalSharedWeight, nodes)
+
 	needAdjustQuotaNodes := make([]*quotaNode, 0)
 	toPartitionResource, needAdjustTotalSharedWeight := int64(0), int64(0)
-	for _, node := range nodes {
-		runtimeQuotaDelta := int64(float64(node.sharedWeight)*float64(totalRes)/float64(totalSharedWeight) + 0.5)
-		node.runtimeQuota += runtimeQuotaDelta
+	for i, node := range nodes {
+		node.runtimeQuota += deltas[i]
 		if node.runtimeQuota < node.request {
 			// if node's runtime is still less than request, the node still need to iterate.
 			needAdjustQuotaNodes = append(needAdjustQuotaNodes, node)
@@ -170,6 +178,70 @@ func (qt *quotaTree) iterationForRedistribution(totalRes, totalSharedWeight int6
 	if toPartitionResource > 0 && len(needAdjustQuotaNodes) > 0 {
 		qt.iterationForRedistribution(toPartitionResource, needAdjustTotalSharedWeight, needAdjustQuotaNodes)
 	}
+}
+
+// computeHamiltonDeltas splits totalRes into per-node integer deltas proportional
+// to node.sharedWeight using the largest-remainder method:
+//  1. base_i      = w_i * totalRes / totalSharedWeight       (integer division via 128-bit)
+//  2. remainder_i = w_i * totalRes mod totalSharedWeight
+//  3. residual    = totalRes - Σ base_i                       (provably >= 0)
+//  4. nodes with the largest remainders get +1 until residual == 0;
+//     ties broken by quotaName for determinism.
+//
+// 128-bit arithmetic (math/bits.Mul64 + Div64) avoids float64 precision loss
+// for large operands (e.g. memory in bytes where w*T can exceed 2^53),
+// guaranteeing Σ(deltas) == totalRes exactly.
+func computeHamiltonDeltas(totalRes, totalSharedWeight int64, nodes []*quotaNode) []int64 {
+	deltas := make([]int64, len(nodes))
+	if totalSharedWeight <= 0 || totalRes <= 0 || len(nodes) == 0 {
+		return deltas
+	}
+
+	type remainderEntry struct {
+		index     int
+		remainder uint64
+		name      string
+	}
+	remainders := make([]remainderEntry, 0, len(nodes))
+
+	uT := uint64(totalRes)
+	uW := uint64(totalSharedWeight)
+
+	distributed := int64(0)
+	for i, node := range nodes {
+		if node.sharedWeight <= 0 {
+			continue
+		}
+		hi, lo := bits.Mul64(uint64(node.sharedWeight), uT)
+		q, r := bits.Div64(hi, lo, uW)
+		base := int64(q)
+
+		deltas[i] = base
+		distributed += base
+		remainders = append(remainders, remainderEntry{
+			index:     i,
+			remainder: r,
+			name:      node.quotaName,
+		})
+	}
+
+	residual := totalRes - distributed
+	if residual <= 0 || len(remainders) == 0 {
+		return deltas
+	}
+
+	sort.SliceStable(remainders, func(a, b int) bool {
+		if remainders[a].remainder != remainders[b].remainder {
+			return remainders[a].remainder > remainders[b].remainder
+		}
+		return remainders[a].name < remainders[b].name
+	})
+
+	for i := 0; i < len(remainders) && residual > 0; i++ {
+		deltas[remainders[i].index]++
+		residual--
+	}
+	return deltas
 }
 
 type quotaResMapType map[string]v1.ResourceList

@@ -44,11 +44,12 @@ import (
 
 // Coscheduling is a plugin that schedules pods in a group.
 type Coscheduling struct {
-	args             *config.CoschedulingArgs
-	frameworkHandler fwktype.Handle
-	pgClient         pgclientset.Interface
-	pgInformer       schedinformers.PodGroupInformer
-	pgMgr            core.Manager
+	args              *config.CoschedulingArgs
+	frameworkHandler  fwktype.Handle
+	pgClient          pgclientset.Interface
+	pgInformerFactory pgformers.SharedInformerFactory
+	pgInformer        schedinformers.PodGroupInformer
+	pgMgr             core.Manager
 }
 
 var _ fwktype.PreEnqueuePlugin = &Coscheduling{}
@@ -68,6 +69,7 @@ var _ frameworkext.ReservationPreBindPlugin = &Coscheduling{}
 var _ fwktype.PostBindPlugin = &Coscheduling{}
 var _ fwktype.EnqueueExtensions = &Coscheduling{}
 var _ fwktype.SignPlugin = &Coscheduling{}
+var _ frameworkext.InformerFactoryProvider = &Coscheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
@@ -98,11 +100,12 @@ func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.
 	koordInformerFactory := extendedHandle.KoordinatorSharedInformerFactory()
 	pgMgr := core.NewPodGroupManager(handle, args, pgClient, pgInformerFactory, informerFactory, koordInformerFactory)
 	plugin := &Coscheduling{
-		args:             args,
-		frameworkHandler: handle,
-		pgClient:         pgClient,
-		pgInformer:       pgInformer,
-		pgMgr:            pgMgr,
+		args:              args,
+		frameworkHandler:  handle,
+		pgClient:          pgClient,
+		pgInformerFactory: pgInformerFactory,
+		pgInformer:        pgInformer,
+		pgMgr:             pgMgr,
 	}
 	return plugin, nil
 }
@@ -296,4 +299,9 @@ func (cs *Coscheduling) PreBindReservation(ctx context.Context, cycleState fwkty
 // PostBind is called after a pod is successfully bound. These plugins are used update PodGroup when pod is bound.
 func (cs *Coscheduling) PostBind(ctx context.Context, _ fwktype.CycleState, pod *v1.Pod, nodeName string) {
 	cs.pgMgr.PostBind(ctx, pod, nodeName)
+}
+
+// GetInformerFactories returns the PodGroup informer factory for central startup management.
+func (cs *Coscheduling) GetInformerFactories() []frameworkext.SharedInformerFactory {
+	return []frameworkext.SharedInformerFactory{cs.pgInformerFactory}
 }

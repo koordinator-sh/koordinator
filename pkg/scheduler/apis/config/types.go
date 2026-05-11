@@ -337,6 +337,17 @@ type DeviceShareArgs struct {
 	DisableDeviceNUMATopologyAlignment bool
 	// GPUSharedResourceTemplatesConfig holds configurations for GPU shared resource templates.
 	GPUSharedResourceTemplatesConfig *GPUSharedResourceTemplatesConfig
+	// GPUShareUnsupportedModels lists GPU vendor-model pairs that do not support GPU sharing (e.g. vNPU).
+	// Pods requesting gpu.shared resources will be filtered out from nodes matching any of these models.
+	GPUShareUnsupportedModels []GPUShareUnsupportedModel
+}
+
+// GPUShareUnsupportedModel identifies a GPU model that does not support GPU sharing.
+type GPUShareUnsupportedModel struct {
+	// Vendor is the GPU vendor label value, e.g. "huawei".
+	Vendor string
+	// Model is the GPU model label value, e.g. "Ascend-310P3-300I-DUO".
+	Model string
 }
 
 type GPUSharedResourceTemplatesConfig struct {

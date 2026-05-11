@@ -41,6 +41,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -101,6 +102,8 @@ type PodGroupManager struct {
 	holder                GangSchedulingContextHolder
 	preemptionEvaluator   PreemptionEvaluator
 	networkTopologySolver NetworkTopologySolver
+
+	workloadAuditor workloadauditor.WorkloadAuditor
 }
 
 // NewPodGroupManager creates a new operation object.
@@ -122,6 +125,10 @@ func NewPodGroupManager(
 		pgLister:  pgInformer.Lister(),
 		podLister: podInformer.Lister(),
 		cache:     gangCache,
+	}
+	if extHandle, ok := handle.(frameworkext.ExtendedHandle); ok {
+		pgMgr.workloadAuditor = extHandle.GetWorkloadAuditor()
+		gangCache.workloadAuditor = pgMgr.workloadAuditor
 	}
 	if handle != nil {
 		pgMgr.networkTopologySolver = NewNetworkTopologySolver(handle)
@@ -185,6 +192,9 @@ func (pgMgr *PodGroupManager) NextPod() *corev1.Pod {
 	}
 	pgMgr.rejectGangGroup(pgMgr.handle, gangSchedulingContext.gangGroup, ReasonAllPendingPodsIsAlreadyAttempted)
 	pgMgr.holder.clearGangSchedulingContext(ReasonAllPendingPodsIsAlreadyAttempted)
+	if gangSchedulingContext.failedMessage == "" && pgMgr.workloadAuditor != nil {
+		pgMgr.workloadAuditor.RecordGangScheduleResult(gangSchedulingContext.gangGroupID, workloadauditor.RecordTypeGangAllPodsAlreadyAttempted, "")
+	}
 
 	return nil
 }
@@ -335,6 +345,9 @@ func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, cycleState fw
 	}
 	if gangSchedulingContext.failedMessage != "" {
 		diagnosis.IsRootCausePod = false
+		if gangSchedulingContext.suggestion != nil {
+			diagnosis.SetSuggestion(gangSchedulingContext.suggestion)
+		}
 		return fmt.Errorf("%s", gangSchedulingContext.failedMessage)
 	}
 	return nil
@@ -374,6 +387,15 @@ func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state fwktype
 	}
 
 	message := pgMgr.summaryAndRecordFailedMessage(state, pod, filteredNodeStatusMap)
+	diagnosis := frameworkext.GetDiagnosis(state)
+	if diagnosis != nil {
+		if suggestion := diagnosis.GetSuggestion(); suggestion != nil {
+			gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
+			if gangSchedulingContext != nil {
+				gangSchedulingContext.suggestion = suggestion
+			}
+		}
+	}
 	if gang.getGangMode() == extension.GangModeStrict {
 		gang.clearWaitingGang()
 		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
@@ -521,6 +543,10 @@ func (pgMgr *PodGroupManager) AllowGangGroup(pod *corev1.Pod, handle fwktype.Han
 	if gang == nil {
 		klog.Warningf("Pod %q missing Gang", klog.KObj(pod))
 		return
+	}
+
+	if pgMgr.workloadAuditor != nil {
+		pgMgr.workloadAuditor.RecordGangScheduleResult(gang.GangGroupId, workloadauditor.RecordTypeScheduled, "")
 	}
 
 	gangSlices := gang.getGangGroup()

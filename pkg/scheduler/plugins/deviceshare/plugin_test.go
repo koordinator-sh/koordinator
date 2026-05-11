@@ -60,6 +60,7 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
@@ -160,6 +161,7 @@ type pluginTestSuit struct {
 }
 
 func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
+	frameworkexthelper.ResetRegistrations()
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
@@ -1164,6 +1166,18 @@ func Test_Plugin_Filter(t *testing.T) {
 	}
 	testHuaweiNodeInfo := &framework.NodeInfo{}
 	testHuaweiNodeInfo.SetNode(testHuaweiNode)
+
+	testHuawei300IDuoNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+			Labels: map[string]string{
+				apiext.LabelGPUVendor: apiext.GPUVendorHuawei,
+				apiext.LabelGPUModel:  "Ascend-310P3-300I-DUO",
+			},
+		},
+	}
+	testHuawei300IDuoNodeInfo := &framework.NodeInfo{}
+	testHuawei300IDuoNodeInfo.SetNode(testHuawei300IDuoNode)
 
 	tests := []struct {
 		name                 string
@@ -2665,6 +2679,18 @@ func Test_Plugin_Filter(t *testing.T) {
 			want:            nil,
 		},
 		{
+			name: "the pod requires vNPU but node GPU model Ascend-310P3-300I-DUO does not support it",
+			state: &preFilterState{
+				skip: false,
+				gpuRequirements: &GPURequirements{
+					gpuShared: true,
+				},
+			},
+			nodeDeviceCache: newNodeDeviceCache(),
+			nodeInfo:        testHuawei300IDuoNodeInfo,
+			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, `model "Ascend-310P3-300I-DUO" of vendor "huawei" does not support GPU Share`),
+		},
+		{
 			name: "allocate by designated, failure",
 			state: &preFilterState{
 				skip: false,
@@ -3181,6 +3207,12 @@ func Test_Plugin_Filter(t *testing.T) {
 				pod.Labels = map[string]string{apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore)}
 				cycleState.Write(stateKey, tt.state)
 			}
+			if strings.Contains(tt.name, "Ascend-310P3-300I-DUO") {
+				cycleState.Write(stateKey, tt.state)
+				pl.gpuShareUnsupportedModels = map[string]sets.Set[string]{
+					apiext.GPUVendorHuawei: sets.New[string]("Ascend-310P3-300I-DUO"),
+				}
+			}
 			status := pl.Filter(context.TODO(), cycleState, pod, tt.nodeInfo)
 			assert.Equal(t, tt.want.Code(), status.Code())
 			assert.True(t, strings.Contains(status.Message(), tt.want.Message()))
@@ -3198,6 +3230,14 @@ func Test_Plugin_FilterNominateReservation(t *testing.T) {
 	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
+
+	// Start the informer factory and wait for cache sync so that the Node object is
+	// visible to the node lister used by gcNodeDevice. Without this, the GC goroutine
+	// may delete the device cache entry because the node is not found in the lister.
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	suit.Framework.SharedInformerFactory().Start(stopCh)
+	suit.Framework.SharedInformerFactory().WaitForCacheSync(stopCh)
 
 	cycleState := framework.NewCycleState()
 	pod := &corev1.Pod{

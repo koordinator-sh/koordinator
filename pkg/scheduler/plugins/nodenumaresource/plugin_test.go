@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	nrtfake "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	"github.com/stretchr/testify/assert"
@@ -54,6 +55,7 @@ import (
 	_ "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/scheme"
 	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
@@ -177,9 +179,12 @@ type pluginTestSuit struct {
 	KoordClientSet       *koordfake.Clientset
 	proxyNew             runtime.PluginFactory
 	nodeNUMAResourceArgs *schedulingconfig.NodeNUMAResourceArgs
+	plugin               fwktype.Plugin
 }
 
 func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
 	var v1args v1.NodeNUMAResourceArgs
 	v1.SetDefaults_NodeNUMAResourceArgs(&v1args)
 	var nodeNUMAResourceArgs schedulingconfig.NodeNUMAResourceArgs
@@ -227,7 +232,7 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 
 	extender := extenderFactory.NewFrameworkExtender(fh)
 
-	return &pluginTestSuit{
+	suit := &pluginTestSuit{
 		Handle:               fh,
 		ExtenderFactory:      extenderFactory,
 		Extender:             extender,
@@ -236,12 +241,41 @@ func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *
 		proxyNew:             proxyNew,
 		nodeNUMAResourceArgs: &nodeNUMAResourceArgs,
 	}
+	// Wrap proxyNew so that the created plugin is saved for start() to access.
+	originalProxyNew := suit.proxyNew
+	suit.proxyNew = func(ctx context.Context, configuration apiruntime.Object, f fwktype.Handle) (fwktype.Plugin, error) {
+		pl, err := originalProxyNew(ctx, configuration, f)
+		if err == nil {
+			suit.plugin = pl
+		}
+		return pl, err
+	}
+	return suit
 }
 
-func (p *pluginTestSuit) start() {
-	ctx := context.TODO()
-	p.Handle.SharedInformerFactory().Start(ctx.Done())
-	p.Handle.SharedInformerFactory().WaitForCacheSync(ctx.Done())
+func (p *pluginTestSuit) start(t testing.TB) {
+	// Use a test-lifetime stop channel so informers keep delivering events for
+	// objects created/updated by the test AFTER start() returns. A stop channel
+	// bound to a short-lived context would be closed the moment start() returns
+	// and silently stop the informer watchers.
+	stopCh := make(chan struct{})
+	t.Cleanup(func() { close(stopCh) })
+	p.Handle.SharedInformerFactory().Start(stopCh)
+	p.ExtenderFactory.KoordinatorSharedInformerFactory().Start(stopCh)
+	p.Handle.SharedInformerFactory().WaitForCacheSync(stopCh)
+	p.ExtenderFactory.KoordinatorSharedInformerFactory().WaitForCacheSync(stopCh)
+	// Start the NRT informer factory if the plugin has been created.
+	if np, ok := p.plugin.(*Plugin); ok && np.nrtInformerFactory != nil {
+		np.nrtInformerFactory.Start(stopCh)
+		np.nrtInformerFactory.WaitForCacheSync(stopCh)
+	}
+	// Use a separate bounded context only for the handler-sync wait so a hang
+	// doesn't block the whole test.
+	syncCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := frameworkexthelper.WaitForHandlersSync(syncCtx); err != nil {
+		t.Fatalf("timed out waiting for handler registrations to sync: %v", err)
+	}
 }
 
 func TestNew(t *testing.T) {
@@ -606,7 +640,7 @@ func TestPlugin_PreFilter(t *testing.T) {
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
-			suit.start()
+			suit.start(t)
 			cycleState := framework.NewCycleState()
 
 			if tt.pod.Annotations != nil && tt.pod.Annotations[extension.AnnotationSchedulingHint] != "" {
@@ -1076,7 +1110,7 @@ func TestPlugin_Filter(t *testing.T) {
 				manager.nodeAllocations[tt.allocationState.nodeName] = tt.allocationState
 			}
 
-			suit.start()
+			suit.start(t)
 
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
@@ -1179,7 +1213,7 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 
 			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NoError(t, err)
-			suit.start()
+			suit.start(t)
 			pl := p.(*Plugin)
 
 			if tt.nodeHasNRT {
@@ -1224,6 +1258,8 @@ func TestPlugin_FilterNominateReservation(t *testing.T) {
 	testState.Write(stateKey, &preFilterState{
 		skip: false,
 	})
+	node0mask, _ := bitmask.NewBitMask(0)
+
 	type fields struct {
 		nodes []*corev1.Node
 	}
@@ -1234,11 +1270,19 @@ func TestPlugin_FilterNominateReservation(t *testing.T) {
 		nodeName        string
 	}
 	tests := []struct {
-		name   string
+		name string
+		// fields/args are used by the simple early-return cases that bypass full construction.
 		fields fields
 		args   args
-		want   *fwktype.Status
+		// The following fields drive full NUMA-aware construction (used when state != nil).
+		state                     *preFilterState
+		rAlloc                    *reusableAlloc
+		reservationAllocatePolicy schedulingv1alpha1.ReservationAllocatePolicy
+		cpuTopology               *CPUTopology
+		numaAffinity              bitmask.BitMask
+		want                      *fwktype.Status
 	}{
+		// ---- early-return cases (no node / state issues) ----
 		{
 			name: "missing preFilterState",
 			args: args{
@@ -1261,15 +1305,188 @@ func TestPlugin_FilterNominateReservation(t *testing.T) {
 			},
 			want: fwktype.NewStatus(fwktype.Error, `getting nil node "test-node" from Snapshot`),
 		},
+		// ---- NUMA compatibility cases ----
+		{
+			// BestHint=NUMA0, R's remained is entirely on NUMA0.
+			// The second tryAllocateFromReusable Allocate call uses requiredResources={NUMA0:...}
+			// which is compatible with hint=NUMA0 → allocation succeeds → result != nil → pass.
+			name: "NUMA-compatible R passes filter (no reservation-affinity)",
+			state: &preFilterState{
+				podNUMATopologyPolicy: extension.NUMATopologyPolicyRestricted,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+			},
+			rAlloc: &reusableAlloc{
+				allocatable: map[int]corev1.ResourceList{
+					0: {corev1.ResourceCPU: resource.MustParse("8")},
+				},
+				remained: map[int]corev1.ResourceList{
+					0: {corev1.ResourceCPU: resource.MustParse("8")},
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			numaAffinity:              node0mask,
+			want:                      nil,
+		},
+		{
+			// Regression: before the fix, FilterNominateReservation returned nil (pass) when the
+			// reservation's NUMA scope was incompatible with the pod's BestHint but
+			// requiredFromReservation was false (no reservation-affinity). This caused the nominator
+			// to include the mismatched reservation as a candidate; when selected by scoring, Reserve
+			// then failed at hint-vs-nominated-NUMA validation.
+			//
+			// Root cause: tryAllocateFromReusable returned (nil, nil) on the fallback path
+			// (requiredFromReservation=false), which FilterNominateReservation previously treated as
+			// "pass". After the fix, result==nil is treated as Unschedulable.
+			name: "NUMA-incompatible R blocked from nominator without reservation-affinity (regression fix)",
+			state: &preFilterState{
+				podNUMATopologyPolicy: extension.NUMATopologyPolicyRestricted,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				// hasReservationAffinity=false (zero value) → requiredFromReservation=false
+			},
+			rAlloc: &reusableAlloc{
+				allocatable: map[int]corev1.ResourceList{
+					1: {corev1.ResourceCPU: resource.MustParse("8")},
+				},
+				remained: map[int]corev1.ResourceList{
+					1: {corev1.ResourceCPU: resource.MustParse("8")},
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			numaAffinity:              node0mask,
+			want:                      fwktype.NewStatus(fwktype.Unschedulable, "reservation NUMA scope is incompatible with the best topology hint"),
+		},
+		{
+			// Baseline: with reservation-affinity, requiredFromReservation=true, so
+			// tryAllocateFromReusable already returned Unschedulable before the fix. Verify this
+			// path still works correctly after the fix.
+			name: "NUMA-incompatible R blocked from nominator with reservation-affinity (baseline)",
+			state: &preFilterState{
+				podNUMATopologyPolicy: extension.NUMATopologyPolicyRestricted,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				hasReservationAffinity: true, // requiredFromReservation=true
+			},
+			rAlloc: &reusableAlloc{
+				allocatable: map[int]corev1.ResourceList{
+					1: {corev1.ResourceCPU: resource.MustParse("8")},
+				},
+				remained: map[int]corev1.ResourceList{
+					1: {corev1.ResourceCPU: resource.MustParse("8")},
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			numaAffinity:              node0mask,
+			want:                      fwktype.NewStatus(fwktype.Unschedulable, "Reservation(s) Insufficient NUMA cpu"),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			suit := newPluginTestSuit(t, nil, tt.fields.nodes)
+			const numaNodeName = "test-node-1"
+			nodeName := numaNodeName
+
+			var nodes []*corev1.Node
+			var cycleState fwktype.CycleState
+			var rInfo *frameworkext.ReservationInfo
+			var pod *corev1.Pod
+
+			if tt.state != nil {
+				// NUMA-aware cases: build a real node so the snapshot lookup succeeds.
+				nodes = []*corev1.Node{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:   numaNodeName,
+							Labels: map[string]string{},
+						},
+						Status: corev1.NodeStatus{
+							Allocatable: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("96"),
+								corev1.ResourceMemory: resource.MustParse("512Gi"),
+							},
+						},
+					},
+				}
+			} else {
+				// Early-return cases: use fields.nodes and override nodeName if set.
+				nodes = tt.fields.nodes
+				if tt.args.nodeName != "" {
+					nodeName = tt.args.nodeName
+				}
+			}
+
+			suit := newPluginTestSuit(t, nil, nodes)
 			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 			pl := p.(*Plugin)
-			got := pl.FilterNominateReservation(context.TODO(), tt.args.cycleState, tt.args.pod, tt.args.reservationInfo, tt.args.nodeName)
+
+			if tt.cpuTopology != nil {
+				pl.topologyOptionsManager.UpdateTopologyOptions(numaNodeName, func(options *TopologyOptions) {
+					options.CPUTopology = tt.cpuTopology
+					for i := 0; i < tt.cpuTopology.NumNodes; i++ {
+						options.NUMANodeResources = append(options.NUMANodeResources, NUMANodeResource{
+							Node: i,
+							Resources: corev1.ResourceList{
+								corev1.ResourceCPU: *resource.NewQuantity(int64(tt.cpuTopology.CPUsPerNode()), resource.DecimalSI),
+							},
+						})
+					}
+				})
+			}
+
+			suit.start(t)
+
+			if tt.state != nil {
+				cycleState = framework.NewCycleState()
+				cycleState.Write(stateKey, tt.state)
+
+				// Construct the reservation and register it as the single matched alloc.
+				reservationUID := uuid.NewUUID()
+				reservation := &schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{
+						UID:  reservationUID,
+						Name: "test-reservation",
+					},
+					Spec: schedulingv1alpha1.ReservationSpec{
+						AllocatePolicy: tt.reservationAllocatePolicy,
+					},
+				}
+				alloc := *tt.rAlloc
+				alloc.rInfo = frameworkext.NewReservationInfo(reservation)
+				rInfo = alloc.rInfo
+
+				cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
+					nodeToState: frameworkext.NodeReservationRestoreStates{
+						numaNodeName: &nodeReservationRestoreStateData{
+							matched: map[types.UID]reusableAlloc{reservationUID: alloc},
+						},
+					},
+				})
+
+				if tt.numaAffinity != nil {
+					topologymanager.InitStore(cycleState)
+					store := topologymanager.GetStore(cycleState)
+					store.SetAffinity(numaNodeName, topologymanager.NUMATopologyHint{NUMANodeAffinity: tt.numaAffinity})
+				}
+
+				pod = &corev1.Pod{}
+			} else {
+				cycleState = tt.args.cycleState
+				rInfo = tt.args.reservationInfo
+				pod = tt.args.pod
+				if pod == nil {
+					pod = &corev1.Pod{}
+				}
+			}
+
+			got := pl.FilterNominateReservation(context.TODO(), cycleState, pod, rInfo, nodeName)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -1288,9 +1505,19 @@ func TestPlugin_Reserve(t *testing.T) {
 		numaAffinity              bitmask.BitMask
 		cpuTopology               *CPUTopology
 		allocatedCPUs             []int
-		want                      *fwktype.Status
-		wantCPUSet                cpuset.CPUSet
-		wantNUMAResource          []NUMANodeResource
+		// skipNominate skips AddNominatedReservation so the pod falls back to tryAllocateFromNode.
+		skipNominate bool
+		// extraNUMAAllocations is injected into nodeAllocation to simulate matched R owners' NUMA
+		// usage double-counted on the node NUMA account (alongside the R fake pod allocation).
+		extraNUMAAllocations []NUMANodeResource
+		// mergedMatchedAllocatable/mergedMatchedAllocated are injected into restoreState; the former
+		// is not consumed by tryAllocateFromNode directly but matches production restore semantics,
+		// while the latter is what the fix must pass to reusableResources to offset double-count.
+		mergedMatchedAllocatable map[int]corev1.ResourceList
+		mergedMatchedAllocated   map[int]corev1.ResourceList
+		want                     *fwktype.Status
+		wantCPUSet               cpuset.CPUSet
+		wantNUMAResource         []NUMANodeResource
 	}{
 		{
 			name: "error with missing preFilterState",
@@ -1588,6 +1815,218 @@ func TestPlugin_Reserve(t *testing.T) {
 			wantCPUSet:                cpuset.NewCPUSet(),
 		},
 		{
+			// Regression for the tryAllocateFromNode double-accounting bug:
+			// node NUMA0 total=8 cpu; matched R.Spec.Resources (allocatable) = 7 cpu on NUMA0 and
+			// R owner has already consumed 4 cpu on NUMA0; in production they are both recorded
+			// on the node NUMA account, making the account 7+4=11 cpu on NUMA0 (exceeding total 8).
+			// We simulate this by injecting a single extraNUMAAllocations of 11 cpu on NUMA0
+			// (the test helper's addCPUs/addPodAllocation path cannot accumulate R's NUMA cpu when
+			// R.remainedCPUs is empty because addCPUs pre-registers the UID in allocatedPods).
+			// The pod has no reservation-affinity and is not nominated, so Reserve falls back to
+			// tryAllocateFromNode which must return mergedMatchedAllocated (=4) so that
+			// available = max(0, 8 - max(0, 11-4)) = max(0, 8-7) = 1 cpu, allowing a 1-cpu pod.
+			// Without the fix, reusableResources omits mergedMatchedAllocated so available=0 and
+			// the pod would be rejected with Insufficient NUMA cpu.
+			name: "fallback tryAllocateFromNode: return mergedMatchedAllocated to offset matched R owner double-count",
+			state: &preFilterState{
+				numCPUsNeeded:          1,
+				requests:               corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+			},
+			matched: map[types.UID]reusableAlloc{
+				uuid.NewUUID(): {
+					allocatable: map[int]corev1.ResourceList{
+						0: {corev1.ResourceCPU: resource.MustParse("7")},
+					},
+					remained: map[int]corev1.ResourceList{
+						0: {corev1.ResourceCPU: resource.MustParse("3")},
+					},
+				},
+			},
+			skipNominate: true,
+			extraNUMAAllocations: []NUMANodeResource{
+				{Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("11")}},
+			},
+			mergedMatchedAllocatable: map[int]corev1.ResourceList{
+				0: {corev1.ResourceCPU: resource.MustParse("7")},
+			},
+			mergedMatchedAllocated: map[int]corev1.ResourceList{
+				0: {corev1.ResourceCPU: resource.MustParse("4")},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			numaAffinity:              node0,
+			want:                      nil,
+			wantCPUSet:                cpuset.CPUSet{},
+			wantNUMAResource: []NUMANodeResource{
+				{Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}},
+			},
+		},
+		{
+			// Boundary: same topology/accounts as the regression case above; pod requests 2 cpu.
+			// Even after the fix returns mergedMatchedAllocated=4, available is clamped to
+			// max(0, 8 - max(0, 11-4)) = 1 cpu, i.e. only the node free part outside R.allocatable.
+			// The pod requesting 2 cpu must be rejected; this proves the fix does NOT let a pod
+			// without reservation-affinity steal matched R capacity (R.allocatable stays reserved).
+			name: "fallback tryAllocateFromNode: do not steal matched reservation capacity beyond node free",
+			state: &preFilterState{
+				numCPUsNeeded:          2,
+				requests:               corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+			},
+			matched: map[types.UID]reusableAlloc{
+				uuid.NewUUID(): {
+					allocatable: map[int]corev1.ResourceList{
+						0: {corev1.ResourceCPU: resource.MustParse("7")},
+					},
+					remained: map[int]corev1.ResourceList{
+						0: {corev1.ResourceCPU: resource.MustParse("3")},
+					},
+				},
+			},
+			skipNominate: true,
+			extraNUMAAllocations: []NUMANodeResource{
+				{Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("11")}},
+			},
+			mergedMatchedAllocatable: map[int]corev1.ResourceList{
+				0: {corev1.ResourceCPU: resource.MustParse("7")},
+			},
+			mergedMatchedAllocated: map[int]corev1.ResourceList{
+				0: {corev1.ResourceCPU: resource.MustParse("4")},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			numaAffinity:              node0,
+			want:                      fwktype.NewStatus(fwktype.Unschedulable, "Insufficient NUMA cpu"),
+			wantCPUSet:                cpuset.NewCPUSet(),
+		},
+		{
+			// Regression for the tryAllocateFromNode double-accounting bug:
+			// node NUMA0 total=8 cpu; matched R.Spec.Resources (allocatable) = 7 cpu on NUMA0 and
+			// R owner has already consumed 4 cpu on NUMA0; in production they are both recorded
+			// on the node NUMA account, making the account 7+4=11 cpu on NUMA0 (exceeding total 8).
+			// We simulate this by injecting a single extraNUMAAllocations of 11 cpu on NUMA0
+			// (the test helper's addCPUs/addPodAllocation path cannot accumulate R's NUMA cpu when
+			// R.remainedCPUs is empty because addCPUs pre-registers the UID in allocatedPods).
+			// The pod has no reservation-affinity and is not nominated, so Reserve falls back to
+			// tryAllocateFromNode which must return mergedMatchedAllocated (=4) so that
+			// available = max(0, 8 - max(0, 11-4)) = max(0, 8-7) = 1 cpu, allowing a 1-cpu pod.
+			// Without the fix, reusableResources omits mergedMatchedAllocated so available=0 and
+			// the pod would be rejected with Insufficient NUMA cpu.
+			name: "fallback tryAllocateFromNode: return mergedMatchedAllocated to offset matched R owner double-count",
+			state: &preFilterState{
+				numCPUsNeeded:          1,
+				requests:               corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+			},
+			matched: map[types.UID]reusableAlloc{
+				uuid.NewUUID(): {
+					allocatable: map[int]corev1.ResourceList{
+						0: {corev1.ResourceCPU: resource.MustParse("7")},
+					},
+					remained: map[int]corev1.ResourceList{
+						0: {corev1.ResourceCPU: resource.MustParse("3")},
+					},
+				},
+			},
+			skipNominate: true,
+			extraNUMAAllocations: []NUMANodeResource{
+				{Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("11")}},
+			},
+			mergedMatchedAllocatable: map[int]corev1.ResourceList{
+				0: {corev1.ResourceCPU: resource.MustParse("7")},
+			},
+			mergedMatchedAllocated: map[int]corev1.ResourceList{
+				0: {corev1.ResourceCPU: resource.MustParse("4")},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			numaAffinity:              node0,
+			want:                      nil,
+			wantCPUSet:                cpuset.CPUSet{},
+			wantNUMAResource: []NUMANodeResource{
+				{Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}},
+			},
+		},
+		{
+			// Boundary: same topology/accounts as the regression case above; pod requests 2 cpu.
+			// Even after the fix returns mergedMatchedAllocated=4, available is clamped to
+			// max(0, 8 - max(0, 11-4)) = 1 cpu, i.e. only the node free part outside R.allocatable.
+			// The pod requesting 2 cpu must be rejected; this proves the fix does NOT let a pod
+			// without reservation-affinity steal matched R capacity (R.allocatable stays reserved).
+			name: "fallback tryAllocateFromNode: do not steal matched reservation capacity beyond node free",
+			state: &preFilterState{
+				numCPUsNeeded:          2,
+				requests:               corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+			},
+			matched: map[types.UID]reusableAlloc{
+				uuid.NewUUID(): {
+					allocatable: map[int]corev1.ResourceList{
+						0: {corev1.ResourceCPU: resource.MustParse("7")},
+					},
+					remained: map[int]corev1.ResourceList{
+						0: {corev1.ResourceCPU: resource.MustParse("3")},
+					},
+				},
+			},
+			skipNominate: true,
+			extraNUMAAllocations: []NUMANodeResource{
+				{Node: 0, Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("11")}},
+			},
+			mergedMatchedAllocatable: map[int]corev1.ResourceList{
+				0: {corev1.ResourceCPU: resource.MustParse("7")},
+			},
+			mergedMatchedAllocated: map[int]corev1.ResourceList{
+				0: {corev1.ResourceCPU: resource.MustParse("4")},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyDefault,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			numaAffinity:              node0,
+			want:                      fwktype.NewStatus(fwktype.Unschedulable, "Insufficient NUMA cpu"),
+			wantCPUSet:                cpuset.NewCPUSet(),
+		},
+		{
+			// allocateWithNominated defense-in-depth: pod has a nominated R on NUMA1 but BestHint=NUMA0,
+			// and no reservation-affinity (requiredFromReservation=false). tryAllocateFromReusable returns
+			// (nil, nil) because Restricted second-Allocate fails (R resources not in hint), but the
+			// fallback is refused since the pod has a concrete nominated reservation. Without this
+			// check the pod would silently bypass the reservation via tryAllocateFromNode.
+			name: "nominated R NUMA-incompatible without affinity: allocateWithNominated refuses fallback",
+			state: &preFilterState{
+				numCPUsNeeded:          4,
+				requests:               corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+				podNUMATopologyPolicy:  extension.NUMATopologyPolicyRestricted,
+				preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs,
+				// hasReservationAffinity=false (zero value) → requiredFromReservation=false
+			},
+			matched: map[types.UID]reusableAlloc{
+				uuid.NewUUID(): {
+					allocatable: map[int]corev1.ResourceList{
+						1: {corev1.ResourceCPU: resource.MustParse("8")},
+					},
+					remained: map[int]corev1.ResourceList{
+						1: {corev1.ResourceCPU: resource.MustParse("8")},
+					},
+					remainedCPUs: cpuset.NewCPUSet(8, 9, 10, 11, 12, 13, 14, 15),
+				},
+			},
+			reservationAllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			cpuTopology:               buildCPUTopologyForTest(2, 1, 4, 2),
+			pod:                       &corev1.Pod{},
+			numaAffinity:              node0,
+			want:                      fwktype.NewStatus(fwktype.Unschedulable, "pod has a nominated reservation but cannot be allocated within its NUMA scope"),
+			wantCPUSet:                cpuset.NewCPUSet(),
+		},
+		{
 			name: "succeed allocate for a reservation-ignored pod",
 			state: &preFilterState{
 				requestCPUBind:         true,
@@ -1682,12 +2121,20 @@ func TestPlugin_Reserve(t *testing.T) {
 						}, tt.cpuTopology)
 					}
 				}
+				// Simulate owner pod NUMA usage already recorded on node NUMA account, which
+				// together with the R fake pod allocation above produces the double-count.
+				if len(tt.extraNUMAAllocations) > 0 {
+					nodeAllocation.addPodAllocation(&PodAllocation{
+						UID:               uuid.NewUUID(),
+						NUMANodeResources: tt.extraNUMAAllocations,
+					}, tt.cpuTopology)
+				}
 			}
 
 			cpuManager := plg.resourceManager.(*resourceManager)
 			cpuManager.nodeAllocations[nodeAllocation.nodeName] = nodeAllocation
 
-			suit.start()
+			suit.start(t)
 
 			cycleState := framework.NewCycleState()
 			if tt.state != nil {
@@ -1705,12 +2152,18 @@ func TestPlugin_Reserve(t *testing.T) {
 						}
 						alloc.rInfo = frameworkext.NewReservationInfo(reservation)
 						tt.matched[reservationUID] = alloc
-						rInfo := frameworkext.NewReservationInfo(reservation)
-						plg.handle.GetReservationNominator().AddNominatedReservation(tt.pod, "test-node-1", rInfo)
+						if !tt.skipNominate {
+							rInfo := frameworkext.NewReservationInfo(reservation)
+							plg.handle.GetReservationNominator().AddNominatedReservation(tt.pod, "test-node-1", rInfo)
+						}
 					}
 					cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
 						nodeToState: frameworkext.NodeReservationRestoreStates{
-							"test-node-1": &nodeReservationRestoreStateData{matched: tt.matched},
+							"test-node-1": &nodeReservationRestoreStateData{
+								matched:                  tt.matched,
+								mergedMatchedAllocatable: tt.mergedMatchedAllocatable,
+								mergedMatchedAllocated:   tt.mergedMatchedAllocated,
+							},
 						},
 					})
 				}
@@ -1810,7 +2263,7 @@ func TestPlugin_PreBind(t *testing.T) {
 	_, status := suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod, metav1.CreateOptions{})
 	assert.Nil(t, status)
 
-	suit.start()
+	suit.start(t)
 
 	plg := p.(*Plugin)
 
@@ -1857,7 +2310,7 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 	_, status := suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod, metav1.CreateOptions{})
 	assert.Nil(t, status)
 
-	suit.start()
+	suit.start(t)
 
 	plg := p.(*Plugin)
 
@@ -1911,7 +2364,7 @@ func TestPlugin_PreBindReservation(t *testing.T) {
 	_, status := suit.KoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
 	assert.Nil(t, status)
 
-	suit.start()
+	suit.start(t)
 
 	plg := p.(*Plugin)
 

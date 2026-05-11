@@ -17,7 +17,6 @@ limitations under the License.
 package elasticquota
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -37,9 +36,7 @@ func TestPlugin_OnPodAddAndDeleteWhenDisableDefault(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisableDefaultQuota, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	suit.AddQuota("test", "", 10, 40, 10, 40, 10, 40, false, "")
 
@@ -76,9 +73,7 @@ func TestPlugin_OnPodUpdateWhenDisableDefault(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisableDefaultQuota, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	suit.AddQuota("test1", "", 10, 40, 10, 40, 10, 40, false, "")
 	suit.AddQuota("test2", "", 10, 40, 10, 40, 10, 40, false, "")
@@ -119,9 +114,7 @@ func TestPlugin_OnPodUpdateWhenDisableDefaultAndRootTree(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	plugin.addRootQuota("test1", "", 10, 40, 10, 40, 10, 40, false, "", "tree1")
 	plugin.addRootQuota("test2", "", 10, 40, 10, 40, 10, 40, false, "", "tree2")
@@ -180,9 +173,7 @@ func TestPlugin_OnPodDelete(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisableDefaultQuota, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	suit.AddQuota("test", "", 10, 40, 10, 40, 10, 40, false, "")
 

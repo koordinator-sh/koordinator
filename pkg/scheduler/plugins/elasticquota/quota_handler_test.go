@@ -17,7 +17,6 @@ limitations under the License.
 package elasticquota
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -37,9 +36,7 @@ func TestPlugin_OnQuotaAddWithTreeID(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	plugin.groupQuotaManager.UpdateClusterTotalResource(createResourceList(501952056, 0))
 	gqm := plugin.groupQuotaManager
@@ -74,9 +71,7 @@ func TestPlugin_OnQuotaUpdateAndDeleteWithTreeID(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	// tree-b:
 	// test2 Max[100, 200]  Min[100,160] request[20,40]
@@ -238,9 +233,7 @@ func TestPlugin_OnRootQuotaAddAndUpdate(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	// tree-cn-hangzhou-a:
 	// cn-hangzhou-a Max[100, 200]  Min[100,200] request[90,190]
@@ -306,9 +299,7 @@ func TestPlugin_HandlerQuotaWhenRoot(t *testing.T) {
 
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.MultiQuotaTree, true)()
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	for _, node := range nodes {
 		plugin.OnNodeAdd(node)
@@ -343,9 +334,7 @@ func TestPlugin_ReplaceQuotas(t *testing.T) {
 	}
 
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	// ReplaceQuotas will conflict with QuotaEventHandler. sleep 1 seconds to avoid it.
 	time.Sleep(time.Second)

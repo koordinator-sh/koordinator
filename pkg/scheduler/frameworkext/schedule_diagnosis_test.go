@@ -17,6 +17,8 @@ limitations under the License.
 package frameworkext
 
 import (
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -107,6 +109,23 @@ func TestDumpDiagnosis(t *testing.T) {
 			},
 			wantDumpMessage: `{"timestamp":null,"questionedKey":"default/test-pod","nominatedNode":"nominatedNode","preFilterMessage":"preFilterMessage","topologyKeyToExplain":"topologyKeyToExplain","isRootCausePod":true,"scheduleDiagnosis":{"alreadyWaitForBound":2,"nodeOfferSlot":{"node1":1,"node2":1},"nodeFailedDetails":[{"preemptMightHelp":true,"failedNodes":["node1"]},{"reason":"node2-reason","preemptMightHelp":true,"failedNodes":["node2"]}]},"preemptionDiagnosis":{"dryRunFilterDiagnosis":{"alreadyWaitForBound":0,"nodeOfferSlot":{"node1":1,"node2":2},"nodeFailedDetails":[{"preemptMightHelp":true,"failedNodes":["node1"]},{"reason":"node2-reason","preemptMightHelp":true,"failedNodes":["node2"]}]},"otherDiagnosis":{"TriggerPodKey":"default/test-pod","preemptorKey":"default/test-pod"}}}`,
 		},
+		{
+			name: "with suggestion",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			},
+			setDiagnosisFunc: func(state fwktype.CycleState) {
+				diagnosis := GetDiagnosis(state)
+				diagnosis.SetSuggestion(&ScheduleSuggestion{
+					Type:    SuggestionEvictWorkloadSelf,
+					Message: "pod is unschedulable, please delete and resubmit",
+				})
+			},
+			wantDumpMessage: `{"timestamp":null,"questionedKey":"default/test-pod","isRootCausePod":true,"scheduleDiagnosis":null,"preemptionDiagnosis":null,"suggestion":{"type":"EvictWorkloadSelf","message":"pod is unschedulable, please delete and resubmit"}}`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -115,10 +134,96 @@ func TestDumpDiagnosis(t *testing.T) {
 			cycleState := framework.NewCycleState()
 			InitDiagnosis(cycleState, tt.pod)
 			tt.setDiagnosisFunc(cycleState)
-			gotDumpMessage := DumpDiagnosis(cycleState)
+			gotDumpMessage := DumpDiagnosis(GetDiagnosis(cycleState))
 			assert.Equal(t, tt.wantDumpMessage, gotDumpMessage)
 		})
 	}
+}
+
+func TestSetSuggestion(t *testing.T) {
+	tests := []struct {
+		name           string
+		initSuggestion *ScheduleSuggestion
+		setSuggestion  *ScheduleSuggestion
+		wantOk         bool
+		wantSuggestion *ScheduleSuggestion
+	}{
+		{
+			name: "set suggestion on empty diagnosis",
+			setSuggestion: &ScheduleSuggestion{
+				Type:    SuggestionEvictWorkloadSelf,
+				Message: "pod is unschedulable, please resubmit",
+			},
+			wantOk: true,
+			wantSuggestion: &ScheduleSuggestion{
+				Type:    SuggestionEvictWorkloadSelf,
+				Message: "pod is unschedulable, please resubmit",
+			},
+		},
+		{
+			name: "set suggestion when already set returns false",
+			initSuggestion: &ScheduleSuggestion{
+				Type:    SuggestionWaitingVictimReleased,
+				Message: "waiting for victims",
+			},
+			setSuggestion: &ScheduleSuggestion{
+				Type:    SuggestionEvictWorkloadSelf,
+				Message: "should not overwrite",
+			},
+			wantOk: false,
+			wantSuggestion: &ScheduleSuggestion{
+				Type:    SuggestionWaitingVictimReleased,
+				Message: "waiting for victims",
+			},
+		},
+		{
+			name: "set DeleteConflictPVC suggestion",
+			setSuggestion: &ScheduleSuggestion{
+				Type:    SuggestionDeleteConflictPVC,
+				Message: "PVC my-pvc conflicts",
+			},
+			wantOk: true,
+			wantSuggestion: &ScheduleSuggestion{
+				Type:    SuggestionDeleteConflictPVC,
+				Message: "PVC my-pvc conflicts",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &Diagnosis{}
+			if tt.initSuggestion != nil {
+				d.Suggestion = tt.initSuggestion
+			}
+			gotOk := d.SetSuggestion(tt.setSuggestion)
+			assert.Equal(t, tt.wantOk, gotOk)
+			assert.Equal(t, tt.wantSuggestion, d.Suggestion)
+		})
+	}
+}
+
+func TestSetSuggestion_Concurrent(t *testing.T) {
+	d := &Diagnosis{}
+	const goroutines = 100
+	var wg sync.WaitGroup
+	var successCount int32
+
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			ok := d.SetSuggestion(&ScheduleSuggestion{
+				Type:    SuggestionEvictWorkloadSelf,
+				Message: "from goroutine",
+			})
+			if ok {
+				atomic.AddInt32(&successCount, 1)
+			}
+		}(i)
+	}
+	wg.Wait()
+	assert.Equal(t, int32(1), successCount, "exactly one goroutine should succeed")
+	assert.NotNil(t, d.Suggestion)
 }
 
 // BenchmarkDumpDiagnosis benchmarks the DumpDiagnosis function with large datasets
@@ -183,7 +288,7 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 			}
 
 			// Run the function being benchmarked
-			DumpDiagnosis(cycleState)
+			DumpDiagnosis(GetDiagnosis(cycleState))
 		}
 	})
 
@@ -216,7 +321,7 @@ func BenchmarkDumpDiagnosis(b *testing.B) {
 			}
 
 			// Run the function being benchmarked
-			DumpDiagnosis(cycleState)
+			DumpDiagnosis(GetDiagnosis(cycleState))
 		}
 	})
 }

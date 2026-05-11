@@ -567,6 +567,33 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 			wantStatus:           fwktype.NewStatus(fwktype.Unschedulable, "preemption: some message"),
 			wantFailedMessage:    `GangGroup "default/gangA" gets rejected due to member Pod "default/pod1" is unschedulable with reason "0/0 nodes are available:", alreadyWaitForBound: 0`,
 		},
+		{
+			name: "gang pod with suggestion propagated to gangSchedulingContext",
+			args: args{
+				state: framework.NewCycleState(),
+				pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "default",
+						Name:      "pod2",
+						Labels: map[string]string{
+							v1alpha1.PodGroupLabel: "gangB",
+						},
+					},
+				},
+			},
+			enablePreemption: true,
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID: "default/gangB",
+				gangGroup:   sets.New[string]("default/gangB"),
+			},
+			preemptionEvaluator: &fakeEvaluator{
+				result: &fwktype.PostFilterResult{},
+				status: fwktype.NewStatus(fwktype.Unschedulable, "preemption failed"),
+			},
+			wantPostFilterResult: &fwktype.PostFilterResult{},
+			wantStatus:           fwktype.NewStatus(fwktype.Unschedulable, "preemption: preemption failed"),
+			wantFailedMessage:    `GangGroup "default/gangB" gets rejected due to member Pod "default/pod2" is unschedulable with reason "0/0 nodes are available:", alreadyWaitForBound: 0`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -588,6 +615,151 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 			if tt.gangSchedulingContext != nil {
 				assert.Equalf(t, tt.wantFailedMessage, tt.gangSchedulingContext.failedMessage, "PostFilter(%v, %v, %v, %v)", tt.args.ctx, tt.args.state, tt.args.pod, tt.args.m)
 			}
+		})
+	}
+}
+
+func TestAfterPostFilter_SuggestionPropagation(t *testing.T) {
+	tests := []struct {
+		name                  string
+		pod                   *corev1.Pod
+		gangSchedulingContext *GangSchedulingContext
+		suggestion            *frameworkext.ScheduleSuggestion
+		wantSuggestion        *frameworkext.ScheduleSuggestion
+	}{
+		{
+			name: "suggestion propagated to gangSchedulingContext via AfterPostFilter",
+			pod:  st.MakePod().Name("pod-af").UID("pod-af").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangAF").Obj(),
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID:   "default/gangAF",
+				gangGroup:     sets.New[string]("default/gangAF"),
+				failedMessage: "already failed",
+			},
+			suggestion: &frameworkext.ScheduleSuggestion{
+				Type:    frameworkext.SuggestionEvictWorkloadSelf,
+				Message: "job is unschedulable, please resubmit",
+			},
+			wantSuggestion: &frameworkext.ScheduleSuggestion{
+				Type:    frameworkext.SuggestionEvictWorkloadSelf,
+				Message: "job is unschedulable, please resubmit",
+			},
+		},
+		{
+			name: "no suggestion when diagnosis has none",
+			pod:  st.MakePod().Name("pod-af2").UID("pod-af2").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangAF2").Obj(),
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID:   "default/gangAF2",
+				gangGroup:     sets.New[string]("default/gangAF2"),
+				failedMessage: "already failed",
+			},
+			suggestion:     nil,
+			wantSuggestion: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handle := NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil)
+			gangCache := NewGangCache(nil, nil, nil, nil, handle)
+			gangCache.onPodAdd(tt.pod)
+			pgMgr := &PodGroupManager{
+				handle: handle,
+				holder: GangSchedulingContextHolder{
+					gangSchedulingContext: tt.gangSchedulingContext,
+				},
+				args:  &config.CoschedulingArgs{},
+				cache: gangCache,
+			}
+
+			cycleState := framework.NewCycleState()
+			frameworkext.InitDiagnosis(cycleState, tt.pod)
+			if tt.suggestion != nil {
+				diagnosis := frameworkext.GetDiagnosis(cycleState)
+				diagnosis.SetSuggestion(tt.suggestion)
+			}
+
+			pgMgr.AfterPostFilter(context.TODO(), cycleState, tt.pod, pgMgr.handle, "coscheduling", nil)
+			assert.Equal(t, tt.wantSuggestion, tt.gangSchedulingContext.suggestion, "suggestion propagation")
+		})
+	}
+}
+
+func TestBeforePreFilter_SuggestionPropagation(t *testing.T) {
+	gangCreatedTime := time.Now()
+	tests := []struct {
+		name                  string
+		pod                   *corev1.Pod
+		pg                    *v1alpha1.PodGroup
+		gangSchedulingContext *GangSchedulingContext
+		wantSuggestion        *frameworkext.ScheduleSuggestion
+		wantIsRootCausePod    bool
+		wantErr               bool
+	}{
+		{
+			name: "subsequent pod gets suggestion from gangSchedulingContext",
+			pod:  st.MakePod().Name("pod-follower").UID("pod-follower").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangX").Obj(),
+			pg:   makePg("gangX", "default", 1, &gangCreatedTime, nil),
+			gangSchedulingContext: &GangSchedulingContext{
+				firstPod:      st.MakePod().Name("pod-leader").UID("pod-leader").Namespace("default").Obj(),
+				gangGroupID:   "default/gangX",
+				gangGroup:     sets.New[string]("default/gangX"),
+				failedMessage: "GangGroup failed",
+				suggestion: &frameworkext.ScheduleSuggestion{
+					Type:    frameworkext.SuggestionWaitingVictimReleased,
+					Message: "waiting for victim pods to be deleted",
+				},
+			},
+			wantSuggestion: &frameworkext.ScheduleSuggestion{
+				Type:    frameworkext.SuggestionWaitingVictimReleased,
+				Message: "waiting for victim pods to be deleted",
+			},
+			wantIsRootCausePod: false,
+			wantErr:            true,
+		},
+		{
+			name: "subsequent pod with no suggestion in gangSchedulingContext",
+			pod:  st.MakePod().Name("pod-follower2").UID("pod-follower2").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangY").Obj(),
+			pg:   makePg("gangY", "default", 1, &gangCreatedTime, nil),
+			gangSchedulingContext: &GangSchedulingContext{
+				firstPod:      st.MakePod().Name("pod-leader2").UID("pod-leader2").Namespace("default").Obj(),
+				gangGroupID:   "default/gangY",
+				gangGroup:     sets.New[string]("default/gangY"),
+				failedMessage: "GangGroup failed",
+			},
+			wantSuggestion:     nil,
+			wantIsRootCausePod: false,
+			wantErr:            true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mgr := NewManagerForTest().pgMgr
+			if tt.pg != nil {
+				mgr.cache.onPodGroupAdd(tt.pg)
+				// Mark gang as initialized so BeforePreFilter reaches the failedMessage check
+				gangId := util.GetId(tt.pg.Namespace, tt.pg.Name)
+				gang := mgr.cache.getGangFromCacheByGangId(gangId, false)
+				if gang != nil {
+					gang.HasGangInit = true
+				}
+			}
+			mgr.cache.onPodAdd(tt.pod)
+			if tt.gangSchedulingContext != nil {
+				mgr.holder.setGangSchedulingContext(tt.gangSchedulingContext, "test")
+			}
+
+			cycleState := framework.NewCycleState()
+			frameworkext.InitDiagnosis(cycleState, tt.pod)
+			err := mgr.BeforePreFilter(context.TODO(), cycleState, tt.pod)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			diagnosis := frameworkext.GetDiagnosis(cycleState)
+			assert.Equal(t, tt.wantIsRootCausePod, diagnosis.IsRootCausePod)
+			assert.Equal(t, tt.wantSuggestion, diagnosis.Suggestion)
 		})
 	}
 }

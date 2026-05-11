@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -80,13 +81,13 @@ var (
 )
 
 type Plugin struct {
-	handle          frameworkext.ExtendedHandle
-	pluginArgs      *schedulingconfig.NodeNUMAResourceArgs
-	nrtLister       topologylister.NodeResourceTopologyLister
-	scorer          *resourceAllocationScorer
-	numaScorer      *resourceAllocationScorer
-	resourceManager ResourceManager
-
+	handle                 frameworkext.ExtendedHandle
+	pluginArgs             *schedulingconfig.NodeNUMAResourceArgs
+	nrtInformerFactory     nrtinformers.SharedInformerFactory
+	nrtLister              topologylister.NodeResourceTopologyLister
+	scorer                 *resourceAllocationScorer
+	numaScorer             *resourceAllocationScorer
+	resourceManager        ResourceManager
 	topologyOptionsManager TopologyOptionsManager
 }
 
@@ -159,6 +160,7 @@ func NewWithOptions(args runtime.Object, handle fwktype.Handle, opts ...Option) 
 	return &Plugin{
 		handle:                 handle.(frameworkext.ExtendedHandle),
 		pluginArgs:             pluginArgs,
+		nrtInformerFactory:     nrtInformerFactory,
 		nrtLister:              nrtLister,
 		scorer:                 scorer,
 		numaScorer:             numaScorer,
@@ -435,6 +437,9 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 		return nil
 	}
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	podNUMATopologyPolicy := state.podNUMATopologyPolicy
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
@@ -527,6 +532,9 @@ func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.
 	}
 
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	cpuAmplificationRatio, err := extension.GetNodeResourceAmplificationRatio(node.Annotations, corev1.ResourceCPU)
 	if err != nil {
 		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInvalidCPUAmplificationRatio)
@@ -628,8 +636,18 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 		return nil
 	}
 
-	_, status = tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, map[types.UID]reusableAlloc{reservationInfo.UID(): matchedReservationAlloc}, pod, node)
-	return status
+	result, status := tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, map[types.UID]reusableAlloc{reservationInfo.UID(): matchedReservationAlloc}, pod, node)
+	if !status.IsSuccess() {
+		return status
+	}
+	if result == nil {
+		// tryAllocateFromReusable returned nil/nil ("no reservation satisfied, but fallback allowed").
+		// In the FilterNominateReservation context, this means the reservation's NUMA scope is
+		// incompatible with the current best topology hint; treat it as unschedulable so this
+		// reservation is excluded from the nominator candidate pool.
+		return fwktype.NewStatus(fwktype.Unschedulable, "reservation NUMA scope is incompatible with the best topology hint")
+	}
+	return nil
 }
 
 func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
@@ -651,6 +669,9 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 		}
 		node := nodeInfo.Node()
+		if node == nil {
+			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+		}
 		topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 		podNUMATopologyPolicy := state.podNUMATopologyPolicy
 		numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
@@ -780,6 +801,9 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState fwktype.CycleStat
 		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+	}
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
@@ -875,7 +899,13 @@ func tryAllocateFromNode(
 		}()
 	} else {
 		resourceOptions.requiredResources = nil
-		resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed)
+		// Return both unmatched and matched reservation owner usage to eliminate double accounting.
+		// For each reservation, the fake reservation pod occupies R.Spec.Resources while its owner
+		// pods are independently accounted in the node cache. Only the second-layer owner usage
+		// (already consumed inside the reservation) should be returned here; R.Spec.Resources remain
+		// deducted as they are still reserved from the pod's perspective when going through the
+		// node-free path, so the pod cannot steal any reservation capacity.
+		resourceOptions.reusableResources = appendAllocated(nil, restoreState.mergedUnmatchedUsed, restoreState.mergedMatchedAllocated)
 		resourceOptions.preferredCPUs = cpuset.NewCPUSet()
 		resourceOptions.preemptibleCPUs = cpuset.NewCPUSet()
 	}

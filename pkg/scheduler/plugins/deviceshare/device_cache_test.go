@@ -138,6 +138,11 @@ func Test_gcNodeDevices(t *testing.T) {
 	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
 	ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Second)
 	defer cancel()
+	// Initialize the node informer before starting the factory so that WaitForCacheSync waits for it.
+	informerFactory.Core().V1().Nodes().Informer()
+	// Start the informer factory so that ForceSyncFromInformer handlers receive data.
+	informerFactory.Start(ctx.Done())
+	informerFactory.WaitForCacheSync(ctx.Done())
 	cache.gcNodeDevice(ctx, informerFactory, defaultGCPeriod)
 	nodeNames := sets.StringKeySet(cache.nodeDeviceInfos)
 	assert.Equal(t, expectedNodeNames, nodeNames)

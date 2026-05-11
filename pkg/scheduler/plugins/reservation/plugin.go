@@ -406,6 +406,9 @@ func (pl *Plugin) AddPod(ctx context.Context, cycleState fwktype.CycleState, pod
 	podRequests[corev1.ResourcePods] = *resource.NewQuantity(1, resource.DecimalSI) // count pods resources
 	state := getStateData(cycleState)
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToAdd.GetPod(), node.Name)
 	if rInfo == nil {
 		rInfo = pl.GetNominatedReservation(podInfoToAdd.GetPod(), node.Name)
@@ -435,6 +438,9 @@ func (pl *Plugin) RemovePod(ctx context.Context, cycleState fwktype.CycleState, 
 	podRequests[corev1.ResourcePods] = *resource.NewQuantity(1, resource.DecimalSI) // count pods resources
 	state := getStateData(cycleState)
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	rInfo := pl.reservationCache.GetReservationInfoByPod(podInfoToRemove.GetPod(), node.Name)
 	if rInfo == nil {
 		rInfo = pl.GetNominatedReservation(podInfoToRemove.GetPod(), node.Name)
@@ -558,6 +564,9 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 	}
 
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
 
@@ -682,6 +691,10 @@ func (pl *Plugin) filterWithPreAllocatablePod(ctx context.Context, cycleState fw
 	}
 
 	node := nodeInfo.Node()
+	if node == nil {
+		result = fwktype.NewStatus(fwktype.Error, "node not found")
+		return
+	}
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
 	if nodeRState == nil {
@@ -814,20 +827,24 @@ func (pl *Plugin) filterWithMultiplePreAllocatablePods(ctx context.Context, cycl
 		return
 	}
 
+	node := nodeInfo.Node()
+	if node == nil {
+		result = fwktype.NewStatus(fwktype.Error, "node not found")
+		return
+	}
 	// For default mode, pre-allocatable pods should be sorted before selecting.
 	// Not for cluster mode since pre-allocatable pods has already been sorted in cache.
 	mode := reservationutil.GetPreAllocationMode(rInfo.Reservation)
 	if mode == schedulingv1alpha1.PreAllocationModeDefault && len(preAllocatablePods) > 1 {
 		var err error
 		preAllocatablePods, err = sortPreAllocatablePodsForDefaultMode(
-			ctx, extender, cycleState, rInfo, preAllocatablePods, nodeInfo.Node().Name)
+			ctx, extender, cycleState, rInfo, preAllocatablePods, node.Name)
 		if err != nil {
 			result = fwktype.AsStatus(err)
 			return
 		}
 	}
 
-	node := nodeInfo.Node()
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
 	if nodeRState == nil {

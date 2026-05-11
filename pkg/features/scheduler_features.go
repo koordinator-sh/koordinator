@@ -102,6 +102,23 @@ const (
 	// DynamicSchedulerCheck is used to check the scheduler name when a pod or a reservation can change it dynamically.
 	DynamicSchedulerCheck featuregate.Feature = "DynamicSchedulerCheck"
 
+	// owner: @saintube @ZiMengSheng
+	// alpha: v1.8
+	//
+	// CrossSchedulerNomination enables cross-scheduler nomination support,
+	// allowing a pod nominated by one scheduler to be recognized by another scheduler.
+	CrossSchedulerNomination featuregate.Feature = "CrossSchedulerNomination"
+
+	// owner: @saintube
+	// alpha: v1.8
+	//
+	// SkipFilterWithNominatedPods simplifies RunFilterPluginsWithNominatedPods by running
+	// filters only once with nominated pods included, instead of the default two-pass
+	// comparison (pass 1 with nominated pods, pass 2 without). The two-pass logic handles
+	// a pod affinity corner case during preemption but introduces 2x filter overhead.
+	// When enabled, the single pass with nominated pods is sufficient for most scenarios.
+	SkipFilterWithNominatedPods featuregate.Feature = "SkipFilterWithNominatedPods"
+
 	CSIStorageCapacity featuregate.Feature = "CSIStorageCapacity"
 
 	GenericEphemeralVolume featuregate.Feature = "GenericEphemeralVolume"
@@ -138,11 +155,13 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	SkipReservationFitsNode:                   {Default: false, PreRelease: featuregate.Alpha},
 	DevicePluginAdaption:                      {Default: false, PreRelease: featuregate.Alpha},
 	CleanExpiredReservationAllocated:          {Default: false, PreRelease: featuregate.Alpha},
+	SkipFilterWithNominatedPods:               {Default: false, PreRelease: featuregate.Alpha},
 	DynamicSchedulerCheck:                     {Default: true, PreRelease: featuregate.Alpha}, // enabled by default
 	CSIStorageCapacity:                        {Default: true, PreRelease: featuregate.GA},    // remove in 1.26
 	GenericEphemeralVolume:                    {Default: true, PreRelease: featuregate.GA},
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},
 	SyncBarrier:                               {Default: false, PreRelease: featuregate.Alpha},
+	CrossSchedulerNomination:                  {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {

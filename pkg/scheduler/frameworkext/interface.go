@@ -18,6 +18,7 @@ package frameworkext
 
 import (
 	"context"
+	"reflect"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
@@ -33,6 +34,7 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 )
 
 // ExtendedHandle extends the k8s scheduling framework Handle interface
@@ -58,6 +60,10 @@ type ExtendedHandle interface {
 	// It returns nil when the framework does not support the resource reservation.
 	GetReservationNominator() ReservationNominator
 	GetNetworkTopologyTreeManager() networktopology.TreeManager
+	// GetCrossSchedulerPodNominator returns the CrossSchedulerPodNominator for cross-scheduler nominated pod tracking.
+	// It returns nil when the feature is not enabled or not configured.
+	GetCrossSchedulerPodNominator() *CrossSchedulerPodNominator
+	GetWorkloadAuditor() workloadauditor.WorkloadAuditor
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.
@@ -290,3 +296,25 @@ type NextPodPlugin interface {
 }
 
 type ForgetPodHandler func(pod *corev1.Pod)
+
+// SharedInformerFactory is a minimal interface for informer factories
+// that can be started and cache-synced.
+type SharedInformerFactory interface {
+	Start(stopCh <-chan struct{})
+	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
+}
+
+// InformerFactoryProvider is implemented by plugins that create their own
+// informer factories (e.g. for third-party CRDs). The framework collects
+// these factories and starts them in the central startup flow, ensuring
+// all caches are synced before scheduling begins.
+//
+// NOTE: This interface is intended for plugin-private informer factories that
+// are NOT shared across plugins. For commonly shared informer factories
+// (e.g. used by multiple plugins), register them in ExtendedHandle instead
+// (like KoordinatorSharedInformerFactory or NodeResourceTopologyInformerFactory)
+// so that all plugins access the same factory instance and avoid duplicate
+// API server watches.
+type InformerFactoryProvider interface {
+	GetInformerFactories() []SharedInformerFactory
+}

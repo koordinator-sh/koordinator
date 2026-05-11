@@ -41,6 +41,7 @@ import (
 	schedulerconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
@@ -82,6 +83,7 @@ type Plugin struct {
 	nodeDeviceCache                            *nodeDeviceCache
 	gpuSharedResourceTemplatesCache            *gpuSharedResourceTemplatesCache
 	gpuSharedResourceTemplatesMatchedResources []corev1.ResourceName
+	gpuShareUnsupportedModels                  map[string]sets.Set[string]
 	scorer                                     *resourceAllocationScorer
 }
 
@@ -372,6 +374,9 @@ func (p *Plugin) AddPod(ctx context.Context, cycleState fwktype.CycleState, podT
 	}
 
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	nd := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nd == nil {
 		return nil
@@ -431,6 +436,9 @@ func (p *Plugin) RemovePod(ctx context.Context, cycleState fwktype.CycleState, p
 	}
 
 	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, "node not found")
+	}
 	nd := p.nodeDeviceCache.getNodeDevice(node.Name, false)
 	if nd == nil {
 		return nil
@@ -496,6 +504,12 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 		pod.Labels != nil && pod.Labels[apiext.LabelGPUIsolationProvider] != "" &&
 		pod.Labels[apiext.LabelGPUIsolationProvider] != node.Labels[apiext.LabelGPUIsolationProvider] {
 		return fwktype.NewStatus(fwktype.Error, "GPUIsolationProviderHAMICore not found on the node")
+	}
+	if state.gpuRequirements != nil && state.gpuRequirements.gpuShared {
+		vendor, model := node.Labels[apiext.LabelGPUVendor], node.Labels[apiext.LabelGPUModel]
+		if p.gpuShareUnsupportedModels[vendor].Has(model) {
+			return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("model %q of vendor %q does not support GPU Share", model, vendor))
+		}
 	}
 	store := topologymanager.GetStore(cycleState)
 	_, ok := store.GetAffinity(node.Name)
@@ -567,6 +581,10 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 	if err != nil {
 		return fwktype.AsStatus(err)
 	}
+	node := nodeInfo.Node()
+	if node == nil {
+		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+	}
 
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(nodeName)
@@ -579,13 +597,13 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 	var affinity topologymanager.NUMATopologyHint
 	if !p.disableDeviceNUMATopologyAlignment {
 		store := topologymanager.GetStore(cycleState)
-		affinity, _ = store.GetAffinity(nodeInfo.Node().Name)
+		affinity, _ = store.GetAffinity(node.Name)
 	}
 
 	allocator := &AutopilotAllocator{
 		state:      state,
 		nodeDevice: nodeDeviceInfo,
-		node:       nodeInfo.Node(),
+		node:       node,
 		pod:        pod,
 		numaNodes:  affinity.NUMANodeAffinity,
 	}
@@ -608,7 +626,7 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 
 		nodeDeviceInfo.lock.RLock()
 		defer nodeDeviceInfo.lock.RUnlock()
-		_, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], reservationInfo.GetReservePod(), nodeInfo.Node(), preemptible, true)
+		_, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], reservationInfo.GetReservePod(), node, preemptible, true)
 		return status
 	}
 
@@ -626,7 +644,7 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	_, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], pod, nodeInfo.Node(), preemptible, true)
+	_, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched[allocIndex:allocIndex+1], pod, node, preemptible, true)
 	return status
 }
 
@@ -650,7 +668,11 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 		if err != nil {
 			return fwktype.AsStatus(err)
 		}
-		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+		node := nodeInfo.Node()
+		if node == nil {
+			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+		}
+		status = p.allocate(ctx, cycleState, pod, node)
 		if !status.IsSuccess() {
 			return status
 		}
@@ -799,7 +821,11 @@ func (p *Plugin) ResizePod(ctx context.Context, cycleState fwktype.CycleState, p
 		if err != nil {
 			return fwktype.AsStatus(err)
 		}
-		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node())
+		node := nodeInfo.Node()
+		if node == nil {
+			return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting nil node %q from Snapshot", nodeName))
+		}
+		status = p.allocate(ctx, cycleState, pod, node)
 		if !status.IsSuccess() {
 			return status
 		}
@@ -918,7 +944,7 @@ func (p *Plugin) getAllNodeDeviceSummary() map[string]*NodeDeviceSummary {
 	return p.nodeDeviceCache.getAllNodeDeviceSummary()
 }
 
-func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
+func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 	args, ok := obj.(*schedulerconfig.DeviceShareArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type DeviceShareArgs, got %T", obj)
@@ -944,7 +970,16 @@ func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.
 	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
 	registerPodEventHandler(deviceCache, handle.SharedInformerFactory(), extendedHandle.KoordinatorSharedInformerFactory())
 	extendedHandle.RegisterForgetPodHandler(deviceCache.deletePod)
-	go deviceCache.gcNodeDevice(context.TODO(), handle.SharedInformerFactory(), defaultGCPeriod)
+	// Register the node informer synchronously during New so that the registration
+	// is visible to the framework's WaitForHandlersSync. If we registered it inside
+	// the gcNodeDevice goroutine, the framework might start scheduling before the
+	// handler registration is collected. Using a no-op handler because gcNodeDevice
+	// only reads from the node lister.
+	nodeInformer := handle.SharedInformerFactory().Core().V1().Nodes().Informer()
+	if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), nodeInformer, nil); err != nil {
+		return nil, err
+	}
+	go deviceCache.gcNodeDevice(ctx, handle.SharedInformerFactory(), defaultGCPeriod)
 
 	gpuSharedResourceTemplatesCache := newGPUSharedResourceTemplatesCache()
 	registerGPUSharedResourceTemplatesConfigMapEventHandler(gpuSharedResourceTemplatesCache,
@@ -953,12 +988,21 @@ func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.
 
 	registerNodeEventHandler(handle.SharedInformerFactory())
 
+	gpuShareUnsupportedModels := make(map[string]sets.Set[string])
+	for _, m := range args.GPUShareUnsupportedModels {
+		if _, ok := gpuShareUnsupportedModels[m.Vendor]; !ok {
+			gpuShareUnsupportedModels[m.Vendor] = sets.New[string]()
+		}
+		gpuShareUnsupportedModels[m.Vendor].Insert(m.Model)
+	}
+
 	return &Plugin{
 		handle:                          extendedHandle,
 		nodeDeviceCache:                 deviceCache,
 		gpuSharedResourceTemplatesCache: gpuSharedResourceTemplatesCache,
 		gpuSharedResourceTemplatesMatchedResources: args.GPUSharedResourceTemplatesConfig.MatchedResources,
-		scorer:                             scorePlugin(args),
-		disableDeviceNUMATopologyAlignment: args.DisableDeviceNUMATopologyAlignment,
+		gpuShareUnsupportedModels:                  gpuShareUnsupportedModels,
+		scorer:                                     scorePlugin(args),
+		disableDeviceNUMATopologyAlignment:         args.DisableDeviceNUMATopologyAlignment,
 	}, nil
 }

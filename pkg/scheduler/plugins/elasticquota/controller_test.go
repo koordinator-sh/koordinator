@@ -178,11 +178,10 @@ func TestController_Run(t *testing.T) {
 			for _, p := range c.pods {
 				suit.Handle.ClientSet().CoreV1().Pods(p.Namespace).Create(ctx, p, metav1.CreateOptions{})
 			}
-			plugin, err := suit.proxyNew(context.TODO(), suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			p := plugin.(*Plugin)
+			p := suit.createPlugin(t).(*Plugin)
 			ctrl := NewElasticQuotaController(p)
 			ctrl.syncElasticQuotaStatusWorker()
+			var err error
 			for _, v := range c.want {
 				eq, _ := suit.client.SchedulingV1alpha1().ElasticQuotas(v.Namespace).Get(ctx, v.Name, metav1.GetOptions{})
 				assert.NotNil(t, eq)

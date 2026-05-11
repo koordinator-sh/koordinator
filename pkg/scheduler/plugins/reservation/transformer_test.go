@@ -1438,7 +1438,7 @@ func TestBeforePreFilterForReservePod(t *testing.T) {
 			pl.reservationCache.updateReservation(availableReservation)
 			err = pl.reservationCache.assumePod(availableReservation.UID, testAssignedPod)
 			assert.NoError(t, err)
-			suit.start()
+			suit.start(t)
 
 			cycleState := framework.NewCycleState()
 			_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, tt.pod)
@@ -1988,7 +1988,7 @@ func TestBeforePreFilterForReservationPreAllocation(t *testing.T) {
 			pl.reservationCache.updateReservation(availableReservation)
 			err = pl.reservationCache.assumePod(availableReservation.UID, testAssignedPod)
 			assert.NoError(t, err)
-			suit.start()
+			suit.start(t)
 
 			cycleState := framework.NewCycleState()
 			_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, tt.pod)
@@ -2339,7 +2339,7 @@ func TestAfterPreFilter_RestoresPreAllocatablePods(t *testing.T) {
 	_, err = suit.fw.ClientSet().CoreV1().Pods(testPreAllocatablePod.Namespace).Create(context.TODO(), testPreAllocatablePod, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	suit.start()
+	suit.start(t)
 
 	cycleState := framework.NewCycleState()
 

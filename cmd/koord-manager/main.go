@@ -85,6 +85,11 @@ func main() {
 	podvalidating.InitFlags(flag.CommandLine)
 	utilfeature.DefaultMutableFeatureGate.AddFlag(pflag.CommandLine)
 	klog.InitFlags(nil)
+	// Opt into the new klog behavior so that -stderrthreshold is honored even
+	// when -logtostderr=true (the default).
+	// Ref: kubernetes/klog#212, kubernetes/klog#432
+	flag.Set("legacy_stderr_threshold_behavior", "false") //nolint:errcheck
+	flag.Set("stderrthreshold", "INFO")                   //nolint:errcheck
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 	pflag.Parse()
 	rand.Seed(time.Now().UnixNano())

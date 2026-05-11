@@ -29,6 +29,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -68,13 +69,11 @@ func DumpDiagnosisBlockingSetter(val string) (string, error) {
 	return fmt.Sprintf("successfully set debugFilterFailure to %s", val), nil
 }
 
-func DumpDiagnosis(state fwktype.CycleState) string {
-	if dumpDiagnosis == false {
+func DumpDiagnosis(diagnosis *Diagnosis) string {
+	if diagnosis == nil {
 		return ""
 	}
-
-	diagnosis := GetDiagnosis(state)
-	if diagnosis == nil {
+	if dumpDiagnosis == false {
 		return ""
 	}
 
@@ -140,6 +139,35 @@ type Diagnosis struct {
 	// maybe modify fwktype.Status to cover addedNominatedPods, corresponding resourceView(such as requested and total) when failed
 	ScheduleDiagnosis   *ScheduleDiagnosis   `json:"scheduleDiagnosis"`
 	PreemptionDiagnosis *PreemptionDiagnosis `json:"preemptionDiagnosis"`
+
+	// Suggestion is the scheduler's advice to external components (e.g. descheduler, autoscaler)
+	// after a job/pod scheduling failure. For example, it may suggest resubmitting the pod or job,
+	// waiting for victims to be deleted, or deleting the PVC bound to the pod.
+	// Use SetSuggestion to set this field; once set, it cannot be overwritten.
+	suggestionMu sync.RWMutex        `json:"-"`
+	Suggestion   *ScheduleSuggestion `json:"suggestion,omitempty"`
+
+	AuditType    workloadauditor.RecordType `json:"-"`
+	AuditMessage string                     `json:"-"`
+}
+
+// SetSuggestion atomically sets the Suggestion field. It returns true if the suggestion
+// was successfully set, or false if it was already set by a prior caller.
+func (d *Diagnosis) SetSuggestion(suggestion *ScheduleSuggestion) bool {
+	d.suggestionMu.Lock()
+	defer d.suggestionMu.Unlock()
+	if d.Suggestion != nil {
+		return false
+	}
+	d.Suggestion = suggestion
+	return true
+}
+
+// GetSuggestion returns the current Suggestion under a read lock.
+func (d *Diagnosis) GetSuggestion() *ScheduleSuggestion {
+	d.suggestionMu.RLock()
+	defer d.suggestionMu.RUnlock()
+	return d.Suggestion
 }
 
 type ScheduleDiagnosis struct {
@@ -152,6 +180,30 @@ type ScheduleDiagnosis struct {
 	// NodeFailedDetails
 	NodeFailedDetails v1alpha1.NodeFailedDetails `json:"nodeFailedDetails,omitempty"`
 }
+
+// ScheduleSuggestion represents the scheduler's suggestion to external components
+// when a job/pod scheduling failure occurs.
+type ScheduleSuggestion struct {
+	// Type indicates the category of the suggestion.
+	Type SuggestionType `json:"type,omitempty"`
+	// Message provides a human-readable explanation of the suggestion.
+	Message string `json:"message,omitempty"`
+}
+
+// SuggestionType defines the type of scheduler suggestion.
+type SuggestionType string
+
+const (
+	// SuggestionEvictWorkloadSelf indicates the current Job/Pod is no longer schedulable
+	// and suggests deleting the Pod and resubmitting it.
+	SuggestionEvictWorkloadSelf SuggestionType = "EvictWorkloadSelf"
+	// SuggestionWaitingVictimReleased indicates the scheduler is waiting for victims to be deleted
+	// before the Job/Pod can be scheduled.
+	SuggestionWaitingVictimReleased SuggestionType = "WaitingVictimReleased"
+	// SuggestionDeleteConflictPVC indicates the Pod's bound PVC is preventing scheduling
+	// and suggests deleting the PVC so the Pod can be rescheduled.
+	SuggestionDeleteConflictPVC SuggestionType = "DeleteConflictPVC"
+)
 
 type SchedulingMode string
 
