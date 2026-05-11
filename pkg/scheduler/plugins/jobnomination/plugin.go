@@ -9,8 +9,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
 	resourceapi "k8s.io/component-helpers/resource"
+	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -46,7 +46,7 @@ var _ fwktype.FilterPlugin = &JobNomination{}
 var _ fwktype.ScorePlugin = &JobNomination{}
 var _ fwktype.ReservePlugin = &JobNomination{}
 
-func New(args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
+func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 	jn := &JobNomination{
 		handle:            handle,
 		retentionDuration: defaultRetentionDuration,
@@ -94,7 +94,7 @@ func (jn *JobNomination) updatePod(oldObj, newObj interface{}) {
 	if !ok {
 		return
 	}
-	
+
 	if !isPodFailed(oldPod) && isPodFailed(newPod) {
 		jn.trackPodRetention(newPod)
 	}
