@@ -202,7 +202,7 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 // QueueingHintFns run once per waiting pod per event, so the JSON parse
 // cost dominated the hint's hot path. A simple annotation-presence check
 // is enough: malformed JSON only widens the wake-up (PreFilter then
-// rejects the pod), which is the conservative behaviour the hint
+// rejects the pod), which is the conservative behavior the hint
 // framework expects.
 func podUsesReservation(pod *corev1.Pod) bool {
 	if reservationutil.IsReservePod(pod) {
