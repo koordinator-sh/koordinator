@@ -25,6 +25,7 @@ import (
 	cliflag "k8s.io/component-base/cli/flag"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
@@ -56,20 +57,22 @@ type Configuration struct {
 	AuditConf          *audit.Config
 	PredictionConf     *prediction.Config
 
-	FeatureGates map[string]bool
+	DefaultQoSClassForGuaranteedPods apiext.QoSClass
+	FeatureGates                     map[string]bool
 }
 
 func NewConfiguration() *Configuration {
 	return &Configuration{
-		ConfigMapName:      DefaultKoordletConfigMapName,
-		ConfigMapNamesapce: DefaultKoordletConfigMapNamespace,
-		StatesInformerConf: statesinformerimpl.NewDefaultConfig(),
-		CollectorConf:      maframework.NewDefaultConfig(),
-		MetricCacheConf:    metriccache.NewDefaultConfig(),
-		QOSManagerConf:     qmframework.NewDefaultConfig(),
-		RuntimeHookConf:    runtimehooks.NewDefaultConfig(),
-		AuditConf:          audit.NewDefaultConfig(),
-		PredictionConf:     prediction.NewDefaultConfig(),
+		ConfigMapName:                    DefaultKoordletConfigMapName,
+		ConfigMapNamesapce:               DefaultKoordletConfigMapNamespace,
+		StatesInformerConf:               statesinformerimpl.NewDefaultConfig(),
+		CollectorConf:                    maframework.NewDefaultConfig(),
+		MetricCacheConf:                  metriccache.NewDefaultConfig(),
+		QOSManagerConf:                   qmframework.NewDefaultConfig(),
+		RuntimeHookConf:                  runtimehooks.NewDefaultConfig(),
+		AuditConf:                        audit.NewDefaultConfig(),
+		PredictionConf:                   prediction.NewDefaultConfig(),
+		DefaultQoSClassForGuaranteedPods: apiext.QoSClassForGuaranteed,
 	}
 }
 
@@ -85,6 +88,7 @@ func (c *Configuration) InitFlags(fs *flag.FlagSet) {
 	c.AuditConf.InitFlags(fs)
 	c.PredictionConf.InitFlags(fs)
 	resourceexecutor.Conf.InitFlags(fs)
+	fs.Var(newQoSClassForGuaranteedFlag(&c.DefaultQoSClassForGuaranteedPods), "default-qos-class-for-guaranteed-pods", "default Koordinator QoSClass for Kubernetes Guaranteed Pods without koordinator QoSClass specified")
 	fs.Var(cliflag.NewMapStringBool(&c.FeatureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 		"Options are:\n"+strings.Join(features.DefaultKoordletFeatureGate.KnownFeatures(), "\n"))
 }
@@ -100,5 +104,29 @@ func (c *Configuration) InitKubeConfigForKoordlet(kubeAPIQPS float64, kubeAPIBur
 	cfg.ContentType = runtime.ContentTypeProtobuf
 	cfg.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
 	c.KubeRestConf = cfg
+	return nil
+}
+
+type qosClassForGuaranteedFlag struct {
+	value *apiext.QoSClass
+}
+
+func newQoSClassForGuaranteedFlag(value *apiext.QoSClass) *qosClassForGuaranteedFlag {
+	return &qosClassForGuaranteedFlag{value: value}
+}
+
+func (f *qosClassForGuaranteedFlag) String() string {
+	if f == nil || f.value == nil {
+		return ""
+	}
+	return string(*f.value)
+}
+
+func (f *qosClassForGuaranteedFlag) Set(value string) error {
+	qosClass := apiext.QoSClass(value)
+	if err := apiext.SetQoSClassForGuaranteed(qosClass); err != nil {
+		return err
+	}
+	*f.value = qosClass
 	return nil
 }
