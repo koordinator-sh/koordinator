@@ -184,6 +184,9 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	if obj.ResyncIntervalSeconds == 0 {
 		obj.ResyncIntervalSeconds = *defaultResyncIntervalSeconds
 	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
+	}
 }
 
 func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
