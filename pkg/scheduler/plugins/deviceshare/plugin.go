@@ -220,6 +220,16 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 // UnschedulableAndUnresolvable Status. The parsed struct (not the raw
 // annotation) is marshaled for the fragment value so semantically equal
 // values collapse.
+//
+// Gating mirrors preparePod (utils.go:preparePod): GetDeviceAllocations
+// is parsed unconditionally because PreFilter parses it before the
+// state.skip check; the device-shape annotations (DeviceAllocateHint,
+// DeviceJointAllocate, GPUPartitionSpec) and the reservation-affinity
+// derivation are skipped for zero-request pods because PreFilter wraps
+// those parses in `if !state.skip` (utils.go:377). Without that gating,
+// a zero-request pod with a malformed hint annotation would be rejected
+// by SignPod but accepted by PreFilter, and KEP-5598 batching would
+// disagree with non-batched scheduling.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	requests, err := GetPodDeviceRequests(pod)
 	if err != nil {
@@ -236,12 +246,8 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 			Value: canonicalDeviceRequests(requests),
 		})
 	}
-	// Parse device-shape annotations with the same helpers preparePod /
-	// parsePodDeviceShareExtensions use so malformed input yields the
-	// identical UnschedulableAndUnresolvable Status instead of silently
-	// canonicalizing raw bytes. Marshal the parsed struct (with helper
-	// defaults applied, e.g. GPUPartitionSpec.AllocatePolicy) so two
-	// semantically equal annotations share a fragment value.
+	// DeviceAllocations is parsed unconditionally to match preparePod
+	// (utils.go:368), which reads it before the state.skip check.
 	if _, ok := pod.Annotations[apiext.AnnotationDeviceAllocated]; ok {
 		allocs, err := apiext.GetDeviceAllocations(pod.Annotations)
 		if err != nil {
@@ -249,57 +255,63 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 		}
 		b, mErr := json.Marshal(allocs)
 		if mErr != nil {
-			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, mErr.Error())
+			return nil, fwktype.AsStatus(mErr)
 		}
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationDeviceAllocated,
 			Value: string(b),
 		})
 	}
-	if _, ok := pod.Annotations[apiext.AnnotationDeviceAllocateHint]; ok {
-		hints, err := apiext.GetDeviceAllocateHints(pod.Annotations)
-		if err != nil {
-			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
-				fmt.Sprintf("invalid DeviceAllocateHint annotation, err: %s", err.Error()))
+	// Device-shape annotations gate on len(requests) > 0 to mirror
+	// preparePod's `if !state.skip` block (utils.go:377). Zero-request
+	// pods short-circuit PreFilter without parsing these, so SignPod
+	// must do the same to keep batched and non-batched outcomes aligned.
+	if len(requests) > 0 {
+		if _, ok := pod.Annotations[apiext.AnnotationDeviceAllocateHint]; ok {
+			hints, err := apiext.GetDeviceAllocateHints(pod.Annotations)
+			if err != nil {
+				return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
+					fmt.Sprintf("invalid DeviceAllocateHint annotation, err: %s", err.Error()))
+			}
+			b, mErr := json.Marshal(hints)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationDeviceAllocateHint,
+				Value: string(b),
+			})
 		}
-		b, mErr := json.Marshal(hints)
-		if mErr != nil {
-			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, mErr.Error())
+		if _, ok := pod.Annotations[apiext.AnnotationDeviceJointAllocate]; ok {
+			joint, err := apiext.GetDeviceJointAllocate(pod.Annotations)
+			if err != nil {
+				return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
+					fmt.Sprintf("invalid DeviceJointAllocate annotation, err: %s", err.Error()))
+			}
+			b, mErr := json.Marshal(joint)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationDeviceJointAllocate,
+				Value: string(b),
+			})
 		}
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationDeviceAllocateHint,
-			Value: string(b),
-		})
-	}
-	if _, ok := pod.Annotations[apiext.AnnotationDeviceJointAllocate]; ok {
-		joint, err := apiext.GetDeviceJointAllocate(pod.Annotations)
-		if err != nil {
-			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
-				fmt.Sprintf("invalid DeviceJointAllocate annotation, err: %s", err.Error()))
+		if _, ok := pod.Annotations[apiext.AnnotationGPUPartitionSpec]; ok {
+			spec, err := apiext.GetGPUPartitionSpec(pod.Annotations)
+			if err != nil {
+				return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
+					fmt.Sprintf("invalid GPUPartitionSpec annotation, err: %s", err.Error()))
+			}
+			b, mErr := json.Marshal(spec)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationGPUPartitionSpec,
+				Value: string(b),
+			})
 		}
-		b, mErr := json.Marshal(joint)
-		if mErr != nil {
-			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, mErr.Error())
-		}
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationDeviceJointAllocate,
-			Value: string(b),
-		})
-	}
-	if _, ok := pod.Annotations[apiext.AnnotationGPUPartitionSpec]; ok {
-		spec, err := apiext.GetGPUPartitionSpec(pod.Annotations)
-		if err != nil {
-			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
-				fmt.Sprintf("invalid GPUPartitionSpec annotation, err: %s", err.Error()))
-		}
-		b, mErr := json.Marshal(spec)
-		if mErr != nil {
-			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, mErr.Error())
-		}
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.DeviceShare.annotation:" + apiext.AnnotationGPUPartitionSpec,
-			Value: string(b),
-		})
 	}
 	if len(fragments) == 0 {
 		return nil, nil

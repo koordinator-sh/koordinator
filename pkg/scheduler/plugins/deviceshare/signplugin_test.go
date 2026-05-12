@@ -193,6 +193,63 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Nil(t, fragments)
 	})
 
+	// mkPodZeroRequest builds a pod that triggers preparePod's state.skip
+	// branch (len(requests) == 0). The device-shape annotation parses
+	// below this point are only performed when !state.skip, so SignPod
+	// must short-circuit the same way.
+	mkPodZeroRequest := func(name string, annos map[string]string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", UID: types.UID(name), Annotations: annos},
+			Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "c",
+				Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("100m"),
+				}},
+			}}},
+		}
+	}
+
+	t.Run("zero-request pod with malformed device-allocate-hint is accepted (skip-gated)", func(t *testing.T) {
+		pod := mkPodZeroRequest("zero-bad-hint", map[string]string{
+			apiext.AnnotationDeviceAllocateHint: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		assert.True(t, status == nil || status.IsSuccess(),
+			"zero-request pod must not be rejected on a skip-gated parse")
+		assert.Empty(t, fragments)
+	})
+
+	t.Run("zero-request pod with malformed device-joint-allocate is accepted (skip-gated)", func(t *testing.T) {
+		pod := mkPodZeroRequest("zero-bad-joint", map[string]string{
+			apiext.AnnotationDeviceJointAllocate: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		assert.True(t, status == nil || status.IsSuccess())
+		assert.Empty(t, fragments)
+	})
+
+	t.Run("zero-request pod with malformed gpu-partition-spec is accepted (skip-gated)", func(t *testing.T) {
+		pod := mkPodZeroRequest("zero-bad-part", map[string]string{
+			apiext.AnnotationGPUPartitionSpec: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		assert.True(t, status == nil || status.IsSuccess())
+		assert.Empty(t, fragments)
+	})
+
+	t.Run("zero-request pod with malformed device-allocated is still rejected (parsed unconditionally)", func(t *testing.T) {
+		// preparePod parses GetDeviceAllocations before the state.skip
+		// check, so SignPod must too. This lock-in test prevents a future
+		// over-correction that would also gate this parse.
+		pod := mkPodZeroRequest("zero-bad-alloc", map[string]string{
+			apiext.AnnotationDeviceAllocated: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		require.NotNil(t, status)
+		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code())
+		assert.Nil(t, fragments)
+	})
+
 	t.Run("reservation affinity does not add a deviceshare fragment", func(t *testing.T) {
 		// The Reservation plugin's SignPod already signs the affinity
 		// annotation, so deviceshare deliberately does not emit a redundant

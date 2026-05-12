@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -43,6 +44,29 @@ func TestPlugin_SignPod(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: name, Namespace: "default", UID: types.UID(name),
 				Annotations: annos,
+			},
+		}
+	}
+
+	// mkPodWithRequests builds a non-zero-request pod. Tests that exercise
+	// SignPod paths gated on PreFilter's !IsZero(requests) branch use this
+	// helper so they reach the gated parses.
+	mkPodWithRequests := func(name string, annos, labels map[string]string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name, Namespace: "default", UID: types.UID(name),
+				Annotations: annos,
+				Labels:      labels,
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Name: "c",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"),
+						},
+					},
+				}},
 			},
 		}
 	}
@@ -127,23 +151,23 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Nil(t, fragments)
 	})
 
-	t.Run("reservation affinity does not add a nodenumaresource fragment", func(t *testing.T) {
-		// The Reservation plugin's SignPod already signs the affinity
-		// annotation, so nodenumaresource deliberately does not emit a
-		// redundant "hasReservationAffinity" fragment here.
-		base := mkPod("plain", nil)
-		withAff := mkPod("with-aff", map[string]string{
+	t.Run("non-zero-request pod with reservation affinity emits hasReservationAffinity fragment", func(t *testing.T) {
+		// Profiles that omit the Reservation plugin still need to
+		// distinguish pods PreFilter would treat as reservation-bound,
+		// so nodenumaresource emits its own presence bool.
+		base := mkPodWithRequests("plain", nil, nil)
+		withAff := mkPodWithRequests("with-aff", map[string]string{
 			apiext.AnnotationReservationAffinity: `{"reservationSelector":{"app":"demo"}}`,
-		})
+		}, nil)
 		fa, _ := pl.SignPod(context.TODO(), base)
 		fb, _ := pl.SignPod(context.TODO(), withAff)
-		assert.Equal(t, fa, fb, "affinity presence must not be re-signed here")
+		assert.NotEqual(t, fa, fb)
 	})
 
-	t.Run("malformed reservation affinity returns UnschedulableAndUnresolvable", func(t *testing.T) {
-		pod := mkPod("bad-aff", map[string]string{
+	t.Run("malformed reservation affinity on non-zero-request pod returns UnschedulableAndUnresolvable", func(t *testing.T) {
+		pod := mkPodWithRequests("bad-aff", map[string]string{
 			apiext.AnnotationReservationAffinity: "not-json",
-		})
+		}, nil)
 		fragments, status := pl.SignPod(context.TODO(), pod)
 		require.NotNil(t, status)
 		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code(),
@@ -151,7 +175,34 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Nil(t, fragments)
 	})
 
-	t.Run("pre-allocation-required label adds a dedicated fragment", func(t *testing.T) {
+	t.Run("zero-request pod with malformed reservation affinity is accepted (skip-gated)", func(t *testing.T) {
+		// PreFilter returns Skip before reading reservation-affinity for
+		// zero-request pods (plugin.go:354), so SignPod must NOT reject
+		// such pods even if the annotation is malformed. Otherwise a
+		// zero-request pod is opted out of batching that PreFilter would
+		// happily skip, violating KEP-5598 parity.
+		pod := mkPod("zero-bad-aff", map[string]string{
+			apiext.AnnotationReservationAffinity: "not-json",
+		})
+		fragments, status := pl.SignPod(context.TODO(), pod)
+		assert.True(t, status == nil || status.IsSuccess(),
+			"zero-request pod must not be rejected on a skip-gated parse")
+		assert.Empty(t, fragments)
+	})
+
+	t.Run("pre-allocation-required label adds a fragment for non-zero-request pods", func(t *testing.T) {
+		base := mkPodWithRequests("plain", nil, nil)
+		preAlloc := mkPodWithRequests("pre", nil, map[string]string{
+			apiext.LabelPreAllocationRequired: "true",
+		})
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, _ := pl.SignPod(context.TODO(), preAlloc)
+		assert.NotEqual(t, fa, fb)
+	})
+
+	t.Run("pre-allocation-required label is ignored for zero-request pods (skip-gated)", func(t *testing.T) {
+		// PreFilter does not store isPreAllocationRequired for zero-request
+		// pods, so signing the label here would diverge from PreFilter.
 		base := mkPod("plain", nil)
 		preAlloc := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -161,6 +212,6 @@ func TestPlugin_SignPod(t *testing.T) {
 		}
 		fa, _ := pl.SignPod(context.TODO(), base)
 		fb, _ := pl.SignPod(context.TODO(), preAlloc)
-		assert.NotEqual(t, fa, fb)
+		assert.Equal(t, fa, fb, "zero-request pods must collapse regardless of pre-allocation-required label")
 	})
 }

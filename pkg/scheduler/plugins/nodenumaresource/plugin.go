@@ -275,19 +275,28 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 //   - pod resource requests (feeds numCPUsNeeded): upstream
 //     noderesources/fit.SignPod already signs pod requests via
 //     computePodResourceRequest.
-//   - reservation-affinity presence: the Reservation plugin's SignPod
-//     already signs the affinity annotation itself, so a presence bit
-//     here is redundant. The parse call is still performed to mirror
-//     PreFilter's UnschedulableAndUnresolvable status on malformed
-//     input.
 //
 // The plugin-unique inputs are:
 //
 //   - numa-topology-spec annotation drives policy / exclusivity.
 //   - resource-spec annotation drives CPU bind policy.
+//   - reservation-affinity presence (PreFilter stores
+//     hasReservationAffinity at plugin.go:371 from a non-nil parse).
+//     Emitted here so profiles that omit the Reservation plugin still
+//     distinguish pods PreFilter would treat as reservation-bound.
 //   - pre-allocation-required label drives isPreAllocationRequired.
+//
+// Gating mirrors PreFilter: numa-topology-spec and resource-spec are
+// parsed unconditionally because PreFilter parses them before the
+// IsZero(requests) early-Skip check (plugin.go:344, 348). The
+// reservation-affinity parse and the IsPreAllocationRequired and
+// hasReservationAffinity fragments only happen for non-zero-request
+// pods because PreFilter returns Skip before reading them
+// (plugin.go:354-372). Parsing aggressively in SignPod would cause
+// SignPod to reject a zero-request pod with a malformed annotation
+// that PreFilter would Skip, breaking the KEP-5598 contract.
 func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
-	fragments := make([]fwktype.SignFragment, 0, 4)
+	fragments := make([]fwktype.SignFragment, 0, 5)
 	// Parse numa-topology-spec / resource-spec with the same helpers PreFilter
 	// uses (see PreFilter below) so malformed input produces the identical
 	// Error Status instead of silently canonicalizing the raw bytes and
@@ -299,7 +308,7 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 		}
 		b, mErr := json.Marshal(numaSpec)
 		if mErr != nil {
-			return nil, fwktype.NewStatus(fwktype.Error, mErr.Error())
+			return nil, fwktype.AsStatus(mErr)
 		}
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.NodeNUMAResource.numaTopology",
@@ -313,26 +322,36 @@ func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFrag
 		}
 		b, mErr := json.Marshal(resourceSpec)
 		if mErr != nil {
-			return nil, fwktype.NewStatus(fwktype.Error, mErr.Error())
+			return nil, fwktype.AsStatus(mErr)
 		}
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.NodeNUMAResource.resourceSpec",
 			Value: string(b),
 		})
 	}
-	// Parse reservation affinity only to mirror PreFilter's failure mode on
-	// malformed input; the resulting presence bit is NOT emitted as a
-	// fragment because the Reservation plugin's SignPod already signs the
-	// affinity annotation, so a "hasReservationAffinity=true" marker here
-	// is redundant.
-	if _, err := reservationutil.GetRequiredReservationAffinity(pod); err != nil {
-		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
-	}
-	if extension.IsPreAllocationRequired(pod.Labels) {
-		fragments = append(fragments, fwktype.SignFragment{
-			Key:   "koord.NodeNUMAResource.preAllocationRequired",
-			Value: true,
-		})
+	// Zero-request pods cause PreFilter to return Skip before any of the
+	// inputs below are read (plugin.go:354), so SignPod must short-circuit
+	// the same way. Two zero-request pods that only differ in
+	// reservation-affinity or IsPreAllocationRequired are batched together
+	// safely because PreFilter would Skip both.
+	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+	if !quotav1.IsZero(requests) {
+		reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
+		}
+		if reservationAffinity != nil {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.NodeNUMAResource.hasReservationAffinity",
+				Value: true,
+			})
+		}
+		if extension.IsPreAllocationRequired(pod.Labels) {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.NodeNUMAResource.preAllocationRequired",
+				Value: true,
+			})
+		}
 	}
 	if len(fragments) == 0 {
 		return nil, nil
