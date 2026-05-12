@@ -1382,11 +1382,22 @@ func (pl *Plugin) Unreserve(ctx context.Context, cycleState fwktype.CycleState, 
 		rName := reservationutil.GetReservationNameFromReservePod(pod)
 		assumedReservation, err := pl.rLister.Get(rName)
 		if err != nil {
-			klog.ErrorS(err, "Failed to get reservation in Unreserve phase", "reservation", rName, "nodeName", nodeName)
-			return
+			klog.ErrorS(err, "Failed to get reservation in Unreserve phase, try to clean up the cache with the reserve pod info", "reservation", rName, "nodeName", nodeName)
+			// If the reservation has been deleted or the lister fails, construct a temporary reservation to clean up the cache.
+			assumedReservation = &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      rName,
+					UID:       pod.UID,
+					Namespace: pod.Namespace,
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: nodeName,
+				},
+			}
+		} else {
+			assumedReservation = assumedReservation.DeepCopy()
+			assumedReservation.Status.NodeName = nodeName
 		}
-		assumedReservation = assumedReservation.DeepCopy()
-		assumedReservation.Status.NodeName = nodeName
 		pl.reservationCache.forgetReservation(assumedReservation)
 		if len(state.preAllocated) == 0 { // reserve pod without pre-allocation
 			return

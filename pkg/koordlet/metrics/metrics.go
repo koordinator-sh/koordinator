@@ -52,6 +52,8 @@ const (
 	UnitCore    = "core"
 	UnitByte    = "byte"
 	UnitInteger = "integer"
+
+	CPUIDKey = "cpu"
 )
 
 var (
