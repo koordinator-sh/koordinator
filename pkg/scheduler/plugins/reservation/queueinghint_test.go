@@ -182,6 +182,17 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			},
 			expectedHint: fwktype.QueueSkip,
 		},
+		{
+			name: "waiting pod uses reservation, deleted pod bound to a node but not tracked by cache, skip",
+			args: args{
+				waitingPod: makeWaitingPodUsingReservation("w-cache-miss"),
+				oldObj: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "bound-untracked", Namespace: "default", UID: "bound-untracked"},
+					Spec:       corev1.PodSpec{NodeName: "node-x"},
+				},
+			},
+			expectedHint: fwktype.QueueSkip,
+		},
 	}
 
 	for _, tt := range tests {
@@ -252,6 +263,37 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 	pendingReservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{Name: "r-pending", UID: "r-pending"},
 		Status:     schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationPending},
+	}
+
+	// ownerMatchedReservation is consumable by any pod whose labels include
+	// app=owner-match-demo, even pods without a ReservationAffinity annotation.
+	// The QueueingHintFn must still wake those pods when this reservation
+	// becomes available; otherwise pods that rely on reservation owner
+	// selectors miss scheduling opportunities.
+	ownerMatchedReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-owner", UID: "r-owner"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Owners: []schedulingv1alpha1.ReservationOwner{{
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "owner-match-demo"},
+				},
+			}},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "node-1",
+		},
+	}
+	ownerMatchedReservationPending := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-owner-p", UID: "r-owner-p"},
+		Spec:       ownerMatchedReservation.Spec,
+		Status:     schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationPending},
+	}
+	ownerMatchedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "owner-matched", Namespace: "default", UID: "owner-matched",
+			Labels: map[string]string{"app": "owner-match-demo"},
+		},
 	}
 
 	type args struct {
@@ -353,6 +395,42 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 				newObj:     nil,
 			},
 			expectedHint: fwktype.Queue,
+		},
+		{
+			name: "Update from Available to non-Available loses matchability for affinity waiters, skip",
+			args: args{
+				waitingPod: makeWaitingPodUsingReservation("w-lose"),
+				oldObj:     availableReservation,
+				newObj:     pendingReservation,
+			},
+			expectedHint: fwktype.QueueSkip,
+		},
+		{
+			name: "owner-matched pod without affinity wakes when its owner reservation becomes Available",
+			args: args{
+				waitingPod: ownerMatchedPod,
+				oldObj:     ownerMatchedReservationPending,
+				newObj:     ownerMatchedReservation,
+			},
+			expectedHint: fwktype.Queue,
+		},
+		{
+			name: "owner-matched pod without affinity wakes when an Available reservation it can match is added",
+			args: args{
+				waitingPod: ownerMatchedPod,
+				oldObj:     nil,
+				newObj:     ownerMatchedReservation,
+			},
+			expectedHint: fwktype.Queue,
+		},
+		{
+			name: "owner-matched pod stays skipped when the affected reservation does not match its labels",
+			args: args{
+				waitingPod: ownerMatchedPod,
+				oldObj:     nil,
+				newObj:     availableReservation, // empty owners, does not target this pod
+			},
+			expectedHint: fwktype.QueueSkip,
 		},
 	}
 
