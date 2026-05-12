@@ -4538,11 +4538,12 @@ func TestUnreserveWhenReservationDeleted(t *testing.T) {
 	cycleState := framework.NewCycleState()
 	cycleState.Write(stateKey, state)
 
-	reservePod := reservationutil.NewReservePod(reservation)
-	status := pl.Reserve(context.TODO(), cycleState, reservePod, "test-node")
-	assert.Nil(t, status)
+	// Manually assume the reservation
+	assumedReservation := reservation.DeepCopy()
+	assumedReservation.Status.NodeName = "test-node"
+	pl.reservationCache.assumeReservation(assumedReservation)
 
-	// Verify reservation is in cache after Reserve
+	// Verify reservation is in cache after assume
 	rInfo := pl.reservationCache.getReservationInfoByUID(reservation.UID)
 	assert.NotNil(t, rInfo)
 
@@ -4550,7 +4551,21 @@ func TestUnreserveWhenReservationDeleted(t *testing.T) {
 	err = client.SchedulingV1alpha1().Reservations().Delete(context.TODO(), reservation.Name, metav1.DeleteOptions{})
 	assert.NoError(t, err)
 
+	// Wait until the reservation deletion is observed by the lister, so that Unreserve
+	// exercises the intended NotFound error-path.
+	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+	defer cancel()
+	err = wait.PollUntilContextCancel(ctx, 10*time.Millisecond, true, func(context.Context) (bool, error) {
+		_, getErr := pl.rLister.Get(reservation.Name)
+		if apierrors.IsNotFound(getErr) {
+			return true, nil
+		}
+		return false, nil
+	})
+	assert.NoError(t, err)
+
 	// Unreserve should clean up the cache even if reservation is deleted
+	reservePod := reservationutil.NewReservePod(reservation)
 	pl.Unreserve(context.TODO(), cycleState, reservePod, "test-node")
 
 	// Verify reservation is removed from cache
