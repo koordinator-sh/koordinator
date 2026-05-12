@@ -20,11 +20,13 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/google/btree"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -66,6 +68,16 @@ func newPreAllocatablePodCache() *preAllocatablePodCache {
 	}
 }
 
+// resizeLockEntry stores the lock metadata for a reservation currently being resized.
+type resizeLockEntry struct {
+	nodeName string
+	lockTime time.Time
+}
+
+// resizeLockTimeout is the maximum duration a resize lock can be held before
+// being considered stale and eligible for forced cleanup.
+const resizeLockTimeout = 5 * time.Minute
+
 type reservationCache struct {
 	reservationLister  schedulinglister.ReservationLister
 	lock               sync.RWMutex
@@ -73,6 +85,7 @@ type reservationCache struct {
 	reservationsOnNode map[string]map[types.UID]struct{} // all reservations on node
 	matchableOnNode    map[string]map[types.UID]struct{} // look up available reservations on node
 	allocatedOnNode    map[string]map[types.UID]struct{} // look up allocated available reservations on node
+	lockedForResize    map[types.UID]*resizeLockEntry    // uid -> lock entry, locked during resize to block new allocation
 	// preAllocatablePodsOnNode caches sorted pre-allocatable candidate pods per node
 	// Uses btree for automatic ordering by priority
 	preAllocatablePodsOnNode map[string]*preAllocatablePodCache
@@ -89,6 +102,7 @@ func newReservationCache(reservationLister schedulinglister.ReservationLister) *
 		reservationsOnNode:       map[string]map[types.UID]struct{}{},
 		matchableOnNode:          map[string]map[types.UID]struct{}{},
 		allocatedOnNode:          map[string]map[types.UID]struct{}{},
+		lockedForResize:          map[types.UID]*resizeLockEntry{},
 		preAllocatablePodsOnNode: map[string]*preAllocatablePodCache{},
 	}
 	cache.preAllocatableLabelKey = apiext.LabelPodPreAllocatable
@@ -154,6 +168,12 @@ func (cache *reservationCache) updateReservation(newR *schedulingv1alpha1.Reserv
 	uid := newR.UID
 	if nodeName := newR.Status.NodeName; nodeName != "" {
 		cache.updateReservationsOnNode(nodeName, uid)
+		// Skip matchableOnNode update if the reservation is locked for resize.
+		// The lock prevents new pod allocation during resize; the explicit
+		// unlockReservationAfterResize call will restore matchability.
+		if _, locked := cache.lockedForResize[uid]; locked {
+			return
+		}
 		// refresh matchable and allocated
 		if rInfo.IsMatchable() { // matchable
 			if cache.matchableOnNode[nodeName] == nil {
@@ -226,12 +246,118 @@ func (cache *reservationCache) updateReservationIfExists(newR *schedulingv1alpha
 	}
 }
 
+// LockReservationForResize removes the reservation from matchableOnNode and sets the
+// lockedForResize flag to prevent updateReservation from re-adding it.
+// Called by the controller BEFORE UpdateStatus to close the race window between the
+// controller's decision to resize and the event handler processing the API change.
+// The lock is released by unlockReservationAfterResize when the event handler confirms
+// the resize state change is reflected in the cache.
+func (cache *reservationCache) LockReservationForResize(uid types.UID, nodeName string) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	cache.lockedForResize[uid] = &resizeLockEntry{nodeName: nodeName, lockTime: time.Now()}
+	if nodeName != "" && cache.matchableOnNode[nodeName] != nil {
+		delete(cache.matchableOnNode[nodeName], uid)
+		if len(cache.matchableOnNode[nodeName]) == 0 {
+			delete(cache.matchableOnNode, nodeName)
+		}
+	}
+}
+
+// UnlockReservationForResize is the exported version of unlockReservationAfterResize,
+// exposed for the controller to rollback the lock when an API call fails after locking.
+func (cache *reservationCache) UnlockReservationForResize(uid types.UID, nodeName string) {
+	cache.unlockReservationAfterResize(uid, nodeName)
+}
+
+// unlockReservationAfterResize clears the lockedForResize flag and adds the reservation
+// back to matchableOnNode if it is matchable. Called by the event handler after the
+// resize state change is reflected in the rInfo (i.e., after updateReservation).
+func (cache *reservationCache) unlockReservationAfterResize(uid types.UID, nodeName string) {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	if _, locked := cache.lockedForResize[uid]; !locked {
+		return // not locked, nothing to do
+	}
+	delete(cache.lockedForResize, uid)
+	rInfo := cache.reservationInfos[uid]
+	if rInfo == nil || !rInfo.IsMatchable() {
+		return
+	}
+	if nodeName != "" {
+		if cache.matchableOnNode[nodeName] == nil {
+			cache.matchableOnNode[nodeName] = map[types.UID]struct{}{}
+		}
+		cache.matchableOnNode[nodeName][uid] = struct{}{}
+		if rInfo.GetAllocatedPods() > 0 {
+			if cache.allocatedOnNode[nodeName] == nil {
+				cache.allocatedOnNode[nodeName] = map[types.UID]struct{}{}
+			}
+			cache.allocatedOnNode[nodeName][uid] = struct{}{}
+		}
+	}
+}
+
+// cleanStaleLocks scans lockedForResize for entries that have exceeded resizeLockTimeout
+// and forcibly unlocks them. This is a safety net for any unforeseen scenario where the
+// normal unlock paths (event handler, PostFilter, defer rollback) fail to release the lock.
+// Returns the number of stale locks that were cleaned.
+func (cache *reservationCache) cleanStaleLocks() int {
+	cache.lock.Lock()
+	defer cache.lock.Unlock()
+	now := time.Now()
+	cleaned := 0
+	for uid, entry := range cache.lockedForResize {
+		if now.Sub(entry.lockTime) <= resizeLockTimeout {
+			continue
+		}
+		klog.Warningf("Force-unlocking stale resize lock for reservation %s (node=%s, locked since %v, age=%v)",
+			uid, entry.nodeName, entry.lockTime.Format(time.RFC3339), now.Sub(entry.lockTime))
+		delete(cache.lockedForResize, uid)
+		// Restore matchability if the reservation is still alive and matchable.
+		rInfo := cache.reservationInfos[uid]
+		if rInfo == nil || !rInfo.IsMatchable() {
+			cleaned++
+			continue
+		}
+		if entry.nodeName != "" {
+			if cache.matchableOnNode[entry.nodeName] == nil {
+				cache.matchableOnNode[entry.nodeName] = map[types.UID]struct{}{}
+			}
+			cache.matchableOnNode[entry.nodeName][uid] = struct{}{}
+			if rInfo.GetAllocatedPods() > 0 {
+				if cache.allocatedOnNode[entry.nodeName] == nil {
+					cache.allocatedOnNode[entry.nodeName] = map[types.UID]struct{}{}
+				}
+				cache.allocatedOnNode[entry.nodeName][uid] = struct{}{}
+			}
+		}
+		cleaned++
+	}
+	return cleaned
+}
+
+// GetResizeLockCount returns the current number of active resize locks.
+// Exposed for metrics collection and observability.
+func (cache *reservationCache) GetResizeLockCount() int {
+	cache.lock.RLock()
+	defer cache.lock.RUnlock()
+	return len(cache.lockedForResize)
+}
+
+// CleanStaleLocks is the exported entry point for periodic stale lock cleanup.
+// Implements ReservationResizeLock interface.
+func (cache *reservationCache) CleanStaleLocks() int {
+	return cache.cleanStaleLocks()
+}
+
 func (cache *reservationCache) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
 	uid := r.UID
 	rInfo := cache.reservationInfos[uid]
 	delete(cache.reservationInfos, uid)
+	delete(cache.lockedForResize, uid) // clean up any resize lock
 	nodeName := r.Status.NodeName
 	cache.deleteReservationOnNode(nodeName, uid)
 	// refresh matchable and allocated

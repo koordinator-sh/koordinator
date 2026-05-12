@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
+	apires "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/ptr"
@@ -32,6 +33,73 @@ import (
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 )
+
+func TestIsReservationSpecResourcesChanged(t *testing.T) {
+	makeReservation := func(available bool, spec corev1.ResourceList, alloc corev1.ResourceList) *schedulingv1alpha1.Reservation {
+		r := &schedulingv1alpha1.Reservation{}
+		if spec != nil {
+			r.Spec.Template = &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name: "c",
+						Resources: corev1.ResourceRequirements{
+							Requests: spec,
+						},
+					}},
+				},
+			}
+		}
+		if available {
+			r.Status.Phase = schedulingv1alpha1.ReservationAvailable
+			r.Status.NodeName = "node"
+		}
+		if alloc != nil {
+			r.Status.Allocatable = alloc.DeepCopy()
+		}
+		return r
+	}
+
+	cpu100 := corev1.ResourceList{corev1.ResourceCPU: apires.MustParse("100m")}
+	cpu200 := corev1.ResourceList{corev1.ResourceCPU: apires.MustParse("200m")}
+	mem100 := corev1.ResourceList{corev1.ResourceMemory: apires.MustParse("100Mi")}
+	gpu1 := corev1.ResourceList{"nvidia.com/gpu": apires.MustParse("1")}
+
+	tests := []struct {
+		name string
+		r    *schedulingv1alpha1.Reservation
+		want bool
+	}{
+		{"not available", makeReservation(false, cpu100, cpu100), false},
+		{"identical resources", makeReservation(true, corev1.ResourceList{corev1.ResourceCPU: apires.MustParse("100m"), corev1.ResourceMemory: apires.MustParse("100Mi")}, corev1.ResourceList{corev1.ResourceCPU: apires.MustParse("100m"), corev1.ResourceMemory: apires.MustParse("100Mi")}), false},
+		{"quantity changed", makeReservation(true, cpu100, cpu200), true},
+		{"resource added in spec", makeReservation(true, merge(cpu100, gpu1), cpu100), true},
+		{"resource removed from spec", makeReservation(true, nil, mem100), true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsReservationSpecResourcesChanged(tc.r)
+			if got != tc.want {
+				t.Fatalf("test %q: IsReservationSpecResourcesChanged = %v, want %v", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// merge returns a new ResourceList that is the union of all inputs.
+func merge(lists ...corev1.ResourceList) corev1.ResourceList {
+	out := corev1.ResourceList{}
+	for _, l := range lists {
+		if l == nil {
+			continue
+		}
+		for k, v := range l {
+			out[k] = v
+		}
+	}
+	return out
+}
 
 func TestIsReservationActive(t *testing.T) {
 	t.Run("test not panic", func(t *testing.T) {

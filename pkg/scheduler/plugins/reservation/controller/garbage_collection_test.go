@@ -122,7 +122,7 @@ func TestGC(t *testing.T) {
 	_, err := fakeClientSet.CoreV1().Nodes().Create(context.TODO(), node, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{}, &noopResizeLock{}, nil)
 
 	sharedInformerFactory.Start(nil)
 	koordSharedInformerFactory.Start(nil)

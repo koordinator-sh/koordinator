@@ -203,8 +203,9 @@ const (
 type ReservationConditionType string
 
 const (
-	ReservationConditionScheduled ReservationConditionType = "Scheduled"
-	ReservationConditionReady     ReservationConditionType = "Ready"
+	ReservationConditionScheduled    ReservationConditionType = "Scheduled"
+	ReservationConditionReady        ReservationConditionType = "Ready"
+	ReservationConditionResizeFailed ReservationConditionType = "ResizeFailed"
 )
 
 type ConditionStatus string
@@ -222,6 +223,8 @@ const (
 	ReasonReservationAvailable = "Available"
 	ReasonReservationSucceeded = "Succeeded"
 	ReasonReservationExpired   = "Expired"
+
+	ReasonReservationResizeFailed = "InsufficientResources"
 )
 
 type ReservationCondition struct {

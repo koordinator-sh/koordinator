@@ -163,12 +163,19 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 func (pl *Plugin) Name() string { return Name }
 
 func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
+	// Create the addToSchedulerQueueFn closure that adds pods to the scheduler's scheduling queue.
+	// This is used by the controller to enqueue fake resize pods for scheduler validation.
+	addToQueueFn := func(pod *corev1.Pod) {
+		pl.handle.Scheduler().GetSchedulingQueue().Add(klog.Background(), pod)
+	}
 	reservationController := controller.New(
 		pl.handle.SharedInformerFactory(),
 		pl.handle.KoordinatorSharedInformerFactory(),
 		pl.handle.ClientSet(),
 		pl.handle.KoordinatorClientSet(),
-		pl.args)
+		pl.args,
+		pl.reservationCache,
+		addToQueueFn)
 	return []frameworkext.Controller{reservationController}, nil
 }
 
@@ -1024,6 +1031,12 @@ func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.Reserva
 
 func (pl *Plugin) PostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status) {
 	var result *fwktype.PostFilterResult
+	// Handle resize scheduling failure: if the fake resize pod fails to schedule,
+	// set ResizeFailed condition on the reservation and unlock.
+	if reservationutil.IsResizePod(pod) {
+		return pl.handleResizeSchedulingFailure(ctx, pod, filteredNodeStatusMap)
+	}
+
 	var reasons []string
 
 	// If Reservation Preemption is enabled, try preemption before aggregating failure reasons.
@@ -1158,6 +1171,103 @@ func (pl *Plugin) FilterReservation(ctx context.Context, cycleState fwktype.Cycl
 	return nil
 }
 
+// handleResizeSchedulingFailure handles the case where a resizing reservation's reserve pod
+// fails to schedule (insufficient resources on the pinned node). It restores the reservation
+// to Available state on the original node with a ResizeFailed condition via a single UpdateStatus.
+// No Update call is needed because no annotations or spec fields were modified during resize.
+func (pl *Plugin) handleResizeSchedulingFailure(ctx context.Context, resizePod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status) {
+	rName := reservationutil.GetReservationNameFromReservePod(resizePod)
+	klog.V(3).InfoS("Handling resize scheduling failure, setting ResizeFailed on reservation",
+		"resizePod", klog.KObj(resizePod), "reservation", rName)
+
+	r, err := pl.rLister.Get(rName)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			// Reservation was deleted while the fake resize pod was in the scheduling queue.
+			// This is expected in the delete-during-resize race window. Just discard the pod.
+			klog.V(3).InfoS("Reservation not found during resize failure handling, likely deleted; discarding resize pod",
+				"resizePod", klog.KObj(resizePod), "reservation", rName)
+			// Clean up the orphaned lock entry from lockedForResize map.
+			if targetUID := reservationutil.GetResizeTargetReservationUID(resizePod); targetUID != "" {
+				pl.reservationCache.UnlockReservationForResize(targetUID, reservationutil.GetReservePodNodeName(resizePod))
+			}
+			return nil, fwktype.NewStatus(fwktype.Unschedulable, "reservation deleted during resize")
+		}
+		klog.ErrorS(err, "Failed to get reservation for resize failure handling", "reservation", rName)
+		return nil, fwktype.AsStatus(err)
+	}
+
+	// Get pinned node from the resize pod annotation
+	pinnedNode := reservationutil.GetReservePodNodeName(resizePod)
+	var failureMessage string
+	if pinnedNode != "" {
+		if nodeStatus := filteredNodeStatusMap.Get(pinnedNode); nodeStatus != nil && len(nodeStatus.Reasons()) > 0 {
+			failureMessage = fmt.Sprintf("resize failed on node %s: %s", pinnedNode, strings.Join(nodeStatus.Reasons(), "; "))
+		} else {
+			failureMessage = fmt.Sprintf("resize failed: pinned node %s not available", pinnedNode)
+		}
+	} else {
+		failureMessage = "resize failed: no pinned node found in resize pod annotations"
+	}
+
+	// Compute the target allocatable for the ResizeFailed fingerprint
+	var targetAllocatable corev1.ResourceList
+	if r.Spec.Template != nil {
+		targetAllocatable = resourceapi.PodRequests(&corev1.Pod{
+			Spec: r.Spec.Template.Spec,
+		}, resourceapi.PodResourcesOptions{})
+	}
+
+	err = util.RetryOnConflictOrTooManyRequests(func() error {
+		latest, err := pl.rLister.Get(rName)
+		if err != nil {
+			return err
+		}
+		latest = latest.DeepCopy()
+
+		// Set ResizeFailed condition on the reservation (reservation stays Available)
+		now := metav1.Now()
+		// Remove any existing ResizeFailed condition and add the new one
+		filtered := make([]schedulingv1alpha1.ReservationCondition, 0, len(latest.Status.Conditions))
+		for _, c := range latest.Status.Conditions {
+			if c.Type != schedulingv1alpha1.ReservationConditionResizeFailed {
+				filtered = append(filtered, c)
+			}
+		}
+		filtered = append(filtered, schedulingv1alpha1.ReservationCondition{
+			Type:               schedulingv1alpha1.ReservationConditionResizeFailed,
+			Status:             schedulingv1alpha1.ConditionStatusTrue,
+			Reason:             schedulingv1alpha1.ReasonReservationResizeFailed,
+			Message:            controller.EncodeResizeFailedMessage(failureMessage, targetAllocatable),
+			LastProbeTime:      now,
+			LastTransitionTime: now,
+		})
+		latest.Status.Conditions = filtered
+
+		_, err = pl.client.Reservations().UpdateStatus(ctx, latest, metav1.UpdateOptions{})
+		if err != nil {
+			klog.ErrorS(err, "Failed to set ResizeFailed condition on reservation",
+				"reservation", klog.KObj(latest), "uid", latest.UID)
+			return err
+		}
+
+		klog.V(3).InfoS("Successfully set ResizeFailed condition after resize scheduling failure",
+			"reservation", klog.KObj(latest), "uid", latest.UID,
+			"node", latest.Status.NodeName, "reason", failureMessage)
+		return nil
+	})
+	if err != nil {
+		klog.ErrorS(err, "Failed to handle resize scheduling failure", "reservation", rName)
+		return nil, fwktype.AsStatus(err)
+	}
+
+	// Unlock the reservation so it becomes matchable again
+	pl.reservationCache.UnlockReservationForResize(r.UID, r.Status.NodeName)
+
+	// Return Unschedulable to tell the scheduler not to proceed with preemption logic
+	return nil, fwktype.NewStatus(fwktype.Unschedulable,
+		fmt.Sprintf("reservation resize failed: %s", failureMessage))
+}
 func (pl *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, nodeName string) *fwktype.Status {
 	// TODO(joseph): We can consider optimizing these codes. It seems that there is no need to exist at present.
 	if rInfo.IsAllocateOnce() && rInfo.GetAllocatedPods() > 0 {
@@ -1581,6 +1691,12 @@ func (pl *Plugin) Bind(ctx context.Context, cycleState fwktype.CycleState, pod *
 		return fwktype.NewStatus(fwktype.Skip)
 	}
 
+	// Handle fake resize pod: update the reservation's allocatable to the new size
+	// and forget the fake pod from the scheduler cache.
+	if reservationutil.IsResizePod(pod) {
+		return pl.bindResizePod(ctx, pod, nodeName)
+	}
+
 	rName := reservationutil.GetReservationNameFromReservePod(pod)
 	klog.V(4).InfoS("Attempting to bind reservation to node", "pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
 
@@ -1614,6 +1730,76 @@ func (pl *Plugin) Bind(ctx context.Context, cycleState fwktype.CycleState, pod *
 	}
 
 	pl.handle.EventRecorder().Eventf(reservation, nil, corev1.EventTypeNormal, "Scheduled", "Binding", "Successfully assigned %v to %v", rName, nodeName)
+	return nil
+}
+
+// bindResizePod handles the Bind phase for a fake resize pod.
+// It updates the reservation's status.allocatable to the new (enlarged) size,
+// then forgets the fake resize pod from the scheduler cache.
+// The reservation stays Available throughout - no phase change needed.
+func (pl *Plugin) bindResizePod(ctx context.Context, resizePod *corev1.Pod, nodeName string) *fwktype.Status {
+	rName := reservationutil.GetReservationNameFromReservePod(resizePod)
+	targetUID := reservationutil.GetResizeTargetReservationUID(resizePod)
+	klog.V(3).InfoS("Binding fake resize pod: updating reservation allocatable",
+		"resizePod", klog.KObj(resizePod), "reservation", rName, "node", nodeName)
+
+	// Compute the new allocatable from the resize pod's resources
+	newAllocatable := resourceapi.PodRequests(resizePod, resourceapi.PodResourcesOptions{})
+
+	var reservation *schedulingv1alpha1.Reservation
+	err := util.RetryOnConflictOrTooManyRequests(func() error {
+		var err error
+		reservation, err = pl.rLister.Get(rName)
+		if err != nil {
+			return err
+		}
+		if reservationutil.IsReservationFailed(reservation) {
+			return errors.New(ErrReasonReservationInactive)
+		}
+
+		reservation = reservation.DeepCopy()
+		// Update allocatable to the new size
+		reservation.Status.Allocatable = newAllocatable
+		// Clear any ResizeFailed condition since resize succeeded
+		filtered := make([]schedulingv1alpha1.ReservationCondition, 0, len(reservation.Status.Conditions))
+		for _, c := range reservation.Status.Conditions {
+			if c.Type != schedulingv1alpha1.ReservationConditionResizeFailed {
+				filtered = append(filtered, c)
+			}
+		}
+		reservation.Status.Conditions = filtered
+
+		_, err = pl.client.Reservations().UpdateStatus(ctx, reservation, metav1.UpdateOptions{})
+		if err != nil {
+			klog.V(4).ErrorS(err, "Failed to update reservation allocatable for resize",
+				"reservation", klog.KObj(reservation))
+		}
+		return err
+	})
+	if err != nil {
+		klog.ErrorS(err, "Failed to bind resize pod", "reservation", rName)
+		// Bind failed after all retries. Explicitly unlock the reservation so it becomes
+		// matchable again. The controller's next resync will detect that spec still differs
+		// from allocatable and re-trigger the resize flow.
+		if targetUID != "" {
+			pl.reservationCache.UnlockReservationForResize(targetUID, reservationutil.GetReservePodNodeName(resizePod))
+		}
+		return fwktype.AsStatus(err)
+	}
+
+	// Forget the fake resize pod from the scheduler cache.
+	// The reservation update event will trigger updateReservationInSchedulerCache
+	// which adjusts the real ReservePod's resources in NodeInfo.
+	if err := pl.handle.ForgetPod(klog.Background(), resizePod); err != nil {
+		klog.ErrorS(err, "Failed to forget fake resize pod from cache",
+			"resizePod", klog.KObj(resizePod), "reservation", rName)
+	}
+
+	klog.V(3).InfoS("Successfully bound resize pod: reservation allocatable updated",
+		"reservation", rName, "targetUID", targetUID, "node", nodeName,
+		"newAllocatable", newAllocatable)
+	pl.handle.EventRecorder().Eventf(reservation, nil, corev1.EventTypeNormal, "Resized", "Binding",
+		"Successfully resized reservation %v on %v", rName, nodeName)
 	return nil
 }
 

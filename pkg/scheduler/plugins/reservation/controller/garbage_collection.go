@@ -52,6 +52,13 @@ func (c *Controller) gcReservations() {
 			}
 		}
 	}
+
+	// Periodically clean up stale resize locks as a safety net.
+	if c.resizeLock != nil {
+		if cleaned := c.resizeLock.CleanStaleLocks(); cleaned > 0 {
+			klog.V(3).InfoS("Cleaned stale resize locks during GC", "count", cleaned)
+		}
+	}
 }
 
 func missingNode(reservation *schedulingv1alpha1.Reservation, nodeLister corelister.NodeLister) bool {
