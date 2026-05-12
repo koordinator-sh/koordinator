@@ -62,9 +62,12 @@ func getResourceQOSSpec(node *corev1.Node, cfg *configuration.ResourceQOSCfg) (*
 	return cfg.ClusterStrategy.DeepCopy(), nil
 }
 
-func getCPUBurstConfigSpec(node *corev1.Node, cfg *configuration.CPUBurstCfg) (*slov1alpha1.CPUBurstStrategy, error) {
-
+func getCPUBurstConfigSpec(node *corev1.Node, cfg *configuration.CPUBurstCfg) (*slov1alpha1.CPUBurstStrategy, []slov1alpha1.PodCPUBurstStrategy, error) {
 	nodeLabels := labels.Set(node.Labels)
+	var podStrategies []slov1alpha1.PodCPUBurstStrategy
+	for _, podStrategy := range cfg.PodStrategies {
+		podStrategies = append(podStrategies, *podStrategy.DeepCopy())
+	}
 	for _, nodeStrategy := range cfg.NodeStrategies {
 		selector, err := metav1.LabelSelectorAsSelector(nodeStrategy.NodeSelector)
 		if err != nil {
@@ -72,11 +75,11 @@ func getCPUBurstConfigSpec(node *corev1.Node, cfg *configuration.CPUBurstCfg) (*
 			continue
 		}
 		if selector.Matches(nodeLabels) {
-			return nodeStrategy.CPUBurstStrategy.DeepCopy(), nil
+			return nodeStrategy.CPUBurstStrategy.DeepCopy(), podStrategies, nil
 		}
 
 	}
-	return cfg.ClusterStrategy.DeepCopy(), nil
+	return cfg.ClusterStrategy.DeepCopy(), podStrategies, nil
 }
 
 func getSystemConfigSpec(node *corev1.Node, cfg *configuration.SystemCfg) (*slov1alpha1.SystemStrategy, error) {

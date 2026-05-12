@@ -416,11 +416,12 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 }
 
 func Test_genPodBurstConfig(t *testing.T) {
-
 	type args struct {
-		podNamespace string
-		podCfg       *slov1alpha1.CPUBurstConfig
-		nodeCfg      *slov1alpha1.CPUBurstConfig
+		podNamespace  string
+		podLabels     map[string]string
+		podCfg        *slov1alpha1.CPUBurstConfig
+		nodeCfg       *slov1alpha1.CPUBurstConfig
+		podStrategies []slov1alpha1.PodCPUBurstStrategy
 	}
 
 	tests := []struct {
@@ -485,6 +486,101 @@ func Test_genPodBurstConfig(t *testing.T) {
 				CFSQuotaBurstPeriodSeconds: ptr.To[int64](600),
 			},
 		},
+		{
+			name: "merge-pod-config",
+			args: args{
+				podCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstOnly,
+					CPUBurstPercent: pointer.Int64(500),
+				},
+				nodeCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:                     slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent:            pointer.Int64(1000),
+					CFSQuotaBurstPercent:       pointer.Int64(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+				},
+			},
+			want: &slov1alpha1.CPUBurstConfig{
+				Policy:                     slov1alpha1.CPUBurstOnly,
+				CPUBurstPercent:            pointer.Int64(500),
+				CFSQuotaBurstPercent:       pointer.Int64(300),
+				CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+			},
+		},
+		{
+			name: "override-pod-config-by-ns",
+			args: args{
+				podNamespace: "test-ns",
+				podCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent: pointer.Int64(500),
+				},
+				nodeCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:                     slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent:            pointer.Int64(1000),
+					CFSQuotaBurstPercent:       pointer.Int64(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+				},
+				podStrategies: []slov1alpha1.PodCPUBurstStrategy{
+					{
+						PodCfgProfile: slov1alpha1.PodCfgProfile{
+							Namespace: "test-ns",
+						},
+						OverridePod: true,
+						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+							Policy:          slov1alpha1.CPUBurstOnly,
+							CPUBurstPercent: pointer.Int64(90),
+						},
+					},
+				},
+			},
+			want: &slov1alpha1.CPUBurstConfig{
+				Policy:                     slov1alpha1.CPUBurstOnly,
+				CPUBurstPercent:            pointer.Int64(90),
+				CFSQuotaBurstPercent:       pointer.Int64(300),
+				CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+			},
+		},
+		{
+			name: "override-pod-config-by-selector",
+			args: args{
+				podCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent: pointer.Int64(500),
+				},
+				podLabels: map[string]string{
+					"app": "test-app",
+				},
+				nodeCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:                     slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent:            pointer.Int64(1000),
+					CFSQuotaBurstPercent:       pointer.Int64(300),
+					CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+				},
+				podStrategies: []slov1alpha1.PodCPUBurstStrategy{
+					{
+						PodCfgProfile: slov1alpha1.PodCfgProfile{
+							PodSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"app": "test-app",
+								},
+							},
+						},
+						OverridePod: true,
+						CPUBurstConfig: slov1alpha1.CPUBurstConfig{
+							Policy:          slov1alpha1.CPUBurstOnly,
+							CPUBurstPercent: pointer.Int64(90),
+						},
+					},
+				},
+			},
+			want: &slov1alpha1.CPUBurstConfig{
+				Policy:                     slov1alpha1.CPUBurstOnly,
+				CPUBurstPercent:            pointer.Int64(90),
+				CFSQuotaBurstPercent:       pointer.Int64(300),
+				CFSQuotaBurstPeriodSeconds: pointer.Int64(600),
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -494,13 +590,14 @@ func Test_genPodBurstConfig(t *testing.T) {
 					Name:        "test-pod",
 					Namespace:   tt.args.podNamespace,
 					Annotations: make(map[string]string),
+					Labels:      tt.args.podLabels,
 				},
 			}
 			if tt.args.podCfg != nil {
 				annoStr, _ := json.Marshal(tt.args.podCfg)
 				pod.Annotations[slov1alpha1.AnnotationPodCPUBurst] = string(annoStr)
 			}
-			if got := genPodBurstConfig(pod, tt.args.nodeCfg); !reflect.DeepEqual(got, tt.want) {
+			if got := genPodBurstConfig(pod, tt.args.nodeCfg, tt.args.podStrategies); !reflect.DeepEqual(got, tt.want) {
 				gotStr, _ := json.Marshal(got)
 				wantStr, _ := json.Marshal(tt.want)
 				t.Errorf("genPodBurstConfig() =\n%v\nwant =\n%v", string(gotStr), string(wantStr))
@@ -1788,7 +1885,7 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 					slov1alpha1.AnnotationPodCPUBurst: string(podCPUBurstCfgStr),
 				}
 			}
-			gotCfg := genPodBurstConfig(tt.args.pod, &tt.args.nodeCfg)
+			gotCfg := genPodBurstConfig(tt.args.pod, &tt.args.nodeCfg, nil)
 			assert.Equal(t, tt.want, gotCfg)
 		})
 	}
