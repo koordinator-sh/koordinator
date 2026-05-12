@@ -614,6 +614,9 @@ func autoConvert_v1_ReservationArgs_To_config_ReservationArgs(in *ReservationArg
 	out.PreAllocationConfig = (*config.PreAllocationConfig)(unsafe.Pointer(in.PreAllocationConfig))
 	out.IgnoredResources = *(*[]string)(unsafe.Pointer(&in.IgnoredResources))
 	out.IgnoredResourceGroups = *(*[]string)(unsafe.Pointer(&in.IgnoredResourceGroups))
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -642,6 +645,9 @@ func autoConvert_config_ReservationArgs_To_v1_ReservationArgs(in *config.Reserva
 	out.PreAllocationConfig = (*PreAllocationConfig)(unsafe.Pointer(in.PreAllocationConfig))
 	out.IgnoredResources = *(*[]string)(unsafe.Pointer(&in.IgnoredResources))
 	out.IgnoredResourceGroups = *(*[]string)(unsafe.Pointer(&in.IgnoredResourceGroups))
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 

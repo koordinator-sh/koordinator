@@ -221,6 +221,8 @@ type ReservationArgs struct {
 	// A group name can't contain '/', and the reserved "kubernetes.io" namespace is rejected.
 	// +optional
 	IgnoredResourceGroups []string `json:"ignoredResourceGroups,omitempty"`
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint *bool `json:"enableQueueHint,omitempty"`
 }
 
 // PreAllocationConfig defines the configuration for pre-allocation feature.
