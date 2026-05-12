@@ -99,26 +99,6 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Nil(t, fragments)
 	})
 
-	t.Run("malformed reservation affinity opts the pod out with UnschedulableAndUnresolvable", func(t *testing.T) {
-		pod := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "bad-aff", Namespace: "default", UID: "bad-aff",
-				Annotations: map[string]string{apiext.AnnotationReservationAffinity: "not-json"},
-			},
-			Spec: corev1.PodSpec{Containers: []corev1.Container{{
-				Name: "c",
-				Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-					apiext.ResourceGPU: resource.MustParse("100"),
-				}},
-			}}},
-		}
-		fragments, status := pl.SignPod(context.TODO(), pod)
-		require.NotNil(t, status)
-		assert.Equal(t, fwktype.UnschedulableAndUnresolvable, status.Code(),
-			"malformed affinity must not silently produce the same signature as a clean pod")
-		assert.Nil(t, fragments)
-	})
-
 	mkPodWithAnno := func(name string, annos map[string]string) *corev1.Pod {
 		return &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default", UID: types.UID(name), Annotations: annos},
@@ -226,7 +206,9 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Equal(t, fa, fb, "affinity presence must not be re-signed here")
 	})
 
-	t.Run("pre-allocation-required label adds a dedicated fragment", func(t *testing.T) {
+	t.Run("pre-allocation-required label does not add a deviceshare fragment", func(t *testing.T) {
+		// The Reservation plugin's SignPod owns the pre-allocation-required
+		// fragment; deviceshare deliberately does not re-sign it.
 		base := mkPod("base", corev1.ResourceList{apiext.ResourceGPU: resource.MustParse("100")})
 		preAlloc := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -242,6 +224,6 @@ func TestPlugin_SignPod(t *testing.T) {
 		}
 		fa, _ := pl.SignPod(context.TODO(), base)
 		fb, _ := pl.SignPod(context.TODO(), preAlloc)
-		assert.NotEqual(t, fa, fb)
+		assert.Equal(t, fa, fb, "pre-allocation-required must not be re-signed here")
 	})
 }

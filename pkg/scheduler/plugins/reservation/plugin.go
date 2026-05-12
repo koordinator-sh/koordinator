@@ -202,29 +202,46 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 //     that carry them, which already disables batching for such pods,
 //     so signing isPodAllNodesPreRestoreRequired here is unreachable.
 //
-// For a reserve pod (a pod that owns a Reservation) the only Filter/
-// Score input unique to this plugin is the target reservation name,
-// because the reserve pod's PreFilter fetches the Reservation by name
-// (plugin.go:408) and every downstream decision (validate, capacity,
-// target node, pre-allocation) derives from that Reservation object.
+// For a reserve pod (a pod that owns a Reservation) the Filter/Score
+// inputs unique to this plugin are:
+//
+//   - the target reservation name (the reserve pod's PreFilter fetches
+//     the Reservation by name at plugin.go:408 and every downstream
+//     decision — validate, capacity, target node — derives from it);
+//   - the pre-allocation annotation (mirrors the Reservation's
+//     Spec.PreAllocation; transformer.go:324 reads it via
+//     IsReservePodPreAllocation and the value branches the reserve
+//     pod's PreFilter at transformer.go:353).
 //
 // For a normal pod the plugin-unique inputs are:
 //
 //   - reservation-affinity annotation (drives matching);
 //   - reservation-ignored label (skips reservation matching entirely);
 //   - exact-match-reservation annotation (extra strict matching);
+//   - pre-allocation-required label (transformer.go:331 reads
+//     IsPreAllocationRequired and the value gates per-node decisions
+//     at transformer.go:476 and is stored in stateData at
+//     transformer.go:526; also consumed by the DeviceShare plugin's
+//     state.isReservationRequired derivation in utils.go:394);
 //   - owner-matching inputs — labels, pod.{UID,Name,Namespace,APIVersion}
 //     and every ownerRef field — consumed by the reservation cache's
 //     IsMatchable / MatchOwners / MatchObjectRef / MatchReservationControllerReference.
 func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
 	if reservationutil.IsReservePod(pod) {
-		return []fwktype.SignFragment{{
+		fragments := []fwktype.SignFragment{{
 			Key:   "koord.Reservation.reservePodFor",
 			Value: reservationutil.GetReservationNameFromReservePod(pod),
-		}}, nil
+		}}
+		if reservationutil.IsReservePodPreAllocation(pod) {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.Reservation.reservePodPreAllocation",
+				Value: true,
+			})
+		}
+		return fragments, nil
 	}
 
-	fragments := make([]fwktype.SignFragment, 0, 4)
+	fragments := make([]fwktype.SignFragment, 0, 5)
 	// Parse reservation-affinity / exact-match annotations with the same
 	// helpers PreFilter uses (transformer.go around prepareMatchReservationStateForNormalPod)
 	// so malformed input yields the identical Status a non-batched schedule
@@ -266,6 +283,12 @@ func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFra
 	if apiext.IsReservationIgnored(pod) {
 		fragments = append(fragments, fwktype.SignFragment{
 			Key:   "koord.Reservation.ignored",
+			Value: true,
+		})
+	}
+	if apiext.IsPreAllocationRequired(pod.Labels) {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.preAllocationRequired",
 			Value: true,
 		})
 	}

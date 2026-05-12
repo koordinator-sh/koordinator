@@ -83,6 +83,27 @@ func TestPlugin_SignPod(t *testing.T) {
 		assert.Equal(t, "booked-r", fragments[0].Value)
 	})
 
+	t.Run("reserve pod with pre-allocation annotation adds a dedicated fragment", func(t *testing.T) {
+		preAllocReservePod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "pre-rp", Namespace: "default", UID: types.UID("pre-rp"),
+				Annotations: map[string]string{
+					reservationutil.AnnotationReservePod:      "true",
+					reservationutil.AnnotationReservationName: "booked-r",
+					reservationutil.AnnotationIsPreAllocation: "true",
+				},
+			},
+		}
+		fragments, status := pl.SignPod(context.TODO(), preAllocReservePod)
+		assert.True(t, status == nil || status.IsSuccess())
+		assert.Equal(t, true, findFragment(fragments, "koord.Reservation.reservePodPreAllocation"),
+			"reserve pod with pre-allocation annotation must emit a dedicated fragment")
+		// Two reserve pods for the same reservation name but differing in
+		// pre-allocation must produce different signatures.
+		plain, _ := pl.SignPod(context.TODO(), reservePod)
+		assert.NotEqual(t, plain, fragments)
+	})
+
 	t.Run("plain pod always contributes the ownerInputs fragment", func(t *testing.T) {
 		fragments, status := pl.SignPod(context.TODO(), normalPod)
 		assert.True(t, status == nil || status.IsSuccess())
@@ -225,6 +246,19 @@ func TestPlugin_SignPod(t *testing.T) {
 		fb, _ := pl.SignPod(context.TODO(), mk("p", "owner-2"))
 		assert.NotEqual(t, fa, fb,
 			"MatchReservationControllerReference matches by ownerRef.UID")
+	})
+
+	t.Run("pre-allocation-required label adds a dedicated fragment", func(t *testing.T) {
+		base := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", UID: "p", Namespace: "default"}}
+		preAlloc := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: "pa", UID: "pa", Namespace: "default",
+			Labels: map[string]string{apiext.LabelPreAllocationRequired: "true"},
+		}}
+		fa, _ := pl.SignPod(context.TODO(), base)
+		fb, _ := pl.SignPod(context.TODO(), preAlloc)
+		assert.Nil(t, findFragment(fa, "koord.Reservation.preAllocationRequired"))
+		assert.Equal(t, true, findFragment(fb, "koord.Reservation.preAllocationRequired"))
+		assert.NotEqual(t, fa, fb)
 	})
 
 	t.Run("different ownerRef.Controller flag produces a different signature", func(t *testing.T) {
