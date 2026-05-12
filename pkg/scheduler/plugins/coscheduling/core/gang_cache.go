@@ -22,6 +22,7 @@ import (
 	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 	listerv1 "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -217,7 +218,16 @@ func (gangCache *GangCache) onPodUpdate(oldObj, newObj interface{}) {
 func (gangCache *GangCache) onPodDelete(obj interface{}) {
 	pod, ok := obj.(*v1.Pod)
 	if !ok {
-		return
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			klog.Errorf("onPodDelete: couldn't get object from tombstone %+v", obj)
+			return
+		}
+		pod, ok = tombstone.Obj.(*v1.Pod)
+		if !ok {
+			klog.Errorf("onPodDelete: tombstone contained object that is not a Pod %+v", tombstone.Obj)
+			return
+		}
 	}
 	gangName := util.GetGangNameByPod(pod)
 	if gangName == "" {
@@ -348,7 +358,16 @@ func (gangCache *GangCache) onPodGroupUpdate(oldObj interface{}, newObj interfac
 func (gangCache *GangCache) onPodGroupDelete(obj interface{}) {
 	pg, ok := obj.(*v1alpha1.PodGroup)
 	if !ok {
-		return
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			klog.Errorf("onPodGroupDelete: couldn't get object from tombstone %+v", obj)
+			return
+		}
+		pg, ok = tombstone.Obj.(*v1alpha1.PodGroup)
+		if !ok {
+			klog.Errorf("onPodGroupDelete: tombstone contained object that is not a PodGroup %+v", tombstone.Obj)
+			return
+		}
 	}
 	gangNamespace := pg.Namespace
 	gangName := pg.Name

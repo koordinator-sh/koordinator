@@ -16,7 +16,11 @@ limitations under the License.
 
 package metrics
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"strconv"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 var (
 	CPUSetSharePoolCPUS = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -31,9 +35,23 @@ var (
 		Help:      "Number of be share pool cores",
 	}, []string{NodeKey})
 
+	CPUSetSharePoolInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "cpuset_share_pool_info",
+		Help:      "Indicates whether the CPU ID is currently part of the share pool (1 = in pool)",
+	}, []string{NodeKey, CPUIDKey})
+
+	CPUSetBESharePoolInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "cpuset_be_share_pool_info",
+		Help:      "Indicates whether the CPU ID is currently part of the BE share pool (1 = in pool)",
+	}, []string{NodeKey, CPUIDKey})
+
 	CPUSetCollector = []prometheus.Collector{
 		CPUSetSharePoolCPUS,
 		CPUSetBESharePoolCPUS,
+		CPUSetSharePoolInfo,
+		CPUSetBESharePoolInfo,
 	}
 )
 
@@ -51,4 +69,30 @@ func RecordCPUSetBESharePoolCores(value float64) {
 		return
 	}
 	CPUSetBESharePoolCPUS.With(labels).Set(value)
+}
+
+func RecordCPUSetSharePoolInfo(cpu int) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[CPUIDKey] = strconv.Itoa(cpu)
+	CPUSetSharePoolInfo.With(labels).Set(1)
+}
+
+func ResetCPUSetSharePoolInfo() {
+	CPUSetSharePoolInfo.Reset()
+}
+
+func RecordCPUSetBESharePoolInfo(cpu int) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[CPUIDKey] = strconv.Itoa(cpu)
+	CPUSetBESharePoolInfo.With(labels).Set(1)
+}
+
+func ResetCPUSetBESharePoolInfo() {
+	CPUSetBESharePoolInfo.Reset()
 }

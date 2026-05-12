@@ -182,7 +182,7 @@ type pluginTestSuit struct {
 	plugin               fwktype.Plugin
 }
 
-func newPluginTestSuit(t *testing.T, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
+func newPluginTestSuit(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node) *pluginTestSuit {
 	// Reset registrations to avoid cross-test interference via package-level state.
 	frameworkexthelper.ResetRegistrations()
 	var v1args v1.NodeNUMAResourceArgs

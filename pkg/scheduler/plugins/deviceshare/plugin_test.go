@@ -160,7 +160,7 @@ type pluginTestSuit struct {
 	proxyNew                         runtime.PluginFactory
 }
 
-func newPluginTestSuit(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
+func newPluginTestSuit(t testing.TB, nodes []*corev1.Node) *pluginTestSuit {
 	frameworkexthelper.ResetRegistrations()
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)

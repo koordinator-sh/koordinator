@@ -22,6 +22,8 @@ import (
 	"testing"
 
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -31,6 +33,7 @@ import (
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -1224,4 +1227,209 @@ func Test_cpusetPlugin_ruleUpdateCbForHostApp(t *testing.T) {
 			assert.Equal(t, tt.wantCPUSet, gotCPUSet)
 		})
 	}
+}
+
+func Test_cpusetPlugin_parseRule_withPerCPUMetric(t *testing.T) {
+	// Register a test node for metrics
+	testingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+	metrics.Register(testingNode)
+	defer metrics.Register(nil)
+
+	sharePools := []ext.CPUSharedPool{
+		{
+			Socket: 0,
+			Node:   0,
+			CPUSet: "0-3",
+		},
+	}
+	beSharePools := []ext.CPUSharedPool{
+		{
+			Socket: 0,
+			Node:   0,
+			CPUSet: "4-7",
+		},
+	}
+	cpuPolicy := &ext.KubeletCPUManagerPolicy{
+		Policy: ext.KubeletCPUManagerPolicyNone,
+	}
+
+	nodeTopo := &topov1alpha1.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-node",
+			Annotations: map[string]string{},
+		},
+	}
+	nodeTopo.Annotations[ext.AnnotationNodeCPUSharedPools] = util.DumpJSON(sharePools)
+	nodeTopo.Annotations[ext.AnnotationNodeBECPUSharedPools] = util.DumpJSON(beSharePools)
+	nodeTopo.Annotations[ext.AnnotationKubeletCPUManagerPolicy] = util.DumpJSON(cpuPolicy)
+
+	// helper to read the actual value of a prometheus Gauge
+	gaugeValue := func(t *testing.T, gauge interface{ Write(*dto.Metric) error }) float64 {
+		t.Helper()
+		m := &dto.Metric{}
+		assert.NoError(t, gauge.Write(m))
+		return m.GetGauge().GetValue()
+	}
+
+	t.Run("per-cpu metrics emitted when feature enabled", func(t *testing.T) {
+		// Reset metrics to ensure a clean state
+		metrics.ResetCPUSetSharePoolInfo()
+		metrics.ResetCPUSetBESharePoolInfo()
+
+		p := &cpusetPlugin{
+			recordPerSharePoolCPUInfo: true,
+		}
+
+		updated, err := p.parseRule(nodeTopo)
+		assert.NoError(t, err)
+		assert.True(t, updated)
+
+		// Verify per-CPU share pool info metrics: cpu 0-3 should all be 1
+		for _, cpu := range []string{"0", "1", "2", "3"} {
+			gauge, err := metrics.CPUSetSharePoolInfo.GetMetricWithLabelValues("test-node", cpu)
+			assert.NoError(t, err)
+			assert.Equal(t, float64(1), gaugeValue(t, gauge), "share pool info value for cpu %s", cpu)
+		}
+
+		// Verify per-CPU BE share pool info metrics: cpu 4-7 should all be 1
+		for _, cpu := range []string{"4", "5", "6", "7"} {
+			gauge, err := metrics.CPUSetBESharePoolInfo.GetMetricWithLabelValues("test-node", cpu)
+			assert.NoError(t, err)
+			assert.Equal(t, float64(1), gaugeValue(t, gauge), "BE share pool info value for cpu %s", cpu)
+		}
+
+		// Verify share pool cores count: "0-3" = 4 cores
+		gauge, err := metrics.CPUSetSharePoolCPUS.GetMetricWithLabelValues("test-node")
+		assert.NoError(t, err)
+		assert.Equal(t, float64(4), gaugeValue(t, gauge))
+
+		// Verify BE share pool cores count: "4-7" = 4 cores
+		gauge, err = metrics.CPUSetBESharePoolCPUS.GetMetricWithLabelValues("test-node")
+		assert.NoError(t, err)
+		assert.Equal(t, float64(4), gaugeValue(t, gauge))
+
+		// Clean up
+		metrics.ResetCPUSetSharePoolInfo()
+		metrics.ResetCPUSetBESharePoolInfo()
+	})
+
+	t.Run("per-cpu metrics not emitted when feature disabled", func(t *testing.T) {
+		// Reset metrics to ensure a clean state
+		metrics.ResetCPUSetSharePoolInfo()
+		metrics.ResetCPUSetBESharePoolInfo()
+
+		p := &cpusetPlugin{
+			recordPerSharePoolCPUInfo: false,
+		}
+
+		updated, err := p.parseRule(nodeTopo)
+		assert.NoError(t, err)
+		assert.True(t, updated)
+
+		// Share pool cores metric should still be recorded (not gated): "0-3" = 4 cores
+		gauge, err := metrics.CPUSetSharePoolCPUS.GetMetricWithLabelValues("test-node")
+		assert.NoError(t, err)
+		assert.Equal(t, float64(4), gaugeValue(t, gauge))
+
+		// BE share pool cores metric should still be recorded: "4-7" = 4 cores
+		gauge, err = metrics.CPUSetBESharePoolCPUS.GetMetricWithLabelValues("test-node")
+		assert.NoError(t, err)
+		assert.Equal(t, float64(4), gaugeValue(t, gauge))
+	})
+
+	t.Run("expired per-cpu metrics cleaned on share pool shrink", func(t *testing.T) {
+		// Reset metrics to ensure a clean state
+		metrics.ResetCPUSetSharePoolInfo()
+		metrics.ResetCPUSetBESharePoolInfo()
+
+		p := &cpusetPlugin{
+			recordPerSharePoolCPUInfo: true,
+		}
+
+		// t0: sharepool = {0,1,2,3}, beSharepool = {4,5,6,7}
+		updated, err := p.parseRule(nodeTopo)
+		assert.NoError(t, err)
+		assert.True(t, updated)
+
+		// Verify t0 state: cpu 0-3 in share pool
+		for _, cpu := range []string{"0", "1", "2", "3"} {
+			gauge, err := metrics.CPUSetSharePoolInfo.GetMetricWithLabelValues("test-node", cpu)
+			assert.NoError(t, err)
+			assert.Equal(t, float64(1), gaugeValue(t, gauge))
+		}
+		// Verify t0 state: cpu 4-7 in BE share pool
+		for _, cpu := range []string{"4", "5", "6", "7"} {
+			gauge, err := metrics.CPUSetBESharePoolInfo.GetMetricWithLabelValues("test-node", cpu)
+			assert.NoError(t, err)
+			assert.Equal(t, float64(1), gaugeValue(t, gauge))
+		}
+
+		// t1: sharepool shrinks to {2,3}, beSharepool shrinks to {6,7}
+		shrunkSharePools := []ext.CPUSharedPool{
+			{Socket: 0, Node: 0, CPUSet: "2-3"},
+		}
+		shrunkBESharePools := []ext.CPUSharedPool{
+			{Socket: 0, Node: 0, CPUSet: "6-7"},
+		}
+		shrunkNodeTopo := &topov1alpha1.NodeResourceTopology{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "test-node",
+				Annotations: map[string]string{},
+			},
+		}
+		shrunkNodeTopo.Annotations[ext.AnnotationNodeCPUSharedPools] = util.DumpJSON(shrunkSharePools)
+		shrunkNodeTopo.Annotations[ext.AnnotationNodeBECPUSharedPools] = util.DumpJSON(shrunkBESharePools)
+		shrunkNodeTopo.Annotations[ext.AnnotationKubeletCPUManagerPolicy] = util.DumpJSON(cpuPolicy)
+
+		updated, err = p.parseRule(shrunkNodeTopo)
+		assert.NoError(t, err)
+		assert.True(t, updated)
+
+		// Verify t1: share pool cores count should be 2
+		gauge, err := metrics.CPUSetSharePoolCPUS.GetMetricWithLabelValues("test-node")
+		assert.NoError(t, err)
+		assert.Equal(t, float64(2), gaugeValue(t, gauge))
+
+		// Verify t1: BE share pool cores count should be 2
+		gauge, err = metrics.CPUSetBESharePoolCPUS.GetMetricWithLabelValues("test-node")
+		assert.NoError(t, err)
+		assert.Equal(t, float64(2), gaugeValue(t, gauge))
+
+		// Verify t1: only cpu 2,3 remain in share pool info
+		// Collect all metric series from CPUSetSharePoolInfo to check
+		collectCPUIDs := func(gaugeVec *prometheus.GaugeVec) map[string]float64 {
+			ch := make(chan prometheus.Metric, 100)
+			go func() {
+				gaugeVec.Collect(ch)
+				close(ch)
+			}()
+			result := map[string]float64{}
+			for m := range ch {
+				d := &dto.Metric{}
+				assert.NoError(t, m.Write(d))
+				for _, lp := range d.GetLabel() {
+					if lp.GetName() == "cpu" {
+						result[lp.GetValue()] = d.GetGauge().GetValue()
+					}
+				}
+			}
+			return result
+		}
+
+		sharePoolCPUs := collectCPUIDs(metrics.CPUSetSharePoolInfo)
+		assert.Equal(t, map[string]float64{"2": 1, "3": 1}, sharePoolCPUs,
+			"only cpu 2,3 should remain in share pool info after shrink; cpu 0,1 should be cleaned")
+
+		beSharePoolCPUs := collectCPUIDs(metrics.CPUSetBESharePoolInfo)
+		assert.Equal(t, map[string]float64{"6": 1, "7": 1}, beSharePoolCPUs,
+			"only cpu 6,7 should remain in BE share pool info after shrink; cpu 4,5 should be cleaned")
+
+		// Clean up
+		metrics.ResetCPUSetSharePoolInfo()
+		metrics.ResetCPUSetBESharePoolInfo()
+	})
 }
