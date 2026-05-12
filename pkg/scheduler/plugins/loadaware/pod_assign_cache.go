@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 // podAssignCache stores the NodeMetric and Pod information that has been successfully scheduled or is about to be bound.
@@ -288,7 +289,7 @@ func (p *podAssignCache) tryCleanup(name string, n *nodeInfo) {
 
 // add or update pod with node name provided
 func (p *podAssignCache) assign(nodeName string, pod *corev1.Pod) {
-	if nodeName == "" || util.IsPodTerminated(pod) {
+	if nodeName == "" || util.IsPodTerminated(pod) || reservationutil.IsReservePod(pod) {
 		return
 	}
 	var estimated ResourceVector
