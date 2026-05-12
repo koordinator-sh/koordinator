@@ -102,6 +102,11 @@ func (in *DeviceShareArgs) DeepCopyInto(out *DeviceShareArgs) {
 		*out = make([]GPUShareUnsupportedModel, len(*in))
 		copy(*out, *in)
 	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

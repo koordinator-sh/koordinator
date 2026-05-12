@@ -256,6 +256,9 @@ func autoConvert_v1_DeviceShareArgs_To_config_DeviceShareArgs(in *DeviceShareArg
 	out.DisableDeviceNUMATopologyAlignment = in.DisableDeviceNUMATopologyAlignment
 	out.GPUSharedResourceTemplatesConfig = (*config.GPUSharedResourceTemplatesConfig)(unsafe.Pointer(in.GPUSharedResourceTemplatesConfig))
 	out.GPUShareUnsupportedModels = *(*[]config.GPUShareUnsupportedModel)(unsafe.Pointer(&in.GPUShareUnsupportedModels))
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -270,6 +273,9 @@ func autoConvert_config_DeviceShareArgs_To_v1_DeviceShareArgs(in *config.DeviceS
 	out.DisableDeviceNUMATopologyAlignment = in.DisableDeviceNUMATopologyAlignment
 	out.GPUSharedResourceTemplatesConfig = (*GPUSharedResourceTemplatesConfig)(unsafe.Pointer(in.GPUSharedResourceTemplatesConfig))
 	out.GPUShareUnsupportedModels = *(*[]GPUShareUnsupportedModel)(unsafe.Pointer(&in.GPUShareUnsupportedModels))
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
