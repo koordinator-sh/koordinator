@@ -18,6 +18,7 @@ package reservation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -80,6 +81,7 @@ const (
 
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.SignPlugin        = &Plugin{}
 
 	_ fwktype.PreFilterPlugin  = &Plugin{}
 	_ fwktype.FilterPlugin     = &Plugin{}
@@ -180,6 +182,181 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+// SignPod captures the pod-level inputs the Reservation plugin reads in
+// PreFilter/Filter/Score that are NOT already covered by an upstream
+// in-tree plugin. Each plugin in the profile contributes its own
+// fragments and the per-pod signature is the union, so we deliberately
+// skip inputs that are already signed by the default k8s scheduler
+// plugins, to keep the signature minimal:
+//
+//   - pod resource requests: upstream noderesources/fit SignPod
+//     (computePodResourceRequest) covers this;
+//   - pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+//     and pod.Spec.NodeSelector: upstream nodeaffinity SignPod covers
+//     this;
+//   - pod.Spec.Affinity.PodAffinity / PodAntiAffinity and required
+//     pod.Spec.TopologySpreadConstraints: upstream interpodaffinity and
+//     podtopologyspread SignPod explicitly return non-success for pods
+//     that carry them, which already disables batching for such pods,
+//     so signing isPodAllNodesPreRestoreRequired here is unreachable.
+//
+// For a reserve pod (a pod that owns a Reservation) the Filter/Score
+// inputs unique to this plugin are:
+//
+//   - the target reservation name (the reserve pod's PreFilter fetches
+//     the Reservation by name at plugin.go:408 and every downstream
+//     decision — validate, capacity, target node — derives from it);
+//   - the pre-allocation annotation (mirrors the Reservation's
+//     Spec.PreAllocation; transformer.go:324 reads it via
+//     IsReservePodPreAllocation and the value branches the reserve
+//     pod's PreFilter at transformer.go:353).
+//
+// For a normal pod the plugin-unique inputs are:
+//
+//   - reservation-affinity annotation (drives matching);
+//   - reservation-ignored label (skips reservation matching entirely);
+//   - exact-match-reservation annotation (extra strict matching);
+//   - pre-allocation-required label (transformer.go:331 reads
+//     IsPreAllocationRequired and the value gates per-node decisions
+//     at transformer.go:476 and is stored in stateData at
+//     transformer.go:526; also consumed by the DeviceShare plugin's
+//     state.isReservationRequired derivation in utils.go:394);
+//   - owner-matching inputs — labels, pod.{UID,Name,Namespace,APIVersion}
+//     and every ownerRef field — consumed by the reservation cache's
+//     IsMatchable / MatchOwners / MatchObjectRef / MatchReservationControllerReference.
+func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	if reservationutil.IsReservePod(pod) {
+		fragments := []fwktype.SignFragment{{
+			Key:   "koord.Reservation.reservePodFor",
+			Value: reservationutil.GetReservationNameFromReservePod(pod),
+		}}
+		if reservationutil.IsReservePodPreAllocation(pod) {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.Reservation.reservePodPreAllocation",
+				Value: true,
+			})
+		}
+		return fragments, nil
+	}
+
+	fragments := make([]fwktype.SignFragment, 0, 5)
+	// Parse reservation-affinity / exact-match annotations with the same
+	// helpers PreFilter uses (transformer.go around prepareMatchReservationStateForNormalPod)
+	// so malformed input yields the identical Status a non-batched schedule
+	// would see, instead of silently canonicalizing the raw bytes.
+	// Marshal the parsed structs (not the raw annotation) so formatting
+	// differences between semantically equal values collapse.
+	if _, ok := pod.Annotations[apiext.AnnotationReservationAffinity]; ok {
+		aff, err := apiext.GetReservationAffinity(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.AsStatus(err)
+		}
+		if aff != nil {
+			b, mErr := json.Marshal(aff)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.Reservation.affinity",
+				Value: string(b),
+			})
+		}
+	}
+	if _, ok := pod.Annotations[apiext.AnnotationExactMatchReservationSpec]; ok {
+		exact, err := apiext.GetExactMatchReservationSpec(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.AsStatus(err)
+		}
+		if exact != nil {
+			b, mErr := json.Marshal(exact)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.Reservation.exactMatch",
+				Value: string(b),
+			})
+		}
+	}
+	if apiext.IsReservationIgnored(pod) {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.ignored",
+			Value: true,
+		})
+	}
+	if apiext.IsPreAllocationRequired(pod.Labels) {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.Reservation.preAllocationRequired",
+			Value: true,
+		})
+	}
+	// Owner-matching inputs are always present (at least the pod namespace
+	// shapes the matcher decision), so the fragment is unconditional.
+	fragments = append(fragments, fwktype.SignFragment{
+		Key:   "koord.Reservation.ownerInputs",
+		Value: canonicalOwnerInputs(pod),
+	})
+	return fragments, nil
+}
+
+// canonicalOwnerInputs serializes every pod attribute that the reservation
+// owner matchers consult so two pods that would match different
+// reservations cannot share a signature. The matchers in
+// pkg/util/reservation/reservation.go consume:
+//
+//   - MatchLabels reads pod.Labels.
+//   - MatchObjectRef reads pod.UID, pod.Name, pod.Namespace, pod.APIVersion.
+//   - MatchReservationControllerReference reads pod.Namespace and the
+//     UID, Controller, Name, Kind and APIVersion of every OwnerReference.
+//
+// Including pod.UID and pod.Name effectively prevents batching across two
+// distinct pods whenever this plugin is in the scheduler profile: every
+// real pod has a unique UID, so the Reservation fragment is unique
+// per-pod, and the overall per-pod signature (the union across plugins)
+// can never collide between two different pods. That is the correct
+// trade-off under KEP-5598: pods sharing a signature MUST receive the
+// same scheduling outcome, and reservation matching by ObjectReference
+// UID means two pods with different UIDs can resolve to different
+// reservations. Correctness beats batching; maintainers agreed on this
+// scope in koordinator-sh/koordinator#2863.
+func canonicalOwnerInputs(pod *corev1.Pod) string {
+	parts := make([]string, 0, 6+len(pod.Labels)+len(pod.OwnerReferences))
+	parts = append(parts, "ns="+pod.Namespace)
+	if pod.Name != "" {
+		parts = append(parts, "name="+pod.Name)
+	}
+	if pod.UID != "" {
+		parts = append(parts, "uid="+string(pod.UID))
+	}
+	if pod.APIVersion != "" {
+		parts = append(parts, "apiVersion="+pod.APIVersion)
+	}
+	if len(pod.Labels) > 0 {
+		keys := make([]string, 0, len(pod.Labels))
+		for k := range pod.Labels {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			parts = append(parts, "label:"+k+"="+pod.Labels[k])
+		}
+	}
+	if len(pod.OwnerReferences) > 0 {
+		owners := make([]string, 0, len(pod.OwnerReferences))
+		for _, ref := range pod.OwnerReferences {
+			controller := ""
+			if ref.Controller != nil {
+				controller = strconv.FormatBool(*ref.Controller)
+			}
+			owners = append(owners, fmt.Sprintf("owner:apiVersion=%s/kind=%s/name=%s/uid=%s/controller=%s",
+				ref.APIVersion, ref.Kind, ref.Name, string(ref.UID), controller))
+		}
+		sort.Strings(owners)
+		parts = append(parts, owners...)
+	}
+	return strings.Join(parts, "|")
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.

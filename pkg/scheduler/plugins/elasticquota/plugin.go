@@ -110,6 +110,7 @@ type Plugin struct {
 
 var (
 	_ fwktype.EnqueueExtensions            = &Plugin{}
+	_ fwktype.SignPlugin                   = &Plugin{}
 	_ fwktype.PreFilterPlugin              = &Plugin{}
 	_ fwktype.PostFilterPlugin             = &Plugin{}
 	_ fwktype.ReservePlugin                = &Plugin{}
@@ -251,6 +252,22 @@ func (g *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	}
 
 	return events, nil
+}
+
+// SignPod captures the quota identity the plugin evaluates against so pods
+// that belong to the same quota (and tree) can share batched scheduling
+// results under KEP-5598. The resolution path mirrors PreFilter's
+// getPodAssociateQuotaNameAndTreeID so default-quota fallback and label
+// lookup stay consistent between signing and scheduling.
+func (g *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+	if quotaName == "" {
+		return nil, nil
+	}
+	return []fwktype.SignFragment{{
+		Key:   "koord.ElasticQuota.quota",
+		Value: quotaName + "|" + treeID,
+	}}, nil
 }
 
 func (g *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
