@@ -31,8 +31,6 @@ import (
 
 	"go.uber.org/multierr"
 	"k8s.io/klog/v2"
-
-	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
@@ -72,7 +70,7 @@ var (
 )
 
 func init() {
-	CacheIdsCacheFunc = util.OnceValues(GetCacheIds)
+	CacheIdsCacheFunc = sync.OnceValues(GetCacheIds)
 }
 
 func isCPUSupportResctrl() (bool, error) {
