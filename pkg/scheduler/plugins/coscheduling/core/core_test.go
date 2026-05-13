@@ -764,6 +764,53 @@ func TestBeforePreFilter_SuggestionPropagation(t *testing.T) {
 	}
 }
 
+func TestBeforePreFilter_NetworkTopologyHandleNotExtended(t *testing.T) {
+	gangaCreatedTime := time.Now()
+	mgr := NewManagerForTest().pgMgr
+
+	pg := makePg("gangNT", "default", 1, &gangaCreatedTime, nil)
+	pg.Annotations = map[string]string{
+		extension.AnnotationGangNetworkTopologySpec: `{"gatherStrategy":[{"layer":"NodeTopologyLayer","strategy":"MustGather"}]}`,
+	}
+	mgr.cache.onPodGroupAdd(pg)
+
+	pod := st.MakePod().Name("pod-nt").UID("pod-nt").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangNT").Obj()
+	mgr.cache.onPodAdd(pod)
+
+	cycleState := framework.NewCycleState()
+	frameworkext.InitDiagnosis(cycleState, pod)
+
+	assert.NotPanics(t, func() {
+		err := mgr.BeforePreFilter(context.TODO(), cycleState, pod)
+		assert.Error(t, err)
+		assert.Equal(t, ErrNoClusterNetworkTopology, err.Error())
+	})
+}
+
+func TestBeforePreFilter_NetworkTopologyManagerNil(t *testing.T) {
+	gangaCreatedTime := time.Now()
+	mgr := NewManagerForTest().pgMgr
+	// Replace the nil handle with a proper ExtendedHandle that has no TreeManager configured,
+	// so GetNetworkTopologyTreeManager() returns nil (covering the tm == nil guard).
+	mgr.handle = NewFakeExtendedFramework(t, nil, nil, nil, nil, nil)
+
+	pg := makePg("gangNT3", "default", 1, &gangaCreatedTime, nil)
+	pg.Annotations = map[string]string{
+		extension.AnnotationGangNetworkTopologySpec: `{"gatherStrategy":[{"layer":"NodeTopologyLayer","strategy":"MustGather"}]}`,
+	}
+	mgr.cache.onPodGroupAdd(pg)
+
+	pod := st.MakePod().Name("pod-nt3").UID("pod-nt3").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangNT3").Obj()
+	mgr.cache.onPodAdd(pod)
+
+	cycleState := framework.NewCycleState()
+	frameworkext.InitDiagnosis(cycleState, pod)
+
+	err := mgr.BeforePreFilter(context.TODO(), cycleState, pod)
+	assert.Error(t, err)
+	assert.Equal(t, ErrNoClusterNetworkTopology, err.Error())
+}
+
 func TestGetGangBindingInfo(t *testing.T) {
 	gangCreatedTime := time.Now()
 	pg1 := makePg("gangA", "gangA_ns", 2, &gangCreatedTime, nil)
