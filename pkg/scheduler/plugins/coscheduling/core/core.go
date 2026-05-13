@@ -133,7 +133,7 @@ func NewPodGroupManager(
 	if handle != nil {
 		pgMgr.networkTopologySolver = NewNetworkTopologySolver(handle)
 	}
-	pgMgr.preemptionEvaluator = NewPreemptionEvaluator(handle, gangCache, &pgMgr.holder, pgMgr.networkTopologySolver)
+	pgMgr.preemptionEvaluator = NewPreemptionEvaluator(handle, gangCache, &pgMgr.holder, pgMgr.networkTopologySolver, args.EnableAsyncPreemption)
 
 	podGroupEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    gangCache.onPodGroupAdd,

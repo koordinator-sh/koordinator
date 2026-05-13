@@ -76,9 +76,10 @@ type preemptionEvaluatorImpl struct {
 	gangCache             *GangCache
 	gangContextHolder     *GangSchedulingContextHolder
 	networkTopologySolver NetworkTopologySolver
+	enableAsyncPreemption bool
 }
 
-func NewPreemptionEvaluator(handle fwktype.Handle, gangCache *GangCache, gangContextHolder *GangSchedulingContextHolder, networkTopologySolver NetworkTopologySolver) PreemptionEvaluator {
+func NewPreemptionEvaluator(handle fwktype.Handle, gangCache *GangCache, gangContextHolder *GangSchedulingContextHolder, networkTopologySolver NetworkTopologySolver, enableAsyncPreemption bool) PreemptionEvaluator {
 	if handle == nil {
 		return nil
 	}
@@ -90,6 +91,7 @@ func NewPreemptionEvaluator(handle fwktype.Handle, gangCache *GangCache, gangCon
 		gangCache:             gangCache,
 		gangContextHolder:     gangContextHolder,
 		networkTopologySolver: networkTopologySolver,
+		enableAsyncPreemption: enableAsyncPreemption,
 	}
 }
 
@@ -368,7 +370,7 @@ func (ev *preemptionEvaluatorImpl) jobEligibleToPreemptOthers(ctx context.Contex
 			anyTerminatingPodOnNominatedNode = true
 		}
 	}
-	if anyTerminatingPodOnNominatedNode {
+	if anyTerminatingPodOnNominatedNode && !ev.enableAsyncPreemption {
 		return false, ReasonTerminatingVictimOnNominatedNode
 	}
 	return true, ""
@@ -393,7 +395,10 @@ func (ev *preemptionEvaluatorImpl) podEligibleToPreemptOthers(ctx context.Contex
 					terminatingPodKey := framework.GetNamespacedName(p.GetPod().Namespace, p.GetPod().Name)
 					jobPreemptionState.TerminatingPodOnNominatedNode[terminatingPodKey] = nomNodeName
 					// There is a terminating pod on the nominated node.
-					return false, ReasonTerminatingVictimOnNominatedNode
+					klog.V(4).InfoS("There is a terminating pod on the nominated node", "pod", klog.KObj(pod), "terminatingPod", klog.KObj(p.GetPod()), "node", nomNodeName, "enableAsyncPreemption", ev.enableAsyncPreemption)
+					if !ev.enableAsyncPreemption {
+						return false, ReasonTerminatingVictimOnNominatedNode
+					}
 				}
 			}
 		}
@@ -680,10 +685,12 @@ func (ev *preemptionEvaluatorImpl) placeToSchedulePods(
 				// 2. another to determine the victim on the candidate node.
 				// Here we choose clone to avoid the modification of cycleState affecting the subsequent determination of Victim
 				assumedCycleState = cycleStates[selectedNode.Node().Name].Clone()
+				assumedCycleStates[selectedNode.Node().Name] = assumedCycleState
 			}
 			assumedNodeInfo := assumedNodeInfos[selectedNode.Node().Name]
 			if assumedNodeInfo == nil {
 				assumedNodeInfo = selectedNode.Snapshot()
+				assumedNodeInfos[selectedNode.Node().Name] = assumedNodeInfo
 			}
 			// TODO consider pod assume on reservation
 			err := addPod(assumedCycleState, podToSchedule, podInfoToAdd, assumedNodeInfo)

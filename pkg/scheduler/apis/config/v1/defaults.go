@@ -49,9 +49,10 @@ var (
 
 	defaultPreferredCPUBindPolicy = CPUBindPolicyFullPCPUs
 
-	defaultEnablePreemption     = ptr.To[bool](false)
-	defaultAwareNetworkTopology = ptr.To[bool](false)
-	defaultGangMatchPolicy      = ptr.To[string](extension.GangMatchPolicyOnceSatisfied)
+	defaultEnablePreemption      = ptr.To[bool](false)
+	defaultEnableAsyncPreemption = ptr.To[bool](true)
+	defaultAwareNetworkTopology  = ptr.To[bool](false)
+	defaultGangMatchPolicy       = ptr.To[string](extension.GangMatchPolicyOnceSatisfied)
 
 	defaultMinCandidateNodesPercentage  = ptr.To[int32](10)
 	defaultMinCandidateNodesAbsolute    = ptr.To[int32](100)
@@ -166,6 +167,9 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	if obj.EnablePreemption == nil {
 		obj.EnablePreemption = defaultEnablePreemption
 	}
+	if obj.EnableAsyncPreemption == nil {
+		obj.EnableAsyncPreemption = defaultEnableAsyncPreemption
+	}
 	if obj.MinCandidateNodesPercentage == nil {
 		obj.MinCandidateNodesPercentage = defaultMinCandidateNodesPercentage
 	}
@@ -242,6 +246,9 @@ func SetDefaults_CoschedulingArgs(obj *CoschedulingArgs) {
 	}
 	if obj.EnablePreemption == nil {
 		obj.EnablePreemption = defaultEnablePreemption
+	}
+	if obj.EnableAsyncPreemption == nil {
+		obj.EnableAsyncPreemption = defaultEnableAsyncPreemption
 	}
 	if obj.AwareNetworkTopology == nil {
 		obj.AwareNetworkTopology = defaultAwareNetworkTopology
