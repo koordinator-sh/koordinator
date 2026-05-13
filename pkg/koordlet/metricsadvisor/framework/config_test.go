@@ -35,7 +35,7 @@ func Test_NewDefaultConfig(t *testing.T) {
 		CPICollectorTimeWindow:           10 * time.Second,
 		ColdPageCollectorInterval:        5 * time.Second,
 		ResctrlCollectorInterval:         10 * time.Second,
-		EnablePageCacheCollector:         false,
+		EnableUsageWithCacheCollector:    false,
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)

@@ -36,7 +36,7 @@ type Config struct {
 	CPICollectorTimeWindow           time.Duration
 	ColdPageCollectorInterval        time.Duration
 	ResctrlCollectorInterval         time.Duration
-	EnablePageCacheCollector         bool
+	EnableUsageWithCacheCollector    bool
 	EnableResctrlCollector           bool
 }
 
@@ -51,7 +51,7 @@ func NewDefaultConfig() *Config {
 		CPICollectorTimeWindow:           10 * time.Second,
 		ColdPageCollectorInterval:        5 * time.Second,
 		ResctrlCollectorInterval:         10 * time.Second,
-		EnablePageCacheCollector:         false,
+		EnableUsageWithCacheCollector:    false,
 		EnableResctrlCollector:           false,
 	}
 }
@@ -65,7 +65,7 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.PSICollectorInterval, "psi-collector-interval", c.PSICollectorInterval, "Collect psi interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.CPICollectorTimeWindow, "collect-cpi-timewindow", c.CPICollectorTimeWindow, "Collect cpi time window. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 	fs.DurationVar(&c.ColdPageCollectorInterval, "coldpage-collector-interval", c.ColdPageCollectorInterval, "Collect cold page interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
-	fs.BoolVar(&c.EnablePageCacheCollector, "enable-pagecache-collector", c.EnablePageCacheCollector, "Enable cache collector of node, pods and containers")
+	fs.BoolVar(&c.EnableUsageWithCacheCollector, "enable-usage-with-cache-collector", c.EnableUsageWithCacheCollector, "Enable memory usage with cache collector for node, pods and containers")
 	fs.BoolVar(&c.EnableResctrlCollector, "enable-resctrl-collector", c.EnableResctrlCollector, "Enable RDT(resource director technology) collector for QoS groups (LSR/LS/BE)")
 	fs.DurationVar(&c.ResctrlCollectorInterval, "resctrl-collector-interval", c.ResctrlCollectorInterval, "Collect RDT metrics interval. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).")
 }
