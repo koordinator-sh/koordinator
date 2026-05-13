@@ -1931,7 +1931,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				return
 			}
 
-			ev := NewPreemptionEvaluator(extendedFramework, pgMgr.cache, &pgMgr.holder, pgMgr.networkTopologySolver).(*preemptionEvaluatorImpl)
+			ev := NewPreemptionEvaluator(extendedFramework, pgMgr.cache, &pgMgr.holder, pgMgr.networkTopologySolver, false).(*preemptionEvaluatorImpl)
 			preemptionState := &JobPreemptionState{
 				TerminatingPodOnNominatedNode: map[string]string{},
 				ClearNominatedNodeFailedMsg:   map[string]string{},

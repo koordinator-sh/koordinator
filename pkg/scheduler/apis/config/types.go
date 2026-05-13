@@ -183,6 +183,8 @@ type ReservationArgs struct {
 
 	// EnablePreemption indicates whether to enable preemption for reservations.
 	EnablePreemption bool
+	// EnableAsyncPreemption indicates whether to enable asynchronous preemption for reservations.
+	EnableAsyncPreemption bool
 	// MinCandidateNodesPercentage is the minimum number of candidates to
 	// shortlist when dry running preemption as a percentage of number of nodes.
 	// Must be in the range [0, 100]. Defaults to 10% of the cluster size if
@@ -314,6 +316,9 @@ type CoschedulingArgs struct {
 	// EnablePreemption indicates whether to enable preemption for coscheduling.
 	// default is false
 	EnablePreemption *bool `json:"enablePreemption,omitempty"`
+	// EnableAsyncPreemption indicates whether to enable asynchronous preemption for coscheduling.
+	// default is false
+	EnableAsyncPreemption bool `json:"enableAsyncPreemption,omitempty"`
 	// AwareNetworkTopology indicates whether to make coscheduling network topology aware.
 	// default is false
 	AwareNetworkTopology *bool `json:"awareNetworkTopology,omitempty"`
