@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -1584,37 +1585,51 @@ func (pl *Plugin) Bind(ctx context.Context, cycleState fwktype.CycleState, pod *
 	rName := reservationutil.GetReservationNameFromReservePod(pod)
 	klog.V(4).InfoS("Attempting to bind reservation to node", "pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
 
-	var reservation *schedulingv1alpha1.Reservation
-	err := util.RetryOnConflictOrTooManyRequests(func() error {
-		var err error
-		reservation, err = pl.rLister.Get(rName)
-		if err != nil {
-			return err
-		}
-
-		// check if the reservation has been inactive
-		if reservationutil.IsReservationFailed(reservation) {
-			return errors.New(ErrReasonReservationInactive)
-		}
-
-		// mark reservation as available
-		reservation = reservation.DeepCopy()
-		if err = reservationutil.SetReservationAvailable(reservation, nodeName); err != nil {
-			return err
-		}
-		_, err = pl.client.Reservations().UpdateStatus(context.TODO(), reservation, metav1.UpdateOptions{})
-		if err != nil {
-			klog.V(4).ErrorS(err, "failed to update reservation", "reservation", klog.KObj(reservation))
-		}
-		return err
-	})
+	reservation, err := pl.rLister.Get(rName)
 	if err != nil {
-		klog.Errorf("Failed to update bind Reservation %s, err: %v", rName, err)
 		return fwktype.AsStatus(err)
 	}
 
+	// check if the reservation has been inactive
+	if reservationutil.IsReservationFailed(reservation) {
+		return fwktype.AsStatus(errors.New(ErrReasonReservationInactive))
+	}
+
+	pl.updateReservationAvailableAsync(rName, nodeName)
 	pl.handle.EventRecorder().Eventf(reservation, nil, corev1.EventTypeNormal, "Scheduled", "Binding", "Successfully assigned %v to %v", rName, nodeName)
 	return nil
+}
+
+func (pl *Plugin) updateReservationAvailableAsync(reservationName, nodeName string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		err := util.RetryOnConflictOrTooManyRequests(func() error {
+			reservation, err := pl.rLister.Get(reservationName)
+			if err != nil {
+				return err
+			}
+
+			if reservationutil.IsReservationFailed(reservation) {
+				return errors.New(ErrReasonReservationInactive)
+			}
+
+			reservation = reservation.DeepCopy()
+			if err := reservationutil.SetReservationAvailable(reservation, nodeName); err != nil {
+				return err
+			}
+
+			_, err = pl.client.Reservations().UpdateStatus(ctx, reservation, metav1.UpdateOptions{})
+			if err != nil {
+				klog.V(4).ErrorS(err, "failed to update reservation", "reservation", klog.KObj(reservation))
+			}
+			return err
+		})
+		if err != nil {
+			klog.ErrorS(err, "Failed to update bind Reservation", "reservation", reservationName, "node", nodeName)
+		}
+	}()
 }
 
 func (pl *Plugin) DeleteReservation(r *schedulingv1alpha1.Reservation) *frameworkext.ReservationInfo {
