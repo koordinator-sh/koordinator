@@ -29,8 +29,10 @@ var (
 
 	// define system resource usage as independent metric, although this can be calculate by node-sum(pod), but the time series are
 	// unaligned across different type of metric, which makes it hard to aggregate.
-	SystemCPUUsageMetric    = defaultMetricFactory.New(SysMetricCPUUsage)
-	SystemMemoryUsageMetric = defaultMetricFactory.New(SysMetricMemoryUsage)
+	SystemCPUUsageMetric                 = defaultMetricFactory.New(SysMetricCPUUsage)
+	SystemMemoryUsageMetric              = defaultMetricFactory.New(SysMetricMemoryUsage)
+	SystemMemoryUsageWithPageCacheMetric = defaultMetricFactory.New(SysMetricMemoryWithPageCacheUsage)
+	SystemMemoryWithHotPageUsageMetric   = defaultMetricFactory.New(SysMetricMemoryWithHotPageUsage)
 
 	PodCPUUsageMetric                 = defaultMetricFactory.New(PodMetricCPUUsage).withPropertySchema(MetricPropertyPodUID)
 	PodMemUsageMetric                 = defaultMetricFactory.New(PodMetricMemoryUsage).withPropertySchema(MetricPropertyPodUID)

@@ -44,8 +44,10 @@ const (
 	NodeMetricGPUMemUsage        MetricKind = "node_gpu_memory_usage"
 	NodeMetricGPUMemTotal        MetricKind = "node_gpu_memory_total"
 
-	SysMetricCPUUsage    MetricKind = "sys_cpu_usage"
-	SysMetricMemoryUsage MetricKind = "sys_memory_usage"
+	SysMetricCPUUsage                 MetricKind = "sys_cpu_usage"
+	SysMetricMemoryUsage              MetricKind = "sys_memory_usage"
+	SysMetricMemoryWithPageCacheUsage MetricKind = "sys_memory_with_page_cache_usage"
+	SysMetricMemoryWithHotPageUsage   MetricKind = "sys_memory_with_hot_page_usage"
 
 	// NodeBE
 	NodeMetricBE MetricKind = "node_be"

@@ -67,24 +67,32 @@ type SharedState struct {
 func NewSharedState() *SharedState {
 	return &SharedState{
 		LatestMetric: LatestMetric{
-			podsCPUByCollector:    make(map[string]metriccache.Point),
-			podsMemoryByCollector: make(map[string]metriccache.Point),
+			podsCPUByCollector:                    make(map[string]metriccache.Point),
+			podsMemoryByCollector:                 make(map[string]metriccache.Point),
+			podsMemoryWithPageCacheByCollector:    make(map[string]metriccache.Point),
+			podsMemoryWithHotPageCacheByCollector: make(map[string]metriccache.Point),
 		},
 	}
 }
 
 type LatestMetric struct {
-	nodeMutex  sync.RWMutex
-	nodeCPU    *metriccache.Point
-	nodeMemory *metriccache.Point
+	nodeMutex                  sync.RWMutex
+	nodeCPU                    *metriccache.Point
+	nodeMemory                 *metriccache.Point
+	nodeMemoryWithPageCache    *metriccache.Point
+	nodeMemoryWithHotPageCache *metriccache.Point
 
-	podMutex              sync.RWMutex
-	podsCPUByCollector    map[string]metriccache.Point
-	podsMemoryByCollector map[string]metriccache.Point
+	podMutex                              sync.RWMutex
+	podsCPUByCollector                    map[string]metriccache.Point
+	podsMemoryByCollector                 map[string]metriccache.Point
+	podsMemoryWithPageCacheByCollector    map[string]metriccache.Point
+	podsMemoryWithHotPageCacheByCollector map[string]metriccache.Point
 
-	hostAppMutex  sync.RWMutex
-	hostAppCPU    *metriccache.Point
-	hostAppMemory *metriccache.Point
+	hostAppMutex                  sync.RWMutex
+	hostAppCPU                    *metriccache.Point
+	hostAppMemory                 *metriccache.Point
+	hostAppMemoryWithPageCache    *metriccache.Point
+	hostAppMemoryWithHotPageCache *metriccache.Point
 }
 
 func (r *SharedState) UpdateNodeUsage(cpu, memory metriccache.Point) {
@@ -94,11 +102,41 @@ func (r *SharedState) UpdateNodeUsage(cpu, memory metriccache.Point) {
 	r.nodeMemory = &memory
 }
 
+func (r *SharedState) UpdateNodeMemoryWithPageCache(memory metriccache.Point) {
+	r.nodeMutex.Lock()
+	defer r.nodeMutex.Unlock()
+	r.nodeMemoryWithPageCache = &memory
+}
+
+func (r *SharedState) UpdateNodeMemoryWithHotPageCache(memory metriccache.Point) {
+	r.nodeMutex.Lock()
+	defer r.nodeMutex.Unlock()
+	r.nodeMemoryWithHotPageCache = &memory
+}
+
 func (r *SharedState) UpdatePodUsage(collectorName string, cpu, memory metriccache.Point) {
 	r.podMutex.Lock()
 	defer r.podMutex.Unlock()
 	r.podsCPUByCollector[collectorName] = cpu
 	r.podsMemoryByCollector[collectorName] = memory
+}
+
+func (r *SharedState) UpdatePodsMemoryWithPageCache(collectorName string, memory metriccache.Point) {
+	r.podMutex.Lock()
+	defer r.podMutex.Unlock()
+	if r.podsMemoryWithPageCacheByCollector == nil {
+		r.podsMemoryWithPageCacheByCollector = make(map[string]metriccache.Point)
+	}
+	r.podsMemoryWithPageCacheByCollector[collectorName] = memory
+}
+
+func (r *SharedState) UpdatePodsMemoryWithHotPageCache(collectorName string, memory metriccache.Point) {
+	r.podMutex.Lock()
+	defer r.podMutex.Unlock()
+	if r.podsMemoryWithHotPageCacheByCollector == nil {
+		r.podsMemoryWithHotPageCacheByCollector = make(map[string]metriccache.Point)
+	}
+	r.podsMemoryWithHotPageCacheByCollector[collectorName] = memory
 }
 
 func (r *SharedState) UpdateHostAppUsage(cpu, memory metriccache.Point) {
@@ -108,16 +146,52 @@ func (r *SharedState) UpdateHostAppUsage(cpu, memory metriccache.Point) {
 	r.hostAppMemory = &memory
 }
 
+func (r *SharedState) UpdateHostAppMemoryWithPageCache(memory metriccache.Point) {
+	r.hostAppMutex.Lock()
+	defer r.hostAppMutex.Unlock()
+	r.hostAppMemoryWithPageCache = &memory
+}
+
+func (r *SharedState) UpdateHostAppMemoryWithHotPageCache(memory metriccache.Point) {
+	r.hostAppMutex.Lock()
+	defer r.hostAppMutex.Unlock()
+	r.hostAppMemoryWithHotPageCache = &memory
+}
+
 func (r *SharedState) GetNodeUsage() (cpu, memory *metriccache.Point) {
 	r.nodeMutex.RLock()
 	defer r.nodeMutex.RUnlock()
 	return r.nodeCPU, r.nodeMemory
 }
 
+func (r *SharedState) GetNodeMemoryWithPageCache() *metriccache.Point {
+	r.nodeMutex.RLock()
+	defer r.nodeMutex.RUnlock()
+	return r.nodeMemoryWithPageCache
+}
+
+func (r *SharedState) GetNodeMemoryWithHotPageCache() *metriccache.Point {
+	r.nodeMutex.RLock()
+	defer r.nodeMutex.RUnlock()
+	return r.nodeMemoryWithHotPageCache
+}
+
 func (r *SharedState) GetHostAppUsage() (cpu, memory *metriccache.Point) {
 	r.hostAppMutex.RLock()
 	defer r.hostAppMutex.RUnlock()
 	return r.hostAppCPU, r.hostAppMemory
+}
+
+func (r *SharedState) GetHostAppMemoryWithPageCache() *metriccache.Point {
+	r.hostAppMutex.RLock()
+	defer r.hostAppMutex.RUnlock()
+	return r.hostAppMemoryWithPageCache
+}
+
+func (r *SharedState) GetHostAppMemoryWithHotPageCache() *metriccache.Point {
+	r.hostAppMutex.RLock()
+	defer r.hostAppMutex.RUnlock()
+	return r.hostAppMemoryWithHotPageCache
 }
 
 func (r *SharedState) GetPodsUsageByCollector() (cpu, memory map[string]metriccache.Point) {
@@ -132,4 +206,24 @@ func (r *SharedState) GetPodsUsageByCollector() (cpu, memory map[string]metricca
 		podsMemory[collector] = val
 	}
 	return podsCPU, podsMemory
+}
+
+func (r *SharedState) GetPodsMemoryWithPageCacheByCollector() map[string]metriccache.Point {
+	r.podMutex.RLock()
+	defer r.podMutex.RUnlock()
+	podsMemory := map[string]metriccache.Point{}
+	for collector, val := range r.podsMemoryWithPageCacheByCollector {
+		podsMemory[collector] = val
+	}
+	return podsMemory
+}
+
+func (r *SharedState) GetPodsMemoryWithHotPageCacheByCollector() map[string]metriccache.Point {
+	r.podMutex.RLock()
+	defer r.podMutex.RUnlock()
+	podsMemory := map[string]metriccache.Point{}
+	for collector, val := range r.podsMemoryWithHotPageCacheByCollector {
+		podsMemory[collector] = val
+	}
+	return podsMemory
 }

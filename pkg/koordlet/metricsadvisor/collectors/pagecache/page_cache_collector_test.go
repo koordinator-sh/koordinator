@@ -256,9 +256,17 @@ DirectMap1G:           0 kB`
 				CgroupReader:   resourceexecutor.NewCgroupReader(),
 			})
 			c := collector.(*pageCacheCollector)
+			c.Setup(&framework.Context{
+				State: framework.NewSharedState(),
+			})
 			assert.NotPanics(t, func() {
 				c.collectPageCache()
 			})
+			if tt.wantMetrics {
+				assert.NotNil(t, c.sharedState.GetNodeMemoryWithPageCache())
+				podPageCacheUsage := c.sharedState.GetPodsMemoryWithPageCacheByCollector()
+				assert.NotEmpty(t, podPageCacheUsage)
+			}
 			assert.NotPanics(t, func() {
 				c.Setup(&framework.Context{})
 			})

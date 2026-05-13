@@ -99,18 +99,11 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 		return
 	}
 
-	nodeMetricSpec := h.statesInformer.GetNodeMetricSpec()
-	nodeMemoryCollectPolicy := defaultMemoryCollectPolicy
-	if nodeMetricSpec == nil {
-		klog.Warningf("get nil nodemetric, use default node memory collect policy: %v", defaultMemoryCollectPolicy)
-	} else if nodeMetricSpec.CollectPolicy != nil && nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy != nil {
-		nodeMemoryCollectPolicy = *nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy
-	}
-
 	count := 0
 	resourceMetrics := make([]metriccache.MetricSample, 0)
 	allCPUUsageCores := metriccache.Point{Timestamp: timeNow(), Value: 0}
 	allMemoryUsage := metriccache.Point{Timestamp: timeNow(), Value: 0}
+	allMemoryUsageWithPageCache := metriccache.Point{Timestamp: timeNow(), Value: 0}
 	metrics.ResetHostApplicationResourceUsage()
 	for _, hostApp := range nodeSLO.Spec.HostApplications {
 		collectTime := timeNow()
@@ -171,16 +164,8 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 		klog.V(6).Infof("collect host application %v finished, metric cpu=%v, memory=%v", hostApp.Name, cpuUsageValue, memoryUsageValue)
 		count++
 		allCPUUsageCores.Value += cpuUsageValue
-		// sum memory usage according to NodeMemoryCollectPolicy
-		switch nodeMemoryCollectPolicy {
-		case slov1alpha1.UsageWithoutPageCache:
-			allMemoryUsage.Value += float64(memoryUsageValue)
-		case slov1alpha1.UsageWithPageCache:
-			allMemoryUsage.Value += float64(memUsageWithPageCache)
-		default:
-			klog.Warning("unrecognized node memory collect policy, use UsageWithoutPageCache as default")
-			allMemoryUsage.Value += float64(memoryUsageValue)
-		}
+		allMemoryUsage.Value += float64(memoryUsageValue)
+		allMemoryUsageWithPageCache.Value += float64(memUsageWithPageCache)
 	}
 
 	appender := h.appendableDB.Appender()
@@ -195,6 +180,7 @@ func (h *hostAppCollector) collectHostAppResUsed() {
 	}
 
 	h.sharedState.UpdateHostAppUsage(allCPUUsageCores, allMemoryUsage)
+	h.sharedState.UpdateHostAppMemoryWithPageCache(allMemoryUsageWithPageCache)
 
 	h.started.Store(true)
 	klog.V(4).Infof("collectHostAppResUsed finished, host application num %d, collected %d",
