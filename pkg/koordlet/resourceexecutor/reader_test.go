@@ -1559,3 +1559,90 @@ func TestCgroupReader_ReadColdPageUsage(t *testing.T) {
 		})
 	}
 }
+
+func TestCgroupReader_ReadCPUBurst(t *testing.T) {
+	type fields struct {
+		UseCgroupsV2     bool
+		CPUBurstValue    string
+		CPUMaxBurstValue string
+	}
+	type args struct {
+		parentDir string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    int64
+		wantErr bool
+	}{
+		{
+			name:    "v1 path not exist",
+			fields:  fields{},
+			want:    -1,
+			wantErr: true,
+		},
+		{
+			name: "parse v1 value successfully",
+			fields: fields{
+				CPUBurstValue: "200000",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    200000,
+			wantErr: false,
+		},
+		{
+			name: "parse v1 zero value",
+			fields: fields{
+				CPUBurstValue: "0",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    0,
+			wantErr: false,
+		},
+		{
+			name: "parse v2 value successfully",
+			fields: fields{
+				UseCgroupsV2:     true,
+				CPUMaxBurstValue: "100000",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    100000,
+			wantErr: false,
+		},
+		{
+			name: "parse v2 zero value",
+			fields: fields{
+				UseCgroupsV2:     true,
+				CPUMaxBurstValue: "0",
+			},
+			args: args{
+				parentDir: "/kubepods.slice",
+			},
+			want:    0,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := sysutil.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(tt.fields.UseCgroupsV2)
+			if tt.fields.CPUBurstValue != "" {
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUBurst, tt.fields.CPUBurstValue)
+			}
+			if tt.fields.CPUMaxBurstValue != "" {
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUBurst, tt.fields.CPUMaxBurstValue)
+			}
+			got, gotErr := NewCgroupReader().ReadCPUBurst(tt.args.parentDir)
+			assert.Equal(t, tt.wantErr, gotErr != nil, "error mismatch")
+			assert.Equal(t, tt.want, got, "value mismatch")
+		})
+	}
+}
