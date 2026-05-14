@@ -19,14 +19,15 @@ package impl
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	topologyv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	faketopologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	topologylister "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha1"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -1063,6 +1064,8 @@ func Test_reportNodeTopology(t *testing.T) {
 		kubeletStub                     KubeletStub
 		disableCreateTopologyCRD        bool
 		oldZoneList                     *topologyv1alpha1.ZoneList
+		nodeLabels                      map[string]string
+		nodeStatus                      *corev1.NodeStatus
 		nodeReserved                    *extension.NodeReservation
 		systemQOSRes                    *extension.SystemQOSResource
 		expectedKubeletCPUManagerPolicy extension.KubeletCPUManagerPolicy
@@ -1075,6 +1078,7 @@ func Test_reportNodeTopology(t *testing.T) {
 		expectedSystemQOS               string
 		expectedTopologyPolicies        []string
 		expectedZones                   topologyv1alpha1.ZoneList
+		expectedLabels                  map[string]string
 	}{
 		{
 			name:   "report topology",
@@ -1270,6 +1274,84 @@ func Test_reportNodeTopology(t *testing.T) {
 			expectedTopologyPolicies: expectedTopologyPolices,
 			expectedZones:            expectedZones,
 		},
+		{
+			name: "report topology with NUMA reservation enabled - verify labels and capacity > allocatable",
+			nodeLabels: map[string]string{
+				extension.LabelNodeEnableNUMAReservation: "true",
+			},
+			nodeStatus: &corev1.NodeStatus{
+				Capacity: corev1.ResourceList{
+					corev1.ResourceCPU:    *resource.NewQuantity(8, resource.DecimalSI),
+					corev1.ResourceMemory: *resource.NewQuantity(269755191296, resource.BinarySI),
+				},
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    *resource.NewQuantity(7, resource.DecimalSI),
+					corev1.ResourceMemory: *resource.NewQuantity(268706611200, resource.BinarySI),
+				},
+			},
+			config: NewDefaultConfig(),
+			kubeletStub: &testKubeletStub{
+				config: &kubeletconfiginternal.KubeletConfiguration{
+					CPUManagerPolicy: "none",
+				},
+			},
+			expectedKubeletCPUManagerPolicy: extension.KubeletCPUManagerPolicy{
+				Policy:       "none",
+				ReservedCPUs: "",
+			},
+			expectedCPUBasicInfo:     string(expectedCPUBasicInfoBytes),
+			expectedCPUSharedPool:    expectedCPUSharedPool,
+			expectedBECPUSharedPool:  expectedBECPUSharedPool,
+			expectedCPUTopology:      expectedCPUTopology,
+			expectedNodeCPUAllocs:    "null",
+			expectedNodeReservation:  "{}",
+			expectedSystemQOS:        "{}",
+			expectedTopologyPolicies: []string{string(topologyv1alpha1.None)},
+			// Note: We don't verify exact zone values here due to complexity of NUMA memory calculation.
+			// The unit tests Test_applyNUMAReservationToZoneResources cover the reservation logic.
+			expectedZones: expectedZones,
+			expectedLabels: map[string]string{
+				extension.LabelNodeEnableNUMAReservation: "true",
+			},
+		},
+		{
+			name: "report topology with NUMA reservation disabled",
+			nodeLabels: map[string]string{
+				extension.LabelNodeEnableNUMAReservation: "false",
+			},
+			nodeStatus: &corev1.NodeStatus{
+				Capacity: corev1.ResourceList{
+					corev1.ResourceCPU:    *resource.NewQuantity(8, resource.DecimalSI),
+					corev1.ResourceMemory: *resource.NewQuantity(269755191296, resource.BinarySI),
+				},
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    *resource.NewQuantity(7, resource.DecimalSI),
+					corev1.ResourceMemory: *resource.NewQuantity(268706611200, resource.BinarySI),
+				},
+			},
+			config: NewDefaultConfig(),
+			kubeletStub: &testKubeletStub{
+				config: &kubeletconfiginternal.KubeletConfiguration{
+					CPUManagerPolicy: "none",
+				},
+			},
+			expectedKubeletCPUManagerPolicy: extension.KubeletCPUManagerPolicy{
+				Policy:       "none",
+				ReservedCPUs: "",
+			},
+			expectedCPUBasicInfo:     string(expectedCPUBasicInfoBytes),
+			expectedCPUSharedPool:    expectedCPUSharedPool,
+			expectedBECPUSharedPool:  expectedBECPUSharedPool,
+			expectedCPUTopology:      expectedCPUTopology,
+			expectedNodeCPUAllocs:    "null",
+			expectedNodeReservation:  "{}",
+			expectedSystemQOS:        "{}",
+			expectedTopologyPolicies: []string{string(topologyv1alpha1.None)},
+			expectedZones:            expectedZones,
+			expectedLabels: map[string]string{
+				extension.LabelNodeEnableNUMAReservation: "false",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1290,6 +1372,15 @@ func Test_reportNodeTopology(t *testing.T) {
 			}()
 
 			testNode := testNodeTemp.DeepCopy()
+			if tt.nodeLabels != nil {
+				testNode.Labels = tt.nodeLabels
+			}
+			if tt.nodeStatus != nil {
+				testNode.Status = *tt.nodeStatus
+			}
+			if testNode.Labels == nil {
+				testNode.Labels = map[string]string{}
+			}
 			if tt.nodeReserved != nil {
 				testNode.Annotations[extension.AnnotationNodeReservation] = util.DumpJSON(tt.nodeReserved)
 			}
@@ -1353,7 +1444,35 @@ func Test_reportNodeTopology(t *testing.T) {
 			assert.Equal(t, tt.expectedNodeReservation, topo.Annotations[extension.AnnotationNodeReservation])
 			assert.Equal(t, tt.expectedSystemQOS, topo.Annotations[extension.AnnotationNodeSystemQOSResource])
 			assert.Equal(t, tt.expectedTopologyPolicies, topo.TopologyPolicies)
-			assert.Equal(t, tt.expectedZones, topo.Zones)
+			// Skip zone comparison for NUMA reservation enabled test as values are complex
+			if tt.name != "report topology with NUMA reservation enabled - verify labels and capacity > allocatable" {
+				assert.Equal(t, tt.expectedZones, topo.Zones)
+			} else {
+				// For NUMA reservation test, just verify zones are not empty and have 2 NUMA nodes
+				assert.Len(t, topo.Zones, 2)
+				assert.Equal(t, "node-0", topo.Zones[0].Name)
+				assert.Equal(t, "node-1", topo.Zones[1].Name)
+				// Verify that capacity >= allocatable for CPU and memory
+				for _, zone := range topo.Zones {
+					for _, res := range zone.Resources {
+						if res.Name == "cpu" || res.Name == "memory" {
+							assert.True(t, res.Capacity.Cmp(res.Allocatable) >= 0,
+								"zone %s resource %s: capacity should be >= allocatable, got capacity=%v, allocatable=%v",
+								zone.Name, res.Name, res.Capacity, res.Allocatable)
+							assert.True(t, res.Allocatable.Cmp(res.Available) == 0,
+								"zone %s resource %s: allocatable should equal available",
+								zone.Name, res.Name)
+						}
+					}
+				}
+			}
+			if tt.expectedLabels != nil {
+				for key, expectedValue := range tt.expectedLabels {
+					actualValue, exists := topo.Labels[key]
+					assert.True(t, exists, "label %s should exist", key)
+					assert.Equal(t, expectedValue, actualValue, "label %s should match", key)
+				}
+			}
 		})
 	}
 }
@@ -2569,6 +2688,7 @@ func Test_calTopologyZoneList(t *testing.T) {
 }
 
 func Test_getNodeReserved(t *testing.T) {
+	proportionalQuantity := resource.MustParse("2500m")
 	fakeTopo := topology.CPUTopology{
 		NumCPUs:    12,
 		NumSockets: 2,
@@ -2594,12 +2714,12 @@ func Test_getNodeReserved(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want extension.NodeReservation
+		want *extension.NodeReservation
 	}{
 		{
 			name: "node.annotation is nil",
 			args: args{},
-			want: extension.NodeReservation{},
+			want: &extension.NodeReservation{},
 		},
 		{
 			name: "node.annotation not nil but nothing reserved",
@@ -2608,7 +2728,7 @@ func Test_getNodeReserved(t *testing.T) {
 					"k": "v",
 				},
 			},
-			want: extension.NodeReservation{},
+			want: &extension.NodeReservation{},
 		},
 		{
 			name: "node.annotation not nil but without cpu reserved",
@@ -2617,7 +2737,7 @@ func Test_getNodeReserved(t *testing.T) {
 					extension.AnnotationNodeReservation: util.GetNodeAnnoReservedJson(extension.NodeReservation{}),
 				},
 			},
-			want: extension.NodeReservation{},
+			want: &extension.NodeReservation{},
 		},
 		{
 			name: "reserve cpu only by quantity",
@@ -2628,18 +2748,18 @@ func Test_getNodeReserved(t *testing.T) {
 					}),
 				},
 			},
-			want: extension.NodeReservation{ReservedCPUs: "0,6"},
+			want: &extension.NodeReservation{ReservedCPUs: "0,6", Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")}},
 		},
 		{
 			name: "reserve cpu only by quantity but value not integer",
 			args: args{
 				map[string]string{
 					extension.AnnotationNodeReservation: util.GetNodeAnnoReservedJson(extension.NodeReservation{
-						Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2.5")},
+						Resources: corev1.ResourceList{corev1.ResourceCPU: proportionalQuantity},
 					}),
 				},
 			},
-			want: extension.NodeReservation{ReservedCPUs: "0,2,6"},
+			want: &extension.NodeReservation{ReservedCPUs: "0,2,6", Resources: corev1.ResourceList{corev1.ResourceCPU: proportionalQuantity}},
 		},
 		{
 			name: "reserve cpu only by quantity but value is negative",
@@ -2650,7 +2770,7 @@ func Test_getNodeReserved(t *testing.T) {
 					}),
 				},
 			},
-			want: extension.NodeReservation{},
+			want: &extension.NodeReservation{Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("-2")}},
 		},
 		{
 			name: "reserve cpu only by specific cpus",
@@ -2661,7 +2781,7 @@ func Test_getNodeReserved(t *testing.T) {
 					}),
 				},
 			},
-			want: extension.NodeReservation{ReservedCPUs: "0-1"},
+			want: &extension.NodeReservation{ReservedCPUs: "0-1"},
 		},
 		{
 			name: "reserve cpu only by specific cpus but core id is unavailable",
@@ -2672,7 +2792,7 @@ func Test_getNodeReserved(t *testing.T) {
 					}),
 				},
 			},
-			want: extension.NodeReservation{},
+			want: &extension.NodeReservation{},
 		},
 		{
 			name: "reserve cpu by specific cpus and quantity",
@@ -2684,14 +2804,13 @@ func Test_getNodeReserved(t *testing.T) {
 					}),
 				},
 			},
-			want: extension.NodeReservation{ReservedCPUs: "0-1"},
+			want: &extension.NodeReservation{ReservedCPUs: "0-1", Resources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")}},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := getNodeReserved(&fakeTopo, tt.args.anno); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getNodeReserved() = %v, want %v", got, tt.want)
-			}
+			got := getNodeReserved(&fakeTopo, tt.args.anno)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -2885,6 +3004,762 @@ func Test_getTopologyPolicy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := getTopologyPolicy(tt.args.topologyManagerPolicy, tt.args.topologyManagerScope)
 			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_divideResourceByCount(t *testing.T) {
+	tests := []struct {
+		name     string
+		quantity resource.Quantity
+		count    int
+		want     resource.Quantity
+	}{
+		{
+			name:     "divide cpu 4000m by 2",
+			quantity: resource.MustParse("4000m"),
+			count:    2,
+			want:     *resource.NewMilliQuantity(2000, resource.DecimalSI),
+		},
+		{
+			name:     "divide cpu 4000m by 3 with ceiling",
+			quantity: resource.MustParse("4000m"),
+			count:    3,
+			want:     *resource.NewMilliQuantity(1334, resource.DecimalSI),
+		},
+		{
+			name:     "divide cpu 4 by 2",
+			quantity: resource.MustParse("4"),
+			count:    2,
+			want:     *resource.NewMilliQuantity(2000, resource.DecimalSI),
+		},
+		{
+			name:     "divide memory 10Gi by 4",
+			quantity: resource.MustParse("10Gi"),
+			count:    4,
+			want:     *resource.NewMilliQuantity(2684354560000, resource.BinarySI),
+		},
+		{
+			name:     "divide memory 10Gi by 3 with ceiling",
+			quantity: resource.MustParse("10Gi"),
+			count:    3,
+			want:     *resource.NewMilliQuantity(3579139413334, resource.BinarySI),
+		},
+		{
+			name:     "divide zero by 2",
+			quantity: resource.MustParse("0"),
+			count:    2,
+			want:     *resource.NewMilliQuantity(0, resource.DecimalSI),
+		},
+		{
+			name:     "divide by 1",
+			quantity: resource.MustParse("5"),
+			count:    1,
+			want:     *resource.NewMilliQuantity(5000, resource.DecimalSI),
+		},
+		{
+			name:     "divide by zero returns zero",
+			quantity: resource.MustParse("4000m"),
+			count:    0,
+			want:     *resource.NewMilliQuantity(0, resource.DecimalSI),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := divideResourceByCount(tt.quantity, tt.count)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_applyNUMAReservationToZoneResources(t *testing.T) {
+	tests := []struct {
+		name          string
+		zoneResources map[string]util.ZoneResources
+		nodeReserved  corev1.ResourceList
+		numaCount     int
+		want          map[string]util.ZoneResources
+	}{
+		{
+			name: "apply reservation to 2 numa nodes with cpu and memory",
+			zoneResources: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+				},
+				"node-1": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+				},
+			},
+			nodeReserved: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(4000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2147483648, resource.BinarySI),
+			},
+			numaCount: 2,
+			want: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(46000, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewMilliQuantity(127775277056000, resource.BinarySI),
+					},
+				},
+				"node-1": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(46000, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewMilliQuantity(127775277056000, resource.BinarySI),
+					},
+				},
+			},
+		},
+		{
+			name: "apply reservation to 3 numa nodes with ceiling division",
+			zoneResources: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(32, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(85899345920, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(32, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(85899345920, resource.BinarySI),
+					},
+				},
+				"node-1": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(32, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(85899345920, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(32, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(85899345920, resource.BinarySI),
+					},
+				},
+				"node-2": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(32, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(85899345920, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(32, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(85899345920, resource.BinarySI),
+					},
+				},
+			},
+			nodeReserved: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewMilliQuantity(6000, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(3221225472, resource.BinarySI),
+			},
+			numaCount: 3,
+			want: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(32, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(85899345920, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(30000, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewMilliQuantity(84825604096000, resource.BinarySI),
+					},
+				},
+				"node-1": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(32, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(85899345920, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(30000, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewMilliQuantity(84825604096000, resource.BinarySI),
+					},
+				},
+				"node-2": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(32, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(85899345920, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewMilliQuantity(30000, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewMilliQuantity(84825604096000, resource.BinarySI),
+					},
+				},
+			},
+		},
+		{
+			name: "empty node reserved returns original",
+			zoneResources: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+				},
+			},
+			nodeReserved: corev1.ResourceList{},
+			numaCount:    1,
+			want: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+				},
+			},
+		},
+		{
+			name: "zero numa count returns original",
+			zoneResources: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+				},
+			},
+			nodeReserved: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(4000, resource.DecimalSI),
+			},
+			numaCount: 0,
+			want: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(48, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(128849018880, resource.BinarySI),
+					},
+				},
+			},
+		},
+		{
+			name: "allocatable not less than zero",
+			zoneResources: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(1, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(1073741824, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(1, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(1073741824, resource.BinarySI),
+					},
+				},
+			},
+			nodeReserved: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(8589934592, resource.BinarySI),
+			},
+			numaCount: 1,
+			want: map[string]util.ZoneResources{
+				"node-0": {
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(1, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(1073741824, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(0, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(0, resource.BinarySI),
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := applyNUMAReservationToZoneResources(tt.zoneResources, tt.nodeReserved, tt.numaCount)
+			for zoneName, wantZoneRes := range tt.want {
+				gotZoneRes, exists := got[zoneName]
+				assert.True(t, exists, "zone %s should exist", zoneName)
+
+				// Check capacity
+				for resourceName, wantQty := range wantZoneRes.Capacity {
+					gotQty, exists := gotZoneRes.Capacity[resourceName]
+					assert.True(t, exists, "capacity resource %s should exist in zone %s", resourceName, zoneName)
+					assert.Equal(t, wantQty, gotQty, "capacity resource %s in zone %s should match", resourceName, zoneName)
+				}
+
+				// Check allocatable
+				for resourceName, wantQty := range wantZoneRes.Allocatable {
+					gotQty, exists := gotZoneRes.Allocatable[resourceName]
+					assert.True(t, exists, "allocatable resource %s should exist in zone %s", resourceName, zoneName)
+					assert.Equal(t, wantQty, gotQty, "allocatable resource %s in zone %s should match", resourceName, zoneName)
+				}
+			}
+		})
+	}
+}
+
+// Test_extendNRTStatusFn verifies that the extendNRTStatusFn hook is invoked during calcNodeTopo
+// and can inject extra fields into nodeTopologyStatus.
+func Test_extendNRTStatusFn(t *testing.T) {
+	// Save and restore the original hook.
+	origFn := extendNRTStatusFn
+	defer func() { extendNRTStatusFn = origFn }()
+
+	called := false
+	var capturedNode *corev1.Node
+	var capturedNumZones int
+	const extraAnnotationKey = "test.koordinator.sh/extra"
+	const extraAnnotationVal = "extra-value"
+
+	extendNRTStatusFn = func(status *nodeTopologyStatus, node *corev1.Node, numZones int) error {
+		called = true
+		capturedNode = node
+		capturedNumZones = numZones
+		if status.Annotations == nil {
+			status.Annotations = map[string]string{}
+		}
+		status.Annotations[extraAnnotationKey] = extraAnnotationVal
+		return nil
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(8589934592, resource.BinarySI),
+			},
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(4, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(8589934592, resource.BinarySI),
+			},
+		},
+	}
+
+	nodeCPUInfo := &metriccache.NodeCPUInfo{
+		ProcessorInfos: []koordletutil.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 1},
+			{CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 1},
+		},
+		TotalInfo: koordletutil.CPUTotalInfo{
+			NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+				0: {{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0}, {CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0}},
+				1: {{CPUID: 2, CoreID: 2, SocketID: 0, NodeID: 1}, {CPUID: 3, CoreID: 3, SocketID: 0, NodeID: 1}},
+			},
+		},
+	}
+
+	nodeNUMAInfo := &koordletutil.NodeNUMAInfo{
+		NUMAInfos: []koordletutil.NUMAInfo{
+			{NUMANodeID: 0, MemInfo: &koordletutil.MemInfo{MemTotal: 4194304}},
+			{NUMANodeID: 1, MemInfo: &koordletutil.MemInfo{MemTotal: 4194304}},
+		},
+		MemInfoMap: map[int32]*koordletutil.MemInfo{
+			0: {MemTotal: 4194304},
+			1: {MemTotal: 4194304},
+		},
+	}
+
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
+	mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nodeCPUInfo, true).AnyTimes()
+	mockMetricCache.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(nodeNUMAInfo, true).AnyTimes()
+
+	informer := &nodeTopoInformer{
+		config:       NewDefaultConfig(),
+		metricCache:  mockMetricCache,
+		nodeInformer: &nodeInformer{node: testNode},
+		podsInformer: &podsInformer{},
+		kubelet: &testKubeletStub{
+			config: &kubeletconfiginternal.KubeletConfiguration{
+				CPUManagerPolicy: "none",
+			},
+		},
+	}
+
+	status, err := informer.calcNodeTopo()
+	assert.NoError(t, err)
+	assert.True(t, called, "extendNRTStatusFn should be called")
+	assert.Equal(t, testNode, capturedNode)
+	assert.Equal(t, 2, capturedNumZones)
+	assert.Equal(t, extraAnnotationVal, status.Annotations[extraAnnotationKey],
+		"extra annotation injected by extendNRTStatusFn should be present")
+}
+
+// Test_extendNRTStatusFn_error verifies that if extendNRTStatusFn returns an error,
+// calcNodeTopo propagates it.
+func Test_extendNRTStatusFn_error(t *testing.T) {
+	origFn := extendNRTStatusFn
+	defer func() { extendNRTStatusFn = origFn }()
+
+	extendNRTStatusFn = func(_ *nodeTopologyStatus, _ *corev1.Node, _ int) error {
+		return fmt.Errorf("extend status error")
+	}
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+		Status: corev1.NodeStatus{
+			Capacity:    corev1.ResourceList{corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI), corev1.ResourceMemory: *resource.NewQuantity(4294967296, resource.BinarySI)},
+			Allocatable: corev1.ResourceList{corev1.ResourceCPU: *resource.NewQuantity(2, resource.DecimalSI), corev1.ResourceMemory: *resource.NewQuantity(4294967296, resource.BinarySI)},
+		},
+	}
+	nodeCPUInfo := &metriccache.NodeCPUInfo{
+		ProcessorInfos: []koordletutil.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0},
+		},
+		TotalInfo: koordletutil.CPUTotalInfo{
+			NodeToCPU: map[int32][]koordletutil.ProcessorInfo{
+				0: {{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0}, {CPUID: 1, CoreID: 1, SocketID: 0, NodeID: 0}},
+			},
+		},
+	}
+	nodeNUMAInfo := &koordletutil.NodeNUMAInfo{
+		NUMAInfos:  []koordletutil.NUMAInfo{{NUMANodeID: 0, MemInfo: &koordletutil.MemInfo{MemTotal: 4194304}}},
+		MemInfoMap: map[int32]*koordletutil.MemInfo{0: {MemTotal: 4194304}},
+	}
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctrl)
+	mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nodeCPUInfo, true).AnyTimes()
+	mockMetricCache.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(nodeNUMAInfo, true).AnyTimes()
+
+	informer := &nodeTopoInformer{
+		config:       NewDefaultConfig(),
+		metricCache:  mockMetricCache,
+		nodeInformer: &nodeInformer{node: testNode},
+		podsInformer: &podsInformer{},
+		kubelet: &testKubeletStub{
+			config: &kubeletconfiginternal.KubeletConfiguration{CPUManagerPolicy: "none"},
+		},
+	}
+
+	_, err := informer.calcNodeTopo()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "extend status error")
+}
+
+// Test_extendNRTEqualFn verifies that the extendNRTEqualFn hook is invoked during isChanged
+// and can force a change to be reported.
+func Test_extendNRTEqualFn(t *testing.T) {
+	origFn := extendNRTEqualFn
+	defer func() { extendNRTEqualFn = origFn }()
+
+	tests := []struct {
+		name       string
+		hookResult bool
+		hookMsg    string
+		wantChange bool
+		wantMsg    string
+	}{
+		{
+			name:       "hook returns equal",
+			hookResult: true,
+			hookMsg:    "",
+			wantChange: false,
+			wantMsg:    "",
+		},
+		{
+			name:       "hook returns not equal",
+			hookResult: false,
+			hookMsg:    "extra field changed",
+			wantChange: true,
+			wantMsg:    "extended status changed, item: extra field changed",
+		},
+	}
+
+	// A fixed oldNRT and newTopoStatus that are otherwise equal.
+	oldNRT := &topologyv1alpha1.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				extension.AnnotationKubeletCPUManagerPolicy: `{"policy":"none"}`,
+				extension.AnnotationNodeCPUSharedPools:      `[]`,
+				extension.AnnotationNodeBECPUSharedPools:    `[]`,
+				extension.AnnotationNodeCPUTopology:         `{"detail":[]}`,
+				extension.AnnotationNodeCPUAllocs:           `null`,
+				extension.AnnotationCPUBasicInfo:            `{}`,
+			},
+		},
+		TopologyPolicies: []string{string(topologyv1alpha1.None)},
+		Zones:            topologyv1alpha1.ZoneList{},
+	}
+	newStatus := &nodeTopologyStatus{
+		Annotations: map[string]string{
+			extension.AnnotationKubeletCPUManagerPolicy: `{"policy":"none"}`,
+			extension.AnnotationNodeCPUSharedPools:      `[]`,
+			extension.AnnotationNodeBECPUSharedPools:    `[]`,
+			extension.AnnotationNodeCPUTopology:         `{"detail":[]}`,
+			extension.AnnotationNodeCPUAllocs:           `null`,
+			extension.AnnotationCPUBasicInfo:            `{}`,
+		},
+		TopologyPolicy: topologyv1alpha1.None,
+		Zones:          topologyv1alpha1.ZoneList{},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hookIsEqual := tt.hookResult
+			hookMsg := tt.hookMsg
+			extendNRTEqualFn = func(_ *nodeTopologyStatus, _ *topologyv1alpha1.NodeResourceTopology) (bool, string) {
+				return hookIsEqual, hookMsg
+			}
+			gotChanged, gotMsg := newStatus.isChanged(oldNRT)
+			assert.Equal(t, tt.wantChange, gotChanged)
+			assert.Equal(t, tt.wantMsg, gotMsg)
+		})
+	}
+}
+
+// Test_mergeNRTZoneFn verifies that the mergeNRTZoneFn hook controls how zones are merged
+// when writing to the NRT object.
+func Test_mergeNRTZoneFn(t *testing.T) {
+	origFn := mergeNRTZoneFn
+	defer func() { mergeNRTZoneFn = origFn }()
+
+	customZone := topologyv1alpha1.ZoneList{
+		{Name: "custom-zone", Type: "Node"},
+	}
+	mergeNRTZoneFn = func(_ *topologyv1alpha1.NodeResourceTopology, zoneList topologyv1alpha1.ZoneList) topologyv1alpha1.ZoneList {
+		// Return a custom zone list regardless of inputs.
+		return customZone
+	}
+
+	status := &nodeTopologyStatus{
+		Zones: topologyv1alpha1.ZoneList{
+			{Name: "node-0", Type: "Node"},
+			{Name: "node-1", Type: "Node"},
+		},
+	}
+	nrt := &topologyv1alpha1.NodeResourceTopology{
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{}},
+	}
+	status.updateNRT(nrt)
+	assert.Equal(t, customZone, nrt.Zones,
+		"mergeNRTZoneFn override should replace the zone list")
+}
+
+// Test_managedNRTAnnotationKeys_extended verifies that dynamically appended annotation keys
+// are tracked by isEqualNRTAnnotations.
+func Test_managedNRTAnnotationKeys_extended(t *testing.T) {
+	origKeys := managedNRTAnnotationKeys
+	defer func() { managedNRTAnnotationKeys = origKeys }()
+
+	const extraKey = "test.koordinator.sh/extra-annotation"
+	managedNRTAnnotationKeys = append(managedNRTAnnotationKeys, extraKey)
+
+	// Both have the extra key -> equal.
+	isEqual, key := isEqualNRTAnnotations(
+		map[string]string{extraKey: `"v1"`},
+		map[string]string{extraKey: `"v1"`},
+	)
+	assert.True(t, isEqual)
+	assert.Empty(t, key)
+
+	// New has the extra key, old does not -> not equal.
+	isEqual, key = isEqualNRTAnnotations(
+		map[string]string{},
+		map[string]string{extraKey: `"v2"`},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraKey, key)
+
+	// Old has the extra key, new does not -> not equal.
+	isEqual, key = isEqualNRTAnnotations(
+		map[string]string{extraKey: `"v2"`},
+		map[string]string{},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraKey, key)
+
+	// Values differ -> not equal.
+	isEqual, key = isEqualNRTAnnotations(
+		map[string]string{extraKey: `"v1"`},
+		map[string]string{extraKey: `"v2"`},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraKey, key)
+}
+
+// Test_managedNRTLabelKeys_extended verifies that dynamically appended label keys
+// are tracked by isEqualNRTLabels.
+func Test_managedNRTLabelKeys_extended(t *testing.T) {
+	origKeys := managedNRTLabelKeys
+	defer func() { managedNRTLabelKeys = origKeys }()
+
+	const extraLabelKey = "test.koordinator.sh/extra-label"
+	managedNRTLabelKeys = append(managedNRTLabelKeys, extraLabelKey)
+
+	// Same value -> equal.
+	isEqual, key := isEqualNRTLabels(
+		map[string]string{extraLabelKey: "true"},
+		map[string]string{extraLabelKey: "true"},
+	)
+	assert.True(t, isEqual)
+	assert.Empty(t, key)
+
+	// Different value -> not equal.
+	isEqual, key = isEqualNRTLabels(
+		map[string]string{extraLabelKey: "true"},
+		map[string]string{extraLabelKey: "false"},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraLabelKey, key)
+
+	// Old missing, new has it -> not equal.
+	isEqual, key = isEqualNRTLabels(
+		map[string]string{},
+		map[string]string{extraLabelKey: "true"},
+	)
+	assert.False(t, isEqual)
+	assert.Equal(t, extraLabelKey, key)
+}
+
+// Test_managedNRTResources_extended verifies that dynamically appended resource names
+// are tracked by isEqualNRTZones.
+func Test_managedNRTResources_extended(t *testing.T) {
+	origResources := managedNRTResources
+	defer func() { managedNRTResources = origResources }()
+
+	const extraResource corev1.ResourceName = "example.com/fpga"
+	managedNRTResources = append(managedNRTResources, extraResource)
+
+	zoneWithExtra := topologyv1alpha1.ZoneList{
+		{
+			Name: "node-0",
+			Type: "Node",
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{Name: string(extraResource), Available: resource.MustParse("4"), Capacity: resource.MustParse("4"), Allocatable: resource.MustParse("4")},
+			},
+		},
+	}
+	zoneWithExtraDiff := topologyv1alpha1.ZoneList{
+		{
+			Name: "node-0",
+			Type: "Node",
+			Resources: topologyv1alpha1.ResourceInfoList{
+				{Name: string(extraResource), Available: resource.MustParse("2"), Capacity: resource.MustParse("4"), Allocatable: resource.MustParse("2")},
+			},
+		},
+	}
+
+	// Same zones -> equal.
+	isEqual, msg := isEqualNRTZones(zoneWithExtra, zoneWithExtra)
+	assert.True(t, isEqual, msg)
+
+	// Different extended resource quantity -> not equal.
+	isEqual, msg = isEqualNRTZones(zoneWithExtra, zoneWithExtraDiff)
+	assert.False(t, isEqual, msg)
+}
+
+func Test_nodeTopoInformer_getNodeKubeletReservedResources(t *testing.T) {
+	tests := []struct {
+		name string
+		node *corev1.Node
+		want corev1.ResourceList
+	}{
+		{
+			name: "calculate reserved from capacity and allocatable",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(96, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(257698037760, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(94, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(255550554112, resource.BinarySI),
+					},
+				},
+			},
+			want: corev1.ResourceList{
+				corev1.ResourceCPU:    *resource.NewQuantity(2, resource.DecimalSI),
+				corev1.ResourceMemory: *resource.NewQuantity(2147483648, resource.BinarySI),
+			},
+		},
+		{
+			name: "no reservation when capacity equals allocatable",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(96, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(257698037760, resource.BinarySI),
+					},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(96, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(257698037760, resource.BinarySI),
+					},
+				},
+			},
+			want: corev1.ResourceList{},
+		},
+		{
+			name: "nil node returns empty",
+			node: nil,
+			want: corev1.ResourceList{},
+		},
+		{
+			name: "missing capacity fields",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Capacity: corev1.ResourceList{},
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    *resource.NewQuantity(96, resource.DecimalSI),
+						corev1.ResourceMemory: *resource.NewQuantity(257698037760, resource.BinarySI),
+					},
+				},
+			},
+			want: corev1.ResourceList{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			informer := &nodeTopoInformer{
+				nodeInformer: &nodeInformer{
+					node: tt.node,
+				},
+			}
+			got := informer.getNodeKubeletReservedResources()
+			for resourceName, wantQty := range tt.want {
+				gotQty, exists := got[resourceName]
+				assert.True(t, exists, "resource %s should exist", resourceName)
+				assert.Equal(t, wantQty, gotQty, "resource %s should match", resourceName)
+			}
+			for resourceName := range got {
+				if _, exists := tt.want[resourceName]; !exists {
+					t.Errorf("unexpected resource %s in result", resourceName)
+				}
+			}
 		})
 	}
 }

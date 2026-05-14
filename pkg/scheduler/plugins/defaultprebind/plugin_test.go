@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -39,7 +40,7 @@ func TestApplyPatch(t *testing.T) {
 		name        string
 		originalObj metav1.Object
 		modifiedObj metav1.Object
-		wantStatus  *framework.Status
+		wantStatus  *fwktype.Status
 		wantError   bool
 	}{
 		{

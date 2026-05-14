@@ -29,13 +29,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
+	st "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -43,21 +47,34 @@ import (
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
-var _ framework.SharedLister = &testSharedLister{}
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
+
+var _ fwktype.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*corev1.Node
-	nodeInfos   []*framework.NodeInfo
+	nodeInfos   []fwktype.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
 }
 
 func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLister {
 	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	nodeInfos := make([]*framework.NodeInfo, 0)
+	nodeInfos := make([]fwktype.NodeInfo, 0)
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
@@ -83,7 +100,7 @@ func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLi
 	}
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwktype.StorageInfoLister {
 	return f
 }
 
@@ -91,31 +108,31 @@ func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
 	return false
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwktype.NodeInfoLister {
 	return f
 }
 
-func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) List() ([]fwktype.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
 
-func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }
 
 func TestNew(t *testing.T) {
-	var v1beta3args v1beta3.LoadAwareSchedulingArgs
-	v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+	var v1args v1.LoadAwareSchedulingArgs
+	v1.SetDefaults_LoadAwareSchedulingArgs(&v1args)
 	var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-	err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+	err := v1.Convert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1args, &loadAwareSchedulingArgs, nil)
 	assert.NoError(t, err)
 
 	koordClientSet := koordfake.NewSimpleClientset()
@@ -140,7 +157,7 @@ func TestNew(t *testing.T) {
 	)
 	assert.Nil(t, err)
 
-	p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+	p, err := proxyNew(context.TODO(), &loadAwareSchedulingArgs, fh)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 }
@@ -149,7 +166,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 	tests := []struct {
 		name       string
 		nodeMetric *slov1alpha1.NodeMetric
-		wantStatus *framework.Status
+		wantStatus *fwktype.Status
 	}{
 		{
 			name: "filter healthy nodeMetrics",
@@ -182,7 +199,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 		{
 			name: "filter unhealthy nodeMetric with expired updateTime",
@@ -201,15 +218,15 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var v1beta3args v1beta3.LoadAwareSchedulingArgs
-			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			var v1args v1.LoadAwareSchedulingArgs
+			v1.SetDefaults_LoadAwareSchedulingArgs(&v1args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			err := v1.Convert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 
 			koordClientSet := koordfake.NewSimpleClientset()
@@ -246,7 +263,7 @@ func TestFilterExpiredNodeMetric(t *testing.T) {
 			)
 			assert.Nil(t, err)
 
-			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+			p, err := proxyNew(context.TODO(), &loadAwareSchedulingArgs, fh)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
@@ -270,7 +287,7 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 		name                                 string
 		nodeMetric                           *slov1alpha1.NodeMetric
 		enableScheduleWhenNodeMetricsExpired *bool
-		wantStatus                           *framework.Status
+		wantStatus                           *fwktype.Status
 	}{
 		{
 			name: "filter healthy nodeMetrics",
@@ -339,7 +356,7 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 				},
 			},
 			enableScheduleWhenNodeMetricsExpired: ptr.To[bool](false),
-			wantStatus:                           framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+			wantStatus:                           fwktype.NewStatus(fwktype.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 		{
 			name: "disable scheduling when nodeMetric with expired updateTime",
@@ -359,16 +376,16 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 				},
 			},
 			enableScheduleWhenNodeMetricsExpired: ptr.To[bool](false),
-			wantStatus:                           framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired),
+			wantStatus:                           fwktype.NewStatus(fwktype.Unschedulable, ErrReasonNodeMetricExpired),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var v1beta3args v1beta3.LoadAwareSchedulingArgs
-			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
-			v1beta3args.EnableScheduleWhenNodeMetricsExpired = tt.enableScheduleWhenNodeMetricsExpired
+			var v1args v1.LoadAwareSchedulingArgs
+			v1.SetDefaults_LoadAwareSchedulingArgs(&v1args)
+			v1args.EnableScheduleWhenNodeMetricsExpired = tt.enableScheduleWhenNodeMetricsExpired
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			err := v1.Convert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 
 			koordClientSet := koordfake.NewSimpleClientset()
@@ -405,7 +422,7 @@ func TestEnableScheduleWhenNodeMetricsExpired(t *testing.T) {
 			)
 			assert.Nil(t, err)
 
-			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+			p, err := proxyNew(context.TODO(), &loadAwareSchedulingArgs, fh)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
@@ -429,7 +446,7 @@ func TestFilterUsage(t *testing.T) {
 		name                      string
 		usageThresholds           map[corev1.ResourceName]int64
 		prodUsageThresholds       map[corev1.ResourceName]int64
-		aggregated                *v1beta3.LoadAwareSchedulingAggregatedArgs
+		aggregated                *v1.LoadAwareSchedulingAggregatedArgs
 		customUsageThresholds     map[corev1.ResourceName]int64
 		customProdUsageThresholds map[corev1.ResourceName]int64
 		assignedPod               []*podAssignInfo
@@ -438,7 +455,7 @@ func TestFilterUsage(t *testing.T) {
 		nodeMetric                *slov1alpha1.NodeMetric
 		pods                      []*corev1.Pod
 		testPod                   *corev1.Pod
-		wantStatus                *framework.Status
+		wantStatus                *fwktype.Status
 	}{
 		{
 			name:     "filter normal usage",
@@ -499,12 +516,12 @@ func TestFilterUsage(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
 			name:     "filter exceed p95 cpu usage",
 			nodeName: "test-node-1",
-			aggregated: &v1beta3.LoadAwareSchedulingAggregatedArgs{
+			aggregated: &v1.LoadAwareSchedulingAggregatedArgs{
 				UsageThresholds: map[corev1.ResourceName]int64{
 					corev1.ResourceCPU: 60,
 				},
@@ -547,7 +564,7 @@ func TestFilterUsage(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonAggregatedUsageExceedThreshold, corev1.ResourceCPU)),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonAggregatedUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
 			name:     "filter exceed memory usage",
@@ -575,7 +592,7 @@ func TestFilterUsage(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
 		},
 		{
 			name: "filter exceed memory usage by custom usage thresholds",
@@ -606,7 +623,7 @@ func TestFilterUsage(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
 		},
 		{
 			name:     "filter exceed p95 cpu usage by custom usage",
@@ -654,7 +671,7 @@ func TestFilterUsage(t *testing.T) {
 					},
 				},
 			},
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonAggregatedUsageExceedThreshold, corev1.ResourceCPU)),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonAggregatedUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
 			name: "disable filter exceed memory usage",
@@ -742,8 +759,8 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
 			wantStatus: nil,
 		},
@@ -806,11 +823,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+			testPod:    st.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
 			name:     "filter prod memory usage",
@@ -871,11 +888,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+			testPod:    st.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
 		},
 		{
 			name:     "filter prod memory usage with custom usage configuration",
@@ -940,11 +957,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+			testPod:    st.MakePod().Namespace("default").Name("prod-pod-3").Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
 		},
 		{
 			name:     "filter daemonset pod exceed cpu usage",
@@ -972,7 +989,7 @@ func TestFilterUsage(t *testing.T) {
 					},
 				},
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("test-pod").Priority(extension.PriorityProdValueMax).OwnerReference("test-daemonset", schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}).Obj(),
+			testPod:    st.MakePod().Namespace("default").Name("test-pod").Priority(extension.PriorityProdValueMax).OwnerReference("test-daemonset", schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}).Obj(),
 			wantStatus: nil,
 		},
 		{
@@ -1034,11 +1051,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "20", corev1.ResourceMemory: "100Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+			testPod:    st.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "20", corev1.ResourceMemory: "100Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
 			name:     "filter mid cpu usage with new pod request configuration",
@@ -1098,11 +1115,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "12k", extension.MidMemory: "100Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+			testPod:    st.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "12k", extension.MidMemory: "100Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 		{
 			name:     "filter memory usage with new pod request configuration",
@@ -1163,11 +1180,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "165Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+			testPod:    st.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "165Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
 		},
 		{
 			name:     "filter mid memory usage with new pod request configuration",
@@ -1227,11 +1244,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-2").Priority(extension.PriorityProdValueMax).Obj(),
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "1k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+			testPod:    st.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "1k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
 		},
 		{
 			name:     "filter prod memory usage with assignedCache pod",
@@ -1281,11 +1298,11 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-2").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "200Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-2").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "200Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "200Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
+			testPod:    st.MakePod().Namespace("default").Name("prod-pod-3").Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "200Gi"}).Priority(extension.PriorityProdValueMax).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceMemory)),
 		},
 		{
 			name:     "filter mid cpu usage with assignedCache pod",
@@ -1335,29 +1352,29 @@ func TestFilterUsage(t *testing.T) {
 				},
 			},
 			pods: []*corev1.Pod{
-				schedulertesting.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
-				schedulertesting.MakePod().Namespace("default").Name("mid-pod-2").Req(map[corev1.ResourceName]string{extension.MidCPU: "20k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("prod-pod-1").Priority(extension.PriorityProdValueMax).Obj(),
+				st.MakePod().Namespace("default").Name("mid-pod-2").Req(map[corev1.ResourceName]string{extension.MidCPU: "20k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
 			},
-			testPod:    schedulertesting.MakePod().Namespace("default").Name("mid-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "20k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
-			wantStatus: framework.NewStatus(framework.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+			testPod:    st.MakePod().Namespace("default").Name("mid-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "20k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var v1beta3args v1beta3.LoadAwareSchedulingArgs
-			v1beta3args.FilterExpiredNodeMetrics = ptr.To[bool](false)
+			var v1args v1.LoadAwareSchedulingArgs
+			v1args.FilterExpiredNodeMetrics = ptr.To[bool](false)
 			if len(tt.usageThresholds) > 0 {
-				v1beta3args.UsageThresholds = tt.usageThresholds
+				v1args.UsageThresholds = tt.usageThresholds
 			}
 			if len(tt.prodUsageThresholds) > 0 {
-				v1beta3args.ProdUsageThresholds = tt.prodUsageThresholds
+				v1args.ProdUsageThresholds = tt.prodUsageThresholds
 			}
 			if tt.aggregated != nil {
-				v1beta3args.Aggregated = tt.aggregated
+				v1args.Aggregated = tt.aggregated
 			}
-			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			v1.SetDefaults_LoadAwareSchedulingArgs(&v1args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			err := v1.Convert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 
 			koordClientSet := koordfake.NewSimpleClientset()
@@ -1429,7 +1446,7 @@ func TestFilterUsage(t *testing.T) {
 			)
 			assert.Nil(t, err)
 
-			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+			p, err := proxyNew(context.TODO(), &loadAwareSchedulingArgs, fh)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
@@ -1464,9 +1481,9 @@ func TestScore(t *testing.T) {
 		nodeMetric              *slov1alpha1.NodeMetric
 		dominantResourceWeight  int64
 		scoreAccordingProdUsage bool
-		aggregatedArgs          *v1beta3.LoadAwareSchedulingAggregatedArgs
+		aggregatedArgs          *v1.LoadAwareSchedulingAggregatedArgs
 		wantScore               int64
-		wantStatus              *framework.Status
+		wantStatus              *fwktype.Status
 	}{
 		{
 			name:     "score node with expired nodeMetric",
@@ -1626,7 +1643,7 @@ func TestScore(t *testing.T) {
 		},
 		{
 			name: "score load node with p95",
-			aggregatedArgs: &v1beta3.LoadAwareSchedulingAggregatedArgs{
+			aggregatedArgs: &v1.LoadAwareSchedulingAggregatedArgs{
 				ScoreAggregationType:    extension.P95,
 				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
@@ -1701,7 +1718,7 @@ func TestScore(t *testing.T) {
 		},
 		{
 			name: "score load node with p95 but have not reported usage",
-			aggregatedArgs: &v1beta3.LoadAwareSchedulingAggregatedArgs{
+			aggregatedArgs: &v1.LoadAwareSchedulingAggregatedArgs{
 				ScoreAggregationType:    extension.P95,
 				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
@@ -1757,7 +1774,7 @@ func TestScore(t *testing.T) {
 		},
 		{
 			name: "score load node with p95 but have not reported usage and have assigned pods",
-			aggregatedArgs: &v1beta3.LoadAwareSchedulingAggregatedArgs{
+			aggregatedArgs: &v1.LoadAwareSchedulingAggregatedArgs{
 				ScoreAggregationType:    extension.P95,
 				ScoreAggregatedDuration: &metav1.Duration{Duration: 5 * time.Minute},
 			},
@@ -2380,15 +2397,15 @@ func TestScore(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var v1beta3args v1beta3.LoadAwareSchedulingArgs
-			v1beta3args.ScoreAccordingProdUsage = &tt.scoreAccordingProdUsage
-			v1beta3args.DominantResourceWeight = tt.dominantResourceWeight
+			var v1args v1.LoadAwareSchedulingArgs
+			v1args.ScoreAccordingProdUsage = &tt.scoreAccordingProdUsage
+			v1args.DominantResourceWeight = tt.dominantResourceWeight
 			if tt.aggregatedArgs != nil {
-				v1beta3args.Aggregated = tt.aggregatedArgs
+				v1args.Aggregated = tt.aggregatedArgs
 			}
-			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			v1.SetDefaults_LoadAwareSchedulingArgs(&v1args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			err := v1.Convert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 
 			koordClientSet := koordfake.NewSimpleClientset()
@@ -2448,7 +2465,7 @@ func TestScore(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			p, err := proxyNew(&loadAwareSchedulingArgs, fh)
+			p, err := proxyNew(context.TODO(), &loadAwareSchedulingArgs, fh)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 
@@ -2464,7 +2481,7 @@ func TestScore(t *testing.T) {
 			assert.NoError(t, err)
 			assert.NotNil(t, nodeInfo)
 
-			score, status := p.(*Plugin).Score(context.TODO(), cycleState, tt.pod, tt.nodeName)
+			score, status := p.(*Plugin).Score(context.TODO(), cycleState, tt.pod, nodeInfo)
 			assert.Equal(t, tt.wantScore, score)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
 		})

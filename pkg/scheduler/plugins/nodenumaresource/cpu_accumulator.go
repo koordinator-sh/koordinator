@@ -17,6 +17,7 @@ limitations under the License.
 package nodenumaresource
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
@@ -99,7 +100,7 @@ func takeCPUs(
 		return acc.result, nil
 	}
 	if acc.isFailed() {
-		return cpuset.NewCPUSet(), fmt.Errorf(ErrNotEnoughCPUs)
+		return cpuset.NewCPUSet(), errors.New(ErrNotEnoughCPUs)
 	}
 
 	fullPCPUs := cpuBindPolicy == schedulingconfig.CPUBindPolicyFullPCPUs

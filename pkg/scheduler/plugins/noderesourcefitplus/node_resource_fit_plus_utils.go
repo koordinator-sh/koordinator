@@ -19,10 +19,11 @@ package noderesourcesfitplus
 import (
 	v1 "k8s.io/api/core/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
+	fwk "k8s.io/kube-scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 	k8sConfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
@@ -40,7 +41,7 @@ func mostRequestedScore(requested, capacity int64) int64 {
 		requested = capacity
 	}
 
-	return requested * framework.MaxNodeScore / capacity
+	return requested * fwk.MaxNodeScore / capacity
 }
 
 func leastRequestedScore(requested, capacity int64) int64 {
@@ -51,7 +52,7 @@ func leastRequestedScore(requested, capacity int64) int64 {
 		return 0
 	}
 
-	return ((capacity - requested) * framework.MaxNodeScore) / capacity
+	return ((capacity - requested) * fwk.MaxNodeScore) / capacity
 }
 
 func resourceScorer(nodeName string, args *config.NodeResourcesFitPlusArgs, requestedMap, allocatableMap map[v1.ResourceName]int64) int64 {
@@ -77,7 +78,7 @@ func resourceScorer(nodeName string, args *config.NodeResourcesFitPlusArgs, requ
 
 	}
 	if weightSum == 0 {
-		return framework.MaxNodeScore
+		return fwk.MaxNodeScore
 	}
 
 	i := nodeScore / weightSum
@@ -85,7 +86,7 @@ func resourceScorer(nodeName string, args *config.NodeResourcesFitPlusArgs, requ
 	return i
 }
 
-func (r *ResourceAllocationPriority) getResourceScore(args *config.NodeResourcesFitPlusArgs, podRequestNames []v1.ResourceName, pod *v1.Pod, nodeInfo *framework.NodeInfo, nodeName string) int64 {
+func (r *ResourceAllocationPriority) getResourceScore(args *config.NodeResourcesFitPlusArgs, podRequestNames []v1.ResourceName, pod *v1.Pod, nodeInfo fwktype.NodeInfo, nodeName string) int64 {
 	requested := make(resourceToValueMap, len(podRequestNames))
 	allocatable := make(resourceToValueMap, len(podRequestNames))
 	for _, resourceName := range podRequestNames {
@@ -110,19 +111,19 @@ func computePodResourceRequest(pod *v1.Pod) *preScoreState {
 type resourceToValueMap map[v1.ResourceName]int64
 
 // calculateResourceAllocatableRequest returns resources Allocatable and Requested values
-func calculateResourceAllocatableRequest(nodeInfo *framework.NodeInfo, pod *v1.Pod, resource v1.ResourceName) (int64, int64) {
+func calculateResourceAllocatableRequest(nodeInfo fwktype.NodeInfo, pod *v1.Pod, resource v1.ResourceName) (int64, int64) {
 	podRequest := calculatePodResourceRequest(pod, resource)
 	switch resource {
 	case v1.ResourceCPU:
-		return nodeInfo.Allocatable.MilliCPU, nodeInfo.NonZeroRequested.MilliCPU + podRequest
+		return nodeInfo.GetAllocatable().GetMilliCPU(), nodeInfo.GetNonZeroRequested().GetMilliCPU() + podRequest
 	case v1.ResourceMemory:
-		return nodeInfo.Allocatable.Memory, nodeInfo.NonZeroRequested.Memory + podRequest
+		return nodeInfo.GetAllocatable().GetMemory(), nodeInfo.GetNonZeroRequested().GetMemory() + podRequest
 
 	case v1.ResourceEphemeralStorage:
-		return nodeInfo.Allocatable.EphemeralStorage, nodeInfo.Requested.EphemeralStorage + podRequest
+		return nodeInfo.GetAllocatable().GetEphemeralStorage(), nodeInfo.GetRequested().GetEphemeralStorage() + podRequest
 	default:
 		if schedutil.IsScalarResourceName(resource) {
-			return nodeInfo.Allocatable.ScalarResources[resource], nodeInfo.Requested.ScalarResources[resource] + podRequest
+			return nodeInfo.GetAllocatable().GetScalarResources()[resource], nodeInfo.GetRequested().GetScalarResources()[resource] + podRequest
 		}
 	}
 	if klog.V(10).Enabled() {

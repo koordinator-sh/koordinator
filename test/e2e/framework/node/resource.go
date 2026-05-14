@@ -41,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	clientretry "k8s.io/client-go/util/retry"
+	"k8s.io/klog/v2"
 	netutil "k8s.io/utils/net"
 
 	e2elog "github.com/koordinator-sh/koordinator/test/e2e/framework/log"
@@ -454,7 +455,7 @@ func toleratesTaintsWithNoScheduleNoExecuteEffects(taints []v1.Taint, toleration
 
 	toleratesTaint := func(taint v1.Taint) bool {
 		for _, toleration := range tolerations {
-			if toleration.ToleratesTaint(&taint) {
+			if toleration.ToleratesTaint(klog.Background(), &taint, false) {
 				return true
 			}
 		}
@@ -853,7 +854,7 @@ func verifyThatTaintIsGone(c clientset.Interface, nodeName string, taint *v1.Tai
 	// TODO use wrapper methods in expect.go after removing core e2e dependency on node
 	gomega.ExpectWithOffset(2, err).NotTo(gomega.HaveOccurred())
 	if taintExists(nodeUpdated.Spec.Taints, taint) {
-		e2elog.Failf("Failed removing taint " + taint.ToString() + " of the node " + nodeName)
+		e2elog.Failf("%s", "Failed removing taint "+taint.ToString()+" of the node "+nodeName)
 	}
 }
 

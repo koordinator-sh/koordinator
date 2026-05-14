@@ -23,10 +23,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -897,7 +897,7 @@ func Test_memoryEvict(t *testing.T) {
 			fakeRecorder := &testutil.FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
 			stop := make(chan struct{})
-			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1.SchemeGroupVersion.Version)
 			evictor.Start(stop)
 			defer func() { stop <- struct{}{} }()
 
@@ -1059,7 +1059,7 @@ func Test_getPodEvictInfoAndSortByPriority(t *testing.T) {
 			fakeRecorder := &testutil.FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
 			stop := make(chan struct{})
-			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1.SchemeGroupVersion.Version)
 			evictor.Start(stop)
 			defer func() { stop <- struct{}{} }()
 
@@ -1168,7 +1168,7 @@ func Test_calculateReleaseByUsedThresholdPercent(t *testing.T) {
 			fakeRecorder := &testutil.FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
 			stop := make(chan struct{})
-			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1.SchemeGroupVersion.Version)
 			evictor.Start(stop)
 			defer func() { stop <- struct{}{} }()
 
@@ -1444,7 +1444,7 @@ func Test_calculateReleaseByAllocatableThresholdPercent(t *testing.T) {
 			fakeRecorder := &testutil.FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
 			stop := make(chan struct{})
-			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+			evictor := qosmanagerUtil.NewEvictor(client, fakeRecorder, policyv1.SchemeGroupVersion.Version)
 			evictor.Start(stop)
 			defer func() { stop <- struct{}{} }()
 

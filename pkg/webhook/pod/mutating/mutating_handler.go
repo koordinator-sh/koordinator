@@ -44,7 +44,7 @@ type PodMutatingHandler struct {
 	Client client.Client
 
 	// Decoder decodes objects
-	Decoder *admission.Decoder
+	Decoder admission.Decoder
 }
 
 var _ admission.Handler = &PodMutatingHandler{}
@@ -170,7 +170,7 @@ func (h *PodMutatingHandler) InjectClient(c client.Client) error {
 // var _ admission.DecoderInjector = &PodMutatingHandler{}
 
 // InjectDecoder injects the decoder into the PodMutatingHandler
-func (h *PodMutatingHandler) InjectDecoder(d *admission.Decoder) error {
+func (h *PodMutatingHandler) InjectDecoder(d admission.Decoder) error {
 	h.Decoder = d
 	return nil
 }

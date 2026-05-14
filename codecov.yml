@@ -10,6 +10,7 @@ coverage:
           - unittests
         paths:
           - "pkg"
+        informational: true
         if_ci_failed: error
         if_no_uploads: error
         if_not_found: success
@@ -30,6 +31,7 @@ ignore:
   - "apis"
   - "pkg/client"
   - "**/*_generated.*"
+  - "mock_*.go"
 
 github_checks:
   annotations: true

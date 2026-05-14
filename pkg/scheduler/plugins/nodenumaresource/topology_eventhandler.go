@@ -23,7 +23,7 @@ import (
 	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
@@ -42,7 +42,7 @@ func registerNodeResourceTopologyEventHandler(informerFactory nrtinformers.Share
 	return nil
 }
 
-func initNRTInformerFactory(handle framework.Handle) (nrtinformers.SharedInformerFactory, error) {
+func initNRTInformerFactory(handle fwktype.Handle) (nrtinformers.SharedInformerFactory, error) {
 	nrtClient, ok := handle.(nrtclientset.Interface)
 	if !ok {
 		extendedHandle := handle.(frameworkext.ExtendedHandle)

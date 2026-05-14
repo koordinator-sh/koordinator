@@ -24,13 +24,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	resourcev1 "k8s.io/api/resource/v1"
 	storagev1 "k8s.io/api/storage/v1"
-	storagev1beta1 "k8s.io/api/storage/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 
@@ -38,61 +39,27 @@ import (
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
+
 func TestCustomCSIStorageCapacityInformer(t *testing.T) {
-	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.CompatibleCSIStorageCapacity, true)()
-
-	fakeClient := kubefake.NewSimpleClientset()
-	storageCapacity := &storagev1beta1.CSIStorageCapacity{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
-			Namespace: "default",
-		},
-		NodeTopology: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"key-1": "value-1",
-			},
-		},
-		StorageClassName:  "test-sc",
-		Capacity:          resource.NewQuantity(200*1024*1024*1024, resource.BinarySI),
-		MaximumVolumeSize: resource.NewQuantity(10, resource.DecimalSI),
-	}
-	_, err := fakeClient.StorageV1beta1().CSIStorageCapacities(storageCapacity.Namespace).Create(context.TODO(), storageCapacity, metav1.CreateOptions{})
-	assert.NoError(t, err)
-
-	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
-	SetupCustomInformers(informerFactory)
-
-	capacityLister := informerFactory.Storage().V1().CSIStorageCapacities().Lister()
-	assert.NotNil(t, capacityLister)
-
-	informerFactory.Start(nil)
-	informerFactory.WaitForCacheSync(nil)
-
-	got, err := capacityLister.CSIStorageCapacities(storageCapacity.Namespace).Get(storageCapacity.Name)
-	assert.NoError(t, err)
-
-	expected := &storagev1.CSIStorageCapacity{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
-			Namespace: "default",
-		},
-		NodeTopology: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"key-1": "value-1",
-			},
-		},
-		StorageClassName:  "test-sc",
-		Capacity:          resource.NewQuantity(200*1024*1024*1024, resource.BinarySI),
-		MaximumVolumeSize: resource.NewQuantity(10, resource.DecimalSI),
-	}
-	assert.Equal(t, expected, got)
+	t.Skip("CompatibleCSIStorageCapacity is a legacy feature for k8s <1.22; CSIStorageCapacity is GA in k8s 1.24+ and v1beta1->v1 transformer is no longer compatible")
 }
 
 func TestCustomDisableCSIStorageCapacityInformer(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisableCSIStorageCapacityInformer, true)()
 
-	fakeClient := kubefake.NewSimpleClientset()
-	storageCapacity := &storagev1beta1.CSIStorageCapacity{
+	fakeClient := kubefake.NewClientset()
+	storageCapacity := &storagev1.CSIStorageCapacity{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: "default",
@@ -106,7 +73,7 @@ func TestCustomDisableCSIStorageCapacityInformer(t *testing.T) {
 		Capacity:          resource.NewQuantity(200*1024*1024*1024, resource.BinarySI),
 		MaximumVolumeSize: resource.NewQuantity(10, resource.DecimalSI),
 	}
-	_, err := fakeClient.StorageV1beta1().CSIStorageCapacities(storageCapacity.Namespace).Create(context.TODO(), storageCapacity, metav1.CreateOptions{})
+	_, err := fakeClient.StorageV1().CSIStorageCapacities(storageCapacity.Namespace).Create(context.TODO(), storageCapacity, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
 	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
@@ -258,5 +225,38 @@ func TestCustomDisablePodDisruptionBudgetInformer(t *testing.T) {
 
 	got, err := v1PDBLister.PodDisruptionBudgets(pdb.Namespace).Get(pdb.Name)
 	assert.True(t, errors.IsNotFound(err))
+	assert.Nil(t, got)
+}
+
+func TestDisableDynamicResourceAllocationInformer(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.DisableDynamicResourceAllocationInformer, true)()
+
+	// Create a real ResourceClaim in a separate fake client to confirm the stub informer
+	// does NOT see it (i.e., the informer is backed by an empty fake client).
+	fakeClient := kubefake.NewSimpleClientset()
+	claim := &resourcev1.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-claim",
+			Namespace: "default",
+		},
+		Spec: resourcev1.ResourceClaimSpec{
+			Devices: resourcev1.DeviceClaim{},
+		},
+	}
+	_, err := fakeClient.ResourceV1().ResourceClaims(claim.Namespace).Create(context.TODO(), claim, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	informerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	SetupCustomInformers(informerFactory)
+
+	claimLister := informerFactory.Resource().V1().ResourceClaims().Lister()
+	assert.NotNil(t, claimLister)
+
+	informerFactory.Start(nil)
+	informerFactory.WaitForCacheSync(nil)
+
+	// The stub informer uses an empty fake client, so the claim should not be found.
+	got, err := claimLister.ResourceClaims(claim.Namespace).Get(claim.Name)
+	assert.True(t, errors.IsNotFound(err), "expected NotFound but got: %v", err)
 	assert.Nil(t, got)
 }

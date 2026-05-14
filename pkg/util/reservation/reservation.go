@@ -29,11 +29,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	resource "k8s.io/component-helpers/resource"
 	corev1helper "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/api/v1/resource"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -540,10 +540,10 @@ func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffini
 	}
 	podToleratesUnschedulable := false
 	if len(reservationAffinity.Tolerations) > 0 {
-		podToleratesUnschedulable = corev1helper.TolerationsTolerateTaint(reservationAffinity.Tolerations, &corev1.Taint{
+		podToleratesUnschedulable = corev1helper.TolerationsTolerateTaint(klog.Background(), reservationAffinity.Tolerations, &corev1.Taint{
 			Key:    corev1.TaintNodeUnschedulable,
 			Effect: corev1.TaintEffectNoSchedule,
-		})
+		}, false)
 	}
 	return &RequiredReservationAffinity{
 		labelSelector:         selector,
@@ -597,7 +597,7 @@ func (s *RequiredReservationAffinity) FindMatchingUntoleratedTaint(taints []core
 	if s == nil {
 		return corev1.Taint{}, false
 	}
-	return corev1helper.FindMatchingUntoleratedTaint(taints, s.tolerations, inclusionFilter)
+	return corev1helper.FindMatchingUntoleratedTaint(klog.Background(), taints, s.tolerations, inclusionFilter, false)
 }
 
 // TolerateUnschedulable returns true if the pod tolerates the reservation unschedulable.

@@ -130,14 +130,14 @@ func (h *configHandler) GetStrategyCopy(node *corev1.Node) *configuration.CPUNor
 	return h.cache.config.CPUNormalizationStrategy.DeepCopy()
 }
 
-func (h *configHandler) enqueueAllNodes(q *workqueue.RateLimitingInterface) {
+func (h *configHandler) enqueueAllNodes(q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	nodeList := &corev1.NodeList{}
 	if err := h.Client.List(context.TODO(), nodeList); err != nil {
 		return
 	}
 
 	for _, node := range nodeList.Items {
-		(*q).Add(reconcile.Request{
+		q.Add(reconcile.Request{
 			NamespacedName: types.NamespacedName{
 				Name: node.Name,
 			},

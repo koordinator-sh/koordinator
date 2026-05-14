@@ -41,7 +41,7 @@ type ElasticQuotaValidatingHandler struct {
 	Client client.Client
 
 	// Decoder decodes objects
-	Decoder *admission.Decoder
+	Decoder admission.Decoder
 }
 
 var _ admission.Handler = &ElasticQuotaValidatingHandler{}
@@ -106,7 +106,7 @@ func (h *ElasticQuotaValidatingHandler) InjectClient(c client.Client) error {
 // var _ admission.DecoderInjector = &ElasticQuotaValidatingHandler{}
 
 // InjectDecoder injects the client into the ElasticQuotaValidatingHandler
-func (h *ElasticQuotaValidatingHandler) InjectDecoder(d *admission.Decoder) error {
+func (h *ElasticQuotaValidatingHandler) InjectDecoder(d admission.Decoder) error {
 	h.Decoder = d
 	return nil
 }

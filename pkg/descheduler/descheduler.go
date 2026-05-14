@@ -209,6 +209,7 @@ func New(client clientset.Interface,
 	metrics.Register()
 
 	profiles, err := profile.NewMap(
+		context.Background(),
 		options.profiles,
 		registry,
 		recorderFactory,

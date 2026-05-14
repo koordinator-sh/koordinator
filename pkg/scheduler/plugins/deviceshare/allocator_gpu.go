@@ -22,7 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -69,10 +69,10 @@ func getRealUsed(originalUsed, refinedTotal, refinedUsed deviceResources) device
 	return realUsed
 }
 
-func (a *GPUAllocator) Allocate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, preferredPCIEs sets.String) ([]*apiext.DeviceAllocation, *framework.Status) {
+func (a *GPUAllocator) Allocate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, preferredPCIEs sets.String) ([]*apiext.DeviceAllocation, *fwktype.Status) {
 	gpuRequirements := requestCtx.gpuRequirements
 	if gpuRequirements == nil {
-		return nil, framework.NewStatus(framework.Unschedulable, ErrNoGPURequirements)
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, ErrNoGPURequirements)
 	}
 	nodeHonorPartition := nodeDevice.nodeHonorGPUPartition
 	gpuPartitionIndexer := nodeDevice.gpuPartitionIndexer
@@ -119,7 +119,7 @@ func removeZeroDevice(originalResources deviceResources) deviceResources {
 	return refinedResources
 }
 
-func generalAllocate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, allocateContext *AllocateContext) ([]*apiext.DeviceAllocation, *framework.Status) {
+func generalAllocate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, allocateContext *AllocateContext) ([]*apiext.DeviceAllocation, *fwktype.Status) {
 	allocations, status := allocateByDeviceTopology(requestCtx.gpuRequirements, nodeDevice.gpuTopologyScope, allocateContext)
 	if !status.IsSuccess() {
 		return nil, status
@@ -132,7 +132,7 @@ func generalAllocate(requestCtx *requestContext, nodeDevice *nodeDevice, desired
 	return defaultAllocateDevices(nodeDevice, requestCtx, requestCtx.gpuRequirements.requestsPerGPU, desiredCount, maxDesiredCount, schedulingv1alpha1.GPU, nil)
 }
 
-func allocateByTemplate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, allocateContext *AllocateContext) ([]*apiext.DeviceAllocation, *framework.Status) {
+func allocateByTemplate(requestCtx *requestContext, nodeDevice *nodeDevice, desiredCount int, maxDesiredCount int, allocateContext *AllocateContext) ([]*apiext.DeviceAllocation, *fwktype.Status) {
 	if !requestCtx.gpuRequirements.enforceGPUSharedResourceTemplate {
 		return nil, nil
 	}
@@ -140,7 +140,7 @@ func allocateByTemplate(requestCtx *requestContext, nodeDevice *nodeDevice, desi
 	key := buildGPUSharedResourceTemplatesKey(requestCtx.node.Labels[apiext.LabelGPUVendor], requestCtx.node.Labels[apiext.LabelGPUModel])
 	candidateTemplates := requestCtx.gpuRequirements.candidateGPUSharedResourceTemplates[key]
 	if len(candidateTemplates) == 0 {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNoMatchedGPUSharedResourceTemplate)
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNoMatchedGPUSharedResourceTemplate)
 	} else if len(candidateTemplates) == 1 {
 		// koord style: matching only one template for accurate resources specified by user
 		allocations, status := generalAllocate(requestCtx, nodeDevice, desiredCount, maxDesiredCount, allocateContext)
@@ -174,7 +174,7 @@ type PartitionsOfAllocationScore struct {
 	AllocationScore int
 }
 
-func allocateByPartition(honorGPUPartition bool, gpuRequirements *GPURequirements, gpuPartitionIndexer GPUPartitionIndexer, allocateContext *AllocateContext) (allocations []*apiext.DeviceAllocation, status *framework.Status) {
+func allocateByPartition(honorGPUPartition bool, gpuRequirements *GPURequirements, gpuPartitionIndexer GPUPartitionIndexer, allocateContext *AllocateContext) (allocations []*apiext.DeviceAllocation, status *fwktype.Status) {
 	defer func() {
 		if !status.IsSuccess() {
 			klog.V(5).Infof("gpuRequirements: %+v, gpuPartitionIndexer: %+v, status: %+v", *gpuRequirements, gpuPartitionIndexer, status)
@@ -189,11 +189,11 @@ func allocateByPartition(honorGPUPartition bool, gpuRequirements *GPURequirement
 		return nil, nil
 	}
 	if gpuPartitionIndexer == nil {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNodeMissingGPUPartitionTable)
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNodeMissingGPUPartitionTable)
 	}
 	indexerOfAllocationScore, ok := gpuPartitionIndexer[gpuRequirements.numberOfGPUs]
 	if !ok || indexerOfAllocationScore == nil {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrUnsupportedGPURequests)
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrUnsupportedGPURequests)
 	}
 
 	// we have to calculate this hash during scheduling cycle because reservation restore and preemption may happen
@@ -224,7 +224,7 @@ func allocateByPartition(honorGPUPartition bool, gpuRequirements *GPURequirement
 		}
 	}
 	if len(feasiblePartitions) == 0 {
-		return nil, framework.NewStatus(framework.Unschedulable, ErrInsufficientPartitionedDevice)
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientPartitionedDevice)
 	}
 	selectedPartition := selectPartitionByBinPack(allocateContext.deviceUsedMinorsHash, feasiblePartitions, gpuPartitionIndexer, gpuRequirements.numberOfGPUs)
 	for _, minor := range selectedPartition.Minors {
@@ -309,18 +309,18 @@ type GPUTopologyScope struct {
 	minor      int32
 }
 
-func allocateByDeviceTopology(gpuRequirements *GPURequirements, gpuTopologyScope *GPUTopologyScope, allocateContext *AllocateContext) (allocations []*apiext.DeviceAllocation, status *framework.Status) {
+func allocateByDeviceTopology(gpuRequirements *GPURequirements, gpuTopologyScope *GPUTopologyScope, allocateContext *AllocateContext) (allocations []*apiext.DeviceAllocation, status *fwktype.Status) {
 	defer func() {
-		// if allocateByDeviceTopology is not required and unsupported in some cases, then we can return nil instead of framework.UnschedulableAndUnresolvable to give the change of success
-		if gpuRequirements.requiredTopologyScope == "" && status.Code() == framework.UnschedulableAndUnresolvable {
+		// if allocateByDeviceTopology is not required and unsupported in some cases, then we can return nil instead of fwktype.UnschedulableAndUnresolvable to give the change of success
+		if gpuRequirements.requiredTopologyScope == "" && status.Code() == fwktype.UnschedulableAndUnresolvable {
 			status = nil
 		}
 	}()
 	if gpuTopologyScope == nil {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrNodeMissingGPUDeviceTopologyTree)
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNodeMissingGPUDeviceTopologyTree)
 	}
 	if gpuRequirements.gpuShared && gpuRequirements.numberOfGPUs > 1 {
-		return nil, framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrUnsupportedMultiSharedGPU)
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrUnsupportedMultiSharedGPU)
 	}
 	allocateResultInfo := allocateFromScope(gpuRequirements, gpuTopologyScope, allocateContext, ScopeLevelContext{
 		cumulativeNotEmpties: 0,
@@ -329,9 +329,9 @@ func allocateByDeviceTopology(gpuRequirements *GPURequirements, gpuTopologyScope
 	})
 	if allocateResultInfo == nil {
 		if gpuRequirements.requiredTopologyScope != "" {
-			return nil, framework.NewStatus(framework.Unschedulable, ErrInsufficientTopologyScopedGPUDevices)
+			return nil, fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientTopologyScopedGPUDevices)
 		}
-		return nil, framework.NewStatus(framework.Unschedulable, ErrInsufficientGPUDevices)
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientGPUDevices)
 	}
 	return allocateResultInfo.allocations, nil
 }

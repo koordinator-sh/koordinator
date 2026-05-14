@@ -46,6 +46,7 @@ type RuntimeRequestInterceptor interface {
 var _ runtimeapi.RuntimeServiceServer = &criServer{}
 
 type criServer struct {
+	runtimeapi.UnimplementedRuntimeServiceServer
 	RuntimeRequestInterceptor
 	backendRuntimeServiceClient runtimeapi.RuntimeServiceClient
 }
@@ -192,6 +193,11 @@ func dialer(ctx context.Context, addr string) (net.Conn, error) {
 	return (&net.Dialer{}).DialContext(ctx, "unix", addr)
 }
 
+// UpdatePodSandboxResources implements runtimeapi.RuntimeServiceServer.
+func (c *criServer) UpdatePodSandboxResources(ctx context.Context, req *runtimeapi.UpdatePodSandboxResourcesRequest) (*runtimeapi.UpdatePodSandboxResourcesResponse, error) {
+	return c.backendRuntimeServiceClient.UpdatePodSandboxResources(ctx, req)
+}
+
 func (c *RuntimeManagerCriServer) initCriServer(runtimeSockPath string) (*grpc.ClientConn, error) {
 	generateGrpcConn := func(sockPath string) (*grpc.ClientConn, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
@@ -223,7 +229,7 @@ func (c *RuntimeManagerCriServer) initCriServer(runtimeSockPath string) (*grpc.C
 }
 
 func (c *RuntimeManagerCriServer) failOver() error {
-	// Try CRI v1 API first. If the backend runtime does not support the v1 API, fall back to using the v1alpha2 API instead.
+	// Only CRI v1 API is supported. CRI v1alpha2 has been removed since K8s 1.26.
 	podResponse := &runtimeapi.ListPodSandboxResponse{}
 	var err error
 	if c.criServer != nil {

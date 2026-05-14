@@ -1,0 +1,928 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "9.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "pluginId": "prometheus" },
+    { "type": "panel", "id": "timeseries", "name": "Time series" },
+    { "type": "panel", "id": "stat", "name": "Stat" }
+  ],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Basic Summary",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Queue Growth Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_queue_incoming_pods_total{job=~\"$job\", queue=\"active\"}[$__rate_interval])) - sum(rate(scheduler_schedule_attempts_total{job=~\"$job\"}[$__rate_interval]))",
+          "legendFormat": "growth"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Active Queue Pending Pods",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(scheduler_pending_pods{job=~\"$job\", queue=\"active\"})",
+          "legendFormat": "pending"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Avg Scheduled Latency",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "avg(rate(scheduler_e2e_scheduling_duration_seconds_sum{job=~\"$job\", result=\"scheduled\"}[$__rate_interval])) / avg(rate(scheduler_e2e_scheduling_duration_seconds_count{job=~\"$job\", result=\"scheduled\"}[$__rate_interval]))",
+          "legendFormat": "latency"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 1 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Slow Scheduling (Timeout)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(increase(scheduler_scheduling_timeout{job=~\"$job\"}[$__rate_interval]))",
+          "legendFormat": "timeout"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 7 },
+      "id": 5,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Enqueue QPS",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_queue_incoming_pods_total{job=~\"$job\", queue=\"active\"}[$__rate_interval]))",
+          "legendFormat": "enqueue"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 7 },
+      "id": 6,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Dequeue QPS",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_schedule_attempts_total{job=~\"$job\"}[$__rate_interval]))",
+          "legendFormat": "dequeue"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 7 },
+      "id": 7,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Process CPU Usage",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(rate(process_cpu_seconds_total{job=~\"$job\"}[$__rate_interval]))",
+          "legendFormat": "cpu"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 7 },
+      "id": 8,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "title": "Process Memory Usage",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(process_resident_memory_bytes{job=~\"$job\"})",
+          "legendFormat": "memory"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 11 },
+      "id": 101,
+      "title": "Scheduler Summary",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "id": 10,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Scheduling Queue Pending Pods",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "scheduler_pending_pods{job=~\"$job\"}",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "id": 11,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Unschedulable Pods by Plugin",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "scheduler_unschedulable_pods{job=~\"$job\"}",
+          "legendFormat": "{{plugin}} ({{profile}})"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "id": 12,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Active Queue Incoming Pods Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_queue_incoming_pods_total{job=~\"$job\", queue=\"active\"}[$__rate_interval])) by (queue, event)",
+          "legendFormat": "{{queue}}/{{event}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "id": 13,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Backoff Queue Signal Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_queue_incoming_pods_total{job=~\"$job\", event!=\"PodAdd\", queue=\"backoff\"}[$__rate_interval])) by (queue, event)",
+          "legendFormat": "{{queue}}/{{event}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "id": 14,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Scheduling Result Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "(sum(rate(scheduler_schedule_attempts_total{job=~\"$job\", result=\"scheduled\"}[$__rate_interval])) / sum(rate(scheduler_schedule_attempts_total{job=~\"$job\"}[$__rate_interval]))) * 100",
+          "legendFormat": "scheduled"
+        },
+        {
+          "expr": "(sum(rate(scheduler_schedule_attempts_total{job=~\"$job\", result=\"error\"}[$__rate_interval])) / sum(rate(scheduler_schedule_attempts_total{job=~\"$job\"}[$__rate_interval]))) * 100",
+          "legendFormat": "error"
+        },
+        {
+          "expr": "(sum(rate(scheduler_schedule_attempts_total{job=~\"$job\", result=\"unschedulable\"}[$__rate_interval])) / sum(rate(scheduler_schedule_attempts_total{job=~\"$job\"}[$__rate_interval]))) * 100",
+          "legendFormat": "unschedulable"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "id": 15,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Schedule Attempts Rate by Result",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_schedule_attempts_total{job=~\"$job\"}[$__rate_interval])) by (result)",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "id": 16,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Preemption Attempts Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(scheduler_preemption_attempts_total{job=~\"$job\"}[$__rate_interval])",
+          "legendFormat": "preemption_attempts"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "id": 17,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Scheduling Attempt Duration (p50 / p90 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(scheduler_scheduling_attempt_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum(rate(scheduler_scheduling_attempt_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p90"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_scheduling_attempt_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 },
+      "id": 18,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "E2E Pod Scheduling Duration (p50 / p90 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(scheduler_pod_scheduling_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum(rate(scheduler_pod_scheduling_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p90"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_pod_scheduling_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 },
+      "id": 19,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Pod Scheduling Attempts Distribution",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(scheduler_pod_scheduling_attempts_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum(rate(scheduler_pod_scheduling_attempts_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p90"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_pod_scheduling_attempts_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 52 },
+      "id": 20,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Scheduler Goroutines",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "scheduler_goroutines{job=~\"$job\"}",
+          "legendFormat": "{{operation}}"
+        },
+        {
+          "expr": "scheduler_scheduler_goroutines{job=~\"$job\"}",
+          "legendFormat": "scheduler_goroutines"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 52 },
+      "id": 21,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Volume Operation Error QPS",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_volume_scheduling_stage_error_total{job=~\"$job\"}[$__rate_interval])) by (operation)",
+          "legendFormat": "{{operation}}"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 60 },
+      "id": 102,
+      "title": "Algorithm Summary",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 61 },
+      "id": 30,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Scheduling Algorithm Duration (p50 / p90 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(scheduler_scheduling_algorithm_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum(rate(scheduler_scheduling_algorithm_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p90"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_scheduling_algorithm_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 61 },
+      "id": 31,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Algorithm OPS",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_scheduling_algorithm_duration_seconds_count{job=~\"$job\"}[$__rate_interval]))",
+          "legendFormat": "OPS"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 69 },
+      "id": 32,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Extension Point Duration p99 by Point",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_framework_extension_point_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le, extension_point))",
+          "legendFormat": "{{extension_point}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 69 },
+      "id": 33,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Plugin Execution Duration p99 (Top 10)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "topk(10, histogram_quantile(0.99, sum(rate(scheduler_plugin_execution_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le, plugin, extension_point)))",
+          "legendFormat": "{{plugin}}/{{extension_point}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 77 },
+      "id": 34,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Evaluated Nodes per Scheduling (p50 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(scheduler_pod_scheduling_evaluated_nodes_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_pod_scheduling_evaluated_nodes_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 77 },
+      "id": 35,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Feasible Nodes per Scheduling (p50 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(scheduler_pod_scheduling_feasible_nodes_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_pod_scheduling_feasible_nodes_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 85 },
+      "id": 36,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Permit Wait Duration (p50 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(scheduler_permit_wait_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_permit_wait_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 85 },
+      "id": 37,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Extension Point Latency AVG",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_framework_extension_point_duration_seconds_sum{job=~\"$job\"}[$__rate_interval])) by (extension_point) / sum(rate(scheduler_framework_extension_point_duration_seconds_count{job=~\"$job\"}[$__rate_interval])) by (extension_point)",
+          "legendFormat": "{{extension_point}}"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 93 },
+      "id": 103,
+      "title": "ElasticQuota",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 94 },
+      "id": 50,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "ElasticQuota Process Latency (p50 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(scheduler_elastic_quota_process_latency_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_elastic_quota_process_latency_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 94 },
+      "id": 51,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "ElasticQuota Hook Plugin Latency p99",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_elastic_quota_hook_plugin_latency_bucket{job=~\"$job\"}[$__rate_interval])) by (le, plugin, operation))",
+          "legendFormat": "{{plugin}}/{{operation}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 94 },
+      "id": 52,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Update ElasticQuota Status Duration (p50 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(scheduler_update_elastic_quota_status_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(scheduler_update_elastic_quota_status_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 102 },
+      "id": 53,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "ElasticQuota Spec (by name, resource, field)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "scheduler_elastic_quota_spec{job=~\"$job\", name=~\"$quota_name\"}",
+          "legendFormat": "{{name}}/{{resource}}/{{field}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 102 },
+      "id": 54,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "ElasticQuota Status (by name, resource, field)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "scheduler_elastic_quota_status{job=~\"$job\", name=~\"$quota_name\"}",
+          "legendFormat": "{{name}}/{{resource}}/{{field}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 102 },
+      "id": 55,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "ElasticQuota Process QPS",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(scheduler_update_elastic_quota_status_duration_seconds_count{job=~\"$job\"}[$__rate_interval])",
+          "legendFormat": "update_status"
+        },
+        {
+          "expr": "rate(scheduler_elastic_quota_process_latency_count{job=~\"$job\"}[$__rate_interval])",
+          "legendFormat": "process"
+        },
+        {
+          "expr": "rate(scheduler_elastic_quota_hook_plugin_latency_count{job=~\"$job\"}[$__rate_interval])",
+          "legendFormat": "hook_plugin"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 110 },
+      "id": 104,
+      "title": "Transformer Extension Summary",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 111 },
+      "id": 70,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Transformer Plugin Latency AVG",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_plugin_execution_duration_seconds_sum{job=~\"$job\", extension_point=~\"BeforePreFilter|AfterPreFilter|BeforeFilter|BeforeScore\"}[$__rate_interval])) by (plugin, extension_point) / sum(rate(scheduler_plugin_execution_duration_seconds_count{job=~\"$job\", extension_point=~\"BeforePreFilter|AfterPreFilter|BeforeFilter|BeforeScore\"}[$__rate_interval])) by (plugin, extension_point)",
+          "legendFormat": "{{plugin}}/{{extension_point}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 111 },
+      "id": 71,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Transformer Execute Count",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_plugin_execution_duration_seconds_count{job=~\"$job\", extension_point=~\"BeforePreFilter|AfterPreFilter|BeforeFilter|BeforeScore\"}[$__rate_interval])) by (extension_point)",
+          "legendFormat": "{{extension_point}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 111 },
+      "id": 72,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Transformer Plugin Execute Count",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(scheduler_plugin_execution_duration_seconds_count{job=~\"$job\", extension_point=~\"BeforePreFilter|AfterPreFilter|BeforeFilter|BeforeScore\"}[$__rate_interval])) by (extension_point, plugin, status)",
+          "legendFormat": "{{extension_point}}/{{plugin}} ({{status}})"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 119 },
+      "id": 105,
+      "title": "Client-Go Summary",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 120 },
+      "id": 80,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Rest Client Request Success Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(rest_client_requests_total{job=~\"$job\", code=~\"2..\"}[$__rate_interval])) by (method) / sum(rate(rest_client_requests_total{job=~\"$job\"}[$__rate_interval])) by (method) * 100",
+          "legendFormat": "{{method}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 120 },
+      "id": 81,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Rest Client Request Latency (p50 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(rest_client_request_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le, verb))",
+          "legendFormat": "p50 {{verb}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(rest_client_request_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le, verb))",
+          "legendFormat": "p99 {{verb}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 128 },
+      "id": 82,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Rest Client QPS",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(rest_client_requests_total{job=~\"$job\"}[$__rate_interval])) by (code, method, host)",
+          "legendFormat": "{{method}} {{code}} {{host}}"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 128 },
+      "id": 83,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Client-side Rate Limiter Latency p99",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(rest_client_rate_limiter_duration_seconds_bucket{job=~\"$job\"}[$__rate_interval])) by (le, verb, host))",
+          "legendFormat": "{{verb}} {{host}}"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["koordinator", "scheduler", "scheduling"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(scheduler_schedule_attempts_total, job)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Job",
+        "multi": false,
+        "name": "job",
+        "query": "label_values(scheduler_schedule_attempts_total, job)",
+        "refresh": 2,
+        "regex": "",
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "definition": "label_values(scheduler_elastic_quota_spec, name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Quota Name",
+        "multi": true,
+        "name": "quota_name",
+        "query": "label_values(scheduler_elastic_quota_spec, name)",
+        "refresh": 2,
+        "regex": "",
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Koordinator Scheduling",
+  "uid": "koordinator-scheduling",
+  "version": 1
+}

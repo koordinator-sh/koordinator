@@ -17,7 +17,7 @@ limitations under the License.
 package reservation
 
 import (
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 )
@@ -34,7 +34,7 @@ type HintExtensions struct {
 	SkipRestoreNodeInfo bool
 }
 
-func getSchedulingHint(cycleState *framework.CycleState) (*HintState, bool) {
+func getSchedulingHint(cycleState fwktype.CycleState) (*HintState, bool) {
 	schedulingHint := hinter.GetSchedulingHintState(cycleState)
 	if schedulingHint == nil || schedulingHint.Extensions == nil {
 		return nil, false

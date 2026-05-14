@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"testing"
 
@@ -13,8 +12,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -29,8 +29,8 @@ func TestPodGroupManager_PreFilter(t *testing.T) {
 		name                  string
 		pod                   *corev1.Pod
 		gangSchedulingContext *GangSchedulingContext
-		wantPreFilterResult   *framework.PreFilterResult
-		wantStatus            *framework.Status
+		wantPreFilterResult   *fwktype.PreFilterResult
+		wantStatus            *fwktype.Status
 	}{
 		{
 			name: "not gang",
@@ -99,7 +99,7 @@ func TestPodGroupManager_PreFilter(t *testing.T) {
 					"default/test-pod": "node2",
 				},
 			},
-			wantPreFilterResult: &framework.PreFilterResult{
+			wantPreFilterResult: &fwktype.PreFilterResult{
 				NodeNames: sets.New[string]("node2"),
 			},
 			wantStatus: nil,
@@ -109,7 +109,7 @@ func TestPodGroupManager_PreFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pgMgr := &PodGroupManager{holder: GangSchedulingContextHolder{gangSchedulingContext: tt.gangSchedulingContext}}
 			cycleState := framework.NewCycleState()
-			gotPreFilterResult, gotStatus := pgMgr.PreFilter(context.TODO(), cycleState, tt.pod)
+			gotPreFilterResult, gotStatus := pgMgr.PreFilter(context.TODO(), cycleState, tt.pod, nil)
 			assert.Equal(t, tt.wantPreFilterResult, gotPreFilterResult)
 			assert.Equal(t, tt.wantStatus, gotStatus)
 
@@ -131,13 +131,13 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 		existingPods           []*corev1.Pod
 		existingNominatedPods  []*corev1.Pod
 		filterPlugin           schedulertesting.RegisterPluginFunc
-		wantScheduleStatus     *framework.Status
+		wantScheduleStatus     *fwktype.Status
 		wantPlannedPodToNode   map[string]string
 		wantDiagnosis          *frameworkext.Diagnosis
 		wantPreemptionState    *JobPreemptionState
 		wantPreemptMessage     string
-		wantPreempt            *framework.PostFilterResult
-		wantPreemptStatus      *framework.Status
+		wantPreempt            *fwktype.PostFilterResult
+		wantPreemptStatus      *fwktype.Status
 		wantPossibleVictims    []schedulingv1alpha1.PossibleVictim
 		wantVictims            []schedulingv1alpha1.PossibleVictim
 		wantJobPods            []corev1.Pod
@@ -430,15 +430,15 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						"node-7": 1,
 						"node-8": 1,
 					},
-					NodeToStatusMap: map[string]*framework.Status{
-						"node-1": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-2": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-3": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-4": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-5": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-6": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-7": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-8": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					NodeToStatusMap: map[string]*fwktype.Status{
+						"node-1": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-2": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-3": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-4": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-5": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-6": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-7": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-8": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
 					},
 				},
 			},
@@ -688,15 +688,15 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						"node-7": 1,
 						"node-8": 1,
 					},
-					NodeToStatusMap: map[string]*framework.Status{
-						"node-1": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-2": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-3": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-4": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-5": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-6": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-7": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-8": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					NodeToStatusMap: map[string]*fwktype.Status{
+						"node-1": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-2": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-3": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-4": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-5": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-6": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-7": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-8": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
 					},
 				},
 			},
@@ -945,7 +945,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						"node-7": 2,
 						"node-8": 2,
 					},
-					NodeToStatusMap: map[string]*framework.Status{},
+					NodeToStatusMap: map[string]*fwktype.Status{},
 				},
 			},
 		},
@@ -1252,7 +1252,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 			},
-			wantScheduleStatus: framework.NewStatus(framework.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu."),
+			wantScheduleStatus: fwktype.NewStatus(fwktype.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu."),
 			wantDiagnosis: &frameworkext.Diagnosis{
 				TopologyKeyToExplain: "SpineLayer",
 				QuestionedKey:        "default/pending-pod-1",
@@ -1270,15 +1270,15 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						"node-7": 1,
 						"node-8": 1,
 					},
-					NodeToStatusMap: map[string]*framework.Status{
-						"node-1": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-2": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-3": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-4": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-5": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-6": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-7": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-8": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					NodeToStatusMap: map[string]*fwktype.Status{
+						"node-1": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-2": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-3": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-4": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-5": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-6": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-7": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-8": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
 					},
 				},
 			},
@@ -1299,7 +1299,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message preempt success, alreadyWaitingForBound: 0/4",
 			wantPreempt:        framework.NewPostFilterResultWithNominatedNode("node-1"),
-			wantPreemptStatus:  framework.NewStatus(framework.Success),
+			wantPreemptStatus:  fwktype.NewStatus(fwktype.Success),
 			wantPossibleVictims: []schedulingv1alpha1.PossibleVictim{
 				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-1", Namespace: "default"}},
 				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-2", Namespace: "default"}},
@@ -1729,7 +1729,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 			},
-			wantScheduleStatus: framework.NewStatus(framework.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 2;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu."),
+			wantScheduleStatus: fwktype.NewStatus(fwktype.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 2;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu."),
 			wantDiagnosis: &frameworkext.Diagnosis{
 				QuestionedKey:        "default/pending-pod-1",
 				IsRootCausePod:       true,
@@ -1747,15 +1747,15 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 						"node-7": 1,
 						"node-8": 1,
 					},
-					NodeToStatusMap: map[string]*framework.Status{
-						"node-1": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-2": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-3": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-4": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-5": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-6": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-7": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-						"node-8": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+					NodeToStatusMap: map[string]*fwktype.Status{
+						"node-1": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-2": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-3": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-4": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-5": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-6": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-7": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+						"node-8": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
 					},
 				},
 			},
@@ -1766,15 +1766,15 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				Message:                       "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.",
 				ClearNominatedNodeFailedMsg:   map[string]string{},
 				TerminatingPodOnNominatedNode: map[string]string{},
-				statusMap: map[string]*framework.Status{
-					"node-1": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-					"node-2": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-					"node-3": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-					"node-4": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-					"node-5": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-					"node-6": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-					"node-7": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
-					"node-8": framework.NewStatus(framework.Unschedulable, "Insufficient cpu").WithFailedPlugin("FakeFitPlugin"),
+				statusMap: map[string]*fwktype.Status{
+					"node-1": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+					"node-2": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+					"node-3": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+					"node-4": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+					"node-5": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+					"node-6": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+					"node-7": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
+					"node-8": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
 				},
 				NodeToOfferSlot: map[string]int{
 					"node-1": 0,
@@ -1790,7 +1790,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 			},
 			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.",
 			wantPreempt:        framework.NewPostFilterResultWithNominatedNode(""),
-			wantPreemptStatus:  framework.NewStatus(framework.Unschedulable, `no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.`),
+			wantPreemptStatus:  fwktype.NewStatus(fwktype.Unschedulable, `no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.`),
 			wantPossibleVictims: []schedulingv1alpha1.PossibleVictim{
 				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-3", Namespace: "default"}},
 			},
@@ -1905,8 +1905,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				_, _ = extendedFramework.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 				if pod.Status.NominatedNodeName != "" {
 					podInfo, _ := framework.NewPodInfo(pod)
-					extendedFramework.AddNominatedPod(logger, podInfo, &framework.NominatingInfo{
-						NominatingMode:    framework.ModeOverride,
+					extendedFramework.AddNominatedPod(logger, podInfo, &fwktype.NominatingInfo{
+						NominatingMode:    fwktype.ModeOverride,
 						NominatedNodeName: pod.Status.NominatedNodeName,
 					})
 				}
@@ -1914,7 +1914,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 
 			ctx := context.Background()
 			cycleState := framework.NewCycleState()
-			m := framework.NodeToStatusMap{}
+			m := framework.NewNodeToStatus(map[string]*fwktype.Status{}, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable))
 			frameworkext.InitDiagnosis(cycleState, tt.triggerPod)
 			if tt.gangSchedulingContext != nil {
 				tt.gangSchedulingContext.triggerPod = tt.triggerPod
@@ -1963,8 +1963,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				for _, victim := range possibleVictims {
 					gotPossibleVictims = append(gotPossibleVictims, schedulingv1alpha1.PossibleVictim{
 						NamespacedName: schedulingv1alpha1.NamespacedName{
-							Name:      victim.Pod.Name,
-							Namespace: victim.Pod.Namespace,
+							Name:      victim.GetPod().Name,
+							Namespace: victim.GetPod().Namespace,
 						},
 					})
 				}
@@ -2002,7 +2002,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 			}
 			if len(tt.wantJobPods) > 0 {
 				gotJobPods, _ := extendedFramework.ClientSet().CoreV1().Pods(tt.wantJobPods[0].Namespace).List(context.TODO(), metav1.ListOptions{
-					LabelSelector: fmt.Sprintf(v1alpha1.PodGroupLabel + "=" + gangName),
+					LabelSelector: v1alpha1.PodGroupLabel + "=" + gangName,
 				})
 				sort.Slice(gotJobPods.Items, func(i, j int) bool {
 					return gotJobPods.Items[i].Name < gotJobPods.Items[j].Name
@@ -2022,7 +2022,7 @@ func TestPodGroupManager_PreScore(t *testing.T) {
 		candidateNodes         []*corev1.Node
 		existingPods           []*corev1.Pod
 		wantNodeScore          map[string]int64
-		wantStatus             *framework.Status
+		wantStatus             *fwktype.Status
 	}{
 		{
 			name: "scheduled, all pods to one node",
@@ -2363,10 +2363,18 @@ func TestPodGroupManager_PreScore(t *testing.T) {
 			pgMgr := &PodGroupManager{handle: extendedFramework, networkTopologySolver: NewNetworkTopologySolver(extendedFramework)}
 			ctx := context.Background()
 			cycleState := framework.NewCycleState()
-			assert.Equal(t, tt.wantStatus, pgMgr.PreScore(ctx, cycleState, tt.pod, tt.candidateNodes))
+			nodeInfos := make([]fwktype.NodeInfo, 0, len(tt.candidateNodes))
+			for _, n := range tt.candidateNodes {
+				ni := framework.NewNodeInfo()
+				ni.SetNode(n)
+				nodeInfos = append(nodeInfos, ni)
+			}
+			assert.Equal(t, tt.wantStatus, pgMgr.PreScore(ctx, cycleState, tt.pod, nodeInfos))
 			nodeScore := map[string]int64{}
-			for i := range tt.candidateNodes {
-				nodeScore[tt.candidateNodes[i].Name], _ = pgMgr.Score(ctx, cycleState, tt.pod, tt.candidateNodes[i].Name)
+			for _, n := range tt.candidateNodes {
+				ni := framework.NewNodeInfo()
+				ni.SetNode(n)
+				nodeScore[n.Name], _ = pgMgr.Score(ctx, cycleState, tt.pod, ni)
 			}
 			assert.Equal(t, tt.wantNodeScore, nodeScore)
 		})

@@ -39,7 +39,7 @@ import (
 
 func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	suit := newPluginTestSuit(t, nil)
-	p, err := suit.proxyNew(getDefaultArgs(), suit.Framework)
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node1"}}

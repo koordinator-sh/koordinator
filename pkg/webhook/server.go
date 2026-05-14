@@ -100,7 +100,7 @@ func SetupWithManager(mgr manager.Manager) error {
 	}
 
 	// register conversion webhook
-	server.Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme()))
+	server.Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme(), conversion.NewRegistry()))
 
 	// register health handler
 	server.Register("/healthz", &health.Handler{})

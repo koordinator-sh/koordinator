@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	apisschedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // ScheduleExplanations.
 type ScheduleExplanationInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.ScheduleExplanationLister
+	Lister() schedulingv1alpha1.ScheduleExplanationLister
 }
 
 type scheduleExplanationInformer struct {
@@ -57,21 +57,33 @@ func NewScheduleExplanationInformer(client versioned.Interface, namespace string
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredScheduleExplanationInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SchedulingV1alpha1().ScheduleExplanations(namespace).List(context.TODO(), options)
+				return client.SchedulingV1alpha1().ScheduleExplanations(namespace).List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SchedulingV1alpha1().ScheduleExplanations(namespace).Watch(context.TODO(), options)
+				return client.SchedulingV1alpha1().ScheduleExplanations(namespace).Watch(context.Background(), options)
 			},
-		},
-		&schedulingv1alpha1.ScheduleExplanation{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SchedulingV1alpha1().ScheduleExplanations(namespace).List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SchedulingV1alpha1().ScheduleExplanations(namespace).Watch(ctx, options)
+			},
+		}, client),
+		&apisschedulingv1alpha1.ScheduleExplanation{},
 		resyncPeriod,
 		indexers,
 	)
@@ -82,9 +94,9 @@ func (f *scheduleExplanationInformer) defaultInformer(client versioned.Interface
 }
 
 func (f *scheduleExplanationInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&schedulingv1alpha1.ScheduleExplanation{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisschedulingv1alpha1.ScheduleExplanation{}, f.defaultInformer)
 }
 
-func (f *scheduleExplanationInformer) Lister() v1alpha1.ScheduleExplanationLister {
-	return v1alpha1.NewScheduleExplanationLister(f.Informer().GetIndexer())
+func (f *scheduleExplanationInformer) Lister() schedulingv1alpha1.ScheduleExplanationLister {
+	return schedulingv1alpha1.NewScheduleExplanationLister(f.Informer().GetIndexer())
 }

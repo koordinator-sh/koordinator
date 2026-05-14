@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	apisschedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // Devices.
 type DeviceInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.DeviceLister
+	Lister() schedulingv1alpha1.DeviceLister
 }
 
 type deviceInformer struct {
@@ -56,21 +56,33 @@ func NewDeviceInformer(client versioned.Interface, resyncPeriod time.Duration, i
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredDeviceInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SchedulingV1alpha1().Devices().List(context.TODO(), options)
+				return client.SchedulingV1alpha1().Devices().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SchedulingV1alpha1().Devices().Watch(context.TODO(), options)
+				return client.SchedulingV1alpha1().Devices().Watch(context.Background(), options)
 			},
-		},
-		&schedulingv1alpha1.Device{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SchedulingV1alpha1().Devices().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SchedulingV1alpha1().Devices().Watch(ctx, options)
+			},
+		}, client),
+		&apisschedulingv1alpha1.Device{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *deviceInformer) defaultInformer(client versioned.Interface, resyncPerio
 }
 
 func (f *deviceInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&schedulingv1alpha1.Device{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisschedulingv1alpha1.Device{}, f.defaultInformer)
 }
 
-func (f *deviceInformer) Lister() v1alpha1.DeviceLister {
-	return v1alpha1.NewDeviceLister(f.Informer().GetIndexer())
+func (f *deviceInformer) Lister() schedulingv1alpha1.DeviceLister {
+	return schedulingv1alpha1.NewDeviceLister(f.Informer().GetIndexer())
 }

@@ -25,6 +25,10 @@ import (
 const (
 	// LabelSchedulerName is used to specify the internal scheduler name for a pod, overriding the spec.schedulerName.
 	LabelSchedulerName = SchedulingDomainPrefix + "/scheduler-name"
+
+	// AnnotationOriginalSchedulerName stores the original pod.Spec.SchedulerName before
+	// TransformSchedulerName overwrites it, allowing later restoration.
+	AnnotationOriginalSchedulerName = InternalSchedulingDomainPrefix + "/original-scheduler-name"
 )
 
 func GetSchedulerName(pod *corev1.Pod) string {

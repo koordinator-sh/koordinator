@@ -31,8 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	resourceapi "k8s.io/component-helpers/resource"
 	k8spodutil "k8s.io/kubernetes/pkg/api/v1/pod"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"

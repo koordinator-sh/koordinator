@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -61,16 +61,16 @@ const (
 )
 
 var (
-	_ framework.EnqueueExtensions = &Plugin{}
+	_ fwktype.EnqueueExtensions = &Plugin{}
 
-	_ framework.PreFilterPlugin = &Plugin{}
-	_ framework.FilterPlugin    = &Plugin{}
-	_ framework.ScorePlugin     = &Plugin{}
-	_ framework.ReservePlugin   = &Plugin{}
+	_ fwktype.PreFilterPlugin = &Plugin{}
+	_ fwktype.FilterPlugin    = &Plugin{}
+	_ fwktype.ScorePlugin     = &Plugin{}
+	_ fwktype.ReservePlugin   = &Plugin{}
 )
 
 type Plugin struct {
-	handle         framework.Handle
+	handle         fwktype.Handle
 	args           *config.LoadAwareSchedulingArgs
 	vectorizer     ResourceVectorizer
 	filterProfile  *usageThresholdsFilterProfile
@@ -79,7 +79,7 @@ type Plugin struct {
 	podAssignCache *podAssignCache
 }
 
-func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 	pluginArgs, ok := args.(*config.LoadAwareSchedulingArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type LoadAwareSchedulingArgs, got %T", args)
@@ -126,31 +126,31 @@ func New(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 
 func (p *Plugin) Name() string { return Name }
 
-func (p *Plugin) EventsToRegister() []framework.ClusterEventWithHint {
+func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWithHint, error) {
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("nodemetrics.%v.%v", slov1alpha1.GroupVersion.Version, slov1alpha1.GroupVersion.Group)
-	return []framework.ClusterEventWithHint{
-		{Event: framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete}},
-		{Event: framework.ClusterEvent{Resource: framework.GVK(gvk), ActionType: framework.Add | framework.Update | framework.Delete}},
-	}
+	return []fwktype.ClusterEventWithHint{
+		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
+		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
+	}, nil
 }
 
-func (p *Plugin) PreFilter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+func (p *Plugin) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
 	// add estimated resources for incoming pod to cache
 	_ = p.addEstimatedOfIncoming(p.vectorizer.EmptyVec(), state, pod)
 	return nil, nil
 }
 
 // PreFilterExtensions returns a PreFilterExtensions interface if the plugin implements one.
-func (p *Plugin) PreFilterExtensions() framework.PreFilterExtensions {
+func (p *Plugin) PreFilterExtensions() fwktype.PreFilterExtensions {
 	return nil
 }
 
-func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+func (p *Plugin) Filter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) *fwktype.Status {
 	node := nodeInfo.Node()
 	if node == nil {
-		return framework.NewStatus(framework.Error, "node not found")
+		return fwktype.NewStatus(fwktype.Error, "node not found")
 	}
 
 	if isDaemonSetPod(pod.OwnerReferences) {
@@ -195,12 +195,12 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 		if errors.IsNotFound(err) {
 			return nil
 		}
-		return framework.NewStatus(framework.Error, err.Error())
+		return fwktype.NewStatus(fwktype.Error, err.Error())
 	}
 	if p.args.FilterExpiredNodeMetrics != nil && *p.args.FilterExpiredNodeMetrics &&
 		p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
 		if p.args.EnableScheduleWhenNodeMetricsExpired != nil && !*p.args.EnableScheduleWhenNodeMetricsExpired {
-			return framework.NewStatus(framework.Unschedulable, ErrReasonNodeMetricExpired)
+			return fwktype.NewStatus(fwktype.Unschedulable, ErrReasonNodeMetricExpired)
 		}
 		return nil
 	}
@@ -219,31 +219,32 @@ func (p *Plugin) Filter(ctx context.Context, state *framework.CycleState, pod *c
 	return p.filterNodeUsage(node.Name, pod, usageThresholds, estimated, allocatable, isAgg)
 }
 
-func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
+func (p *Plugin) ScoreExtensions() fwktype.ScoreExtensions {
 	return nil
 }
 
-func (p *Plugin) Reserve(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) *framework.Status {
+func (p *Plugin) Reserve(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
 	p.podAssignCache.assign(nodeName, pod)
 	return nil
 }
 
-func (p *Plugin) Unreserve(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) {
+func (p *Plugin) Unreserve(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeName string) {
 	p.podAssignCache.unAssign(nodeName, pod)
 }
 
-func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+func (p *Plugin) Score(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (int64, *fwktype.Status) {
 	if p.scoreWeights == nil {
 		return 0, nil // skip if score weights are disabled
 	}
 
-	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+	nodeName := nodeInfo.Node().Name
+	nodeInfoSnapshot, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
-		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+		return 0, fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
-	node := nodeInfo.Node()
+	node := nodeInfoSnapshot.Node()
 	if node == nil {
-		return 0, framework.NewStatus(framework.Error, "node not found")
+		return 0, fwktype.NewStatus(fwktype.Error, "node not found")
 	}
 
 	allocatableList, err := p.estimator.EstimateNode(node)
@@ -267,7 +268,7 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 		if errors.IsNotFound(err) {
 			return 0, nil
 		}
-		return 0, framework.NewStatus(framework.Error, err.Error())
+		return 0, fwktype.NewStatus(fwktype.Error, err.Error())
 	}
 	if p.args.NodeMetricExpirationSeconds != nil && isNodeMetricExpired(nodeMetric, *p.args.NodeMetricExpirationSeconds) {
 		return 0, nil
@@ -291,7 +292,7 @@ func (p *Plugin) Score(ctx context.Context, state *framework.CycleState, pod *co
 }
 
 // try to use state cache before EstimatePod
-func (p *Plugin) addEstimatedOfIncoming(estimated ResourceVector, cycleState *framework.CycleState, pod *corev1.Pod) error {
+func (p *Plugin) addEstimatedOfIncoming(estimated ResourceVector, cycleState fwktype.CycleState, pod *corev1.Pod) error {
 	var podEstimated ResourceVector
 	if c, err := cycleState.Read(incomingPodEstimatedStateKey); err == nil {
 		podEstimated, _ = c.(ResourceVector)
@@ -312,7 +313,7 @@ func (p *Plugin) addEstimatedOfIncoming(estimated ResourceVector, cycleState *fr
 	return nil
 }
 
-func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThresholds, estimatedUsed, allocatable ResourceVector, isAgg bool) *framework.Status {
+func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThresholds, estimatedUsed, allocatable ResourceVector, isAgg bool) *fwktype.Status {
 	for i, value := range usageThresholds {
 		if value == 0 {
 			continue
@@ -338,7 +339,7 @@ func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThreshol
 				"estimated", getResourceQuantity(resourceName, estimated),
 				"total", getResourceQuantity(resourceName, total))
 		}
-		return framework.NewStatus(framework.Unschedulable, fmt.Sprintf(reason, resourceName))
+		return fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(reason, resourceName))
 	}
 	return nil
 }
@@ -346,7 +347,7 @@ func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThreshol
 func loadAwareSchedulingScorer(dominantWeight int64, resToWeightMap, used, allocatable ResourceVector) int64 {
 	var nodeScore, dominantScore, weightSum int64
 	if dominantWeight != 0 {
-		dominantScore, weightSum = framework.MaxNodeScore, dominantWeight
+		dominantScore, weightSum = fwktype.MaxNodeScore, dominantWeight
 	}
 	for i, weight := range resToWeightMap {
 		score := leastUsedScore(used[i], allocatable[i])
@@ -371,5 +372,5 @@ func leastUsedScore(used, capacity int64) int64 {
 		return 0
 	}
 
-	return ((capacity - used) * framework.MaxNodeScore) / capacity
+	return ((capacity - used) * fwktype.MaxNodeScore) / capacity
 }

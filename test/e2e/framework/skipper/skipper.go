@@ -137,7 +137,7 @@ func Skipf(format string, args ...interface{}) {
 // SkipUnlessAtLeast skips if the value is less than the minValue.
 func SkipUnlessAtLeast(value int, minValue int, message string) {
 	if value < minValue {
-		skipInternalf(1, message)
+		skipInternalf(1, "%s", message)
 	}
 }
 

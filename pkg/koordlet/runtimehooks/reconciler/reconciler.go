@@ -551,7 +551,7 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 
 					if err := reconcileFn(currentPods); err != nil {
 						klog.Warningf("calling reconcile function %v for pod %v failed, error %v",
-							r.description[r.filter.Name()], err)
+							r.description[r.filter.Name()], podMeta.Key(), err)
 					}
 				}
 			}
@@ -577,8 +577,8 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 
 					for k, fn := range fns {
 						if err := fn(currentPods); err != nil {
-							klog.Warningf("calling reconcile function %v for pod %v failed, error %v, condition %s",
-								r.description[r.filter.Name()], err, k)
+							klog.Warningf("calling reconcile function %v for pods %v failed, error %v, condition %s",
+								r.description[r.filter.Name()], len(currentPods), err, k)
 						}
 					}
 				}

@@ -21,10 +21,8 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/api/errors"
-
 	policyv1 "k8s.io/api/policy/v1"
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -35,24 +33,11 @@ const (
 	EvictionSubResourceName = "pods/eviction"
 )
 
-// EvictPodByVersion evicts Pods using the best available method in Kubernetes.
-//
-// The available methods are, in order of preference:
-// * v1 eviction API
-// * v1beta1 eviction API
+// EvictPodByVersion evicts Pods using the policy/v1 Eviction API (k8s >= 1.22).
+// The v1beta1 eviction API was removed in k8s 1.25 and is no longer supported.
 func EvictPodByVersion(ctx context.Context, kubernetes kubernetes.Interface, namespace, name string, opts metav1.DeleteOptions, evictVersion string) error {
 	if evictVersion == "v1" {
 		return kubernetes.CoreV1().Pods(namespace).EvictV1(ctx, &policyv1.Eviction{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-			},
-			DeleteOptions: &opts,
-		})
-	}
-
-	if evictVersion == "v1beta1" {
-		return kubernetes.CoreV1().Pods(namespace).EvictV1beta1(ctx, &policyv1beta1.Eviction{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
 				Namespace: namespace,

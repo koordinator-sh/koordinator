@@ -25,7 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -261,7 +261,7 @@ func (v ResourceVector) SubDelta(x, y ResourceVector) (changed bool) {
 	return
 }
 
-func (v ResourceVector) Clone() framework.StateData {
+func (v ResourceVector) Clone() fwktype.StateData {
 	if v == nil {
 		return nil
 	}

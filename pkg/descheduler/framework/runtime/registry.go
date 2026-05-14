@@ -17,6 +17,7 @@ limitations under the License.
 package runtime
 
 import (
+	"context"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -26,7 +27,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 )
 
-type PluginFactory func(args runtime.Object, handle framework.Handle) (framework.Plugin, error)
+type PluginFactory func(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error)
 
 // DecodeInto decodes configuration whose type is *runtime.Unknown to the interface into.
 func DecodeInto(obj runtime.Object, into interface{}) error {

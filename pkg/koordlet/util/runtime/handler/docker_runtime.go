@@ -88,8 +88,9 @@ func (d *DockerRuntimeHandler) StopContainer(c context.Context, containerID stri
 	defer cancel()
 
 	stopTimeout := time.Duration(timeout) * time.Second
+	stopTimeoutSeconds := int(stopTimeout.Seconds())
 
-	return d.dockerClient.ContainerStop(ctx, containerID, &stopTimeout)
+	return d.dockerClient.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &stopTimeoutSeconds})
 }
 
 func (d *DockerRuntimeHandler) UpdateContainerResources(containerID string, opts UpdateOptions) error {

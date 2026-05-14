@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	apisslov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // NodeMetrics.
 type NodeMetricInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.NodeMetricLister
+	Lister() slov1alpha1.NodeMetricLister
 }
 
 type nodeMetricInformer struct {
@@ -56,21 +56,33 @@ func NewNodeMetricInformer(client versioned.Interface, resyncPeriod time.Duratio
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredNodeMetricInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SloV1alpha1().NodeMetrics().List(context.TODO(), options)
+				return client.SloV1alpha1().NodeMetrics().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SloV1alpha1().NodeMetrics().Watch(context.TODO(), options)
+				return client.SloV1alpha1().NodeMetrics().Watch(context.Background(), options)
 			},
-		},
-		&slov1alpha1.NodeMetric{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SloV1alpha1().NodeMetrics().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SloV1alpha1().NodeMetrics().Watch(ctx, options)
+			},
+		}, client),
+		&apisslov1alpha1.NodeMetric{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *nodeMetricInformer) defaultInformer(client versioned.Interface, resyncP
 }
 
 func (f *nodeMetricInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&slov1alpha1.NodeMetric{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisslov1alpha1.NodeMetric{}, f.defaultInformer)
 }
 
-func (f *nodeMetricInformer) Lister() v1alpha1.NodeMetricLister {
-	return v1alpha1.NewNodeMetricLister(f.Informer().GetIndexer())
+func (f *nodeMetricInformer) Lister() slov1alpha1.NodeMetricLister {
+	return slov1alpha1.NewNodeMetricLister(f.Informer().GetIndexer())
 }

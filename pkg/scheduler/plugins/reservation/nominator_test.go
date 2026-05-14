@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	apiresource "k8s.io/kubernetes/pkg/api/v1/resource"
+	apiresource "k8s.io/component-helpers/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
@@ -344,7 +344,7 @@ func TestNominatePreAllocation(t *testing.T) {
 					},
 				},
 			},
-			AllocateOnce:   ptr.To[bool](false),
+			AllocateOnce:   ptr.To(false),
 			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
 			PreAllocation:  true,
 		},
@@ -658,7 +658,7 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 	assert.NoError(t, err)
 	recoverNodeInfoFn := func() {
 		for _, v := range reservations {
-			nodeInfo.AddPod(reservationutil.NewReservePod(v))
+			nodeInfo.(*framework.NodeInfo).AddPod(reservationutil.NewReservePod(v))
 		}
 	}
 
@@ -688,6 +688,7 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 
 	p, err := suit.pluginFactory()
 	assert.NoError(t, err)
+	suit.start(t)
 	pl := p.(*Plugin)
 
 	nominatedReservationCount := map[types.UID]int{}
@@ -695,7 +696,7 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 		recoverNodeInfoFn()
 		cycleState := framework.NewCycleState()
 		pl.BeforePreFilter(context.TODO(), cycleState, pod)
-		pl.PreFilter(context.TODO(), cycleState, pod)
+		pl.PreFilter(context.TODO(), cycleState, pod, nil)
 		pl.Filter(context.TODO(), cycleState, pod, nodeInfo)
 		nm := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
 		rInfo, status := nm.NominateReservation(context.TODO(), cycleState, pod, node.Name)
@@ -745,10 +746,11 @@ func TestReservationsNominator(t *testing.T) {
 	}
 	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
 	assert.NoError(t, err)
-	assert.Equal(t, 0, len(nodeInfo.Pods))
+	assert.Equal(t, 0, len(nodeInfo.GetPods()))
 
 	p, err := suit.pluginFactory()
 	assert.NoError(t, err)
+	suit.start(t)
 	pl := p.(*Plugin)
 
 	nominatorImpl := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
@@ -760,12 +762,63 @@ func TestReservationsNominator(t *testing.T) {
 	assert.Equal(t, pod, pods[2])
 	assert.True(t, update)
 	assert.True(t, status.IsSuccess())
-	assert.Equal(t, 1, len(nodeInfoOut.Pods))
+	assert.Equal(t, 1, len(nodeInfoOut.GetPods()))
 
 	nominatorImpl.AddNominatedReservePod(pods[1], "node-1")
 	pod, nodeInfoOut, update, status = pl.BeforeFilter(ctx, state, pods[2], nodeInfo)
 	assert.Equal(t, pod, pods[2])
 	assert.True(t, update)
 	assert.True(t, status.IsSuccess())
-	assert.Equal(t, 2, len(nodeInfoOut.Pods))
+	assert.Equal(t, 2, len(nodeInfoOut.GetPods()))
+
+	// Test gang scenario: same-job nominated reserve pods should be excluded from BeforeFilter.
+	t.Run("gang same-job exclusion", func(t *testing.T) {
+		gangPod0 := pods[0] // nominated on node-1
+		gangPod1 := pods[1] // nominated on node-1
+
+		// Mark gangPod0 as a same-job pod (gang-mate of gangPod1).
+		gangState := framework.NewCycleState()
+		frameworkext.MakeNominatedPodsOfTheSameJob(gangState, []string{string(gangPod0.UID)})
+
+		// Scheduling gangPod1: gangPod0 (same-job) should be excluded;
+		// gangPod1 itself is excluded by UID check (rInfo.Pod.UID != pod.UID).
+		// Result: 0 pods added.
+		_, nodeInfoOut, update, status := pl.BeforeFilter(ctx, gangState, gangPod1, nodeInfo)
+		assert.True(t, update)
+		assert.True(t, status.IsSuccess())
+		assert.Equal(t, 0, len(nodeInfoOut.GetPods()),
+			"gang-mate nominated pod should be excluded from BeforeFilter")
+
+		// Without same-job marking, gangPod0 should be included.
+		noGangState := framework.NewCycleState()
+		_, nodeInfoOut2, update2, status2 := pl.BeforeFilter(ctx, noGangState, gangPod1, nodeInfo)
+		assert.True(t, update2)
+		assert.True(t, status2.IsSuccess())
+		assert.Equal(t, 1, len(nodeInfoOut2.GetPods()),
+			"without same-job marking, nominated pod should be included")
+
+		// Mixed nomination: verify only same-job pods are excluded, others are included.
+		// pods[2] is scheduling; pods[0] is same-job; pods[1] is not.
+		// Result: pods[1] included, pods[0] excluded.
+		mixedState := framework.NewCycleState()
+		frameworkext.MakeNominatedPodsOfTheSameJob(mixedState, []string{string(gangPod0.UID)})
+		_, nodeInfoOut3, update3, status3 := pl.BeforeFilter(ctx, mixedState, pods[2], nodeInfo)
+		assert.True(t, update3)
+		assert.True(t, status3.IsSuccess())
+		assert.Equal(t, 1, len(nodeInfoOut3.GetPods()),
+			"mixed: non-same-job nominated pod should still be included")
+		// Verify the included pod is pods[1] (non-same-job), not pods[0] (same-job).
+		podUIDs := make([]string, len(nodeInfoOut3.GetPods()))
+		for i, p := range nodeInfoOut3.GetPods() {
+			podUIDs[i] = string(p.GetPod().UID)
+		}
+		assert.Contains(t, podUIDs, string(gangPod1.UID),
+			"mixed: non-same-job nominated pod should be included")
+		assert.NotContains(t, podUIDs, string(gangPod0.UID),
+			"mixed: same-job nominated pod should be excluded")
+
+		// Clean up nominated pods.
+		nominatorImpl.DeleteNominatedReservePod(gangPod0)
+		nominatorImpl.DeleteNominatedReservePod(gangPod1)
+	})
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package profile
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -31,22 +32,22 @@ import (
 type RecorderFactory func(string) events.EventRecorder
 
 // newProfile builds a DeschedulerProfile for the given configuration.
-func newProfile(profile deschedulerconfig.DeschedulerProfile, r frameworkruntime.Registry, recorderFactory RecorderFactory, opts ...frameworkruntime.Option) (framework.Handle, error) {
+func newProfile(ctx context.Context, profile deschedulerconfig.DeschedulerProfile, r frameworkruntime.Registry, recorderFactory RecorderFactory, opts ...frameworkruntime.Option) (framework.Handle, error) {
 	eventRecorder := recorderFactory(profile.Name)
 	opts = append(opts, frameworkruntime.WithEventRecorder(eventRecorder))
-	return frameworkruntime.NewFramework(r, &profile, opts...)
+	return frameworkruntime.NewFramework(ctx, r, &profile, opts...)
 }
 
 // Map holds frameworks indexed by scheduler name.
 type Map map[string]framework.Handle
 
 // NewMap builds the frameworks given by the configuration, indexed by name.
-func NewMap(profiles []deschedulerconfig.DeschedulerProfile, r frameworkruntime.Registry, recorderFactory RecorderFactory, opts ...frameworkruntime.Option) (Map, error) {
+func NewMap(ctx context.Context, profiles []deschedulerconfig.DeschedulerProfile, r frameworkruntime.Registry, recorderFactory RecorderFactory, opts ...frameworkruntime.Option) (Map, error) {
 	m := make(Map)
 	v := cfgValidator{m: m}
 
 	for _, profileCfg := range profiles {
-		p, err := newProfile(profileCfg, r, recorderFactory, opts...)
+		p, err := newProfile(ctx, profileCfg, r, recorderFactory, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("creating profile for descheduler name %s: %v", profileCfg.Name, err)
 		}

@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -344,7 +345,7 @@ func (nm *nominator) GetNominatedPreAllocations(rInfo *frameworkext.ReservationI
 
 // TODO(joseph): Should move the function into frameworkext package as default nominator
 
-func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (*frameworkext.ReservationInfo, *framework.Status) {
+func (pl *Plugin) NominateReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) (*frameworkext.ReservationInfo, *fwktype.Status) {
 	if reservationutil.IsReservePod(pod) {
 		return nil, nil
 	}
@@ -371,7 +372,7 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 
 	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
 	if !ok {
-		return nil, framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
+		return nil, fwktype.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
 	}
 
 	reservations := make([]*frameworkext.ReservationInfo, 0, len(reservationInfos))
@@ -397,7 +398,7 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 
 	reservationScoreList, err := prioritizeReservations(ctx, extender, cycleState, pod, reservations, nodeName)
 	if err != nil {
-		return nil, framework.AsStatus(err)
+		return nil, fwktype.AsStatus(err)
 	}
 	sort.Slice(reservationScoreList, func(i, j int) bool {
 		return reservationScoreList[i].Score > reservationScoreList[j].Score
@@ -411,7 +412,7 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState *framework
 		}
 	}
 	if nominated == nil {
-		return nil, framework.AsStatus(fmt.Errorf("missing the most suitable reservation %v(%v)",
+		return nil, fwktype.AsStatus(fmt.Errorf("missing the most suitable reservation %v(%v)",
 			klog.KRef(reservationScoreList[0].Namespace, reservationScoreList[0].Name), reservationScoreList[0].UID))
 	}
 	return nominated, nil
@@ -456,7 +457,7 @@ func (pl *Plugin) GetNominatedReservation(pod *corev1.Pod, nodeName string) *fra
 	return pl.reservationCache.getReservationInfoByUID(reservationID)
 }
 
-func (pl *Plugin) NominatePreAllocation(ctx context.Context, cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeName string) (*corev1.Pod, *framework.Status) {
+func (pl *Plugin) NominatePreAllocation(ctx context.Context, cycleState fwktype.CycleState, rInfo *frameworkext.ReservationInfo, nodeName string) (*corev1.Pod, *fwktype.Status) {
 	if !rInfo.IsPreAllocation() {
 		return nil, nil
 	}
@@ -483,7 +484,7 @@ func (pl *Plugin) NominatePreAllocation(ctx context.Context, cycleState *framewo
 
 	extender, ok := pl.handle.(frameworkext.FrameworkExtender)
 	if !ok {
-		return nil, framework.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
+		return nil, fwktype.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
 	}
 
 	candidates := make([]*corev1.Pod, 0, len(preAllocatablePods))
@@ -504,7 +505,7 @@ func (pl *Plugin) NominatePreAllocation(ctx context.Context, cycleState *framewo
 
 	reservationScoreList, err := prioritizePreAllocatablePods(ctx, extender, cycleState, rInfo, candidates, nodeName)
 	if err != nil {
-		return nil, framework.AsStatus(err)
+		return nil, fwktype.AsStatus(err)
 	}
 	sort.Slice(reservationScoreList, func(i, j int) bool {
 		return reservationScoreList[i].Score > reservationScoreList[j].Score
@@ -518,7 +519,7 @@ func (pl *Plugin) NominatePreAllocation(ctx context.Context, cycleState *framewo
 		}
 	}
 	if nominated == nil {
-		return nil, framework.AsStatus(fmt.Errorf("missing the most suitable pre-allocatable pod %v(%v)",
+		return nil, fwktype.AsStatus(fmt.Errorf("missing the most suitable pre-allocatable pod %v(%v)",
 			klog.KRef(reservationScoreList[0].Namespace, reservationScoreList[0].Name), reservationScoreList[0].UID))
 	}
 	return nominated, nil
@@ -542,7 +543,7 @@ func (pl *Plugin) GetNominatedPreAllocations(rInfo *frameworkext.ReservationInfo
 
 // NominatePreAllocations nominates multiple pre-allocatable pods for a reservation.
 // It accumulates resources from pods until all dimensions are satisfied.
-func (pl *Plugin) NominatePreAllocations(cycleState *framework.CycleState, rInfo *frameworkext.ReservationInfo, nodeName string) ([]*corev1.Pod, *framework.Status) {
+func (pl *Plugin) NominatePreAllocations(cycleState fwktype.CycleState, rInfo *frameworkext.ReservationInfo, nodeName string) ([]*corev1.Pod, *fwktype.Status) {
 	if !rInfo.IsPreAllocation() {
 		return nil, nil
 	}
@@ -558,7 +559,7 @@ func (pl *Plugin) NominatePreAllocations(cycleState *framework.CycleState, rInfo
 func prioritizeReservations(
 	ctx context.Context,
 	fwk frameworkext.FrameworkExtender,
-	state *framework.CycleState,
+	state fwktype.CycleState,
 	pod *corev1.Pod,
 	reservations []*frameworkext.ReservationInfo,
 	nodeName string,
@@ -602,7 +603,7 @@ func prioritizeReservations(
 func prioritizePreAllocatablePods(
 	ctx context.Context,
 	fwk frameworkext.FrameworkExtender,
-	state *framework.CycleState,
+	state fwktype.CycleState,
 	rInfo *frameworkext.ReservationInfo,
 	pods []*corev1.Pod,
 	nodeName string,

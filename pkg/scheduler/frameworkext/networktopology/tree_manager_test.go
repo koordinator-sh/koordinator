@@ -119,7 +119,8 @@ func Test_treeManager_Run(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tm, fakeTools := NewFakeTreeManager(tt.clusterNetworkTopology, tt.nodes)
-			tm.Run(context.TODO())
+			// Use Run in a goroutine since lister is pre-initialized in NewFakeTreeManager
+			tm.(*treeManager).run(context.TODO())
 			gotNetworkTopology, _ := fakeTools.KoordClient.SchedulingV1alpha1().ClusterNetworkTopologies().Get(context.TODO(), fakeClusterNetworkTopology.Name, metav1.GetOptions{})
 			assert.Equal(t, tt.wantClusterNetworkTopologyStatus, gotNetworkTopology.Status)
 		})
@@ -321,7 +322,8 @@ func Test_treeManager_GetSnapshot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tm, _ := NewFakeTreeManager(tt.clusterNetworkTopology, tt.nodes)
-			tm.Run(context.TODO())
+			// Use run directly since lister is pre-initialized in NewFakeTreeManager
+			tm.(*treeManager).run(context.TODO())
 			snapshot := tm.GetSnapshot()
 			makeParentNil(snapshot.TreeNode)
 			makeParentNil(tt.want.TreeNode)

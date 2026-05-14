@@ -154,9 +154,15 @@ func ZoneListToZoneResourceList(zoneList v1alpha1.ZoneList) map[string]corev1.Re
 	return zoneResourceList
 }
 
-// ZoneResourceListToZoneList transforms the zone resource list into the zone list by the orders of the zone name and
-// the resource name.
-// It supposes the capacity, allocatable, available of a ResourceInfo is the same.
+// ZoneResources holds both capacity and allocatable resources for a zone.
+type ZoneResources struct {
+	Capacity    corev1.ResourceList
+	Allocatable corev1.ResourceList
+}
+
+// ZoneResourceListToZoneList converts zone resource list to zone list.
+// When resourceList contains only capacity, allocatable and available will be set to capacity.
+// When resourceList contains both capacity and allocatable, they will be set accordingly.
 func ZoneResourceListToZoneList(zoneResourceList map[string]corev1.ResourceList) v1alpha1.ZoneList {
 	zoneList := make(v1alpha1.ZoneList, len(zoneResourceList))
 	i := 0
@@ -171,6 +177,56 @@ func ZoneResourceListToZoneList(zoneResourceList map[string]corev1.ResourceList)
 				Capacity:    quantity,
 				Allocatable: quantity,
 				Available:   quantity,
+			})
+		}
+		sort.Slice(zoneList[i].Resources, func(p, q int) bool {
+			return zoneList[i].Resources[p].Name < zoneList[i].Resources[q].Name
+		})
+		i++
+	}
+	sort.Slice(zoneList, func(i, j int) bool {
+		return zoneList[i].Name < zoneList[j].Name
+	})
+	return zoneList
+}
+
+// ZoneResourcesToZoneList converts zone resources (with capacity and allocatable) to zone list.
+// This function properly handles the case where capacity >= allocatable.
+func ZoneResourcesToZoneList(zoneResources map[string]ZoneResources) v1alpha1.ZoneList {
+	zoneList := make(v1alpha1.ZoneList, len(zoneResources))
+	i := 0
+	for zoneName, resources := range zoneResources {
+		zoneList[i] = v1alpha1.Zone{
+			Name: zoneName,
+			Type: NodeZoneType,
+		}
+		// Merge capacity and allocatable resource names
+		allResources := make(map[corev1.ResourceName]bool)
+		for resName := range resources.Capacity {
+			allResources[resName] = true
+		}
+		for resName := range resources.Allocatable {
+			allResources[resName] = true
+		}
+
+		for resourceName := range allResources {
+			capacity, hasCapacity := resources.Capacity[resourceName]
+			allocatable, hasAllocatable := resources.Allocatable[resourceName]
+
+			// If capacity is not set, use allocatable; if allocatable is not set, use capacity
+			if !hasCapacity {
+				capacity = allocatable
+			}
+			if !hasAllocatable {
+				allocatable = capacity
+			}
+
+			// Available should match allocatable
+			zoneList[i].Resources = append(zoneList[i].Resources, v1alpha1.ResourceInfo{
+				Name:        string(resourceName),
+				Capacity:    capacity,
+				Allocatable: allocatable,
+				Available:   allocatable,
 			})
 		}
 		sort.Slice(zoneList[i].Resources, func(p, q int) bool {
@@ -217,7 +273,7 @@ func MergeZoneList(a, b v1alpha1.ZoneList) v1alpha1.ZoneList {
 	return ZoneResourceListToZoneList(zoneResourcesA)
 }
 
-func IsZoneListResourceEqual(a, b v1alpha1.ZoneList, resourceNames ...string) bool {
+func IsZoneListResourceEqual(a, b v1alpha1.ZoneList, resourceNames ...corev1.ResourceName) bool {
 	zoneResourcesA := ZoneListToZoneResourceList(a)
 	zoneResourcesB := ZoneListToZoneResourceList(b)
 
@@ -250,8 +306,8 @@ func IsZoneListResourceEqual(a, b v1alpha1.ZoneList, resourceNames ...string) bo
 			}
 		} else {
 			for _, resourceName := range resourceNames {
-				quantityA, okA := zoneA[corev1.ResourceName(resourceName)]
-				quantityB, okB := zoneB[corev1.ResourceName(resourceName)]
+				quantityA, okA := zoneA[resourceName]
+				quantityB, okB := zoneB[resourceName]
 				if !okA && !okB {
 					continue
 				}

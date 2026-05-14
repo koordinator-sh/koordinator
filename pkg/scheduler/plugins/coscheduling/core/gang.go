@@ -398,15 +398,18 @@ func (gang *Gang) setChild(pod *v1.Pod) {
 	defer gang.lock.Unlock()
 
 	podId := util.GetId(pod.Namespace, pod.Name)
+	_, existed := gang.Children[podId]
 	gang.Children[podId] = pod
-	if _, ok := gang.Children[podId]; !ok {
+
+	if !existed {
 		klog.V(6).Infof("SetChild, gangName: %v, childName: %v", gang.Name, podId)
 	} else {
 		klog.V(6).Infof("UpdateChild, gangName: %v, childName: %v", gang.Name, podId)
 	}
 	if pod.Spec.NodeName == "" && gang.WaitingForBindChildren[podId] == nil {
+		_, pendingExisted := gang.PendingChildren[podId]
 		gang.PendingChildren[podId] = pod
-		if _, ok := gang.PendingChildren[podId]; !ok {
+		if !pendingExisted {
 			klog.Infof("SetPendingChild, gangName: %v, childName: %v", gang.Name, podId)
 		} else {
 			klog.Infof("UpdatePendingChild, gangName: %v, childName: %v", gang.Name, podId)

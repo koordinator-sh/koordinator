@@ -27,7 +27,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 )
 
 func TestDefaultEstimatorEstimatePod(t *testing.T) {
@@ -269,12 +269,12 @@ func TestDefaultEstimatorEstimatePod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var v1beta3args v1beta3.LoadAwareSchedulingArgs
-			v1beta3args.EstimatedScalingFactors = tt.scalarFactors
-			v1beta3args.AllowCustomizeEstimation = tt.allowCustomize
-			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			var v1args v1.LoadAwareSchedulingArgs
+			v1args.EstimatedScalingFactors = tt.scalarFactors
+			v1args.AllowCustomizeEstimation = tt.allowCustomize
+			v1.SetDefaults_LoadAwareSchedulingArgs(&v1args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			err := v1.Convert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 			estimator, err := NewDefaultEstimator(&loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
@@ -351,10 +351,10 @@ func TestDefaultEstimatorEstimateNode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var v1beta3args v1beta3.LoadAwareSchedulingArgs
-			v1beta3.SetDefaults_LoadAwareSchedulingArgs(&v1beta3args)
+			var v1args v1.LoadAwareSchedulingArgs
+			v1.SetDefaults_LoadAwareSchedulingArgs(&v1args)
 			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
-			err := v1beta3.Convert_v1beta3_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1beta3args, &loadAwareSchedulingArgs, nil)
+			err := v1.Convert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1args, &loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)
 			estimator, err := NewDefaultEstimator(&loadAwareSchedulingArgs, nil)
 			assert.NoError(t, err)

@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -34,7 +35,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-var checkedNRTResourceSet = sets.NewString(string(corev1.ResourceCPU), string(corev1.ResourceMemory))
+var checkedNRTResourceSet = sets.New[corev1.ResourceName](corev1.ResourceCPU, corev1.ResourceMemory)
 
 var _ handler.EventHandler = &NRTHandler{}
 
@@ -42,7 +43,7 @@ type NRTHandler struct {
 	syncContext *framework.SyncContext
 }
 
-func (h *NRTHandler) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (h *NRTHandler) Create(ctx context.Context, evt event.TypedCreateEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	nrt, ok := evt.Object.(*topologyv1alpha1.NodeResourceTopology)
 	if !ok {
 		return
@@ -59,7 +60,7 @@ func (h *NRTHandler) Create(ctx context.Context, evt event.CreateEvent, q workqu
 	})
 }
 
-func (h *NRTHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (h *NRTHandler) Update(ctx context.Context, evt event.TypedUpdateEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	nrtOld, okOld := evt.ObjectOld.(*topologyv1alpha1.NodeResourceTopology)
 	nrtNew, okNew := evt.ObjectNew.(*topologyv1alpha1.NodeResourceTopology)
 	if !okOld || !okNew {
@@ -81,7 +82,7 @@ func (h *NRTHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqu
 	})
 }
 
-func (h *NRTHandler) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (h *NRTHandler) Delete(ctx context.Context, evt event.TypedDeleteEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	nrt, ok := evt.Object.(*topologyv1alpha1.NodeResourceTopology)
 	if !ok {
 		return
@@ -92,7 +93,7 @@ func (h *NRTHandler) Delete(ctx context.Context, evt event.DeleteEvent, q workqu
 	}
 }
 
-func (h *NRTHandler) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (h *NRTHandler) Generic(ctx context.Context, evt event.TypedGenericEvent[ctrlclient.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
 func isNRTResourcesCreated(nrt *topologyv1alpha1.NodeResourceTopology) bool {
@@ -103,7 +104,7 @@ func isNRTResourcesCreated(nrt *topologyv1alpha1.NodeResourceTopology) bool {
 	// check if any zone has the target resource allocatable
 	for _, zone := range nrt.Zones {
 		for _, resourceInfo := range zone.Resources {
-			if checkedNRTResourceSet.Has(resourceInfo.Name) {
+			if checkedNRTResourceSet.Has(corev1.ResourceName(resourceInfo.Name)) {
 				return true
 			}
 		}
@@ -114,7 +115,7 @@ func isNRTResourcesCreated(nrt *topologyv1alpha1.NodeResourceTopology) bool {
 
 func isNRTResourcesChanged(nrtOld, nrtNew *topologyv1alpha1.NodeResourceTopology) bool {
 	// check if target resources not equal
-	return !util.IsZoneListResourceEqual(nrtOld.Zones, nrtNew.Zones, checkedNRTResourceSet.List()...)
+	return !util.IsZoneListResourceEqual(nrtOld.Zones, nrtNew.Zones, checkedNRTResourceSet.UnsortedList()...)
 }
 
 func cleanupContextForNRT(syncContext *framework.SyncContext, nrt *topologyv1alpha1.NodeResourceTopology) error {

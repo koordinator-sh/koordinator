@@ -17,10 +17,8 @@ limitations under the License.
 package helper
 
 import (
-	"context"
 	"time"
 
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 )
 
@@ -29,14 +27,12 @@ var _ cache.SharedIndexInformer = &forceSyncsharedIndexInformer{}
 type forceSyncsharedIndexInformer struct {
 	cache.SharedIndexInformer
 	defaultResync time.Duration
-	factory       informers.SharedInformerFactory
 }
 
-func newForceSyncSharedIndexInformer(informer cache.SharedIndexInformer, defaultResync time.Duration, factory informers.SharedInformerFactory) cache.SharedIndexInformer {
+func newForceSyncSharedIndexInformer(informer cache.SharedIndexInformer, defaultResync time.Duration) cache.SharedIndexInformer {
 	return &forceSyncsharedIndexInformer{
 		SharedIndexInformer: informer,
 		defaultResync:       defaultResync,
-		factory:             factory,
 	}
 }
 
@@ -45,8 +41,10 @@ func (s *forceSyncsharedIndexInformer) AddEventHandler(handler cache.ResourceEve
 }
 
 func (s *forceSyncsharedIndexInformer) AddEventHandlerWithResyncPeriod(handler cache.ResourceEventHandler, resyncPeriod time.Duration) (cache.ResourceEventHandlerRegistration, error) {
-	if _, ok := handler.(*forceSyncEventHandler); ok {
-		return s.SharedIndexInformer.AddEventHandlerWithResyncPeriod(handler, resyncPeriod)
+	reg, err := s.SharedIndexInformer.AddEventHandlerWithResyncPeriod(handler, resyncPeriod)
+	if err != nil {
+		return nil, err
 	}
-	return ForceSyncFromInformer(context.Background().Done(), s.factory, s.SharedIndexInformer, handler, WithResyncPeriod(resyncPeriod))
+	addRegistration(reg)
+	return reg, nil
 }

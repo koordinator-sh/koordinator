@@ -17,6 +17,7 @@ limitations under the License.
 package metrics
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -124,6 +125,22 @@ var (
 			Buckets: prometheus.ExponentialBuckets(0.001, 2, 20),
 		}, []string{"jobName", "result"}))
 
+	GangScheduleCycleDuration = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "gang_schedule_cycle_duration_seconds",
+			Help:      "Duration of a gang scheduling cycle, from the first pod passing PreFilter until the context is cleared, labeled by clear reason and job size bucket.",
+			// Explicit buckets tuned for a 10s SLO with current p50 ~30s.
+			// Dense around the 10s boundary (7.5/10/12.5) to get accurate
+			// quantiles there, and 15/20/25/30 to observe the current range.
+			Buckets: []float64{
+				0.1, 0.5, 1, 2, 3, 5, 7.5, 10, 12.5, 15, 20, 25, 30, 45, 60, 120,
+			},
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"reason", "job_size"},
+	)
+
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ReservationStatusPhase,
@@ -134,6 +151,7 @@ var (
 		WaitingGangGroupNumber,
 		NextPodDeleteFromQueueLatency,
 		ElasticQuotaHookPluginLatency,
+		GangScheduleCycleDuration,
 	}
 
 	gcMetricsList = []prometheus.Collector{
@@ -244,4 +262,26 @@ func RecordJobPreemptionDuration(jobName string, result string, latency time.Dur
 		"result":  result,
 	}
 	JobPreemptionDuration.WithObserve(labels, latency.Seconds())
+}
+
+// GangJobSizeBucket maps a gang job size (number of attempted pods) to a
+// bounded-cardinality label value, so it can be safely used as a Prometheus
+// label without causing a cardinality explosion. Buckets are 100-wide up to
+// 1000, with a single "1000+" catch-all above that.
+func GangJobSizeBucket(n int) string {
+	const bucketWidth, maxBucketed = 100, 1000
+	switch {
+	case n <= 0:
+		return "0"
+	case n > maxBucketed:
+		return "1000+"
+	}
+	idx := (n - 1) / bucketWidth
+	return fmt.Sprintf("%d-%d", idx*bucketWidth+1, (idx+1)*bucketWidth)
+}
+
+// RecordGangScheduleCycleDuration records how long a gang scheduling cycle
+// took, bucketed by clear reason and job size.
+func RecordGangScheduleCycleDuration(reason, jobSize string, latency time.Duration) {
+	GangScheduleCycleDuration.WithLabelValues(reason, jobSize).Observe(latency.Seconds())
 }

@@ -17,12 +17,13 @@ limitations under the License.
 package validation
 
 import (
+	"fmt"
+	"net"
 	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	componentbasevalidation "k8s.io/component-base/config/validation"
 
@@ -49,10 +50,10 @@ func ValidateDeschedulerConfiguration(cc *config.DeschedulerConfiguration) utile
 			existingProfiles[profile.Name] = i
 		}
 	}
-	for _, msg := range validation.IsValidSocketAddr(cc.HealthzBindAddress) {
+	for _, msg := range isValidSocketAddr(cc.HealthzBindAddress) {
 		errs = append(errs, field.Invalid(field.NewPath("healthzBindAddress"), cc.HealthzBindAddress, msg))
 	}
-	for _, msg := range validation.IsValidSocketAddr(cc.MetricsBindAddress) {
+	for _, msg := range isValidSocketAddr(cc.MetricsBindAddress) {
 		errs = append(errs, field.Invalid(field.NewPath("metricsBindAddress"), cc.MetricsBindAddress, msg))
 	}
 
@@ -64,6 +65,26 @@ func ValidateDeschedulerConfiguration(cc *config.DeschedulerConfiguration) utile
 	}
 
 	return utilerrors.Flatten(utilerrors.NewAggregate(errs))
+}
+
+// isValidSocketAddr checks whether addr is a valid host:port or ip:port socket address.
+func isValidSocketAddr(addr string) []string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return []string{fmt.Sprintf("must be a valid socket address (host:port), got error: %v", err)}
+	}
+	if host != "" {
+		if net.ParseIP(host) == nil {
+			// try to resolve as hostname
+			if _, err := net.LookupHost(host); err != nil {
+				return []string{fmt.Sprintf("invalid host %q in socket address", host)}
+			}
+		}
+	}
+	if port == "" {
+		return []string{"port must not be empty in socket address"}
+	}
+	return nil
 }
 
 func validateDeschedulerProfile(path *field.Path, profile *config.DeschedulerProfile) []error {

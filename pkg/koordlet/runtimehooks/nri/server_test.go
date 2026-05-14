@@ -25,8 +25,8 @@ import (
 
 	"github.com/containerd/nri/pkg/api"
 	"github.com/containerd/nri/pkg/stub"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"

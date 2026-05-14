@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schetesting "k8s.io/kubernetes/pkg/scheduler/testing"
 
@@ -110,8 +111,8 @@ func TestCheckPodHook(t *testing.T) {
 	pod1 := schetesting.MakePod().Name("pod1").Label(extension.LabelQuotaName, q1.Name).Containers(
 		[]v1.Container{schetesting.MakeContainer().Name("0").Resources(map[v1.ResourceName]string{
 			v1.ResourceCPU: "2"}).Obj()}).Obj()
-	_, status := plugin.PreFilter(context.TODO(), framework.NewCycleState(), pod1)
-	assert.True(t, status.IsUnschedulable(), "Pod should be unschedulable")
+	_, status := plugin.PreFilter(context.TODO(), framework.NewCycleState(), pod1, nil)
+	assert.True(t, status.Code() == fwktype.Unschedulable, "Pod should be unschedulable")
 	assert.Equal(t, "CheckPod failed for hook plugin mockPlugin, err: test error", status.Message())
 }
 
@@ -226,9 +227,7 @@ func TestReplaceQuotasWithHookPlugins(t *testing.T) {
 				},
 			}
 		})
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 
 	// prepare test quotas
 	quotas := []interface{}{
@@ -240,7 +239,7 @@ func TestReplaceQuotasWithHookPlugins(t *testing.T) {
 	// ReplaceQuotas will conflict with QuotaEventHandler. sleep 1 seconds to avoid it.
 	time.Sleep(time.Second)
 	// call ReplaceQuotas which should trigger ResetQuotasForHookPlugins
-	err = plugin.ReplaceQuotas(quotas)
+	err := plugin.ReplaceQuotas(quotas)
 	assert.Nil(t, err)
 
 	// verify hook plugins were called
@@ -276,9 +275,7 @@ func initPluginSuit(t *testing.T) (*pluginTestSuit, *Plugin) {
 				},
 			}
 		})
-	p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
-	assert.Nil(t, err)
-	plugin := p.(*Plugin)
+	plugin := suit.createPlugin(t).(*Plugin)
 	return suit, plugin
 }
 

@@ -17,6 +17,7 @@ limitations under the License.
 package runtime
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -79,7 +80,7 @@ func (p *mockNoopPlugin) Name() string {
 }
 
 func NewMockNoopPluginFactory() PluginFactory {
-	return func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+	return func(_ context.Context, _ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
 		return &mockNoopPlugin{}, nil
 	}
 }
@@ -89,8 +90,8 @@ func NewMockNoopPluginFactory() PluginFactory {
 func isRegistryEqual(registryX, registryY Registry) bool {
 	for name, pluginFactory := range registryY {
 		if val, ok := registryX[name]; ok {
-			p1, _ := pluginFactory(nil, nil)
-			p2, _ := val(nil, nil)
+			p1, _ := pluginFactory(context.TODO(), nil, nil)
+			p2, _ := val(context.TODO(), nil, nil)
 			if p1.Name() != p2.Name() {
 				// pluginFactory functions are not the same.
 				return false

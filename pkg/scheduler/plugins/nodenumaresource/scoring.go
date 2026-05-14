@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
@@ -52,18 +53,18 @@ var resourceStrategyTypeMap = map[schedulingconfig.ScoringStrategyType]scorer{
 	},
 }
 
-func (p *Plugin) PreScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) *framework.Status {
+func (p *Plugin) PreScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) *fwktype.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
 	}
 	if state.skip {
-		return framework.NewStatus(framework.Skip)
+		return fwktype.NewStatus(fwktype.Skip)
 	}
 	return nil
 }
 
-func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeName string) (int64, *framework.Status) {
+func (p *Plugin) Score(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (int64, *fwktype.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return 0, status
@@ -72,11 +73,12 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 		return 0, nil
 	}
 
-	nodeInfo, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
+	nodeName := nodeInfo.Node().Name
+	nodeInfoSnapshot, err := p.handle.SnapshotSharedLister().NodeInfos().Get(nodeName)
 	if err != nil {
-		return 0, framework.NewStatus(framework.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
+		return 0, fwktype.NewStatus(fwktype.Error, fmt.Sprintf("getting node %q from Snapshot: %v", nodeName, err))
 	}
-	node := nodeInfo.Node()
+	node := nodeInfoSnapshot.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
 	podNUMATopologyPolicy := state.podNUMATopologyPolicy
@@ -99,31 +101,41 @@ func (p *Plugin) Score(ctx context.Context, cycleState *framework.CycleState, po
 	}
 
 	if numaTopologyPolicy == extension.NUMATopologyPolicyNone {
-		return p.scoreWithAmplifiedCPUs(state, nodeInfo, resourceOptions)
+		return p.scoreWithAmplifiedCPUs(state, nodeInfoSnapshot, resourceOptions)
 	}
 
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(nodeName)
 	podAllocation, status := p.allocateWithNominated(restoreState, resourceOptions, pod, node)
 	if !status.IsSuccess() {
-		return 0, status
+		// Score-layer contract: the pod has already passed Filter on this node, so returning a
+		// non-Success status here would be upgraded to framework.Error by the scheduling framework
+		// and surface as SchedulerError on the Pod condition. Degrade to score=0 with nil status
+		// so the scheduler can continue selecting other candidates naturally, and record a warning
+		// for later investigation (it implies a mismatch between Filter and Score strictness).
+		klog.Warningf("Score: allocateWithNominated failed after Filter passed, degrading to score=0; pod=%s node=%s reason=%s", klog.KObj(pod), node.Name, status.Message())
+		return 0, nil
 	}
 	if podAllocation == nil {
 		podAllocation, status = tryAllocateFromNode(p.resourceManager, nil, restoreState, resourceOptions, pod, node)
 		if !status.IsSuccess() {
-			return 0, status
+			// Same reasoning as above: degrade to score=0 instead of propagating Unschedulable/Error.
+			klog.Warningf("Score: tryAllocateFromNode failed after Filter passed, degrading to score=0; pod=%s node=%s reason=%s", klog.KObj(pod), node.Name, status.Message())
+			return 0, nil
 		}
 	}
 
-	allocatable, requested := p.calculateAllocatableAndRequested(node.Name, nodeInfo, podAllocation, resourceOptions)
+	allocatable, requested := p.calculateAllocatableAndRequested(node.Name, nodeInfoSnapshot, podAllocation, resourceOptions)
 	return p.scorer.score(requested, allocatable, framework.NewResource(resourceOptions.requests))
 }
 
-func (p *Plugin) scoreWithAmplifiedCPUs(state *preFilterState, nodeInfo *framework.NodeInfo, resourceOptions *ResourceOptions) (int64, *framework.Status) {
+func (p *Plugin) scoreWithAmplifiedCPUs(state *preFilterState, nodeInfo fwktype.NodeInfo, resourceOptions *ResourceOptions) (int64, *fwktype.Status) {
 	quantity := state.requests[corev1.ResourceCPU]
 	cpuAmplificationRatio := resourceOptions.topologyOptions.AmplificationRatios[corev1.ResourceCPU]
 	if quantity.IsZero() || cpuAmplificationRatio <= 1 {
-		return p.scorer.score(nodeInfo.Requested, nodeInfo.Allocatable, framework.NewResource(resourceOptions.requests))
+		requestedFwk := nodeInfo.GetRequested().(*framework.Resource)
+		allocatableFwk := nodeInfo.GetAllocatable().(*framework.Resource)
+		return p.scorer.score(requestedFwk, allocatableFwk, framework.NewResource(resourceOptions.requests))
 	}
 
 	node := nodeInfo.Node()
@@ -132,15 +144,15 @@ func (p *Plugin) scoreWithAmplifiedCPUs(state *preFilterState, nodeInfo *framewo
 		return 0, nil
 	}
 	allocatedMilliCPU := int64(allocated.CPUs().Size() * 1000)
-	requested := nodeInfo.Requested.Clone()
+	requested := nodeInfo.GetRequested().(*framework.Resource).Clone()
 	requested.MilliCPU -= allocatedMilliCPU
 	requested.MilliCPU += extension.Amplify(allocatedMilliCPU, cpuAmplificationRatio)
-	return p.scorer.score(requested, nodeInfo.Allocatable, framework.NewResource(resourceOptions.requests))
+	return p.scorer.score(requested, nodeInfo.GetAllocatable().(*framework.Resource), framework.NewResource(resourceOptions.requests))
 }
 
 func (p *Plugin) calculateAllocatableAndRequested(
 	nodeName string,
-	nodeInfo *framework.NodeInfo,
+	nodeInfo fwktype.NodeInfo,
 	podAllocation *PodAllocation,
 	resourceOptions *ResourceOptions,
 ) (allocatable, requested *framework.Resource) {
@@ -170,8 +182,8 @@ func (p *Plugin) calculateAllocatableAndRequested(
 		allocatable = framework.NewResource(totalAllocatable)
 		requested = framework.NewResource(totalRequested)
 	} else {
-		allocatable = nodeInfo.Allocatable
-		requested = nodeInfo.Requested
+		allocatable = nodeInfo.GetAllocatable().(*framework.Resource)
+		requested = nodeInfo.GetRequested().(*framework.Resource)
 		if !podAllocation.CPUSet.IsEmpty() {
 			requested = requested.Clone()
 		}
@@ -186,7 +198,7 @@ func (p *Plugin) calculateAllocatableAndRequested(
 	return
 }
 
-func (p *Plugin) ScoreExtensions() framework.ScoreExtensions {
+func (p *Plugin) ScoreExtensions() fwktype.ScoreExtensions {
 	return nil
 }
 
@@ -207,9 +219,9 @@ type resourceAllocationScorer struct {
 type resourceToValueMap map[corev1.ResourceName]int64
 
 // score will use `scorer` function to calculate the score.
-func (r *resourceAllocationScorer) score(totalRequested, totalAllocatable, podRequests *framework.Resource) (int64, *framework.Status) {
+func (r *resourceAllocationScorer) score(totalRequested, totalAllocatable, podRequests *framework.Resource) (int64, *fwktype.Status) {
 	if r.resourceToWeightMap == nil {
-		return 0, framework.NewStatus(framework.Error, "resources not found")
+		return 0, fwktype.NewStatus(fwktype.Error, "resources not found")
 	}
 
 	requested := make(resourceToValueMap)

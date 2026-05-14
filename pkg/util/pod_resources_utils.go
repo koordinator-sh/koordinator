@@ -19,7 +19,7 @@ package util
 import (
 	corev1 "k8s.io/api/core/v1"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	resourceapi "k8s.io/kubernetes/pkg/api/v1/resource"
+	resourcehelper "k8s.io/component-helpers/resource"
 )
 
 // NOTE: functions in this file can be overwritten for extension
@@ -47,7 +47,7 @@ func GetPodMilliCPULimit(pod *corev1.Pod) int64 {
 }
 
 func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1.ResourceList {
-	result := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+	result := resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{})
 	if len(resourceNames) > 0 {
 		result = quotav1.Mask(result, resourceNames)
 	}

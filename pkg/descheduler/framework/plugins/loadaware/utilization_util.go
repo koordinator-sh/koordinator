@@ -425,6 +425,10 @@ func balancePods(ctx context.Context,
 	nodeIndexer podutil.GetPodsAssignedToNodeFunc,
 	continueEviction continueEvictionCond,
 	evictionReasonGenerator evictionReasonGeneratorFn) {
+	if len(targetNodes) == 0 {
+		klog.V(4).InfoS("No target nodes available for balancing, skip eviction", "nodePool", nodePoolName, "prod", prod, "sourceNodes", len(sourceNodes))
+		return
+	}
 	for _, srcNode := range sourceNodes {
 		var allPods []*corev1.Pod
 		if prod {

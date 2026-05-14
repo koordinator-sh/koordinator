@@ -19,10 +19,10 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // NodeMetricLister helps list NodeMetrics.
@@ -30,39 +30,19 @@ import (
 type NodeMetricLister interface {
 	// List lists all NodeMetrics in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.NodeMetric, err error)
+	List(selector labels.Selector) (ret []*slov1alpha1.NodeMetric, err error)
 	// Get retrieves the NodeMetric from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.NodeMetric, error)
+	Get(name string) (*slov1alpha1.NodeMetric, error)
 	NodeMetricListerExpansion
 }
 
 // nodeMetricLister implements the NodeMetricLister interface.
 type nodeMetricLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*slov1alpha1.NodeMetric]
 }
 
 // NewNodeMetricLister returns a new NodeMetricLister.
 func NewNodeMetricLister(indexer cache.Indexer) NodeMetricLister {
-	return &nodeMetricLister{indexer: indexer}
-}
-
-// List lists all NodeMetrics in the indexer.
-func (s *nodeMetricLister) List(selector labels.Selector) (ret []*v1alpha1.NodeMetric, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.NodeMetric))
-	})
-	return ret, err
-}
-
-// Get retrieves the NodeMetric from the index for a given name.
-func (s *nodeMetricLister) Get(name string) (*v1alpha1.NodeMetric, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1alpha1.Resource("nodemetric"), name)
-	}
-	return obj.(*v1alpha1.NodeMetric), nil
+	return &nodeMetricLister{listers.New[*slov1alpha1.NodeMetric](indexer, slov1alpha1.Resource("nodemetric"))}
 }

@@ -76,10 +76,7 @@ func TestPlugin_OnNodeAdd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
-			assert.NotNil(t, p)
-			assert.Nil(t, err)
-			plugin := p.(*Plugin)
+			plugin := suit.createPlugin(t).(*Plugin)
 
 			time.Sleep(100 * time.Millisecond)
 			for _, node := range tt.nodes {
@@ -209,9 +206,7 @@ func TestPlugin_OnNodeUpdate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			plugin := p.(*Plugin)
+			plugin := suit.createPlugin(t).(*Plugin)
 
 			for _, node := range nodes {
 				plugin.OnNodeAdd(node)
@@ -265,9 +260,7 @@ func TestPlugin_OnNodeDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil)
-			p, err := suit.proxyNew(suit.elasticQuotaArgs, suit.Handle)
-			assert.Nil(t, err)
-			plugin := p.(*Plugin)
+			plugin := suit.createPlugin(t).(*Plugin)
 
 			for _, node := range nodes {
 				plugin.OnNodeAdd(node)

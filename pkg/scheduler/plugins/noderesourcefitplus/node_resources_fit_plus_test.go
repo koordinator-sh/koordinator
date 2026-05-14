@@ -25,34 +25,50 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	fwktype "k8s.io/kube-scheduler/framework"
 	k8sConfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
-var _ framework.SharedLister = &testSharedLister{}
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
+
+var _ fwktype.SharedLister = &testSharedLister{}
 
 type testSharedLister struct {
 	nodes       []*corev1.Node
-	nodeInfos   []*framework.NodeInfo
+	nodeInfos   []fwktype.NodeInfo
 	nodeInfoMap map[string]*framework.NodeInfo
 }
 
 func newTestSharedLister(pods []*corev1.Pod, nodes []*corev1.Node) *testSharedLister {
 	nodeInfoMap := make(map[string]*framework.NodeInfo)
-	nodeInfos := make([]*framework.NodeInfo, 0)
+	nodeInfos := make([]fwktype.NodeInfo, 0)
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if _, ok := nodeInfoMap[nodeName]; !ok {
@@ -84,8 +100,8 @@ type PredicateClientSetAndHandle struct {
 	koordInformerFactory koordinatorinformers.SharedInformerFactory
 }
 
-func NodeResourcesPluginFactoryProxy(factoryFn frameworkruntime.PluginFactory, plugin *framework.Plugin) frameworkruntime.PluginFactory {
-	return func(args apiruntime.Object, handle framework.Handle) (framework.Plugin, error) {
+func NodeResourcesPluginFactoryProxy(factoryFn frameworkruntime.PluginFactory, plugin *fwktype.Plugin) frameworkruntime.PluginFactory {
+	return func(_ context.Context, args apiruntime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
 		koordClient := koordfake.NewSimpleClientset()
 		koordInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClient, 0)
 		extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
@@ -95,7 +111,7 @@ func NodeResourcesPluginFactoryProxy(factoryFn frameworkruntime.PluginFactory, p
 			return nil, err
 		}
 		extender := extenderFactory.NewFrameworkExtender(handle.(framework.Framework))
-		*plugin, err = factoryFn(args, &PredicateClientSetAndHandle{
+		*plugin, err = factoryFn(context.Background(), args, &PredicateClientSetAndHandle{
 			ExtendedHandle:       extender,
 			koordinatorClientSet: koordClient,
 			koordInformerFactory: koordInformerFactory,
@@ -106,18 +122,18 @@ func NodeResourcesPluginFactoryProxy(factoryFn frameworkruntime.PluginFactory, p
 
 func TestPlugin_Score(t *testing.T) {
 
-	var v1beta2args v1beta3.NodeResourcesFitPlusArgs
-	v1beta2args.Resources = map[corev1.ResourceName]v1beta3.ResourcesType{
+	var v1beta2args v1.NodeResourcesFitPlusArgs
+	v1beta2args.Resources = map[corev1.ResourceName]v1.ResourcesType{
 		"nvidia.com/gpu": {Type: k8sConfig.MostAllocated, Weight: 2},
 		"cpu":            {Type: k8sConfig.LeastAllocated, Weight: 1},
 		"memory":         {Type: k8sConfig.LeastAllocated, Weight: 1},
 	}
 
 	var nodeResourcesFitPlusArgs config.NodeResourcesFitPlusArgs
-	err := v1beta3.Convert_v1beta3_NodeResourcesFitPlusArgs_To_config_NodeResourcesFitPlusArgs(&v1beta2args, &nodeResourcesFitPlusArgs, nil)
+	err := v1.Convert_v1_NodeResourcesFitPlusArgs_To_config_NodeResourcesFitPlusArgs(&v1beta2args, &nodeResourcesFitPlusArgs, nil)
 	assert.NoError(t, err)
 
-	var ptplugin framework.Plugin
+	var ptplugin fwktype.Plugin
 	proxyNew := NodeResourcesPluginFactoryProxy(New, &ptplugin)
 
 	cs := kubefake.NewSimpleClientset()
@@ -207,7 +223,7 @@ func TestPlugin_Score(t *testing.T) {
 	)
 	assert.Nil(t, err)
 
-	p, err := proxyNew(&nodeResourcesFitPlusArgs, fh)
+	p, err := proxyNew(context.TODO(), &nodeResourcesFitPlusArgs, fh)
 	p.Name()
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
@@ -257,19 +273,30 @@ func TestPlugin_Score(t *testing.T) {
 		},
 	}
 
-	status := p.(framework.PreScorePlugin).PreScore(context.TODO(), cycleState, pod, nodes)
+	nodeInfos := make([]fwktype.NodeInfo, 0, len(nodes))
+	for _, n := range nodes {
+		ni, err := snapshot.Get(n.Name)
+		assert.NoError(t, err)
+		nodeInfos = append(nodeInfos, ni)
+	}
+	status := p.(fwktype.PreScorePlugin).PreScore(context.TODO(), cycleState, pod, nodeInfos)
 	if status != nil {
 		t.Fatal("PreScore run err")
 	}
 
-	scoreNode1, _ := p.(*Plugin).Score(context.TODO(), cycleState, pod, "testNode1")
-	scoreNode2, _ := p.(*Plugin).Score(context.TODO(), cycleState, pod, "testNode2")
+	var niNode1, niNode2 fwktype.NodeInfo
+	niNode1, err = snapshot.Get("testNode1")
+	assert.NoError(t, err)
+	niNode2, err = snapshot.Get("testNode2")
+	assert.NoError(t, err)
+	scoreNode1, _ := p.(*Plugin).Score(context.TODO(), cycleState, pod, niNode1)
+	scoreNode2, _ := p.(*Plugin).Score(context.TODO(), cycleState, pod, niNode2)
 	if scoreNode1 <= scoreNode2 {
 		t.Fatal("scoreNode1 must more than scoreNode2")
 	}
 }
 
-func (f *testSharedLister) StorageInfos() framework.StorageInfoLister {
+func (f *testSharedLister) StorageInfos() fwktype.StorageInfoLister {
 	return f
 }
 
@@ -277,22 +304,22 @@ func (f *testSharedLister) IsPVCUsedByPods(key string) bool {
 	return false
 }
 
-func (f *testSharedLister) NodeInfos() framework.NodeInfoLister {
+func (f *testSharedLister) NodeInfos() fwktype.NodeInfoLister {
 	return f
 }
 
-func (f *testSharedLister) List() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) List() ([]fwktype.NodeInfo, error) {
 	return f.nodeInfos, nil
 }
 
-func (f *testSharedLister) HavePodsWithAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]*framework.NodeInfo, error) {
+func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
 	return nil, nil
 }
 
-func (f *testSharedLister) Get(nodeName string) (*framework.NodeInfo, error) {
+func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
 }

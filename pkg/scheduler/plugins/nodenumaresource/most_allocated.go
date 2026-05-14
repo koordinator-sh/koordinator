@@ -18,7 +18,7 @@ limitations under the License.
 package nodenumaresource
 
 import (
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 )
 
 // mostResourceScorer favors nodes with most requested resources.
@@ -58,5 +58,5 @@ func mostRequestedScore(requested, capacity int64) int64 {
 		requested = capacity
 	}
 
-	return (requested * framework.MaxNodeScore) / capacity
+	return (requested * fwktype.MaxNodeScore) / capacity
 }

@@ -34,13 +34,13 @@ import (
 func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 	tests := []struct {
 		name      string
-		fn        func(handler handler.EventHandler, q workqueue.RateLimitingInterface)
+		fn        func(handler handler.EventHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request])
 		hasEvent  bool
 		eventName string
 	}{
 		{
 			name: "create device event",
-			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler handler.EventHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Create(context.TODO(), event.CreateEvent{
 					Object: &schedulingv1alpha1.Device{
 						ObjectMeta: metav1.ObjectMeta{
@@ -54,7 +54,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		},
 		{
 			name: "delete device event",
-			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler handler.EventHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &schedulingv1alpha1.Device{
 						ObjectMeta: metav1.ObjectMeta{
@@ -68,7 +68,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		},
 		{
 			name: "delete event not device",
-			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler handler.EventHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
@@ -81,14 +81,14 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		},
 		{
 			name: "generic event ignore",
-			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler handler.EventHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Generic(context.TODO(), event.GenericEvent{}, q)
 			},
 			hasEvent: false,
 		},
 		{
 			name: "update device event",
-			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler handler.EventHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &schedulingv1alpha1.Device{
 						ObjectMeta: metav1.ObjectMeta{
@@ -120,7 +120,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		},
 		{
 			name: "update device event ignore",
-			fn: func(handler handler.EventHandler, q workqueue.RateLimitingInterface) {
+			fn: func(handler handler.EventHandler, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &schedulingv1alpha1.Device{
 						ObjectMeta: metav1.ObjectMeta{
@@ -151,14 +151,14 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+			queue := workqueue.NewTypedRateLimitingQueue[reconcile.Request](workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 			h := &DeviceHandler{}
 			tt.fn(h, queue)
 			assert.Equal(t, tt.hasEvent, queue.Len() > 0, "unexpected event")
 			if tt.hasEvent {
 				assert.True(t, queue.Len() >= 0, "expected event")
 				e, _ := queue.Get()
-				assert.Equal(t, tt.eventName, e.(reconcile.Request).Name)
+				assert.Equal(t, tt.eventName, e.Name)
 			}
 		})
 	}

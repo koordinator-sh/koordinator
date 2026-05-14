@@ -44,8 +44,17 @@ type ScheduleExplanationStatus struct {
 	// Schedulable indicates whether the QuestionObject can be scheduled.
 	Schedulable bool `json:"schedulable,omitempty"`
 
+	// SchedulableAfterPreemption indicates whether the QuestionObject can be scheduled
+	// after preempting possible victims. Only meaningful when Schedulable is false.
+	SchedulableAfterPreemption bool `json:"schedulableAfterPreemption,omitempty"`
+
 	// FailedMessage indicates the reason for the QuestionObject can't be scheduled.
 	FailedMessage string `json:"failedMessage,omitempty"`
+
+	// LastUpdateTime records when the status was last written. It is updated whenever
+	// the status content changes, or at least once per minute as a heartbeat.
+	// +optional
+	LastUpdateTime metav1.Time `json:"lastUpdateTime,omitempty"`
 
 	// DetailedExplanation indicates the detailed explanation in each topology domain.
 	DetailedExplanation []*TopologyDomainLevelExplanation `json:"detailedExplanation,omitempty"`
@@ -57,6 +66,10 @@ type TopologyDomainLevelExplanation struct {
 
 	// Schedulable indicates whether the QuestionObject can be scheduled.
 	Schedulable bool `json:"schedulable,omitempty"`
+
+	// SchedulableAfterPreemption indicates whether the QuestionObject can be scheduled
+	// after preempting possible victims. Only meaningful when Schedulable is false.
+	SchedulableAfterPreemption bool `json:"schedulableAfterPreemption,omitempty"`
 
 	// FailedMessage indicates the reason for the QuestionObject can't be scheduled in this topology domain.
 	FailedMessage string `json:"failedMessage,omitempty"`

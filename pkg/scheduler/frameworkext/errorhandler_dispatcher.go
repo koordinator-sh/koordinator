@@ -20,13 +20,14 @@ import (
 	"context"
 	"time"
 
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 // TODO: We should refactor these function types with scheduler.FailureHandlerFn
 
-type PreErrorHandlerFilter func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) bool
+type PreErrorHandlerFilter func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) bool
 type PostErrorHandlerFilter PreErrorHandlerFilter
 
 type errorHandlerDispatcher struct {
@@ -52,7 +53,7 @@ func (d *errorHandlerDispatcher) RegisterErrorHandlerFilters(preFilter PreErrorH
 	}
 }
 
-func (d *errorHandlerDispatcher) Error(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) {
+func (d *errorHandlerDispatcher) Error(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) {
 	defer func() {
 		for _, handlerFilter := range d.postHandlerFilters {
 			if handlerFilter(ctx, fwk, podInfo, status, nominatingInfo, start) {

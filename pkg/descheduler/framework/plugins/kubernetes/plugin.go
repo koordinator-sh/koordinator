@@ -44,7 +44,7 @@ import (
 )
 
 type (
-	PluginFactory       = func(args runtime.Object, handle k8sdeschedulerframework.Handle) (k8sdeschedulerframework.Plugin, error)
+	PluginFactory       = func(ctx context.Context, args runtime.Object, handle k8sdeschedulerframework.Handle) (k8sdeschedulerframework.Plugin, error)
 	PluginArgsDefaulter = func(obj runtime.Object)
 	PluginArgsValidator = func(obj runtime.Object) error
 )
@@ -139,7 +139,7 @@ func SetupK8sDeschedulerPlugins(registry frameworkruntime.Registry) {
 	registry[defaultevictor.PluginName] = defaultevictor.New
 }
 
-func (d *PluginDescriptor) New(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func (d *PluginDescriptor) New(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	t := reflect.ValueOf(d.ArgsPrototype).Elem().Type()
 	defaultArgs := reflect.New(t).Interface().(runtime.Object)
 	d.ArgsDefaulter(defaultArgs)
@@ -163,7 +163,7 @@ func (d *PluginDescriptor) New(args runtime.Object, handle framework.Handle) (fr
 	if err := d.ArgsValidator(args); err != nil {
 		return nil, err
 	}
-	pl, err := d.Factory(args, adaptor.NewFrameworkHandleAdaptor(handle))
+	pl, err := d.Factory(ctx, args, adaptor.NewFrameworkHandleAdaptor(handle))
 	if err != nil {
 		return nil, err
 	}

@@ -21,26 +21,26 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 )
 
-func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, topologyOptions TopologyOptions) *framework.Status {
+func (p *Plugin) FilterByNUMANode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, node *corev1.Node, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, topologyOptions TopologyOptions) *fwktype.Status {
 	if policyType == apiext.NUMATopologyPolicyNone {
 		return nil
 	}
 	numaNodes := topologyOptions.getNUMANodes()
 	if len(numaNodes) == 0 {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, "node(s) missing NUMA resources")
+		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "node(s) missing NUMA resources")
 	}
 	numaNodesStatus := p.resourceManager.GetNodeAllocation(node.Name).GetAllNUMANodeStatus(len(numaNodes))
 	return p.handle.(frameworkext.FrameworkExtender).RunNUMATopologyManagerAdmit(ctx, cycleState, pod, node, numaNodes, policyType, exclusivePolicy, numaNodesStatus)
 }
 
-func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
+func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]topologymanager.NUMATopologyHint, *fwktype.Status) {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return nil, status
@@ -59,18 +59,18 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	restoreState := reservationRestoreState.getNodeState(node.Name)
 	resourceOptions, err := p.getResourceOptions(state, node, requestCPUBind, topologymanager.NUMATopologyHint{}, topologyOptions)
 	if err != nil {
-		return nil, framework.AsStatus(err)
+		return nil, fwktype.AsStatus(err)
 	}
 	resourceOptions.numaScorer = p.numaScorer
 	hints, err := p.resourceManager.GetTopologyHints(node, pod, resourceOptions, numaTopologyPolicy, restoreState)
 	if err != nil {
 		klog.V(5).ErrorS(err, "failed to get topology hints", "pod", klog.KObj(pod), "node", node.Name)
-		return nil, framework.NewStatus(framework.Unschedulable, "node(s) Insufficient NUMA Node resources")
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, "node(s) Insufficient NUMA Node resources")
 	}
 	return hints, nil
 }
 
-func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *framework.Status {
+func (p *Plugin) Allocate(ctx context.Context, cycleState fwktype.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *fwktype.Status {
 	state, status := getPreFilterState(cycleState)
 	if !status.IsSuccess() {
 		return status
@@ -88,7 +88,7 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 
 	resourceOptions, err := p.getResourceOptions(state, node, requestCPUBind, affinity, topologyOptions)
 	if err != nil {
-		return framework.NewStatus(framework.UnschedulableAndUnresolvable, err.Error())
+		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
 
 	podAllocation, status := tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, restoreState.matched, pod, node)

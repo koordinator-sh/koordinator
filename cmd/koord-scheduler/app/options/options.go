@@ -23,7 +23,7 @@ import (
 	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"k8s.io/apimachinery/pkg/runtime"
-	apiserveroptions "k8s.io/apiserver/pkg/server/options"
+	"k8s.io/client-go/rest"
 	scheduleroptions "k8s.io/kubernetes/cmd/kube-scheduler/app/options"
 
 	schedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
@@ -44,7 +44,7 @@ func NewOptions() *Options {
 	options := &Options{
 		Options: scheduleroptions.NewOptions(),
 		CombinedInsecureServing: &CombinedInsecureServingOptions{
-			Healthz: &apiserveroptions.DeprecatedInsecureServingOptions{
+			Healthz: &DeprecatedInsecureServingOptions{
 				BindNetwork: "tcp",
 			},
 		},
@@ -74,17 +74,20 @@ func (o *Options) Config(ctx context.Context) (*schedulerappconfig.Config, error
 	// So we need to fix it ourselves.
 	config.InformerFactory = frameworkexthelper.NewForceSyncSharedInformerFactory(config.InformerFactory)
 
+	config.KubeConfig.ContentType = runtime.ContentTypeProtobuf
+	config.KubeConfig.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
+
 	// use json for CRD clients
-	kubeConfig := *config.KubeConfig
+	kubeConfig := rest.CopyConfig(config.KubeConfig)
 	kubeConfig.ContentType = runtime.ContentTypeJSON
 	kubeConfig.AcceptContentTypes = runtime.ContentTypeJSON
-	koordinatorClient, err := koordinatorclientset.NewForConfig(&kubeConfig)
+	koordinatorClient, err := koordinatorclientset.NewForConfig(kubeConfig)
 	if err != nil {
 		return nil, err
 	}
 	koordinatorSharedInformerFactory := koordinatorinformers.NewSharedInformerFactoryWithOptions(koordinatorClient, 0)
 
-	nrtClient, err := nrtclientset.NewForConfig(&kubeConfig)
+	nrtClient, err := nrtclientset.NewForConfig(kubeConfig)
 	if err != nil {
 		return nil, err
 	}

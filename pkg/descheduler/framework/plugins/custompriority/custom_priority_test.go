@@ -55,7 +55,9 @@ func registerRecordingEvictor(rec **recordingEvictor) frameworktesting.RegisterP
 		// instantiate one instance captured in tests via closure
 		var inst recordingEvictor
 		*rec = &inst
-		reg.Register((*rec).Name(), func(_ runtime.Object, _ frameworkapi.Handle) (frameworkapi.Plugin, error) { return *rec, nil })
+		reg.Register((*rec).Name(), func(_ context.Context, _ runtime.Object, _ frameworkapi.Handle) (frameworkapi.Plugin, error) {
+			return *rec, nil
+		})
 		profile.Plugins.Evict.Enabled = append(profile.Plugins.Evict.Enabled, deschedulerconfig.Plugin{Name: (*rec).Name()})
 		profile.Plugins.Filter.Enabled = append(profile.Plugins.Filter.Enabled, deschedulerconfig.Plugin{Name: (*rec).Name()})
 	}
@@ -215,7 +217,7 @@ func Test_NewCustomPriority_and_Name(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			plg, err := NewCustomPriority(tc.args, fh)
+			plg, err := NewCustomPriority(context.Background(), tc.args, fh)
 			if tc.wantErr {
 				assert.Error(t, err)
 				return

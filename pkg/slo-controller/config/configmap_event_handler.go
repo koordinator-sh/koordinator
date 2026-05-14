@@ -22,8 +22,10 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/workqueue"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
@@ -31,11 +33,11 @@ import (
 var _ handler.EventHandler = &EnqueueRequestForConfigMap{}
 
 type EnqueueRequestForConfigMap struct {
-	EnqueueRequest     func(q *workqueue.RateLimitingInterface)
+	EnqueueRequest     func(q workqueue.TypedRateLimitingInterface[reconcile.Request])
 	SyncCacheIfChanged func(configMap *corev1.ConfigMap) bool
 }
 
-func (p *EnqueueRequestForConfigMap) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (p *EnqueueRequestForConfigMap) Create(ctx context.Context, evt event.TypedCreateEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	configMap, ok := evt.Object.(*corev1.ConfigMap)
 	if !ok {
 		return
@@ -47,16 +49,16 @@ func (p *EnqueueRequestForConfigMap) Create(ctx context.Context, evt event.Creat
 	if p.SyncCacheIfChanged != nil && !p.SyncCacheIfChanged(configMap) {
 		return
 	}
-	p.EnqueueRequest(&q)
+	p.EnqueueRequest(q)
 }
 
-func (p *EnqueueRequestForConfigMap) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (p *EnqueueRequestForConfigMap) Delete(ctx context.Context, evt event.TypedDeleteEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
-func (p *EnqueueRequestForConfigMap) Generic(ctx context.Context, evt event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (p *EnqueueRequestForConfigMap) Generic(ctx context.Context, evt event.TypedGenericEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
-func (p *EnqueueRequestForConfigMap) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (p *EnqueueRequestForConfigMap) Update(ctx context.Context, evt event.TypedUpdateEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	newConfigMap := evt.ObjectNew.(*corev1.ConfigMap)
 	oldConfigMap := evt.ObjectOld.(*corev1.ConfigMap)
 	if newConfigMap.Namespace != sloconfig.ConfigNameSpace || newConfigMap.Name != sloconfig.SLOCtrlConfigMap {
@@ -69,5 +71,5 @@ func (p *EnqueueRequestForConfigMap) Update(ctx context.Context, evt event.Updat
 		return
 	}
 
-	p.EnqueueRequest(&q)
+	p.EnqueueRequest(q)
 }

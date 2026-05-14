@@ -15,28 +15,31 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	"k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	fakepgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned/fake"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1beta3"
+	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/core"
 )
 
 func newPluginTestSuitForGangAPI(t *testing.T, nodes []*corev1.Node) *pluginTestSuit {
-	var v1beta3args v1beta3.CoschedulingArgs
-	v1beta3.SetDefaults_CoschedulingArgs(&v1beta3args)
+	// Reset registrations to avoid cross-test interference via package-level state.
+	frameworkexthelper.ResetRegistrations()
+	var v1args v1.CoschedulingArgs
+	v1.SetDefaults_CoschedulingArgs(&v1args)
 	var gangSchedulingArgs config.CoschedulingArgs
-	err := v1beta3.Convert_v1beta3_CoschedulingArgs_To_config_CoschedulingArgs(&v1beta3args, &gangSchedulingArgs, nil)
+	err := v1.Convert_v1_CoschedulingArgs_To_config_CoschedulingArgs(&v1args, &gangSchedulingArgs, nil)
 	assert.NoError(t, err)
 
 	pgClientSet := fakepgclientset.NewSimpleClientset()
-	var plugin framework.Plugin
+	var plugin fwktype.Plugin
 	proxyNew := GangPluginFactoryProxy(pgClientSet, New, &plugin)
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
@@ -78,11 +81,13 @@ func TestEndpointsQueryGangInfo(t *testing.T) {
 	if err != nil {
 		t.Errorf("retry podClient create pod err: %v", err)
 	}
-	p, err := suit.proxyNew(suit.gangSchedulingArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.gangSchedulingArgs, suit.Handle)
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
-	suit.start()
 	gp := p.(*Coscheduling)
+	// Assign the plugin so that suit.start() can access pgInformerFactory.
+	suit.plugin = p
+	suit.start(t)
 	gangExpected := core.GangSummary{
 		Name:                   "ganga_ns/ganga",
 		WaitTime:               time.Second * 600,

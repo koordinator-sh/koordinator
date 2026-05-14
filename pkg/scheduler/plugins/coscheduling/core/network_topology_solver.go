@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 
@@ -31,14 +32,14 @@ type NetworkTopologySolver interface {
 	// TODO Currently, only one score is supported for each node. Subsequent algorithms may need to support calling different plugins to score nodes and support configuring plugin weights.
 	PlacePods(
 		ctx context.Context,
-		cycleStates map[string]*framework.CycleState,
+		cycleStates map[string]fwktype.CycleState,
 		toSchedulePods []*corev1.Pod,
-		nodes []*framework.NodeInfo,
+		nodes []fwktype.NodeInfo,
 		addPod podFunc,
 		jobNetworkRequirements *JobTopologyRequirements,
 		clusterNetworkTopology *networktopology.TreeNode,
 		nodeToScore map[string]int,
-	) (podToNode map[string]string, status *framework.Status)
+	) (podToNode map[string]string, status *fwktype.Status)
 }
 
 var (
@@ -51,64 +52,80 @@ type networkTopologySolverImpl struct {
 
 func (solver *networkTopologySolverImpl) PlacePods(
 	ctx context.Context,
-	cycleStates map[string]*framework.CycleState,
+	cycleStates map[string]fwktype.CycleState,
 	toSchedulePods []*corev1.Pod,
-	nodes []*framework.NodeInfo,
+	nodes []fwktype.NodeInfo,
 	addPod podFunc,
 	jobNetworkRequirements *JobTopologyRequirements,
 	clusterNetworkTopology *networktopology.TreeNode,
 	nodeToScore map[string]int,
-) (map[string]string, *framework.Status) {
+) (map[string]string, *fwktype.Status) {
 	topologyState := TopologyStateFromContext(ctx)
 	nodeOfferSlot := solver.calculateNodeOfferSlot(ctx, cycleStates, toSchedulePods, nodes, addPod)
-	nodeToExistingNums := calculateNodeExistingPodsNum(ctx, solver.handle.Parallelizer(), extension.GetPodNetworkTopologySelector(toSchedulePods[0]), nodes)
+	nodeToExistingNums := calculateNodeExistingPodsNum(ctx, solver.handle.Parallelizer().(parallelize.Parallelizer), extension.GetPodNetworkTopologySelector(toSchedulePods[0]), nodes)
 	nodeLayeredTopologyNodes := enumerateNodeTopologyNode(clusterNetworkTopology, len(nodes))
 	evaluateTopologyNode(nodeLayeredTopologyNodes, nodeOfferSlot, nodeToScore, nodeToExistingNums)
+	constrainOfferSlotByPodCountMultiple(clusterNetworkTopology, jobNetworkRequirements.LayerPodCountMultiple)
 
 	topologyState.MustGatheredTopologyNode = searchMustGatherSatisfiedNodes(jobNetworkRequirements, clusterNetworkTopology)
 	candidateTopologyNodes := searchOfferSlotSatisfiedNodes(jobNetworkRequirements, topologyState.MustGatheredTopologyNode)
-	if len(candidateTopologyNodes) == 0 {
-		var reasons []string
-		for _, node := range topologyState.MustGatheredTopologyNode {
-			reasons = append(reasons, fmt.Sprintf("topology topologyNode %s/%s: %d", node.Layer, node.Name, node.OfferSlot))
+
+	if len(candidateTopologyNodes) > 0 {
+		sort.Slice(candidateTopologyNodes, func(i, j int) bool {
+			return topologyNodeLessFunc(candidateTopologyNodes[i], candidateTopologyNodes[j], true)
+		})
+		for _, candidate := range candidateTopologyNodes {
+			distribution := map[string]int{}
+			orderedNodes, actualSlot := distributeOfferSlot(jobNetworkRequirements.DesiredOfferSlot, candidate, distribution, jobNetworkRequirements.LayerPodCountMultiple)
+			if actualSlot >= jobNetworkRequirements.DesiredOfferSlot {
+				podToNode := distributePods(toSchedulePods, orderedNodes, distribution)
+				return podToNode, nil
+			}
 		}
-		sort.Strings(reasons)
-		fitError := &framework.FitError{
-			NumAllNodes: len(nodes),
-			Diagnosis: framework.Diagnosis{
-				NodeToStatusMap: topologyState.NodeToStatusMap,
-			},
-		}
-		return nil, framework.NewStatus(framework.Unschedulable, fmt.Sprintf(MessageNoCandidateTopologyNodes, jobNetworkRequirements.DesiredOfferSlot, strings.Join(reasons, ";"), fitError.Error()))
 	}
 
-	sort.Slice(candidateTopologyNodes, func(i, j int) bool {
-		return topologyNodeLessFunc(candidateTopologyNodes[i], candidateTopologyNodes[j], true)
-	})
+	var reasons []string
+	for _, node := range topologyState.MustGatheredTopologyNode {
+		reasons = append(reasons, fmt.Sprintf("topology topologyNode %s/%s: %d", node.Layer, node.Name, node.OfferSlot))
+	}
+	sort.Strings(reasons)
 
-	distribution := map[string]int{}
-	orderedNodes, _ := distributeOfferSlot(jobNetworkRequirements.DesiredOfferSlot, candidateTopologyNodes[0], distribution)
+	// Append PodCountMultiple constraint information if present
+	var podCountMultipleInfo string
+	if len(jobNetworkRequirements.LayerPodCountMultiple) > 0 {
+		var constraints []string
+		for layer, multiple := range jobNetworkRequirements.LayerPodCountMultiple {
+			constraints = append(constraints, fmt.Sprintf("%s=%d", layer, multiple))
+		}
+		sort.Strings(constraints)
+		podCountMultipleInfo = fmt.Sprintf("; podCountMultiple constraints: %s", strings.Join(constraints, ", "))
+	}
 
-	podToNode := distributePods(toSchedulePods, orderedNodes, distribution)
-	return podToNode, nil
+	fitError := &framework.FitError{
+		NumAllNodes: len(nodes),
+		Diagnosis: framework.Diagnosis{
+			NodeToStatus: framework.NewNodeToStatus(topologyState.NodeToStatusMap, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable)),
+		},
+	}
+	return nil, fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(MessageNoCandidateTopologyNodes, jobNetworkRequirements.DesiredOfferSlot, strings.Join(reasons, ";"), fitError.Error())+podCountMultipleInfo)
 }
 
 func (solver *networkTopologySolverImpl) calculateNodeOfferSlot(
 	ctx context.Context,
-	cycleStates map[string]*framework.CycleState,
+	cycleStates map[string]fwktype.CycleState,
 	toSchedulePods []*corev1.Pod,
-	nodeInfos []*framework.NodeInfo,
+	nodeInfos []fwktype.NodeInfo,
 	addPod podFunc,
 ) map[string]int {
 	topologyState := TopologyStateFromContext(ctx)
 	topologyState.NodeOfferSlot = make(map[string]int, len(nodeInfos))
-	topologyState.NodeToStatusMap = make(framework.NodeToStatusMap)
+	topologyState.NodeToStatusMap = make(map[string]*fwktype.Status)
 	var statusLock sync.RWMutex
 	calculateForNode := func(nodeI int) {
 		nodeInfo := nodeInfos[nodeI]
 		cycleState := cycleStates[nodeInfo.Node().Name]
 		var offerSlot int
-		var status *framework.Status
+		var status *fwktype.Status
 		for podI := range toSchedulePods {
 			toSchedulePod := toSchedulePods[podI]
 			status = solver.handle.RunFilterPluginsWithNominatedPods(ctx, cycleState, toSchedulePod, nodeInfo)
@@ -123,7 +140,7 @@ func (solver *networkTopologySolverImpl) calculateNodeOfferSlot(
 				// TODO consider pod assume on reservation
 				err := addPod(cycleState, podToSchedule, podInfoToAdd, nodeInfo)
 				if err != nil {
-					status = framework.AsStatus(err)
+					status = fwktype.AsStatus(err)
 					break
 				}
 			}
@@ -144,7 +161,7 @@ func calculateNodeExistingPodsNum(
 	ctx context.Context,
 	parallelizer parallelize.Parallelizer,
 	selectorKey string,
-	nodeInfos []*framework.NodeInfo) map[string]int {
+	nodeInfos []fwktype.NodeInfo) map[string]int {
 	if selectorKey == "" {
 		return nil
 	}
@@ -153,8 +170,9 @@ func calculateNodeExistingPodsNum(
 	calculateForNode := func(nodeI int) {
 		nodeInfo := nodeInfos[nodeI]
 		podNum := 0
-		for _, pod := range nodeInfo.Pods {
-			if extension.GetPodNetworkTopologySelector(pod.Pod) == selectorKey {
+		for _, podInfo := range nodeInfo.GetPods() {
+			pod := podInfo.GetPod()
+			if extension.GetPodNetworkTopologySelector(pod) == selectorKey {
 				podNum += 1
 			}
 		}
@@ -214,6 +232,43 @@ func evaluateTopologyNode(
 	}
 }
 
+// constrainOfferSlotByPodCountMultiple traverses the topology tree bottom-up
+// and constrains each node's OfferSlot based on PodCountMultiple requirements.
+// After this, OfferSlot at each node reflects the maximum achievable capacity
+// considering PodCountMultiple constraints.
+func constrainOfferSlotByPodCountMultiple(
+	root *networktopology.TreeNode,
+	layerPodCountMultiple map[schedulingv1alpha1.TopologyLayer]int,
+) {
+	if len(layerPodCountMultiple) == 0 {
+		return
+	}
+	doConstrainOfferSlot(root, layerPodCountMultiple)
+}
+
+func doConstrainOfferSlot(
+	node *networktopology.TreeNode,
+	layerPodCountMultiple map[schedulingv1alpha1.TopologyLayer]int,
+) {
+	if node.Layer == schedulingv1alpha1.NodeTopologyLayer {
+		if multiple := layerPodCountMultiple[node.Layer]; multiple > 1 {
+			node.OfferSlot = (node.OfferSlot / multiple) * multiple
+		}
+		return
+	}
+	constrainedSum := 0
+	for _, child := range node.Children {
+		if child != nil {
+			doConstrainOfferSlot(child, layerPodCountMultiple)
+			constrainedSum += child.OfferSlot
+		}
+	}
+	node.OfferSlot = constrainedSum
+	if multiple := layerPodCountMultiple[node.Layer]; multiple > 1 {
+		node.OfferSlot = (node.OfferSlot / multiple) * multiple
+	}
+}
+
 func searchMustGatherSatisfiedNodes(
 	jobNetworkRequirements *JobTopologyRequirements,
 	clusterNetworkTopology *networktopology.TreeNode,
@@ -247,7 +302,8 @@ func searchMustGatherSatisfiedNodes(
 
 func searchOfferSlotSatisfiedNodes(
 	jobNetworkRequirements *JobTopologyRequirements,
-	mustGatherSatisfiedNodes []*networktopology.TreeNode) []*networktopology.TreeNode {
+	mustGatherSatisfiedNodes []*networktopology.TreeNode,
+) []*networktopology.TreeNode {
 	desiredOfferSlot := jobNetworkRequirements.DesiredOfferSlot
 	var candidates []*networktopology.TreeNode
 	layeredTopologyNodes := make([]*networktopology.TreeNode, len(mustGatherSatisfiedNodes))
@@ -259,6 +315,7 @@ func searchOfferSlotSatisfiedNodes(
 			if layeredTopologyNode.OfferSlot < desiredOfferSlot {
 				continue
 			}
+
 			layeredCandidates = append(layeredCandidates, layeredTopologyNode)
 			for _, child := range layeredTopologyNode.Children {
 				if child != nil {
@@ -297,15 +354,24 @@ func distributeOfferSlot(
 	desiredOfferSlot int,
 	topologyNode *networktopology.TreeNode,
 	distribution map[string]int,
+	layerPodCountMultiple map[schedulingv1alpha1.TopologyLayer]int,
 ) (topologyOrderedNodes []string, offerSlot int) {
-	if topologyNode.Layer == schedulingv1alpha1.NodeTopologyLayer {
-		offerSlot = topologyNode.OfferSlot
-		if offerSlot > desiredOfferSlot {
-			offerSlot = desiredOfferSlot
-		}
-		distribution[topologyNode.Name] = offerSlot
-		return []string{topologyNode.Name}, offerSlot
+	// Calculate the maximum slot this topology node can provide
+
+	maxOfferSlot := topologyNode.OfferSlot
+	if maxOfferSlot > desiredOfferSlot {
+		maxOfferSlot = desiredOfferSlot
 	}
+
+	if multiple := layerPodCountMultiple[topologyNode.Layer]; multiple > 1 {
+		maxOfferSlot = (maxOfferSlot / multiple) * multiple
+	}
+
+	if topologyNode.Layer == schedulingv1alpha1.NodeTopologyLayer {
+		distribution[topologyNode.Name] = maxOfferSlot
+		return []string{topologyNode.Name}, maxOfferSlot
+	}
+
 	var children []*networktopology.TreeNode
 	for _, child := range topologyNode.Children {
 		if child != nil {
@@ -315,10 +381,12 @@ func distributeOfferSlot(
 	sort.Slice(children, func(i, j int) bool {
 		return topologyNodeLessFunc(children[i], children[j], false)
 	})
+
+	remainingSlot := maxOfferSlot
 	for _, child := range children {
-		orderedNodesOfChild, offerSlotOfChild := distributeOfferSlot(desiredOfferSlot, child, distribution)
+		orderedNodesOfChild, offerSlotOfChild := distributeOfferSlot(remainingSlot, child, distribution, layerPodCountMultiple)
 		topologyOrderedNodes = append(topologyOrderedNodes, orderedNodesOfChild...)
-		desiredOfferSlot -= offerSlotOfChild
+		remainingSlot -= offerSlotOfChild
 		offerSlot += offerSlotOfChild
 	}
 	return topologyOrderedNodes, offerSlot
@@ -349,7 +417,7 @@ func distributePods(
 	return podToNode
 }
 
-func NewNetworkTopologySolver(handle framework.Handle) NetworkTopologySolver {
+func NewNetworkTopologySolver(handle fwktype.Handle) NetworkTopologySolver {
 	return &networkTopologySolverImpl{
 		handle: handle.(frameworkext.ExtendedHandle),
 	}

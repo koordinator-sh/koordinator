@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	apisschedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // Reservations.
 type ReservationInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.ReservationLister
+	Lister() schedulingv1alpha1.ReservationLister
 }
 
 type reservationInformer struct {
@@ -56,21 +56,33 @@ func NewReservationInformer(client versioned.Interface, resyncPeriod time.Durati
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredReservationInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SchedulingV1alpha1().Reservations().List(context.TODO(), options)
+				return client.SchedulingV1alpha1().Reservations().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.SchedulingV1alpha1().Reservations().Watch(context.TODO(), options)
+				return client.SchedulingV1alpha1().Reservations().Watch(context.Background(), options)
 			},
-		},
-		&schedulingv1alpha1.Reservation{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SchedulingV1alpha1().Reservations().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.SchedulingV1alpha1().Reservations().Watch(ctx, options)
+			},
+		}, client),
+		&apisschedulingv1alpha1.Reservation{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *reservationInformer) defaultInformer(client versioned.Interface, resync
 }
 
 func (f *reservationInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&schedulingv1alpha1.Reservation{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisschedulingv1alpha1.Reservation{}, f.defaultInformer)
 }
 
-func (f *reservationInformer) Lister() v1alpha1.ReservationLister {
-	return v1alpha1.NewReservationLister(f.Informer().GetIndexer())
+func (f *reservationInformer) Lister() schedulingv1alpha1.ReservationLister {
+	return schedulingv1alpha1.NewReservationLister(f.Informer().GetIndexer())
 }

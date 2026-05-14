@@ -20,7 +20,10 @@ set -e
 SHELL_FOLDER=$(cd "$(dirname "$0")";pwd)
 LICENSE_HEADER_PATH="./hack/boilerplate/boilerplate.go.txt"
 
-cd $GOPATH/src/github.com/koordinator-sh/koordinator
+cd "${SHELL_FOLDER}/.."
+
+# install go.uber.org/mock/mockgen (successor of github.com/golang/mock)
+# go install go.uber.org/mock/mockgen@v0.6.0
 
 # generates gomock files
 mockgen -source pkg/koordlet/statesinformer/api.go \
@@ -41,11 +44,18 @@ mockgen -source pkg/koordlet/metriccache/metric_cache.go \
   -destination pkg/koordlet/metriccache/mockmetriccache/mock.go \
   -aux_files github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache=pkg/koordlet/metriccache/tsdb_storage.go,github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache=pkg/koordlet/metriccache/kv_storage.go \
   -copyright_file ${LICENSE_HEADER_PATH}
-mockgen -source vendor/k8s.io/cri-api/pkg/apis/runtime/v1/api.pb.go \
+mockgen -source vendor/k8s.io/cri-api/pkg/apis/runtime/v1/api_grpc.pb.go \
   -destination pkg/koordlet/util/runtime/handler/mockclient/mock.go \
-  -imports github.com/koordinator-sh/koordinator/vendor/k8s.io/cri-api/pkg/apis/runtime/v1=k8s.io/cri-api/pkg/apis/runtime/v1 \
   -copyright_file ${LICENSE_HEADER_PATH} \
   -package mock_client RuntimeServiceClient
+# Fix vendor path in generated mock (mockgen -source mode resolves vendor paths literally)
+# Use portable sed: macOS requires 'sed -i ""', Linux uses 'sed -i""'
+sed -i "" -e 's|github\.com/koordinator-sh/koordinator/vendor/k8s\.io/cri-api/pkg/apis/runtime/v1|k8s.io/cri-api/pkg/apis/runtime/v1|g' \
+  pkg/koordlet/util/runtime/handler/mockclient/mock.go 2>/dev/null || \
+  sed -i -e 's|github\.com/koordinator-sh/koordinator/vendor/k8s\.io/cri-api/pkg/apis/runtime/v1|k8s.io/cri-api/pkg/apis/runtime/v1|g' \
+  pkg/koordlet/util/runtime/handler/mockclient/mock.go
+# Fix import ordering to comply with go fmt
+go fmt pkg/koordlet/util/runtime/handler/mockclient/mock.go
 mockgen -source pkg/koordlet/runtimehooks/nri/types.go \
   -destination pkg/koordlet/runtimehooks/nri/mock_nri.go \
   -copyright_file ${LICENSE_HEADER_PATH} \

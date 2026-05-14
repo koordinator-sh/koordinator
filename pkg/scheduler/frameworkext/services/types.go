@@ -21,7 +21,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kube-scheduler/framework"
+	k8sfwk "k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 type APIServiceProvider interface {
@@ -42,32 +43,32 @@ type NodeInfo struct {
 	// Overall Node information.
 	Node *corev1.Node `json:"node,omitempty"`
 	// Pods running on the node.
-	Pods []*framework.PodInfo `json:"pods,omitempty"`
+	Pods []framework.PodInfo `json:"pods,omitempty"`
 
 	// The subset of pods with affinity.
-	PodsWithAffinity []*framework.PodInfo `json:"podsWithAffinity,omitempty"`
+	PodsWithAffinity []framework.PodInfo `json:"podsWithAffinity,omitempty"`
 
 	// The subset of pods with required anti-affinity.
-	PodsWithRequiredAntiAffinity []*framework.PodInfo `json:"podsWithRequiredAntiAffinity,omitempty"`
+	PodsWithRequiredAntiAffinity []framework.PodInfo `json:"podsWithRequiredAntiAffinity,omitempty"`
 
 	// Ports allocated on the node.
 	UsedPorts HostPortInfo `json:"usedPorts,omitempty"`
 
 	// Total requested resources of all pods on this node. This includes assumed
 	// pods, which scheduler has sent for binding, but may not be scheduled yet.
-	Requested *framework.Resource `json:"requested,omitempty"`
+	Requested *k8sfwk.Resource `json:"requested,omitempty"`
 	// Total requested resources of all pods on this node with a minimum value
 	// applied to each container's CPU and memory requests. This does not reflect
 	// the actual resource requests for this node, but is used to avoid scheduling
 	// many zero-request pods onto one node.
-	NonZeroRequested *framework.Resource `json:"nonZeroRequested,omitempty"`
+	NonZeroRequested *k8sfwk.Resource `json:"nonZeroRequested,omitempty"`
 
 	// The total amount of remaining resources
-	Remaining *framework.Resource `json:"remaining,omitempty"`
+	Remaining *k8sfwk.Resource `json:"remaining,omitempty"`
 
 	// We store allocatedResources (which is Node.Status.Allocatable.*) explicitly
 	// as int64, to avoid conversions and accessing map.
-	Allocatable *framework.Resource `json:"allocatable,omitempty"`
+	Allocatable *k8sfwk.Resource `json:"allocatable,omitempty"`
 
 	// ImageStates holds the entry of an image if and only if this image is on the node. The entry can be used for
 	// checking an image's existence and advanced usage (e.g., image locality scheduling policy) based on the image
@@ -86,7 +87,7 @@ type NodeInfo struct {
 // HostPortInfo stores mapping from ip to a set of ProtocolPort
 type HostPortInfo map[string][]framework.ProtocolPort
 
-func convertNodeInfo(nodeInfo *framework.NodeInfo) *NodeInfo {
+func convertNodeInfo(nodeInfo *k8sfwk.NodeInfo) *NodeInfo {
 	var usedPorts HostPortInfo
 	if len(nodeInfo.UsedPorts) > 0 {
 		usedPorts = make(HostPortInfo)

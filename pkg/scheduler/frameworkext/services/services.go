@@ -24,9 +24,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
-
-	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 )
 
 const (
@@ -84,7 +83,7 @@ func NewEngine(e *gin.Engine) *Engine {
 	}
 }
 
-func (e *Engine) RegisterPluginService(plugin framework.Plugin, profileName string) {
+func (e *Engine) RegisterPluginService(plugin fwktype.Plugin, profileName string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if serviceProvider, ok := plugin.(APIServiceProvider); ok {

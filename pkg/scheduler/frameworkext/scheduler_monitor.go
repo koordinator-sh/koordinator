@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
@@ -151,7 +152,7 @@ func (m *SchedulerMonitor) StartMonitoring(pod *corev1.Pod) {
 	m.lock.Unlock()
 }
 
-func (m *SchedulerMonitor) Complete(pod *corev1.Pod, status *framework.Status) {
+func (m *SchedulerMonitor) Complete(pod *corev1.Pod, status *fwktype.Status) {
 	m.lock.Lock()
 	state, ok := m.schedulingPods[pod.UID]
 	delete(m.schedulingPods, pod.UID)
@@ -180,7 +181,7 @@ func defaultStartMonitor(pod *corev1.Pod, state *podScheduleState) {
 	klog.Infof("start monitoring pod %v(%s)", klog.KObj(pod), pod.UID)
 }
 
-func defaultCompleteMonitor(pod *corev1.Pod, state *podScheduleState, end time.Time, timeout time.Duration, status *framework.Status) {
+func defaultCompleteMonitor(pod *corev1.Pod, state *podScheduleState, end time.Time, timeout time.Duration, status *fwktype.Status) {
 	klog.Infof("pod %v(%s) scheduled complete", klog.KObj(pod), pod.UID)
 	recordIfSchedulingTimeout(pod.UID, state, end, timeout)
 }

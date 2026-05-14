@@ -37,10 +37,10 @@ const (
 
 type SLOControllerConfigConflict struct {
 	client  ctrlclient.Client
-	decoder *ctrladmission.Decoder
+	decoder ctrladmission.Decoder
 }
 
-func NewPlugin(decoder *ctrladmission.Decoder, client ctrlclient.Client) *SLOControllerConfigConflict {
+func NewPlugin(decoder ctrladmission.Decoder, client ctrlclient.Client) *SLOControllerConfigConflict {
 	sloConfig := &SLOControllerConfigConflict{client: client, decoder: decoder}
 	return sloConfig
 }

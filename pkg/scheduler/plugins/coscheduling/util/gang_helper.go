@@ -42,17 +42,7 @@ func GetId(namespace, name string) string {
 }
 
 func GetGangNameByPod(pod *corev1.Pod) string {
-	if pod == nil {
-		return ""
-	}
-	var gangName string
-	if gangName = pod.Labels[v1alpha1.PodGroupLabel]; gangName == "" {
-		// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
-		if gangName = pod.Labels[extension.LabelLightweightCoschedulingPodGroupName]; gangName == "" {
-			gangName = extension.GetGangName(pod)
-		}
-	}
-	return gangName
+	return extension.GetGangName(pod)
 }
 
 func GetGangMinNumFromPod(pod *corev1.Pod) (minNum int, err error) {

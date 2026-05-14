@@ -21,6 +21,7 @@ import (
 	"errors"
 	"time"
 
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -33,38 +34,38 @@ var (
 	JobRejectPlugin = "JobRejectPlugin"
 )
 
-func TakeoverNominatingInfo(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *framework.Status, nominatingInfo *framework.NominatingInfo, start time.Time) *framework.NominatingInfo {
-	if status == nil || status.Code() != framework.Unschedulable {
+func TakeoverNominatingInfo(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) *fwktype.NominatingInfo {
+	if status == nil || status.Code() != fwktype.Unschedulable {
 		return nominatingInfo
 	}
 	rejecterPlugin := getRejecterPlugin(status)
 	if rejecterPlugin == JobPreemptionSuccessPlugin {
-		return &framework.NominatingInfo{
-			NominatingMode:    framework.ModeOverride,
+		return &fwktype.NominatingInfo{
+			NominatingMode:    fwktype.ModeOverride,
 			NominatedNodeName: podInfo.Pod.Spec.NodeName,
 		}
-	} else if status.FailedPlugin() == JobRejectPlugin {
-		return &framework.NominatingInfo{
-			NominatingMode:    framework.ModeNoop,
+	} else if status.Plugin() == JobRejectPlugin {
+		return &fwktype.NominatingInfo{
+			NominatingMode:    fwktype.ModeNoop,
 			NominatedNodeName: "",
 		}
-	} else if status.FailedPlugin() == JobPreemptionFailurePlugin {
-		return &framework.NominatingInfo{
-			NominatingMode:    framework.ModeOverride,
+	} else if status.Plugin() == JobPreemptionFailurePlugin {
+		return &fwktype.NominatingInfo{
+			NominatingMode:    fwktype.ModeOverride,
 			NominatedNodeName: "",
 		}
 	}
 	return nominatingInfo
 }
 
-func getRejecterPlugin(status *framework.Status) string {
-	if status == nil || status.Code() != framework.Unschedulable {
+func getRejecterPlugin(status *fwktype.Status) string {
+	if status == nil || status.Code() != fwktype.Unschedulable {
 		return ""
 	}
 	err := status.AsError()
 	var fitError *framework.FitError
 	if errors.As(err, &fitError) && fitError.Diagnosis.UnschedulablePlugins.Len() == 1 {
-		// 1.33 framework.NewStatus(framework.Unschedulable, msg).WithPlugin(pluginName):
+		// 1.33 fwktype.NewStatus(fwktype.Unschedulable, msg).WithPlugin(pluginName):
 		//		fitErr := &framework.FitError{
 		//			NumAllNodes: 1,
 		//			Pod:         assumedPodInfo.Pod,
@@ -73,9 +74,9 @@ func getRejecterPlugin(status *framework.Status) string {
 		//				UnschedulablePlugins: sets.New(status.Plugin()),
 		//			},
 		//		}
-		//		framework.NewStatus(status.Code()).WithError(fitErr)
+		//		fwktype.NewStatus(status.Code()).WithError(fitErr)
 		return fitError.Diagnosis.UnschedulablePlugins.UnsortedList()[0]
 	}
-	// 1.28 framework.NewStatus(framework.Unschedulable, msg).WithFailedPlugin(pluginName):
-	return status.FailedPlugin()
+	// 1.28 fwktype.NewStatus(fwktype.Unschedulable, msg).WithFailedPlugin(pluginName):
+	return status.Plugin()
 }

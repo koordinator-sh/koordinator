@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
@@ -31,19 +32,19 @@ func Test_getSchedulingHint(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		setupState     func(*framework.CycleState)
+		setupState     func(fwktype.CycleState)
 		expectedResult *HintState
 		expectedOK     bool
 	}{
 		{
 			name:           "no scheduling hint state",
-			setupState:     func(state *framework.CycleState) {},
+			setupState:     func(state fwktype.CycleState) {},
 			expectedResult: nil,
 			expectedOK:     false,
 		},
 		{
 			name: "scheduling hint state without extensions",
-			setupState: func(state *framework.CycleState) {
+			setupState: func(state fwktype.CycleState) {
 				hintState := &hinter.SchedulingHintStateData{}
 				state.Write(hinter.SchedulingHintStateKey, hintState)
 			},
@@ -52,7 +53,7 @@ func Test_getSchedulingHint(t *testing.T) {
 		},
 		{
 			name: "scheduling hint state with extensions but not for reservation plugin",
-			setupState: func(state *framework.CycleState) {
+			setupState: func(state fwktype.CycleState) {
 				hintState := &hinter.SchedulingHintStateData{
 					Extensions: map[string]interface{}{
 						"other-plugin": HintExtensions{SkipRestoreNodeInfo: true},
@@ -65,7 +66,7 @@ func Test_getSchedulingHint(t *testing.T) {
 		},
 		{
 			name: "scheduling hint state with reservation plugin extensions - wrong type",
-			setupState: func(state *framework.CycleState) {
+			setupState: func(state fwktype.CycleState) {
 				hintState := &hinter.SchedulingHintStateData{
 					PreFilterNodes: []string{"node1", "node2"},
 					Extensions: map[string]interface{}{
@@ -79,7 +80,7 @@ func Test_getSchedulingHint(t *testing.T) {
 		},
 		{
 			name: "scheduling hint state with reservation plugin extensions - correct type",
-			setupState: func(state *framework.CycleState) {
+			setupState: func(state fwktype.CycleState) {
 				hintState := &hinter.SchedulingHintStateData{
 					PreFilterNodes: []string{"node1", "node2"},
 					Extensions: map[string]interface{}{

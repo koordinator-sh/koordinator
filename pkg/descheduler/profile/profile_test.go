@@ -136,7 +136,7 @@ func TestNewMap(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m, err := NewMap(tc.profiles, fakeRegistry, nilRecordFactory)
+			m, err := NewMap(context.TODO(), tc.profiles, fakeRegistry, nilRecordFactory)
 			if err := checkErr(err, tc.wantErr); err != nil {
 				t.Fatal(err)
 			}
@@ -170,8 +170,8 @@ func (p *fakePlugin) PreEvictionFilter(_ *corev1.Pod) bool {
 	return false
 }
 
-func newFakePlugin(name string) func(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	return func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+func newFakePlugin(name string) func(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+	return func(_ context.Context, _ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
 		return &fakePlugin{name: name}, nil
 	}
 }

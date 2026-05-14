@@ -21,7 +21,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -35,7 +35,7 @@ type podEventHandler struct {
 	resourceManager ResourceManager
 }
 
-func registerPodEventHandler(handle framework.Handle, resourceManager ResourceManager) {
+func registerPodEventHandler(handle fwktype.Handle, resourceManager ResourceManager) {
 	podInformer := handle.SharedInformerFactory().Core().V1().Pods().Informer()
 	eventHandler := &podEventHandler{
 		resourceManager: resourceManager,

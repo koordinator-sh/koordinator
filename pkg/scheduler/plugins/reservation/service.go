@@ -22,6 +22,7 @@ import (
 	"github.com/gin-gonic/gin"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -42,8 +43,8 @@ type ReservationItem struct {
 	Allocatable       corev1.ResourceList                          `json:"allocatable,omitempty"`
 	Reserved          corev1.ResourceList                          `json:"reserved,omitempty"`
 	Allocated         corev1.ResourceList                          `json:"allocated,omitempty"`
-	AllocatablePorts  framework.HostPortInfo                       `json:"allocatablePorts,omitempty"`
-	AllocatedPorts    framework.HostPortInfo                       `json:"allocatedPorts,omitempty"`
+	AllocatablePorts  fwktype.HostPortInfo                         `json:"allocatablePorts,omitempty"`
+	AllocatedPorts    fwktype.HostPortInfo                         `json:"allocatedPorts,omitempty"`
 	AvailableResource *framework.Resource                          `json:"availableResource,omitempty"`
 	AllocatedResource *framework.Resource                          `json:"allocatedResource,omitempty"`
 	Owners            []schedulingv1alpha1.ReservationOwner        `json:"owners,omitempty"`

@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -90,73 +91,79 @@ func TestDebugFiltersSetter(t *testing.T) {
 }
 
 func TestDebugScores(t *testing.T) {
-	pluginToNodeScores := map[string]framework.NodeScoreList{
+	pluginToNodeScores := map[string]fwktype.NodeScoreList{
 		"ImageLocality": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
 		},
 		"InterPodAffinity": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
 		},
 		"LoadAwareScheduling": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 85},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 87},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 55},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 15},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 85},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 87},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 55},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 15},
 		},
 		"NodeAffinity": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
 		},
 		"NodeNUMAResource": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
 		},
 		"NodeResourcesBalancedAllocation": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 96},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 96},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 95},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 90},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 96},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 96},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 95},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 90},
 		},
 		"NodeResourcesFit": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 93},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 94},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 91},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 82},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 93},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 94},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 91},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 82},
 		},
 		"PodTopologySpread": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 200},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 200},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 200},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 200},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 200},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 200},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 200},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 200},
 		},
 		"Reservation": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 0},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 0},
 		},
 		"TaintToleration": {
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 100},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 100},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 100},
-			framework.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 100},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.50", Score: 100},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.51", Score: 100},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.19", Score: 100},
+			fwktype.NodeScore{Name: "cn-hangzhou.10.0.4.18", Score: 100},
 		},
 	}
-	nodes := []*corev1.Node{
+	nodeObjs := []*corev1.Node{
 		{ObjectMeta: metav1.ObjectMeta{Name: "cn-hangzhou.10.0.4.50"}},
 		{ObjectMeta: metav1.ObjectMeta{Name: "cn-hangzhou.10.0.4.51"}},
 		{ObjectMeta: metav1.ObjectMeta{Name: "cn-hangzhou.10.0.4.19"}},
 		{ObjectMeta: metav1.ObjectMeta{Name: "cn-hangzhou.10.0.4.18"}},
+	}
+	nodes := make([]fwktype.NodeInfo, 0, len(nodeObjs))
+	for _, n := range nodeObjs {
+		ni := framework.NewNodeInfo()
+		ni.SetNode(n)
+		nodes = append(nodes, ni)
 	}
 
 	pod := &corev1.Pod{
@@ -166,16 +173,16 @@ func TestDebugScores(t *testing.T) {
 		},
 	}
 
-	m := map[string][]framework.PluginScore{}
+	m := map[string][]fwktype.PluginScore{}
 	for pluginName, nodeScores := range pluginToNodeScores {
 		for _, v := range nodeScores {
-			m[v.Name] = append(m[v.Name], framework.PluginScore{
+			m[v.Name] = append(m[v.Name], fwktype.PluginScore{
 				Name:  pluginName,
 				Score: v.Score,
 			})
 		}
 	}
-	allNodePluginScores := make([]framework.NodePluginScores, 0, len(m))
+	allNodePluginScores := make([]fwktype.NodePluginScores, 0, len(m))
 	for nodeName, pluginScores := range m {
 		sort.Slice(pluginScores, func(i, j int) bool {
 			return pluginScores[i].Name < pluginScores[j].Name
@@ -184,7 +191,7 @@ func TestDebugScores(t *testing.T) {
 		for _, v := range pluginScores {
 			totalScore += v.Score
 		}
-		allNodePluginScores = append(allNodePluginScores, framework.NodePluginScores{
+		allNodePluginScores = append(allNodePluginScores, fwktype.NodePluginScores{
 			Name:       nodeName,
 			Scores:     pluginScores,
 			TotalScore: totalScore,

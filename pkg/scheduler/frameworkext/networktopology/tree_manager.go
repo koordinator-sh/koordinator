@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -109,8 +110,10 @@ func (tm *treeManager) buildTree() Tree {
 	}
 	clusterNetworkTopology, err := tm.topologyLister.Get(defaultClusterNetworkTopologyName)
 	if err != nil {
-		klog.Errorf("[NetworkTopology] get cluster network topology fail, clusterNetworkTopologyName: %v, err: %v",
-			defaultClusterNetworkTopologyName, err.Error())
+		if !errors.IsNotFound(err) {
+			klog.Errorf("[NetworkTopology] get cluster network topology fail, clusterNetworkTopologyName: %v, err: %v",
+				defaultClusterNetworkTopologyName, err.Error())
+		}
 		return nil
 	}
 	t, err := NewTree(clusterNetworkTopology)

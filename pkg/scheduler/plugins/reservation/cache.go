@@ -25,7 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -449,7 +449,7 @@ func (cache *reservationCache) getReservationInfoByUID(uid types.UID) *framework
 func (cache *reservationCache) GetReservationInfoByPod(pod *corev1.Pod, nodeName string) *frameworkext.ReservationInfo {
 	var target *frameworkext.ReservationInfo
 	// TODO: fast lookup pods assigned to reservations
-	cache.ForEachMatchableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+	cache.ForEachMatchableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *fwktype.Status) {
 		if _, ok := rInfo.AssignedPods[pod.UID]; ok {
 			target = rInfo
 			return false, nil
@@ -483,7 +483,7 @@ func (cache *reservationCache) ListAllNodes(matchable bool) []string {
 	return nodes
 }
 
-func (cache *reservationCache) ForEachMatchableReservationOnNode(nodeName string, fn func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status)) *framework.Status {
+func (cache *reservationCache) ForEachMatchableReservationOnNode(nodeName string, fn func(rInfo *frameworkext.ReservationInfo) (bool, *fwktype.Status)) *fwktype.Status {
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
 	rOnNode := cache.matchableOnNode[nodeName]
@@ -506,7 +506,7 @@ func (cache *reservationCache) ForEachMatchableReservationOnNode(nodeName string
 func (cache *reservationCache) ListAvailableReservationInfosOnNode(nodeName string, listAll bool) []*frameworkext.ReservationInfo {
 	var result []*frameworkext.ReservationInfo
 	if !listAll {
-		cache.ForEachMatchableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+		cache.ForEachMatchableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *fwktype.Status) {
 			result = append(result, rInfo.Clone())
 			return true, nil
 		})

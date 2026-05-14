@@ -21,15 +21,46 @@ import (
 	"net"
 
 	"github.com/spf13/pflag"
-	apiserveroptions "k8s.io/apiserver/pkg/server/options"
+	apiserver "k8s.io/apiserver/pkg/server"
 
 	schedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 )
 
+// DeprecatedInsecureServingOptions provides options for insecure serving (no TLS).
+// DEPRECATED: no longer supported.
+type DeprecatedInsecureServingOptions struct {
+	BindAddress net.IP
+	BindPort    int
+	BindNetwork string
+	Listener    net.Listener
+}
+
+// ApplyTo populates the DeprecatedInsecureServingInfo from the options.
+func (s *DeprecatedInsecureServingOptions) ApplyTo(c **apiserver.DeprecatedInsecureServingInfo) error {
+	if s == nil {
+		return nil
+	}
+	if s.BindPort <= 0 {
+		return nil
+	}
+	if s.Listener == nil {
+		var err error
+		addr := net.JoinHostPort(s.BindAddress.String(), fmt.Sprintf("%d", s.BindPort))
+		s.Listener, err = net.Listen(s.BindNetwork, addr)
+		if err != nil {
+			return fmt.Errorf("failed to create listener: %v", err)
+		}
+	}
+	*c = &apiserver.DeprecatedInsecureServingInfo{
+		Listener: s.Listener,
+	}
+	return nil
+}
+
 // CombinedInsecureServingOptions sets up to two insecure listeners for healthz and metrics. The flags
 // override the ComponentConfig and DeprecatedInsecureServingOptions values for both.
 type CombinedInsecureServingOptions struct {
-	Healthz *apiserveroptions.DeprecatedInsecureServingOptions
+	Healthz *DeprecatedInsecureServingOptions
 
 	BindPort    int
 	BindAddress string

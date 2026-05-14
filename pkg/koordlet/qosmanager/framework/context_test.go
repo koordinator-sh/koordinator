@@ -20,11 +20,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
@@ -85,7 +84,7 @@ func Test_evictPod_policy_v1beta1(t *testing.T) {
 
 	fakeRecorder := &testutil.FakeRecorder{}
 	client := clientsetfake.NewSimpleClientset()
-	setupFakeDiscoveryWithPolicyResource(&client.Fake, policyv1beta1.SchemeGroupVersion.String())
+	setupFakeDiscoveryWithPolicyResource(&client.Fake, policyv1.SchemeGroupVersion.String())
 	evictVersion, err := util.FindSupportedEvictVersion(client)
 	assert.Nil(t, err)
 

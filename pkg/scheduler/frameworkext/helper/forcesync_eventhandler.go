@@ -17,156 +17,142 @@ limitations under the License.
 package helper
 
 import (
+	"context"
+	"fmt"
 	"reflect"
-	"strconv"
+	"sync"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	apimachinerytypes "k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog/v2"
 )
 
+var (
+	registrationsMu sync.Mutex
+	registrations   []cache.ResourceEventHandlerRegistration
+)
+
+func addRegistration(reg cache.ResourceEventHandlerRegistration) {
+	registrationsMu.Lock()
+	defer registrationsMu.Unlock()
+	registrations = append(registrations, reg)
+}
+
+// GetRegistrations returns a snapshot of all collected registrations.
+func GetRegistrations() []cache.ResourceEventHandlerRegistration {
+	registrationsMu.Lock()
+	defer registrationsMu.Unlock()
+	return append([]cache.ResourceEventHandlerRegistration{}, registrations...)
+}
+
+// ResetRegistrations clears all collected registrations and any startup hooks
+// registered alongside them. Only for testing.
+func ResetRegistrations() {
+	registrationsMu.Lock()
+	registrations = nil
+	registrationsMu.Unlock()
+	ResetStartupHooks()
+}
+
+// forceSyncEventHandler holds configuration for event handler registration.
 type forceSyncEventHandler struct {
-	handler      cache.ResourceEventHandler
-	syncCh       chan struct{}
-	objects      map[apimachinerytypes.UID]int64
 	resyncPeriod time.Duration
 }
 
-func newForceSyncEventHandler(handler cache.ResourceEventHandler, options ...Option) *forceSyncEventHandler {
-	h := &forceSyncEventHandler{
-		handler: handler,
-		syncCh:  make(chan struct{}, 1),
-		objects: map[apimachinerytypes.UID]int64{},
-	}
-	for _, fn := range options {
-		fn(h)
-	}
-	return h
-}
-
-func (h *forceSyncEventHandler) syncDone() {
-	close(h.syncCh)
-}
-
-func (h *forceSyncEventHandler) waitForSyncDone() {
-	<-h.syncCh
-}
-
-func (h *forceSyncEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
-	h.waitForSyncDone()
-	if metaAccessor, ok := obj.(metav1.ObjectMetaAccessor); ok {
-		objectMeta := metaAccessor.GetObjectMeta()
-		objectUID := objectMeta.GetUID()
-		if oldResourceVersion, ok := h.objects[objectUID]; ok && oldResourceVersion != 0 {
-			resourceVersion, err := strconv.ParseInt(objectMeta.GetResourceVersion(), 10, 64)
-			if err == nil && resourceVersion <= oldResourceVersion {
-				return
-			}
-			delete(h.objects, objectUID)
-			klog.Warningf("Object %q has been updated multiple times in a short period of time", klog.KObj(objectMeta).String())
-		}
-	}
-	if h.handler != nil {
-		h.handler.OnAdd(obj, isInInitialList)
-	}
-}
-
-func (h *forceSyncEventHandler) OnUpdate(oldObj, newObj interface{}) {
-	h.waitForSyncDone()
-	if h.objects != nil {
-		// Release objects map to reduce memory usage and reduce GC pressure
-		h.objects = nil
-	}
-	if h.handler != nil {
-		h.handler.OnUpdate(oldObj, newObj)
-	}
-}
-
-func (h *forceSyncEventHandler) OnDelete(obj interface{}) {
-	h.waitForSyncDone()
-	if h.objects != nil {
-		// Release objects map to reduce memory usage and reduce GC pressure
-		h.objects = nil
-	}
-	if h.handler != nil {
-		h.handler.OnDelete(obj)
-	}
-}
-
-func (h *forceSyncEventHandler) addDirectly(obj interface{}, isInInitialList bool) {
-	if h.handler == nil {
-		return
-	}
-	h.handler.OnAdd(obj, isInInitialList)
-	if metaAccessor, ok := obj.(metav1.ObjectMetaAccessor); ok {
-		objectMeta := metaAccessor.GetObjectMeta()
-		resourceVersion, err := strconv.ParseInt(objectMeta.GetResourceVersion(), 10, 64)
-		if err == nil {
-			h.objects[objectMeta.GetUID()] = resourceVersion
-		}
-	}
-}
-
+// CacheSyncer is the interface for starting informers and waiting for cache sync.
 type CacheSyncer interface {
 	Start(stopCh <-chan struct{})
 	WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
 }
 
+// Option is a functional option for forceSyncEventHandler.
 type Option func(*forceSyncEventHandler)
 
+// WithResyncPeriod sets the resync period for the event handler registration.
 func WithResyncPeriod(resyncPeriod time.Duration) Option {
 	return func(handler *forceSyncEventHandler) {
 		handler.resyncPeriod = resyncPeriod
 	}
 }
 
-// ForceSyncFromInformer ensures that the EventHandler will synchronize data immediately after registration,
-// helping those plugins that need to build memory status through EventHandler to correctly synchronize data
-func ForceSyncFromInformer(stopCh <-chan struct{}, cacheSyncer CacheSyncer, informer cache.SharedInformer, handler cache.ResourceEventHandler, options ...Option) (cache.ResourceEventHandlerRegistration, error) {
-	syncEventHandler := newForceSyncEventHandler(handler, options...)
-	registration, err := informer.AddEventHandlerWithResyncPeriod(syncEventHandler, syncEventHandler.resyncPeriod)
-	if cacheSyncer != nil {
-		cacheSyncer.Start(stopCh)
-		cacheSyncer.WaitForCacheSync(stopCh)
+// ForceSyncFromInformer registers handler via standard AddEventHandler and collects
+// the registration for WaitForHandlersSync.
+// NOTE: The informer is NOT started here; it will be started later in startInformersAndWaitForSync.
+// Function signature is kept unchanged for backward compatibility.
+func ForceSyncFromInformer(stopCh <-chan struct{}, cacheSyncer CacheSyncer,
+	informer cache.SharedInformer, handler cache.ResourceEventHandler,
+	options ...Option) (cache.ResourceEventHandlerRegistration, error) {
+	cfg := &forceSyncEventHandler{}
+	for _, fn := range options {
+		fn(cfg)
 	}
-	allObjects := informer.GetStore().List()
-	for _, obj := range allObjects {
-		syncEventHandler.addDirectly(obj, true)
+	// Replace nil handler with a no-op handler to avoid panics when events are delivered.
+	if handler == nil {
+		handler = cache.ResourceEventHandlerFuncs{}
 	}
-	syncEventHandler.syncDone()
-	return registration, err
+	reg, err := informer.AddEventHandlerWithResyncPeriod(handler, cfg.resyncPeriod)
+	if err != nil {
+		return nil, err
+	}
+	// Avoid double-registration: forceSyncsharedIndexInformer.AddEventHandlerWithResyncPeriod
+	// already calls addRegistration internally, so skip it here to prevent duplicates
+	// in GetRegistrations() and redundant work in waitForKoordinatorHandlersSync.
+	if _, isWrapper := informer.(*forceSyncsharedIndexInformer); !isWrapper {
+		addRegistration(reg)
+	}
+	return reg, nil
 }
 
-func ForceSyncFromInformerWithReplace(stopCh <-chan struct{}, cacheSyncer CacheSyncer, informer cache.SharedInformer, handler cache.ResourceEventHandler, replaceHandler func([]interface{}) error, options ...Option) (cache.ResourceEventHandlerRegistration, error) {
-	syncEventHandler := newForceSyncEventHandler(handler, options...)
-	registration, err := informer.AddEventHandlerWithResyncPeriod(syncEventHandler, syncEventHandler.resyncPeriod)
-	if err != nil {
-		return nil, err
+// ForceSyncFromInformerWithReplace registers handler via ForceSyncFromInformer and, when
+// replaceHandler is non-nil, registers an AfterPluginInformersSynced startup hook that
+// invokes replaceHandler exactly once with a full snapshot of the informer's store. The
+// scheduler startup pipeline runs these hooks AFTER the plugin informer factories have
+// started and synced, but BEFORE the main informer factories (pods/nodes/etc.) deliver
+// events; this gives downstream event handlers a clean happens-before anchor on the
+// rebuilt plugin state. A non-nil error from replaceHandler aborts startup so the
+// scheduler can shut down gracefully.
+//
+// IMPORTANT (discouraged for new call sites): the whole-snapshot "replace" semantics is
+// a legacy shape kept for the ElasticQuota plugin. New plugins that need to initialize
+// from an initial list should either (a) register an AfterPluginInformersSynced hook
+// directly and pull the snapshot from a lister, or (b) use the plain ForceSyncFromInformer
+// path with idempotent OnAdd/OnUpdate handling, which does not require any cross-factory
+// startup ordering.
+func ForceSyncFromInformerWithReplace(stopCh <-chan struct{}, cacheSyncer CacheSyncer,
+	informer cache.SharedInformer, handler cache.ResourceEventHandler,
+	replaceHandler func([]interface{}) error,
+	options ...Option) (cache.ResourceEventHandlerRegistration, error) {
+	reg, err := ForceSyncFromInformer(stopCh, cacheSyncer, informer, handler, options...)
+	if err != nil || replaceHandler == nil {
+		return reg, err
 	}
+	// Register a startup hook that fires AFTER the hosting plugin informer factory has
+	// started and synced. At that point the registered handler has already consumed the
+	// initial list, so informer.GetStore().List() returns a complete snapshot. The hook
+	// runs synchronously relative to the startup pipeline, so its completion is totally
+	// ordered before any main informer begins delivering events.
+	RegisterAfterPluginInformersSynced(func(ctx context.Context) error {
+		if !cache.WaitForCacheSync(ctx.Done(), reg.HasSynced) {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return fmt.Errorf("ForceSyncFromInformerWithReplace: handler registration never synced")
+		}
+		return replaceHandler(informer.GetStore().List())
+	})
+	return reg, nil
+}
 
-	if cacheSyncer != nil {
-		cacheSyncer.Start(stopCh)
-		cacheSyncer.WaitForCacheSync(stopCh)
-	}
-
-	allObjects := informer.GetStore().List()
-	// record object uid.
-	for _, obj := range allObjects {
-		if metaAccessor, ok := obj.(metav1.ObjectMetaAccessor); ok {
-			objectMeta := metaAccessor.GetObjectMeta()
-			resourceVersion, err := strconv.ParseInt(objectMeta.GetResourceVersion(), 10, 64)
-			if err == nil {
-				syncEventHandler.objects[objectMeta.GetUID()] = resourceVersion
+// WaitForHandlersSync waits until all collected handler registrations have synced.
+// It is intended for use in tests: call it after starting informer factories so that
+// all OnAdd events delivered by the initial list have been processed before assertions.
+func WaitForHandlersSync(ctx context.Context) error {
+	return wait.PollUntilContextCancel(ctx, 100*time.Millisecond, true, func(ctx context.Context) (bool, error) {
+		for _, reg := range GetRegistrations() {
+			if !reg.HasSynced() {
+				return false, nil
 			}
 		}
-	}
-	// replace objects
-	err = replaceHandler(allObjects)
-	if err != nil {
-		return nil, err
-	}
-	syncEventHandler.syncDone()
-	return registration, err
+		return true, nil
+	})
 }

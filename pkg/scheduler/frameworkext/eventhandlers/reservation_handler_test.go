@@ -32,6 +32,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/apis/core/validation"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -39,7 +40,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/ptr"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -194,12 +195,12 @@ func TestAddReservationErrorHandler(t *testing.T) {
 				PodInfo: podInfo,
 			}
 
-			nominatingInfo := &framework.NominatingInfo{
-				NominatingMode:    framework.ModeNoop,
+			nominatingInfo := &fwktype.NominatingInfo{
+				NominatingMode:    fwktype.ModeNoop,
 				NominatedNodeName: "",
 			}
 
-			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.AsStatus(errors.New(tt.want)), nominatingInfo, time.Now())
+			handler(context.TODO(), extendedHandle, queuedPodInfo, fwktype.AsStatus(errors.New(tt.want)), nominatingInfo, time.Now())
 
 			r, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), tt.r.Name, metav1.GetOptions{})
 			assert.Equal(t, tt.wantErr, err != nil, err)
@@ -244,7 +245,7 @@ func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
 		isReservePod                     bool
 		hasReservationAffinity           bool
 		nilNominatingInfo                bool
-		nominatingMode                   framework.NominatingMode
+		nominatingMode                   fwktype.NominatingMode
 		nominatedNodeName                string
 		podNominatedNodeName             string
 		expectDeleteNominatedReservation bool
@@ -254,21 +255,21 @@ func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
 		{
 			name:                  "reserve pod should re-add nomination by failureHandler",
 			isReservePod:          true,
-			nominatingMode:        framework.ModeOverride,
+			nominatingMode:        fwktype.ModeOverride,
 			nominatedNodeName:     "test-node",
 			expectReAddNomination: true,
 		},
 		{
 			name:                 "normal pod with ModeOverride and nominated node should keep nomination",
 			isReservePod:         false,
-			nominatingMode:       framework.ModeOverride,
+			nominatingMode:       fwktype.ModeOverride,
 			nominatedNodeName:    "test-node",
 			expectKeepNomination: true,
 		},
 		{
 			name:                             "normal pod with ModeNoop and empty pod.Status.NominatedNodeName should delete nomination",
 			isReservePod:                     false,
-			nominatingMode:                   framework.ModeNoop,
+			nominatingMode:                   fwktype.ModeNoop,
 			nominatedNodeName:                "",
 			podNominatedNodeName:             "",
 			expectDeleteNominatedReservation: true,
@@ -276,7 +277,7 @@ func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
 		{
 			name:                 "normal pod with ModeNoop and non-empty pod.Status.NominatedNodeName should keep nomination",
 			isReservePod:         false,
-			nominatingMode:       framework.ModeNoop,
+			nominatingMode:       fwktype.ModeNoop,
 			nominatedNodeName:    "",
 			podNominatedNodeName: "test-node",
 			expectKeepNomination: true,
@@ -284,7 +285,7 @@ func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
 		{
 			name:                             "normal pod with ModeOverride but no nominated node should delete nomination",
 			isReservePod:                     false,
-			nominatingMode:                   framework.ModeOverride,
+			nominatingMode:                   fwktype.ModeOverride,
 			nominatedNodeName:                "",
 			expectDeleteNominatedReservation: true,
 		},
@@ -292,7 +293,7 @@ func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
 			name:                   "pod with reservation affinity should not handle nomination",
 			isReservePod:           false,
 			hasReservationAffinity: true,
-			nominatingMode:         framework.ModeNoop,
+			nominatingMode:         fwktype.ModeNoop,
 			nominatedNodeName:      "",
 		},
 		{
@@ -376,15 +377,15 @@ func TestMakeReservationErrorHandler_NominationHandling(t *testing.T) {
 				PodInfo: podInfo,
 			}
 
-			var nominatingInfo *framework.NominatingInfo
+			var nominatingInfo *fwktype.NominatingInfo
 			if !tt.nilNominatingInfo {
-				nominatingInfo = &framework.NominatingInfo{
+				nominatingInfo = &fwktype.NominatingInfo{
 					NominatingMode:    tt.nominatingMode,
 					NominatedNodeName: tt.nominatedNodeName,
 				}
 			}
 
-			handler(context.TODO(), extendedHandle, queuedPodInfo, framework.NewStatus(framework.Unschedulable, "test error"), nominatingInfo, time.Now())
+			handler(context.TODO(), extendedHandle, queuedPodInfo, fwktype.NewStatus(fwktype.Unschedulable, "test error"), nominatingInfo, time.Now())
 
 			// Check if nomination was deleted or kept
 			if tt.expectDeleteNominatedReservation {
@@ -899,7 +900,9 @@ func Test_updateReservation(t *testing.T) {
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 			}
-			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, corev1.DefaultSchedulerName)
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, corev1.DefaultSchedulerName,
+				frameworkruntime.WithWaitingPods(frameworkruntime.NewWaitingPodsMap()),
+			)
 			assert.NoError(t, err)
 
 			sched := &scheduler.Scheduler{
@@ -1482,14 +1485,14 @@ func Test_updateReservationInSchedulingQueue(t *testing.T) {
 	}
 }
 
-var _ framework.PermitPlugin = &fakePermitPlugin{}
+var _ fwktype.PermitPlugin = &fakePermitPlugin{}
 
 type fakePermitPlugin struct{}
 
 func (f *fakePermitPlugin) Name() string { return "fakePermitPlugin" }
 
-func (f *fakePermitPlugin) Permit(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) (*framework.Status, time.Duration) {
-	return framework.NewStatus(framework.Wait), 30 * time.Second
+func (f *fakePermitPlugin) Permit(ctx context.Context, state fwktype.CycleState, p *corev1.Pod, nodeName string) (*fwktype.Status, time.Duration) {
+	return fwktype.NewStatus(fwktype.Wait), 30 * time.Second
 }
 
 func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
@@ -1557,11 +1560,13 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterPermitPlugin("fakePermitPlugin", func(_ runtime.Object, f framework.Handle) (framework.Plugin, error) {
+				schedulertesting.RegisterPermitPlugin("fakePermitPlugin", func(_ context.Context, _ runtime.Object, f fwktype.Handle) (fwktype.Plugin, error) {
 					return &fakePermitPlugin{}, nil
 				}),
 			}
-			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, corev1.DefaultSchedulerName)
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, corev1.DefaultSchedulerName,
+				frameworkruntime.WithWaitingPods(frameworkruntime.NewWaitingPodsMap()),
+			)
 			assert.NoError(t, err)
 
 			sched := &scheduler.Scheduler{
@@ -1575,9 +1580,9 @@ func Test_deleteReservationFromSchedulingQueue(t *testing.T) {
 			rejected := make(chan bool, 1)
 			if tt.waiting {
 				status := fh.RunPermitPlugins(context.TODO(), cycleState, reservePod, "test-node")
-				assert.True(t, status.IsSuccess() || status.Code() == framework.Wait)
+				assert.True(t, status.IsSuccess() || status.Code() == fwktype.Wait)
 				hasWaitingPod := false
-				fh.IterateOverWaitingPods(func(pod framework.WaitingPod) {
+				fh.IterateOverWaitingPods(func(pod fwktype.WaitingPod) {
 					if pod.GetPod() != nil && pod.GetPod().UID == reservePod.UID {
 						hasWaitingPod = true
 					}

@@ -31,21 +31,19 @@ import (
 
 // arbitrationHandler implement handler.EventHandler
 type arbitrationHandler struct {
-	handler.EnqueueRequestForObject
 	client     client.Client
 	arbitrator Arbitrator
 }
 
 func NewHandler(arbitrator Arbitrator, client client.Client) handler.EventHandler {
 	return &arbitrationHandler{
-		EnqueueRequestForObject: handler.EnqueueRequestForObject{},
-		arbitrator:              arbitrator,
-		client:                  client,
+		arbitrator: arbitrator,
+		client:     client,
 	}
 }
 
 // Create call Arbitrator.Create
-func (h *arbitrationHandler) Create(ctx context.Context, evt event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (h *arbitrationHandler) Create(ctx context.Context, evt event.TypedCreateEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	if evt.Object == nil {
 		enqueueLog.Error(nil, "CreateEvent received with no metadata", "event", evt)
 		return
@@ -55,7 +53,7 @@ func (h *arbitrationHandler) Create(ctx context.Context, evt event.CreateEvent, 
 }
 
 // Update implements EventHandler.
-func (h *arbitrationHandler) Update(ctx context.Context, evt event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (h *arbitrationHandler) Update(ctx context.Context, evt event.TypedUpdateEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	switch {
 	case evt.ObjectNew != nil:
 		q.Add(reconcile.Request{NamespacedName: types.NamespacedName{
@@ -79,7 +77,7 @@ func (h *arbitrationHandler) Update(ctx context.Context, evt event.UpdateEvent, 
 }
 
 // Delete implements EventHandler.
-func (h *arbitrationHandler) Delete(ctx context.Context, evt event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (h *arbitrationHandler) Delete(ctx context.Context, evt event.TypedDeleteEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	if evt.Object == nil {
 		enqueueLog.Error(nil, "DeleteEvent received with no metadata", "event", evt)
 		return
@@ -89,4 +87,8 @@ func (h *arbitrationHandler) Delete(ctx context.Context, evt event.DeleteEvent, 
 		Namespace: evt.Object.GetNamespace(),
 	}})
 	h.arbitrator.DeletePodMigrationJob(evt.Object.(*v1alpha1.PodMigrationJob))
+}
+
+// Generic implements EventHandler.
+func (h *arbitrationHandler) Generic(ctx context.Context, evt event.TypedGenericEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }

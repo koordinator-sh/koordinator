@@ -22,17 +22,48 @@ import (
 	"strconv"
 
 	"github.com/spf13/pflag"
-	apiserveroptions "k8s.io/apiserver/pkg/server/options"
+	apiserver "k8s.io/apiserver/pkg/server"
 
 	deschedulerappconfig "github.com/koordinator-sh/koordinator/cmd/koord-descheduler/app/config"
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
 )
 
+// DeprecatedInsecureServingOptions provides options for insecure serving (no TLS).
+// DEPRECATED: no longer supported.
+type DeprecatedInsecureServingOptions struct {
+	BindAddress net.IP
+	BindPort    int
+	BindNetwork string
+	Listener    net.Listener
+}
+
+// ApplyTo populates the DeprecatedInsecureServingInfo from the options.
+func (s *DeprecatedInsecureServingOptions) ApplyTo(c **apiserver.DeprecatedInsecureServingInfo) error {
+	if s == nil {
+		return nil
+	}
+	if s.BindPort <= 0 {
+		return nil
+	}
+	if s.Listener == nil {
+		var err error
+		addr := net.JoinHostPort(s.BindAddress.String(), fmt.Sprintf("%d", s.BindPort))
+		s.Listener, err = net.Listen(s.BindNetwork, addr)
+		if err != nil {
+			return fmt.Errorf("failed to create listener: %v", err)
+		}
+	}
+	*c = &apiserver.DeprecatedInsecureServingInfo{
+		Listener: s.Listener,
+	}
+	return nil
+}
+
 // CombinedInsecureServingOptions sets up to two insecure listeners for healthz and metrics. The flags
 // override the ComponentConfig and DeprecatedInsecureServingOptions values for both.
 type CombinedInsecureServingOptions struct {
-	Healthz *apiserveroptions.DeprecatedInsecureServingOptions
-	Metrics *apiserveroptions.DeprecatedInsecureServingOptions
+	Healthz *DeprecatedInsecureServingOptions
+	Metrics *DeprecatedInsecureServingOptions
 
 	BindPort    int    // overrides the structs above on ApplyTo, ignored on ApplyToFromLoadedConfig
 	BindAddress string // overrides the structs above on ApplyTo, ignored on ApplyToFromLoadedConfig
@@ -100,7 +131,7 @@ func (o *CombinedInsecureServingOptions) ApplyToFromLoadedConfig(c *deschedulera
 	return o.applyTo(c, componentConfig)
 }
 
-func updateAddressFromDeprecatedInsecureServingOptions(addr *string, is *apiserveroptions.DeprecatedInsecureServingOptions) {
+func updateAddressFromDeprecatedInsecureServingOptions(addr *string, is *DeprecatedInsecureServingOptions) {
 	if is == nil {
 		*addr = ""
 		return
@@ -115,7 +146,7 @@ func updateAddressFromDeprecatedInsecureServingOptions(addr *string, is *apiserv
 	}
 }
 
-func updateDeprecatedInsecureServingOptionsFromAddress(is *apiserveroptions.DeprecatedInsecureServingOptions, addr string) {
+func updateDeprecatedInsecureServingOptionsFromAddress(is *DeprecatedInsecureServingOptions, addr string) {
 	if is == nil {
 		return
 	}

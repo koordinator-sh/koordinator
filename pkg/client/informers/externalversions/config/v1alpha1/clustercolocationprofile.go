@@ -19,13 +19,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	apisconfigv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
 	versioned "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	internalinterfaces "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/config/v1alpha1"
+	configv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/config/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -36,7 +36,7 @@ import (
 // ClusterColocationProfiles.
 type ClusterColocationProfileInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.ClusterColocationProfileLister
+	Lister() configv1alpha1.ClusterColocationProfileLister
 }
 
 type clusterColocationProfileInformer struct {
@@ -56,21 +56,33 @@ func NewClusterColocationProfileInformer(client versioned.Interface, resyncPerio
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredClusterColocationProfileInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ConfigV1alpha1().ClusterColocationProfiles().List(context.TODO(), options)
+				return client.ConfigV1alpha1().ClusterColocationProfiles().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.ConfigV1alpha1().ClusterColocationProfiles().Watch(context.TODO(), options)
+				return client.ConfigV1alpha1().ClusterColocationProfiles().Watch(context.Background(), options)
 			},
-		},
-		&configv1alpha1.ClusterColocationProfile{},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.ConfigV1alpha1().ClusterColocationProfiles().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.ConfigV1alpha1().ClusterColocationProfiles().Watch(ctx, options)
+			},
+		}, client),
+		&apisconfigv1alpha1.ClusterColocationProfile{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +93,9 @@ func (f *clusterColocationProfileInformer) defaultInformer(client versioned.Inte
 }
 
 func (f *clusterColocationProfileInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&configv1alpha1.ClusterColocationProfile{}, f.defaultInformer)
+	return f.factory.InformerFor(&apisconfigv1alpha1.ClusterColocationProfile{}, f.defaultInformer)
 }
 
-func (f *clusterColocationProfileInformer) Lister() v1alpha1.ClusterColocationProfileLister {
-	return v1alpha1.NewClusterColocationProfileLister(f.Informer().GetIndexer())
+func (f *clusterColocationProfileInformer) Lister() configv1alpha1.ClusterColocationProfileLister {
+	return configv1alpha1.NewClusterColocationProfileLister(f.Informer().GetIndexer())
 }

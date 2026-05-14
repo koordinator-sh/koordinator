@@ -331,7 +331,7 @@ func (p *tcPlugin) refreshForAllPods(pods []*statesinformer.PodMeta, rule *tcRul
 		if needLimitAtPodLevel {
 			// create tc rules
 			if err := initHandleId(pod.Pod.UID, rule.handleToUid, rule.uidToHandle); err != nil {
-				klog.Errorf(err.Error())
+				klog.Errorf("failed to init handle id, err: %s", err)
 				continue
 			}
 			p.updateRule(rule)

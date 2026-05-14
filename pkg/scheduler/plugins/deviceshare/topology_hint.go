@@ -22,7 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/gengo/examples/set-gen/sets"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -37,7 +37,7 @@ const (
 	defaultNUMAScore = 500
 )
 
-func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
+func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, node *corev1.Node) (map[string][]topologymanager.NUMATopologyHint, *fwktype.Status) {
 	if p.disableDeviceNUMATopologyAlignment {
 		return nil, nil
 	}
@@ -64,16 +64,16 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState *framework.
 	return p.generateTopologyHints(cycleState, state, nodeDeviceInfo, node, pod)
 }
 
-func generateDesignatedHints(allocations apiext.DeviceAllocations, topology *NUMATopology) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
+func generateDesignatedHints(allocations apiext.DeviceAllocations, topology *NUMATopology) (map[string][]topologymanager.NUMATopologyHint, *fwktype.Status) {
 	hints := map[string][]topologymanager.NUMATopologyHint{}
 	numaNodes := sets.NewInt()
 	for deviceType, deviceAllocations := range allocations {
 		for _, allocation := range deviceAllocations {
 			if deviceToNodeID, ok := topology.deviceToNodeID[deviceType]; !ok {
-				return nil, framework.NewStatus(framework.Unschedulable, ErrDesignatedAllocationLackNUMA)
+				return nil, fwktype.NewStatus(fwktype.Unschedulable, ErrDesignatedAllocationLackNUMA)
 
 			} else if nodeID, ok := deviceToNodeID[allocation.Minor]; !ok {
-				return nil, framework.NewStatus(framework.Unschedulable, ErrDesignatedAllocationLackNUMA)
+				return nil, fwktype.NewStatus(fwktype.Unschedulable, ErrDesignatedAllocationLackNUMA)
 			} else {
 				numaNodes.Insert(nodeID)
 			}
@@ -82,7 +82,7 @@ func generateDesignatedHints(allocations apiext.DeviceAllocations, topology *NUM
 	}
 	affinity, err := bitmask.NewBitMask(numaNodes.UnsortedList()...)
 	if err != nil {
-		return nil, framework.NewStatus(framework.Unschedulable, err.Error())
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, err.Error())
 	}
 	for deviceType := range allocations {
 		hints[string(deviceType)] = []topologymanager.NUMATopologyHint{
@@ -97,7 +97,7 @@ func generateDesignatedHints(allocations apiext.DeviceAllocations, topology *NUM
 	return hints, nil
 }
 
-func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *framework.Status {
+func (p *Plugin) Allocate(ctx context.Context, cycleState fwktype.CycleState, affinity topologymanager.NUMATopologyHint, pod *corev1.Pod, node *corev1.Node) *fwktype.Status {
 	if p.disableDeviceNUMATopologyAlignment {
 		return nil
 	}
@@ -156,7 +156,7 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState *framework.CycleState,
 	return status
 }
 
-func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *preFilterState, nodeDevice *nodeDevice, node *corev1.Node, pod *corev1.Pod) (map[string][]topologymanager.NUMATopologyHint, *framework.Status) {
+func (p *Plugin) generateTopologyHints(cycleState fwktype.CycleState, state *preFilterState, nodeDevice *nodeDevice, node *corev1.Node, pod *corev1.Pod) (map[string][]topologymanager.NUMATopologyHint, *fwktype.Status) {
 	reservationRestoreState := getReservationRestoreState(cycleState)
 	restoreState := reservationRestoreState.getNodeState(node.Name)
 	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[node.Name])
@@ -178,7 +178,7 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 	sort.Ints(numaNodes)
 
 	var minAffinitySize map[corev1.ResourceName]int
-	var statusUnsatisfied *framework.Status
+	var statusUnsatisfied *fwktype.Status
 	var bestAllocationResult apiext.DeviceAllocations
 	var feasibleAllocationResults []*numaScopedAllocation
 
@@ -186,7 +186,7 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 		nodeDevice.lock.RLock()
 		defer nodeDevice.lock.RUnlock()
 
-		var status *framework.Status
+		var status *fwktype.Status
 		var allocateResult apiext.DeviceAllocations
 		if mask.Count() == len(numaNodes) {
 			defer func() {
@@ -204,7 +204,7 @@ func (p *Plugin) generateTopologyHints(cycleState *framework.CycleState, state *
 		totalDevices := calcTotalDevicesByNUMA(nodeDevice, maskNodes)
 		for deviceType, wanted := range allocator.desiredCountPerDeviceType {
 			if totalCount, exists := totalDevices[deviceType]; exists && totalCount < wanted {
-				status = framework.NewStatus(framework.UnschedulableAndUnresolvable, ErrInsufficientNUMAScopedDevices)
+				status = fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrInsufficientNUMAScopedDevices)
 				return
 			}
 		}

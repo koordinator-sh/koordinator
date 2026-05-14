@@ -38,6 +38,7 @@ import (
 	"k8s.io/apiserver/pkg/server/mux"
 	"k8s.io/apiserver/pkg/server/routes"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/record"
@@ -316,7 +317,9 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	completedProfiles := make([]deschedulerconfig.DeschedulerProfile, 0)
 
 	recorderFactory := func(name string) events.EventRecorder {
-		return record.NewEventRecorderAdapter(cc.Manager.GetEventRecorderFor(name))
+		broadcaster := record.NewBroadcaster()
+		recorder := broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: name})
+		return record.NewEventRecorderAdapter(recorder)
 	}
 
 	evictionLimiter := evictions.NewEvictionLimiter(

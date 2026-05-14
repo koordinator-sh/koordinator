@@ -17,6 +17,8 @@ limitations under the License.
 package testing
 
 import (
+	"context"
+
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
@@ -38,7 +40,7 @@ func NewFramework(fns []RegisterPluginFunc, profileName string, opts ...runtime.
 	for _, f := range fns {
 		f(&registry, profile)
 	}
-	return runtime.NewFramework(registry, profile, opts...)
+	return runtime.NewFramework(context.Background(), registry, profile, opts...)
 }
 
 type RegisterPluginFunc func(reg *runtime.Registry, profile *deschedulerconfig.DeschedulerProfile)

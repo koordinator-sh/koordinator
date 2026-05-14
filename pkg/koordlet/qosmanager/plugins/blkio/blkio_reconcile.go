@@ -74,7 +74,7 @@ func (b *blkIOReconcile) Setup(context *framework.Context) {
 
 func (b *blkIOReconcile) Run(stopCh <-chan struct{}) {
 	if err := b.init(stopCh); err != nil {
-		klog.Fatal("blkIOReconcile init failed, error %v", err)
+		klog.Fatalf("blkIOReconcile init failed, error %v", err)
 		return
 	}
 	go wait.Until(b.reconcile, b.reconcileInterval, stopCh)

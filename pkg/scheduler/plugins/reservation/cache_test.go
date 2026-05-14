@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -679,7 +679,7 @@ func TestCacheForEachMatchableReservationOnNode(t *testing.T) {
 
 	// iterate over matchable reservations on test-node-1
 	count := 0
-	status := cache.ForEachMatchableReservationOnNode("test-node-1", func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+	status := cache.ForEachMatchableReservationOnNode("test-node-1", func(rInfo *frameworkext.ReservationInfo) (bool, *fwktype.Status) {
 		count++
 		assert.Equal(t, reservation1.UID, rInfo.UID())
 		return true, nil
@@ -689,7 +689,7 @@ func TestCacheForEachMatchableReservationOnNode(t *testing.T) {
 
 	// test early termination
 	count = 0
-	status = cache.ForEachMatchableReservationOnNode("test-node-1", func(rInfo *frameworkext.ReservationInfo) (bool, *framework.Status) {
+	status = cache.ForEachMatchableReservationOnNode("test-node-1", func(rInfo *frameworkext.ReservationInfo) (bool, *fwktype.Status) {
 		count++
 		return false, nil // stop iteration
 	})

@@ -47,7 +47,7 @@ func TestReserveByNUMANode(t *testing.T) {
 	}
 	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
 
-	p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+	p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 	assert.NoError(t, err)
 	pl := p.(*Plugin)
 
@@ -91,7 +91,7 @@ func TestReserveByNUMANode(t *testing.T) {
 			},
 		},
 	}
-	_, status := pl.PreFilter(context.TODO(), cycleState, pod)
+	_, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
 	assert.True(t, status.IsSuccess())
 
 	nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(node.Name)

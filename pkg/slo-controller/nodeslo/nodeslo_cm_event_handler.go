@@ -97,13 +97,13 @@ func NewSLOCfgHandlerForConfigMapEvent(client client.Client, initCfg SLOCfg, rec
 	return sloHandler
 }
 
-func (p *SLOCfgHandlerForConfigMapEvent) triggerAllNodeEnqueue(q *workqueue.RateLimitingInterface) {
+func (p *SLOCfgHandlerForConfigMapEvent) triggerAllNodeEnqueue(q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	nodeList := &corev1.NodeList{}
 	if err := p.Client.List(context.TODO(), nodeList); err != nil {
 		return
 	}
 	for _, node := range nodeList.Items {
-		(*q).Add(reconcile.Request{
+		q.Add(reconcile.Request{
 			NamespacedName: types.NamespacedName{
 				Name: node.Name,
 			},

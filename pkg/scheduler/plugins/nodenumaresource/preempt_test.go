@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
@@ -114,16 +115,16 @@ func TestPlugin_AddPod(t *testing.T) {
 		resourceManager ResourceManager
 	}
 	type args struct {
-		cycleState   *framework.CycleState
+		cycleState   fwktype.CycleState
 		podInfoToAdd *framework.PodInfo
-		nodeInfo     *framework.NodeInfo
+		nodeInfo     fwktype.NodeInfo
 	}
 	tests := []struct {
 		name   string
 		fields fields
 		args   args
-		want   *framework.Status
-		wantFn func(t *testing.T, state *framework.CycleState)
+		want   *fwktype.Status
+		wantFn func(t *testing.T, state fwktype.CycleState)
 	}{
 		{
 			name: "failed to get state",
@@ -131,7 +132,7 @@ func TestPlugin_AddPod(t *testing.T) {
 				cycleState: framework.NewCycleState(),
 				nodeInfo:   testNodeInfo,
 			},
-			want: framework.AsStatus(framework.ErrNotFound),
+			want: fwktype.AsStatus(fwktype.ErrNotFound),
 		},
 		{
 			name: "state skips",
@@ -142,10 +143,10 @@ func TestPlugin_AddPod(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "nil pod to add",
+			name: "empty pod to add",
 			args: args{
 				cycleState:   testState,
-				podInfoToAdd: nil,
+				podInfoToAdd: &framework.PodInfo{},
 				nodeInfo:     testNodeInfo,
 			},
 			want: nil,
@@ -161,7 +162,7 @@ func TestPlugin_AddPod(t *testing.T) {
 				nodeInfo:     testNodeInfo,
 			},
 			want: nil,
-			wantFn: func(t *testing.T, state *framework.CycleState) {
+			wantFn: func(t *testing.T, state fwktype.CycleState) {
 				stateData, status := getPreFilterState(state)
 				assert.True(t, status.IsSuccess())
 				assert.False(t, stateData.skip)
@@ -184,7 +185,7 @@ func TestPlugin_AddPod(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil, []*corev1.Node{tt.args.nodeInfo.Node()})
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 			pl, ok := p.(*Plugin)
@@ -280,16 +281,16 @@ func TestPlugin_RemovePod(t *testing.T) {
 		resourceManager ResourceManager
 	}
 	type args struct {
-		cycleState      *framework.CycleState
+		cycleState      fwktype.CycleState
 		podInfoToRemove *framework.PodInfo
-		nodeInfo        *framework.NodeInfo
+		nodeInfo        fwktype.NodeInfo
 	}
 	tests := []struct {
 		name   string
 		fields fields
 		args   args
-		want   *framework.Status
-		wantFn func(t *testing.T, state *framework.CycleState)
+		want   *fwktype.Status
+		wantFn func(t *testing.T, state fwktype.CycleState)
 	}{
 		{
 			name: "failed to get state",
@@ -297,7 +298,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 				cycleState: framework.NewCycleState(),
 				nodeInfo:   testNodeInfo,
 			},
-			want: framework.AsStatus(framework.ErrNotFound),
+			want: fwktype.AsStatus(fwktype.ErrNotFound),
 		},
 		{
 			name: "state skips",
@@ -308,10 +309,10 @@ func TestPlugin_RemovePod(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "nil pod to add",
+			name: "empty pod to add",
 			args: args{
 				cycleState:      testState,
-				podInfoToRemove: nil,
+				podInfoToRemove: &framework.PodInfo{},
 				nodeInfo:        testNodeInfo,
 			},
 			want: nil,
@@ -327,7 +328,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 				nodeInfo:        testNodeInfo,
 			},
 			want: nil,
-			wantFn: func(t *testing.T, state *framework.CycleState) {
+			wantFn: func(t *testing.T, state fwktype.CycleState) {
 				stateData, status := getPreFilterState(state)
 				assert.True(t, status.IsSuccess())
 				assert.False(t, stateData.skip)
@@ -350,7 +351,7 @@ func TestPlugin_RemovePod(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuit(t, nil, []*corev1.Node{tt.args.nodeInfo.Node()})
-			p, err := suit.proxyNew(suit.nodeNUMAResourceArgs, suit.Handle)
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
 			assert.NotNil(t, p)
 			assert.Nil(t, err)
 			pl, ok := p.(*Plugin)

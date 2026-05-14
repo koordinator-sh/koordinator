@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
@@ -165,7 +166,7 @@ func TestSchedulerMonitor_StartAndCompleteMonitoring(t *testing.T) {
 		t.Errorf("Start time should not be zero after StartMonitoring")
 	}
 	time.Sleep(2 * timeout)
-	monitor.Complete(pod, framework.NewStatus(framework.Unschedulable, "node(s) is unschedulable"))
+	monitor.Complete(pod, fwktype.NewStatus(fwktype.Unschedulable, "node(s) is unschedulable"))
 	if _, exists := monitor.schedulingPods[pod.UID]; exists {
 		t.Errorf("Pod should be removed from schedulingPods after Complete")
 	}

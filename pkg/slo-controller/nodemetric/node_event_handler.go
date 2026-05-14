@@ -29,13 +29,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-var _ handler.EventHandler = &EnqueueRequestForNode{}
+var _ handler.TypedEventHandler[client.Object, reconcile.Request] = &EnqueueRequestForNode{}
 
 type EnqueueRequestForNode struct {
 	client.Client
 }
 
-func (n *EnqueueRequestForNode) Create(ctx context.Context, e event.CreateEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNode) Create(ctx context.Context, e event.TypedCreateEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	if node, ok := e.Object.(*corev1.Node); !ok {
 		return
 	} else {
@@ -47,7 +47,7 @@ func (n *EnqueueRequestForNode) Create(ctx context.Context, e event.CreateEvent,
 	}
 }
 
-func (n *EnqueueRequestForNode) Update(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNode) Update(ctx context.Context, e event.TypedUpdateEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	newNode, oldNode := e.ObjectNew.(*corev1.Node), e.ObjectOld.(*corev1.Node)
 	// TODO, only use for noderesource
 	if !isNodeUpdated(newNode, oldNode) {
@@ -60,7 +60,7 @@ func (n *EnqueueRequestForNode) Update(ctx context.Context, e event.UpdateEvent,
 	})
 }
 
-func (n *EnqueueRequestForNode) Delete(ctx context.Context, e event.DeleteEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNode) Delete(ctx context.Context, e event.TypedDeleteEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 	if node, ok := e.Object.(*corev1.Node); !ok {
 		return
 	} else {
@@ -72,7 +72,7 @@ func (n *EnqueueRequestForNode) Delete(ctx context.Context, e event.DeleteEvent,
 	}
 }
 
-func (n *EnqueueRequestForNode) Generic(ctx context.Context, e event.GenericEvent, q workqueue.RateLimitingInterface) {
+func (n *EnqueueRequestForNode) Generic(ctx context.Context, e event.TypedGenericEvent[client.Object], q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 }
 
 // isNodeUpdated returns whether the new node's allocatable or labels is different from the old one's

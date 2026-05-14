@@ -19,10 +19,10 @@ limitations under the License.
 package v1alpha1
 
 import (
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // PodMigrationJobLister helps list PodMigrationJobs.
@@ -30,39 +30,19 @@ import (
 type PodMigrationJobLister interface {
 	// List lists all PodMigrationJobs in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.PodMigrationJob, err error)
+	List(selector labels.Selector) (ret []*schedulingv1alpha1.PodMigrationJob, err error)
 	// Get retrieves the PodMigrationJob from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.PodMigrationJob, error)
+	Get(name string) (*schedulingv1alpha1.PodMigrationJob, error)
 	PodMigrationJobListerExpansion
 }
 
 // podMigrationJobLister implements the PodMigrationJobLister interface.
 type podMigrationJobLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*schedulingv1alpha1.PodMigrationJob]
 }
 
 // NewPodMigrationJobLister returns a new PodMigrationJobLister.
 func NewPodMigrationJobLister(indexer cache.Indexer) PodMigrationJobLister {
-	return &podMigrationJobLister{indexer: indexer}
-}
-
-// List lists all PodMigrationJobs in the indexer.
-func (s *podMigrationJobLister) List(selector labels.Selector) (ret []*v1alpha1.PodMigrationJob, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.PodMigrationJob))
-	})
-	return ret, err
-}
-
-// Get retrieves the PodMigrationJob from the index for a given name.
-func (s *podMigrationJobLister) Get(name string) (*v1alpha1.PodMigrationJob, error) {
-	obj, exists, err := s.indexer.GetByKey(name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1alpha1.Resource("podmigrationjob"), name)
-	}
-	return obj.(*v1alpha1.PodMigrationJob), nil
+	return &podMigrationJobLister{listers.New[*schedulingv1alpha1.PodMigrationJob](indexer, schedulingv1alpha1.Resource("podmigrationjob"))}
 }

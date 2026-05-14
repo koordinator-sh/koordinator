@@ -330,7 +330,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 	}
 	if !isNRTResourcesCreated(nrt) {
 		klog.V(5).Infof("abort to calculate batch resources for NRT, resources %v not found, node %s",
-			checkedNRTResourceSet.List(), node.Name)
+			checkedNRTResourceSet.UnsortedList(), node.Name)
 		return nil, nil, nil
 	}
 
@@ -369,7 +369,7 @@ func (p *Plugin) calculateOnNUMALevel(strategy *configuration.ColocationStrategy
 		podsHPZoneUsed[i] = util.NewZeroResourceList()
 		podsHPZoneMaxUsedReq[i] = util.NewZeroResourceList()
 		for _, resourceInfo := range zone.Resources {
-			if checkedNRTResourceSet.Has(resourceInfo.Name) {
+			if checkedNRTResourceSet.Has(corev1.ResourceName(resourceInfo.Name)) {
 				nodeZoneAllocatable[i][corev1.ResourceName(resourceInfo.Name)] = resourceInfo.Allocatable.DeepCopy()
 			}
 		}
@@ -497,7 +497,7 @@ func (p *Plugin) prepareForNodeResourceTopology(strategy *configuration.Colocati
 		}
 		if !isNRTResourcesCreated(nrt) {
 			klog.V(5).Infof("abort to prepare batch resources for NRT, resources %v not found, node %s",
-				checkedNRTResourceSet.List(), node.Name)
+				checkedNRTResourceSet.UnsortedList(), node.Name)
 			return nil
 		}
 

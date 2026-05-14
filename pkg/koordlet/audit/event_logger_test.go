@@ -50,7 +50,7 @@ func TestFluentEventLogger(t *testing.T) {
 
 	block1KB := makeBlock(1023, 'a')
 	for i := 0; i < 1024*12; i++ {
-		logger.V(0).Node().Message(string(block1KB)).Do()
+		logger.V(0).Node().Message("%s", string(block1KB)).Do()
 	}
 
 	pattern := fmt.Sprintf("%s/audit-*.log", tempDir)
@@ -79,7 +79,7 @@ func TestReverseEventReaderSingleFile(t *testing.T) {
 	blocks := make([][]byte, 26)
 	for i := 0; i < 26; i++ {
 		blocks[i] = makeBlock(63, 'a'+byte(i))
-		logger.V(0).Node().Message(string(blocks[i])).Do()
+		logger.V(0).Node().Message("%s", string(blocks[i])).Do()
 	}
 	logger.Close()
 
@@ -104,7 +104,7 @@ func TestReverseEventReaderMultiFile(t *testing.T) {
 
 	block1KB := makeBlock(1023, 'a')
 	for i := 0; i < 1024*12; i++ {
-		logger.V(0).Node().Message(string(block1KB)).Do()
+		logger.V(0).Node().Message("%s", string(block1KB)).Do()
 	}
 
 	logger.Close()

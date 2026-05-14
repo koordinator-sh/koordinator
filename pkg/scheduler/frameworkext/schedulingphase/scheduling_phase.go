@@ -17,7 +17,7 @@ limitations under the License.
 package schedulingphase
 
 import (
-	"k8s.io/kubernetes/pkg/scheduler/framework"
+	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -35,17 +35,17 @@ type SchedulingPhase struct {
 	extensionPoint string
 }
 
-func (s *SchedulingPhase) Clone() framework.StateData {
+func (s *SchedulingPhase) Clone() fwktype.StateData {
 	return s
 }
 
-func RecordPhase(cycleState *framework.CycleState, extensionPoint string) {
+func RecordPhase(cycleState fwktype.CycleState, extensionPoint string) {
 	cycleState.Write(phaseStateKey, &SchedulingPhase{
 		extensionPoint: extensionPoint,
 	})
 }
 
-func GetExtensionPointBeingExecuted(cycleState *framework.CycleState) string {
+func GetExtensionPointBeingExecuted(cycleState fwktype.CycleState) string {
 	s, err := cycleState.Read(phaseStateKey)
 	if err != nil || s == nil {
 		return ""

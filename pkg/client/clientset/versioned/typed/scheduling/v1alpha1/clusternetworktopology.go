@@ -19,15 +19,14 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
-	"time"
+	context "context"
 
-	v1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	scheme "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
-	rest "k8s.io/client-go/rest"
+	gentype "k8s.io/client-go/gentype"
 )
 
 // ClusterNetworkTopologiesGetter has a method to return a ClusterNetworkTopologyInterface.
@@ -38,147 +37,36 @@ type ClusterNetworkTopologiesGetter interface {
 
 // ClusterNetworkTopologyInterface has methods to work with ClusterNetworkTopology resources.
 type ClusterNetworkTopologyInterface interface {
-	Create(ctx context.Context, clusterNetworkTopology *v1alpha1.ClusterNetworkTopology, opts v1.CreateOptions) (*v1alpha1.ClusterNetworkTopology, error)
-	Update(ctx context.Context, clusterNetworkTopology *v1alpha1.ClusterNetworkTopology, opts v1.UpdateOptions) (*v1alpha1.ClusterNetworkTopology, error)
-	UpdateStatus(ctx context.Context, clusterNetworkTopology *v1alpha1.ClusterNetworkTopology, opts v1.UpdateOptions) (*v1alpha1.ClusterNetworkTopology, error)
+	Create(ctx context.Context, clusterNetworkTopology *schedulingv1alpha1.ClusterNetworkTopology, opts v1.CreateOptions) (*schedulingv1alpha1.ClusterNetworkTopology, error)
+	Update(ctx context.Context, clusterNetworkTopology *schedulingv1alpha1.ClusterNetworkTopology, opts v1.UpdateOptions) (*schedulingv1alpha1.ClusterNetworkTopology, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+	UpdateStatus(ctx context.Context, clusterNetworkTopology *schedulingv1alpha1.ClusterNetworkTopology, opts v1.UpdateOptions) (*schedulingv1alpha1.ClusterNetworkTopology, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
-	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1alpha1.ClusterNetworkTopology, error)
-	List(ctx context.Context, opts v1.ListOptions) (*v1alpha1.ClusterNetworkTopologyList, error)
+	Get(ctx context.Context, name string, opts v1.GetOptions) (*schedulingv1alpha1.ClusterNetworkTopology, error)
+	List(ctx context.Context, opts v1.ListOptions) (*schedulingv1alpha1.ClusterNetworkTopologyList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ClusterNetworkTopology, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *schedulingv1alpha1.ClusterNetworkTopology, err error)
 	ClusterNetworkTopologyExpansion
 }
 
 // clusterNetworkTopologies implements ClusterNetworkTopologyInterface
 type clusterNetworkTopologies struct {
-	client rest.Interface
+	*gentype.ClientWithList[*schedulingv1alpha1.ClusterNetworkTopology, *schedulingv1alpha1.ClusterNetworkTopologyList]
 }
 
 // newClusterNetworkTopologies returns a ClusterNetworkTopologies
 func newClusterNetworkTopologies(c *SchedulingV1alpha1Client) *clusterNetworkTopologies {
 	return &clusterNetworkTopologies{
-		client: c.RESTClient(),
+		gentype.NewClientWithList[*schedulingv1alpha1.ClusterNetworkTopology, *schedulingv1alpha1.ClusterNetworkTopologyList](
+			"clusternetworktopologies",
+			c.RESTClient(),
+			scheme.ParameterCodec,
+			"",
+			func() *schedulingv1alpha1.ClusterNetworkTopology { return &schedulingv1alpha1.ClusterNetworkTopology{} },
+			func() *schedulingv1alpha1.ClusterNetworkTopologyList {
+				return &schedulingv1alpha1.ClusterNetworkTopologyList{}
+			},
+		),
 	}
-}
-
-// Get takes name of the clusterNetworkTopology, and returns the corresponding clusterNetworkTopology object, and an error if there is any.
-func (c *clusterNetworkTopologies) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ClusterNetworkTopology, err error) {
-	result = &v1alpha1.ClusterNetworkTopology{}
-	err = c.client.Get().
-		Resource("clusternetworktopologies").
-		Name(name).
-		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// List takes label and field selectors, and returns the list of ClusterNetworkTopologies that match those selectors.
-func (c *clusterNetworkTopologies) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ClusterNetworkTopologyList, err error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	result = &v1alpha1.ClusterNetworkTopologyList{}
-	err = c.client.Get().
-		Resource("clusternetworktopologies").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Watch returns a watch.Interface that watches the requested clusterNetworkTopologies.
-func (c *clusterNetworkTopologies) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	opts.Watch = true
-	return c.client.Get().
-		Resource("clusternetworktopologies").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Watch(ctx)
-}
-
-// Create takes the representation of a clusterNetworkTopology and creates it.  Returns the server's representation of the clusterNetworkTopology, and an error, if there is any.
-func (c *clusterNetworkTopologies) Create(ctx context.Context, clusterNetworkTopology *v1alpha1.ClusterNetworkTopology, opts v1.CreateOptions) (result *v1alpha1.ClusterNetworkTopology, err error) {
-	result = &v1alpha1.ClusterNetworkTopology{}
-	err = c.client.Post().
-		Resource("clusternetworktopologies").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(clusterNetworkTopology).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Update takes the representation of a clusterNetworkTopology and updates it. Returns the server's representation of the clusterNetworkTopology, and an error, if there is any.
-func (c *clusterNetworkTopologies) Update(ctx context.Context, clusterNetworkTopology *v1alpha1.ClusterNetworkTopology, opts v1.UpdateOptions) (result *v1alpha1.ClusterNetworkTopology, err error) {
-	result = &v1alpha1.ClusterNetworkTopology{}
-	err = c.client.Put().
-		Resource("clusternetworktopologies").
-		Name(clusterNetworkTopology.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(clusterNetworkTopology).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *clusterNetworkTopologies) UpdateStatus(ctx context.Context, clusterNetworkTopology *v1alpha1.ClusterNetworkTopology, opts v1.UpdateOptions) (result *v1alpha1.ClusterNetworkTopology, err error) {
-	result = &v1alpha1.ClusterNetworkTopology{}
-	err = c.client.Put().
-		Resource("clusternetworktopologies").
-		Name(clusterNetworkTopology.Name).
-		SubResource("status").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(clusterNetworkTopology).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Delete takes name of the clusterNetworkTopology and deletes it. Returns an error if one occurs.
-func (c *clusterNetworkTopologies) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	return c.client.Delete().
-		Resource("clusternetworktopologies").
-		Name(name).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *clusterNetworkTopologies) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
-	}
-	return c.client.Delete().
-		Resource("clusternetworktopologies").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// Patch applies the patch and returns the patched clusterNetworkTopology.
-func (c *clusterNetworkTopologies) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ClusterNetworkTopology, err error) {
-	result = &v1alpha1.ClusterNetworkTopology{}
-	err = c.client.Patch(pt).
-		Resource("clusternetworktopologies").
-		Name(name).
-		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
 }

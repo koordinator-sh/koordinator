@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
@@ -33,6 +34,10 @@ const (
 	Hugepage1Gkbyte = 1048576
 	Hugepage2Mkbyte = 2048
 )
+
+var getSkipNUMAFn = func() sets.Set[int32] {
+	return system.GetNUMANodesHasGI()
+}
 
 // MemInfo is the content of system /proc/meminfo.
 // NOTE: the unit of each field is KiB.
@@ -255,7 +260,7 @@ func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
 		return nil, fmt.Errorf("failed to read NUMA dir, err: %w", err)
 	}
 
-	giNUMANodes := system.GetNUMANodesHasGI()
+	skippedNodes := getSkipNUMAFn()
 
 	result := &NodeNUMAInfo{
 		MemInfoMap: map[int32]*MemInfo{},
@@ -275,8 +280,8 @@ func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
 		}
 		nodeID := int32(nodeIDRaw)
 
-		if giNUMANodes.Has(nodeID) {
-			klog.V(5).Infof("node %d has GI, skip", nodeID)
+		if skippedNodes.Has(nodeID) {
+			klog.V(5).Infof("node %d is in skip list, skipped, list %v", nodeID, skippedNodes.UnsortedList())
 			continue
 		}
 
@@ -298,9 +303,10 @@ func GetNodeNUMAInfo() (*NodeNUMAInfo, error) {
 		}
 	}
 
-	if len(nodeDirs) != len(result.NUMAInfos)+giNUMANodes.Len() {
-		return nil, fmt.Errorf("invalid number of NUMA meminfo, dir %v, parsed %v",
-			len(nodeDirs), len(result.NUMAInfos))
+	if len(nodeDirs) != len(result.NUMAInfos)+skippedNodes.Len() {
+		// numa devices might be corrupted after unplug, but we can tolerate it
+		klog.Warningf("failed to get matched NUMA meminfo, dir %v, parsed %v, skipped %v",
+			len(nodeDirs), len(result.NUMAInfos), skippedNodes.Len())
 	}
 	if len(result.NUMAInfos) != int(maxNodeID+1) {
 		return nil, fmt.Errorf("unexpected number of NUMA node, max ID %v, parsed %v",

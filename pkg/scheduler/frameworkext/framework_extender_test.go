@@ -25,19 +25,24 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	frameworkfake "k8s.io/kubernetes/pkg/scheduler/framework/fake"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing"
+	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -47,6 +52,14 @@ import (
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
+
+func init() {
+	schedulermetrics.Register()
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 // TestForgetPod_SchedulerNil verifies that ForgetPod does not panic when the scheduler
 // has not been initialized yet (InitScheduler not called), and that all registered
@@ -164,10 +177,16 @@ func TestForgetPod_SchedulerReady(t *testing.T) {
 	assert.False(t, assumed, "pod should be removed from assumed cache after ForgetPod")
 }
 
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
 var (
-	_ framework.PreFilterPlugin = &TestTransformer{}
-	_ framework.FilterPlugin    = &TestTransformer{}
-	_ framework.ScorePlugin     = &TestTransformer{}
+	_ fwktype.PreFilterPlugin = &TestTransformer{}
+	_ fwktype.FilterPlugin    = &TestTransformer{}
+	_ fwktype.ScorePlugin     = &TestTransformer{}
+	_ fwktype.PreBindPlugin   = &TestTransformer{}
 
 	_ FindOneNodePluginProvider = &TestTransformer{}
 	_ PreferNodesPluginProvider = &TestTransformer{}
@@ -190,7 +209,7 @@ func (h *TestTransformer) Name() string {
 	return "TestTransformer"
 }
 
-func (h *TestTransformer) BeforePreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *framework.Status) {
+func (h *TestTransformer) BeforePreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *fwktype.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -198,15 +217,15 @@ func (h *TestTransformer) BeforePreFilter(ctx context.Context, cycleState *frame
 	return pod, true, nil
 }
 
-func (h *TestTransformer) PreFilter(ctx context.Context, state *framework.CycleState, p *corev1.Pod) (*framework.PreFilterResult, *framework.Status) {
+func (h *TestTransformer) PreFilter(ctx context.Context, state fwktype.CycleState, p *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
 	return nil, nil
 }
 
-func (h *TestTransformer) PreFilterExtensions() framework.PreFilterExtensions {
+func (h *TestTransformer) PreFilterExtensions() fwktype.PreFilterExtensions {
 	return nil
 }
 
-func (h *TestTransformer) AfterPreFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, preFilterResult *framework.PreFilterResult) *framework.Status {
+func (h *TestTransformer) AfterPreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, preFilterResult *fwktype.PreFilterResult) *fwktype.Status {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -214,7 +233,7 @@ func (h *TestTransformer) AfterPreFilter(ctx context.Context, cycleState *framew
 	return nil
 }
 
-func (h *TestTransformer) BeforeFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) (*corev1.Pod, *framework.NodeInfo, bool, *framework.Status) {
+func (h *TestTransformer) BeforeFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (*corev1.Pod, fwktype.NodeInfo, bool, *fwktype.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -222,7 +241,7 @@ func (h *TestTransformer) BeforeFilter(ctx context.Context, cycleState *framewor
 	return pod, nodeInfo, true, nil
 }
 
-func (h *TestTransformer) Filter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodeInfo *framework.NodeInfo) *framework.Status {
+func (h *TestTransformer) Filter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) *fwktype.Status {
 	return nil
 }
 
@@ -230,12 +249,12 @@ func (h *TestTransformer) FindOneNodePlugin() FindOneNodePlugin {
 	return h
 }
 
-func (h *TestTransformer) FindOneNode(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) (string, *framework.Status) {
+func (h *TestTransformer) FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations["FindOneNode"] = "FindOneNode"
-	return "", framework.NewStatus(framework.Skip)
+	return "", fwktype.NewStatus(fwktype.Skip)
 
 }
 
@@ -243,31 +262,31 @@ func (h *TestTransformer) PreferNodesPlugin() PreferNodesPlugin {
 	return h
 }
 
-func (h *TestTransformer) PreferNodes(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) ([]string, *framework.Status) {
+func (h *TestTransformer) PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations["PreferNodes"] = "PreferNodes"
-	return nil, framework.NewStatus(framework.Skip)
+	return nil, fwktype.NewStatus(fwktype.Skip)
 }
 
-func (h *TestTransformer) BeforeScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, nodes []*corev1.Node) (*corev1.Pod, []*corev1.Node, bool, *framework.Status) {
+func (h *TestTransformer) BeforeScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfos []fwktype.NodeInfo) (*corev1.Pod, []fwktype.NodeInfo, bool, *fwktype.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations[fmt.Sprintf("BeforeScore-%d", h.index)] = fmt.Sprintf("%d", h.index)
-	return pod, nodes, true, nil
+	return pod, nodeInfos, true, nil
 }
 
-func (h *TestTransformer) Score(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) (int64, *framework.Status) {
+func (h *TestTransformer) Score(ctx context.Context, state fwktype.CycleState, p *corev1.Pod, nodeInfo fwktype.NodeInfo) (int64, *fwktype.Status) {
 	return 0, nil
 }
 
-func (h *TestTransformer) ScoreExtensions() framework.ScoreExtensions {
+func (h *TestTransformer) ScoreExtensions() fwktype.ScoreExtensions {
 	return nil
 }
 
-func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, filteredNodeStatusMap framework.NodeToStatusMap) {
+func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -275,7 +294,11 @@ func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState *frame
 }
 
 // PreBind implements the standard PreBind plugin interface
-func (h *TestTransformer) PreBind(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
+func (h *TestTransformer) PreBind(ctx context.Context, state fwktype.CycleState, p *corev1.Pod, nodeName string) *fwktype.Status {
+	return nil
+}
+
+func (h *TestTransformer) PreBindPreFlight(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
 	return nil
 }
 
@@ -283,11 +306,11 @@ type testPreBindReservationState struct {
 	reservation *schedulingv1alpha1.Reservation
 }
 
-func (t *testPreBindReservationState) Clone() framework.StateData {
+func (t *testPreBindReservationState) Clone() fwktype.StateData {
 	return t
 }
 
-func (h *TestTransformer) PreBindReservation(ctx context.Context, cycleState *framework.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *framework.Status {
+func (h *TestTransformer) PreBindReservation(ctx context.Context, cycleState fwktype.CycleState, reservation *schedulingv1alpha1.Reservation, nodeName string) *fwktype.Status {
 	if reservation.Annotations == nil {
 		reservation.Annotations = map[string]string{}
 	}
@@ -312,19 +335,23 @@ func (f *fakePreBindPlugin) Name() string {
 	return "fakePreBindPlugin"
 }
 
-func (f *fakePreBindPlugin) PreBind(ctx context.Context, state *framework.CycleState, p *corev1.Pod, nodeName string) *framework.Status {
+func (f *fakePreBindPlugin) PreBindPreFlight(_ context.Context, _ fwktype.CycleState, _ *corev1.Pod, _ string) *fwktype.Status {
+	return nil
+}
+
+func (f *fakePreBindPlugin) PreBind(ctx context.Context, state fwktype.CycleState, p *corev1.Pod, nodeName string) *fwktype.Status {
 	if f.err != nil {
-		return framework.AsStatus(f.err)
+		return fwktype.AsStatus(f.err)
 	}
 	return nil
 }
 
-func (f *fakePreBindPlugin) ApplyPatch(ctx context.Context, cycleState *framework.CycleState, originalObj, modifiedObj metav1.Object) *framework.Status {
+func (f *fakePreBindPlugin) ApplyPatch(ctx context.Context, cycleState fwktype.CycleState, originalObj, modifiedObj metav1.Object) *fwktype.Status {
 	if f.skipApplyPatch {
-		return framework.NewStatus(framework.Skip)
+		return fwktype.NewStatus(fwktype.Skip)
 	}
 	if f.err != nil {
-		return framework.AsStatus(f.err)
+		return fwktype.AsStatus(f.err)
 	}
 	if f.appendAnnotations != nil {
 		annotations := modifiedObj.GetAnnotations()
@@ -340,15 +367,32 @@ func (f *fakePreBindPlugin) ApplyPatch(ctx context.Context, cycleState *framewor
 	return nil
 }
 
-type fakeNodeInfoLister struct {
-	frameworkfake.NodeInfoLister
+// nodeInfoLister implements fwktype.NodeInfoLister for testing.
+type nodeInfoLister []fwktype.NodeInfo
+
+func (n nodeInfoLister) List() ([]fwktype.NodeInfo, error)                     { return n, nil }
+func (n nodeInfoLister) HavePodsWithAffinityList() ([]fwktype.NodeInfo, error) { return n, nil }
+func (n nodeInfoLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.NodeInfo, error) {
+	return n, nil
+}
+func (n nodeInfoLister) Get(nodeName string) (fwktype.NodeInfo, error) {
+	for _, ni := range n {
+		if ni != nil && ni.Node().Name == nodeName {
+			return ni, nil
+		}
+	}
+	return nil, fmt.Errorf("unable to find node: %s", nodeName)
 }
 
-func (c fakeNodeInfoLister) NodeInfos() framework.NodeInfoLister {
+type fakeNodeInfoLister struct {
+	nodeInfoLister
+}
+
+func (c fakeNodeInfoLister) NodeInfos() fwktype.NodeInfoLister {
 	return c
 }
 
-func (c fakeNodeInfoLister) StorageInfos() framework.StorageInfoLister {
+func (c fakeNodeInfoLister) StorageInfos() fwktype.StorageInfoLister {
 	return c
 }
 
@@ -360,7 +404,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 	tests := []struct {
 		name string
 		pod  *corev1.Pod
-		want *framework.Status
+		want *fwktype.Status
 	}{
 		{
 			name: "normal RunPreFilterPlugins",
@@ -384,10 +428,10 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterPreFilterPlugin("T1", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+				schedulertesting.RegisterPreFilterPlugin("T1", PluginFactoryProxy(extenderFactory, func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 					return &TestTransformer{name: "T1", index: 1}, nil
 				})),
-				schedulertesting.RegisterPreFilterPlugin("T2", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+				schedulertesting.RegisterPreFilterPlugin("T2", PluginFactoryProxy(extenderFactory, func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 					return &TestTransformer{name: "T2", index: 2}, nil
 				})),
 			}
@@ -397,14 +441,14 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 				context.TODO(),
 				registeredPlugins,
 				"koord-scheduler",
-				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{}}),
+				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfoLister{}}),
 				frameworkruntime.WithClientSet(fakeClient),
 				frameworkruntime.WithInformerFactory(sharedInformerFactory),
 			)
 			assert.NoError(t, err)
 			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
 			frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
-			_, status := frameworkExtender.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), tt.pod)
+			_, status, _ := frameworkExtender.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), tt.pod)
 			assert.Equal(t, tt.want, status)
 			expectedAnnotations := map[string]string{
 				"BeforePreFilter-1": "1",
@@ -420,68 +464,161 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 }
 
 func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) {
+	const (
+		highPriority = int32(200)
+		midPriority  = int32(100)
+		lowPriority  = int32(50)
+	)
+
+	newNode := func(cpu string) *corev1.Node {
+		return &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+			Status: corev1.NodeStatus{
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:  resource.MustParse(cpu),
+					corev1.ResourcePods: resource.MustParse("110"),
+				},
+			},
+		}
+	}
+
+	newCrossNominator := func(pods ...*corev1.Pod) *CrossSchedulerPodNominator {
+		nominator := NewCrossSchedulerPodNominator()
+		nominator.AddLocalProfileName("koord-scheduler")
+		for _, pod := range pods {
+			nominator.OnAdd(pod)
+		}
+		return nominator
+	}
+
 	tests := []struct {
-		name     string
-		pod      *corev1.Pod
-		nodeInfo *framework.NodeInfo
-		want     *framework.Status
+		name                                string
+		enableCrossSchedulerNomination      bool
+		enableSkipFilterWithNominatedPods   bool
+		node                                *corev1.Node
+		pod                                 *corev1.Pod
+		nativeNominatedPods                 []*corev1.Pod
+		crossSchedulerNominator             *CrossSchedulerPodNominator
+		nominatedPodsOfTheSameJob           []string
+		wantSuccess                         bool
+		wantUnschedulable                   bool
+		wantNotUnschedulableAndUnresolvable bool
 	}{
 		{
-			name:     "normal RunFilterPluginsWithNominatedPods",
-			pod:      &corev1.Pod{},
-			nodeInfo: framework.NewNodeInfo(),
-			want:     nil,
+			name:                                "default two-pass native nominated pod returns unschedulable",
+			node:                                newNode("2"),
+			pod:                                 makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			nativeNominatedPods:                 []*corev1.Pod{makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "koord-scheduler", "test-node", "")},
+			wantUnschedulable:                   true,
+			wantNotUnschedulableAndUnresolvable: true,
+		},
+		{
+			name:        "default two-pass without nominated pods succeeds",
+			node:        newNode("2"),
+			pod:         makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			wantSuccess: true,
+		},
+		{
+			name:                                "cross-scheduler two-pass high priority nominated pod returns unschedulable",
+			enableCrossSchedulerNomination:      true,
+			node:                                newNode("2"),
+			pod:                                 makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			crossSchedulerNominator:             newCrossNominator(makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "other-scheduler", "test-node", "")),
+			wantUnschedulable:                   true,
+			wantNotUnschedulableAndUnresolvable: true,
+		},
+		{
+			name:                           "cross-scheduler two-pass same priority nominated pod is ignored",
+			enableCrossSchedulerNomination: true,
+			node:                           newNode("2"),
+			pod:                            makePriorityPod("scheduling-pod", "uid-scheduling", midPriority, "1", "koord-scheduler", "", ""),
+			crossSchedulerNominator:        newCrossNominator(makePriorityPod("nominated-pod", "uid-nominated", midPriority, "1500m", "other-scheduler", "test-node", "")),
+			wantSuccess:                    true,
+		},
+		{
+			name:                              "skip-filter single-pass native nominated pod fails",
+			enableSkipFilterWithNominatedPods: true,
+			node:                              newNode("2"),
+			pod:                               makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			nativeNominatedPods:               []*corev1.Pod{makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "koord-scheduler", "test-node", "")},
+			wantUnschedulable:                 true,
+		},
+		{
+			name:                              "skip-filter single-pass native nominated pod succeeds when capacity is enough",
+			enableSkipFilterWithNominatedPods: true,
+			node:                              newNode("4"),
+			pod:                               makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			nativeNominatedPods:               []*corev1.Pod{makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1", "koord-scheduler", "test-node", "")},
+			wantSuccess:                       true,
+		},
+		{
+			name:                              "skip-filter single-pass with cross-scheduler high priority nominated pod fails",
+			enableCrossSchedulerNomination:    true,
+			enableSkipFilterWithNominatedPods: true,
+			node:                              newNode("2"),
+			pod:                               makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			crossSchedulerNominator:           newCrossNominator(makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "other-scheduler", "test-node", "")),
+			wantUnschedulable:                 true,
+		},
+		{
+			name:                              "skip-filter single-pass with cross-scheduler same priority nominated pod is ignored",
+			enableCrossSchedulerNomination:    true,
+			enableSkipFilterWithNominatedPods: true,
+			node:                              newNode("2"),
+			pod:                               makePriorityPod("scheduling-pod", "uid-scheduling", midPriority, "1", "koord-scheduler", "", ""),
+			crossSchedulerNominator:           newCrossNominator(makePriorityPod("nominated-pod", "uid-nominated", midPriority, "1500m", "other-scheduler", "test-node", "")),
+			wantSuccess:                       true,
+		},
+		{
+			name:                      "same-job nominated pod is excluded",
+			node:                      newNode("2"),
+			pod:                       makePriorityPod("scheduling-pod", "uid-scheduling", lowPriority, "1", "koord-scheduler", "", ""),
+			nativeNominatedPods:       []*corev1.Pod{makePriorityPod("nominated-pod", "uid-nominated", highPriority, "1500m", "koord-scheduler", "test-node", "")},
+			nominatedPodsOfTheSameJob: []string{"uid-nominated"},
+			wantSuccess:               true,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			koordClientSet := koordfake.NewSimpleClientset()
-			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
-			extenderFactory, err := NewFrameworkExtenderFactory(
-				WithServicesEngine(services.NewEngine(gin.New())),
-				WithKoordinatorClientSet(koordClientSet),
-				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
-			)
-			assert.NoError(t, err)
-			assert.NotNil(t, extenderFactory)
-			assert.Equal(t, koordClientSet, extenderFactory.KoordinatorClientSet())
-			assert.Equal(t, koordSharedInformerFactory, extenderFactory.KoordinatorSharedInformerFactory())
-			registeredPlugins := []schedulertesting.RegisterPluginFunc{
-				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterFilterPlugin("T1", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
-					return &TestTransformer{name: "T1", index: 1}, nil
-				})),
-				schedulertesting.RegisterFilterPlugin("T2", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
-					return &TestTransformer{name: "T2", index: 2}, nil
-				})),
+			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.CrossSchedulerNomination, tt.enableCrossSchedulerNomination)()
+			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.SkipFilterWithNominatedPods, tt.enableSkipFilterWithNominatedPods)()
+
+			extender, nodeInfo := buildCrossSchedulerExtenderAndNodeInfo(t, tt.node, tt.crossSchedulerNominator)
+			ctx := context.TODO()
+			logger := klog.FromContext(ctx)
+			for _, nominatedPod := range tt.nativeNominatedPods {
+				nominatedPodInfo, err := framework.NewPodInfo(nominatedPod)
+				assert.NoError(t, err)
+				extender.AddNominatedPod(logger, nominatedPodInfo, &fwktype.NominatingInfo{
+					NominatingMode:    fwktype.ModeOverride,
+					NominatedNodeName: nominatedPod.Status.NominatedNodeName,
+				})
 			}
-			fakeClient := kubefake.NewSimpleClientset()
-			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
-			fh, err := schedulertesting.NewFramework(
-				context.TODO(),
-				registeredPlugins,
-				"koord-scheduler",
-				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: frameworkfake.NodeInfoLister{}}),
-				frameworkruntime.WithClientSet(fakeClient),
-				frameworkruntime.WithInformerFactory(sharedInformerFactory),
-				frameworkruntime.WithPodNominator(NewFakePodNominator()),
-			)
-			assert.NoError(t, err)
-			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
-			frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
-			tt.nodeInfo.SetNode(&corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node-1",
-				},
-			})
-			assert.Equal(t, tt.want, frameworkExtender.RunFilterPluginsWithNominatedPods(context.TODO(), framework.NewCycleState(), tt.pod, tt.nodeInfo))
-			assert.Len(t, tt.pod.Annotations, 2)
-			expectedAnnotations := map[string]string{
-				"BeforeFilter-1": "1",
-				"BeforeFilter-2": "2",
+
+			state := framework.NewCycleState()
+			if len(tt.nominatedPodsOfTheSameJob) > 0 {
+				MakeNominatedPodsOfTheSameJob(state, tt.nominatedPodsOfTheSameJob)
 			}
-			assert.Equal(t, expectedAnnotations, tt.pod.Annotations)
+
+			status := extender.RunFilterPluginsWithNominatedPods(ctx, state, tt.pod, nodeInfo)
+			if tt.wantSuccess {
+				if status != nil {
+					assert.True(t, status.IsSuccess(), "expected success, got: %v", status)
+				}
+				return
+			}
+
+			if assert.NotNil(t, status) {
+				assert.False(t, status.IsSuccess(), "expected failure, got success")
+				if tt.wantUnschedulable {
+					assert.True(t, status.IsRejected(), "expected unschedulable status, got: %v", status)
+				}
+				if tt.wantNotUnschedulableAndUnresolvable {
+					assert.NotEqual(t, fwktype.UnschedulableAndUnresolvable, status.Code(),
+						"expected retryable unschedulable status, got: %v", status)
+				}
+			}
 		})
 	}
 }
@@ -490,18 +627,22 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 	tests := []struct {
 		name       string
 		pod        *corev1.Pod
-		nodes      []*corev1.Node
-		wantScore  []framework.NodePluginScores
-		wantStatus *framework.Status
+		nodes      []fwktype.NodeInfo
+		wantScore  []fwktype.NodePluginScores
+		wantStatus *fwktype.Status
 	}{
 		{
-			name:  "normal RunScorePlugins",
-			pod:   &corev1.Pod{},
-			nodes: []*corev1.Node{{}},
-			wantScore: []framework.NodePluginScores{
+			name: "normal RunScorePlugins",
+			pod:  &corev1.Pod{},
+			nodes: func() []fwktype.NodeInfo {
+				ni := framework.NewNodeInfo()
+				ni.SetNode(&corev1.Node{})
+				return []fwktype.NodeInfo{ni}
+			}(),
+			wantScore: []fwktype.NodePluginScores{
 				{
 					Name: "",
-					Scores: []framework.PluginScore{
+					Scores: []fwktype.PluginScore{
 						{
 							Name:  "T1",
 							Score: 0,
@@ -532,10 +673,10 @@ func Test_frameworkExtenderImpl_RunScorePlugins(t *testing.T) {
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterScorePlugin("T1", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+				schedulertesting.RegisterScorePlugin("T1", PluginFactoryProxy(extenderFactory, func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 					return &TestTransformer{name: "T1", index: 1}, nil
 				}), 1),
-				schedulertesting.RegisterScorePlugin("T2", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+				schedulertesting.RegisterScorePlugin("T2", PluginFactoryProxy(extenderFactory, func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 					return &TestTransformer{name: "T2", index: 2}, nil
 				}), 1),
 			}
@@ -617,13 +758,13 @@ func TestPreBind(t *testing.T) {
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-				schedulertesting.RegisterPreBindPlugin("fakePreBindPlugin", func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+				schedulertesting.RegisterPreBindPlugin("fakePreBindPlugin", func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 					return &fakePreBindPlugin{err: errors.New("failed")}, nil
 				}),
-				schedulertesting.RegisterPreBindPlugin("TestTransformer-1", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+				schedulertesting.RegisterPreBindPlugin("TestTransformer-1", PluginFactoryProxy(extenderFactory, func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 					return &TestTransformer{name: "TestTransformer-1", index: 1}, nil
 				})),
-				schedulertesting.RegisterPreBindPlugin("TestTransformer-2", PluginFactoryProxy(extenderFactory, func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+				schedulertesting.RegisterPreBindPlugin("TestTransformer-2", PluginFactoryProxy(extenderFactory, func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 					return &TestTransformer{name: "TestTransformer-2", index: 2}, nil
 				})),
 			}
@@ -858,10 +999,10 @@ func TestPreBindExtensionOrder(t *testing.T) {
 	registeredPlugins := []schedulertesting.RegisterPluginFunc{
 		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterPreBindPlugin(preBindA.Name(), func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+		schedulertesting.RegisterPreBindPlugin(preBindA.Name(), func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 			return preBindA, nil
 		}),
-		schedulertesting.RegisterPreBindPlugin(preBindB.Name(), func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+		schedulertesting.RegisterPreBindPlugin(preBindB.Name(), func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 			return preBindB, nil
 		}),
 	}
@@ -914,7 +1055,7 @@ type fakeReservationRestoreStateData struct {
 	m NodeReservationRestoreStates
 }
 
-func (s *fakeReservationRestoreStateData) Clone() framework.StateData {
+func (s *fakeReservationRestoreStateData) Clone() fwktype.StateData {
 	return s
 }
 
@@ -930,14 +1071,14 @@ type fakeReservationRestorePlugin struct {
 
 func (f *fakeReservationRestorePlugin) Name() string { return "fakeReservationRestorePlugin" }
 
-func (f *fakeReservationRestorePlugin) PreRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod) *framework.Status {
+func (f *fakeReservationRestorePlugin) PreRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status {
 	cycleState.Write(fakeReservationRestoreStateKey, &fakeReservationRestoreStateData{})
 	return nil
 }
 
-func (f *fakeReservationRestorePlugin) RestoreReservation(ctx context.Context, cycleState *framework.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status) {
+func (f *fakeReservationRestorePlugin) RestoreReservation(ctx context.Context, cycleState fwktype.CycleState, podToSchedule *corev1.Pod, matched []*ReservationInfo, unmatched []*ReservationInfo, nodeInfo fwktype.NodeInfo) (interface{}, *fwktype.Status) {
 	if f.restoreReservationErr != nil {
-		return nil, framework.AsStatus(f.restoreReservationErr)
+		return nil, fwktype.AsStatus(f.restoreReservationErr)
 	}
 	return &fakeNodeReservationRestoreStateData{
 		matched:   matched,
@@ -945,13 +1086,13 @@ func (f *fakeReservationRestorePlugin) RestoreReservation(ctx context.Context, c
 	}, nil
 }
 
-func (f *fakeReservationRestorePlugin) FinalRestoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, states NodeReservationRestoreStates) *framework.Status {
+func (f *fakeReservationRestorePlugin) FinalRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, states NodeReservationRestoreStates) *fwktype.Status {
 	if f.finalRestoreReservationErr != nil {
-		return framework.AsStatus(f.finalRestoreReservationErr)
+		return fwktype.AsStatus(f.finalRestoreReservationErr)
 	}
 	val, err := cycleState.Read(fakeReservationRestoreStateKey)
 	if err != nil {
-		return framework.AsStatus(err)
+		return fwktype.AsStatus(err)
 	}
 	val.(*fakeReservationRestoreStateData).m = states
 	return nil
@@ -1072,17 +1213,17 @@ func (f *fakeReservationPreAllocationRestorePlugin) Name() string {
 	return "fakeReservationPreAllocationRestorePlugin"
 }
 
-func (f *fakeReservationPreAllocationRestorePlugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *ReservationInfo) *framework.Status {
+func (f *fakeReservationPreAllocationRestorePlugin) PreRestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, r *ReservationInfo) *fwktype.Status {
 	if f.preRestoreErr != nil {
-		return framework.AsStatus(f.preRestoreErr)
+		return fwktype.AsStatus(f.preRestoreErr)
 	}
 	cycleState.Write(fakeReservationRestoreStateKey, &fakeReservationRestoreStateData{})
 	return nil
 }
 
-func (f *fakeReservationPreAllocationRestorePlugin) RestoreReservationPreAllocation(ctx context.Context, cycleState *framework.CycleState, r *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo *framework.NodeInfo) (interface{}, *framework.Status) {
+func (f *fakeReservationPreAllocationRestorePlugin) RestoreReservationPreAllocation(ctx context.Context, cycleState fwktype.CycleState, r *ReservationInfo, preAllocatable []*corev1.Pod, nodeInfo fwktype.NodeInfo) (interface{}, *fwktype.Status) {
 	if f.restoreErr != nil {
-		return nil, framework.AsStatus(f.restoreErr)
+		return nil, fwktype.AsStatus(f.restoreErr)
 	}
 	return &fakeNodeReservationPreAllocationRestoreStateData{
 		preAllocatable: preAllocatable,
@@ -1208,24 +1349,24 @@ type fakeReservationFilterPlugin struct {
 
 func (f *fakeReservationFilterPlugin) Name() string { return "fakeReservationFilterPlugin" }
 
-func (f *fakeReservationFilterPlugin) FilterReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo *framework.NodeInfo) *framework.Status {
+func (f *fakeReservationFilterPlugin) FilterReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeInfo fwktype.NodeInfo) *fwktype.Status {
 	if reservationInfo.Reservation.Annotations == nil {
 		reservationInfo.Reservation.Annotations = map[string]string{}
 	}
 	reservationInfo.Reservation.Annotations[fmt.Sprintf("reservationFilterWithPlugin-%d", f.index)] = fmt.Sprintf("%d", f.index)
 	if f.err != nil {
-		return framework.AsStatus(f.err)
+		return fwktype.AsStatus(f.err)
 	}
 	return nil
 }
 
-func (f *fakeReservationFilterPlugin) FilterNominateReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *framework.Status {
+func (f *fakeReservationFilterPlugin) FilterNominateReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) *fwktype.Status {
 	if reservationInfo.Reservation.Annotations == nil {
 		reservationInfo.Reservation.Annotations = map[string]string{}
 	}
 	reservationInfo.Reservation.Annotations[fmt.Sprintf("reservationFilterPlugin-%d", f.index)] = fmt.Sprintf("%d", f.index)
 	if f.err != nil {
-		return framework.AsStatus(f.err)
+		return fwktype.AsStatus(f.err)
 	}
 	return nil
 }
@@ -1412,10 +1553,10 @@ type fakeReservationScorePlugin struct {
 
 func (f *fakeReservationScorePlugin) Name() string { return f.name }
 
-func (f *fakeReservationScorePlugin) ScoreReservation(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) (int64, *framework.Status) {
-	var status *framework.Status
+func (f *fakeReservationScorePlugin) ScoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, reservationInfo *ReservationInfo, nodeName string) (int64, *fwktype.Status) {
+	var status *fwktype.Status
 	if f.err != nil {
-		status = framework.AsStatus(f.err)
+		status = fwktype.AsStatus(f.err)
 	}
 	if f.isPreAllocation {
 		return f.scores[pod.GetName()], status
@@ -1427,7 +1568,7 @@ func (f *fakeReservationScorePlugin) ReservationScoreExtensions() ReservationSco
 	return f
 }
 
-func (f *fakeReservationScorePlugin) NormalizeReservationScore(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, scores ReservationScoreList) *framework.Status {
+func (f *fakeReservationScorePlugin) NormalizeReservationScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, scores ReservationScoreList) *fwktype.Status {
 	if f.enableNormalization {
 		return DefaultReservationNormalizeScore(MaxReservationScore, false, scores)
 	}
@@ -1772,8 +1913,8 @@ func TestReservationPreBindPluginOrder(t *testing.T) {
 			for _, pluginName := range tt.pluginRegistrationOrder {
 				pl := plugins[pluginName]
 				registeredPlugins = append(registeredPlugins,
-					schedulertesting.RegisterPreBindPlugin(pl.Name(), func(p *TestTransformer) func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
-						return func(_ runtime.Object, _ framework.Handle) (framework.Plugin, error) {
+					schedulertesting.RegisterPreBindPlugin(pl.Name(), func(p *TestTransformer) func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
+						return func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
 							return p, nil
 						}
 					}(pl)),
@@ -1841,7 +1982,7 @@ func TestReservationPreBindPluginOrder(t *testing.T) {
 type TestPreferNodesPlugin struct {
 	name           string
 	preferredNodes []string
-	returnStatus   *framework.Status
+	returnStatus   *fwktype.Status
 }
 
 func (p *TestPreferNodesPlugin) Name() string {
@@ -1852,7 +1993,7 @@ func (p *TestPreferNodesPlugin) PreferNodesPlugin() PreferNodesPlugin {
 	return p
 }
 
-func (p *TestPreferNodesPlugin) PreferNodes(ctx context.Context, cycleState *framework.CycleState, pod *corev1.Pod, result *framework.PreFilterResult) ([]string, *framework.Status) {
+func (p *TestPreferNodesPlugin) PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -1863,32 +2004,32 @@ func (p *TestPreferNodesPlugin) PreferNodes(ctx context.Context, cycleState *fra
 func Test_frameworkExtenderImpl_PreferNodesPlugin_Registration(t *testing.T) {
 	tests := []struct {
 		name           string
-		plugins        []framework.Plugin
+		plugins        []fwktype.Plugin
 		wantPluginName string
 	}{
 		{
 			name: "register single PreferNodesPlugin",
-			plugins: []framework.Plugin{
+			plugins: []fwktype.Plugin{
 				&TestPreferNodesPlugin{
 					name:           "test-prefer-nodes-1",
 					preferredNodes: []string{"node-1", "node-2"},
-					returnStatus:   framework.NewStatus(framework.Success),
+					returnStatus:   fwktype.NewStatus(fwktype.Success),
 				},
 			},
 			wantPluginName: "test-prefer-nodes-1",
 		},
 		{
 			name: "register multiple PreferNodesPlugin - only first one is used",
-			plugins: []framework.Plugin{
+			plugins: []fwktype.Plugin{
 				&TestPreferNodesPlugin{
 					name:           "test-prefer-nodes-1",
 					preferredNodes: []string{"node-1"},
-					returnStatus:   framework.NewStatus(framework.Success),
+					returnStatus:   fwktype.NewStatus(fwktype.Success),
 				},
 				&TestPreferNodesPlugin{
 					name:           "test-prefer-nodes-2",
 					preferredNodes: []string{"node-2"},
-					returnStatus:   framework.NewStatus(framework.Success),
+					returnStatus:   fwktype.NewStatus(fwktype.Success),
 				},
 			},
 			wantPluginName: "test-prefer-nodes-1",
@@ -1938,16 +2079,16 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 	tests := []struct {
 		name                 string
 		preferredNodes       []string
-		preferNodesStatus    *framework.Status
+		preferNodesStatus    *fwktype.Status
 		nodes                []*corev1.Node
 		expectCallPreferNode bool
-		expectResult         *framework.PreFilterResult
-		expectStatus         *framework.Status
+		expectResult         *fwktype.PreFilterResult
+		expectStatus         *fwktype.Status
 	}{
 		{
 			name:                 "PreferNodes returns Skip - use original prefilter result",
 			preferredNodes:       nil,
-			preferNodesStatus:    framework.NewStatus(framework.Skip),
+			preferNodesStatus:    fwktype.NewStatus(fwktype.Skip),
 			nodes:                []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}},
 			expectCallPreferNode: true,
 			expectResult:         nil,
@@ -1956,16 +2097,16 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 		{
 			name:                 "PreferNodes returns Error - abort scheduling",
 			preferredNodes:       nil,
-			preferNodesStatus:    framework.NewStatus(framework.Error, "test error"),
+			preferNodesStatus:    fwktype.NewStatus(fwktype.Error, "test error"),
 			nodes:                []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}},
 			expectCallPreferNode: true,
 			expectResult:         nil,
-			expectStatus:         framework.NewStatus(framework.Error, "test error"),
+			expectStatus:         fwktype.NewStatus(fwktype.Error, "test error"),
 		},
 		{
 			name:                 "PreferNodes returns Success with preferred nodes - but nodes not exist",
 			preferredNodes:       []string{"non-existent-node"},
-			preferNodesStatus:    framework.NewStatus(framework.Success),
+			preferNodesStatus:    fwktype.NewStatus(fwktype.Success),
 			nodes:                []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}},
 			expectCallPreferNode: true,
 			expectResult:         nil,
@@ -1974,24 +2115,24 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 		{
 			name:              "PreferNodes returns Success - first preferred node exists and passes filter",
 			preferredNodes:    []string{"node-1"},
-			preferNodesStatus: framework.NewStatus(framework.Success),
+			preferNodesStatus: fwktype.NewStatus(fwktype.Success),
 			nodes: []*corev1.Node{
 				{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}},
 				{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}},
 			},
 			expectCallPreferNode: true,
-			expectResult:         &framework.PreFilterResult{NodeNames: sets.New("node-1")},
+			expectResult:         &fwktype.PreFilterResult{NodeNames: sets.New("node-1")},
 			expectStatus:         nil,
 		},
 		{
 			name:              "PreferNodes returns Success - first preferred node missing, second exists and passes filter",
 			preferredNodes:    []string{"non-existent-node", "node-2"},
-			preferNodesStatus: framework.NewStatus(framework.Success),
+			preferNodesStatus: fwktype.NewStatus(fwktype.Success),
 			nodes: []*corev1.Node{
 				{ObjectMeta: metav1.ObjectMeta{Name: "node-2"}},
 			},
 			expectCallPreferNode: true,
-			expectResult:         &framework.PreFilterResult{NodeNames: sets.New("node-2")},
+			expectResult:         &fwktype.PreFilterResult{NodeNames: sets.New("node-2")},
 			expectStatus:         nil,
 		},
 	}
@@ -2018,7 +2159,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 			}
 
 			// Populate the snapshot lister with the test nodes so RunPreferNodesPlugin can find them.
-			var nodeInfos frameworkfake.NodeInfoLister
+			var nodeInfos nodeInfoLister
 			for _, n := range tt.nodes {
 				ni := framework.NewNodeInfo()
 				ni.SetNode(n)
@@ -2031,7 +2172,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 				"koord-scheduler",
 				frameworkruntime.WithClientSet(fakeClient),
 				frameworkruntime.WithInformerFactory(sharedInformerFactory),
-				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{NodeInfoLister: nodeInfos}),
+				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfos}),
 				frameworkruntime.WithPodNominator(NewFakePodNominator()),
 			)
 			assert.NoError(t, err)
@@ -2054,7 +2195,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 				},
 			}
 
-			result, status := impl.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), pod)
+			result, status, _ := impl.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), pod)
 
 			if tt.expectCallPreferNode {
 				assert.Contains(t, pod.Annotations, "PreferNodesPlugin-called")
@@ -2077,4 +2218,96 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 			}
 		})
 	}
+}
+
+// fakeFitFilterPlugin is a simple filter plugin that checks CPU resource fit,
+// used by CrossScheduler nomination tests.
+type fakeFitFilterPlugin struct{}
+
+func (f *fakeFitFilterPlugin) Name() string { return "FakeFitFilterPlugin" }
+
+func (f *fakeFitFilterPlugin) Filter(_ context.Context, _ fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) *fwktype.Status {
+	if insufficient := noderesources.Fits(pod, nodeInfo, nil, noderesources.ResourceRequestsOptions{}); len(insufficient) != 0 {
+		var reasons []string
+		for _, r := range insufficient {
+			reasons = append(reasons, r.Reason)
+		}
+		return fwktype.NewStatus(fwktype.Unschedulable, reasons...)
+	}
+	return nil
+}
+
+// makePriorityPod creates a pod with a given priority, CPU request, schedulerName, and optionally a nominated node.
+func makePriorityPod(name string, uid types.UID, priority int32, cpuReq string, schedulerName, nominatedNode, nodeName string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+			UID:       uid,
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: schedulerName,
+			NodeName:      nodeName,
+			Priority:      &priority,
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse(cpuReq),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			NominatedNodeName: nominatedNode,
+		},
+	}
+}
+
+// buildCrossSchedulerExtenderAndNodeInfo is a helper that creates a FrameworkExtender with FakeFitFilterPlugin
+// and optionally injects a CrossSchedulerPodNominator.
+func buildCrossSchedulerExtenderAndNodeInfo(t *testing.T, node *corev1.Node, crossNominator *CrossSchedulerPodNominator) (FrameworkExtender, fwktype.NodeInfo) {
+	t.Helper()
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+
+	opts := []Option{
+		WithKoordinatorClientSet(koordClientSet),
+		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	}
+	if crossNominator != nil {
+		opts = append(opts, WithCrossSchedulerPodNominator(crossNominator))
+	}
+
+	extenderFactory, err := NewFrameworkExtenderFactory(opts...)
+	assert.NoError(t, err)
+
+	nodeInfo := framework.NewNodeInfo()
+	nodeInfo.SetNode(node)
+
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		schedulertesting.RegisterFilterPlugin("FakeFitFilterPlugin", func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
+			return &fakeFitFilterPlugin{}, nil
+		}),
+	}
+
+	fakeClient := kubefake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
+		registeredPlugins,
+		"koord-scheduler",
+		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfoLister{nodeInfo}}),
+		frameworkruntime.WithClientSet(fakeClient),
+		frameworkruntime.WithInformerFactory(sharedInformerFactory),
+		frameworkruntime.WithPodNominator(NewFakePodNominator()),
+	)
+	assert.NoError(t, err)
+
+	extender := extenderFactory.NewFrameworkExtender(fh)
+	extender.SetConfiguredPlugins(fh.ListPlugins())
+	return extender, nodeInfo
 }

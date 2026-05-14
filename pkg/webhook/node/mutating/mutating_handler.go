@@ -47,7 +47,7 @@ type NodeMutatingHandler struct {
 	Client client.Client
 
 	// Decoder decodes objects
-	Decoder *admission.Decoder
+	Decoder admission.Decoder
 
 	ignoreFilter IgnoreFilter
 }
@@ -71,7 +71,7 @@ func shouldIgnoreIfNotNode(req admission.Request) bool {
 */
 
 // NewNodeStatusMutatingHandler creates a new handler for node/status.
-func NewNodeStatusMutatingHandler(c client.Client, d *admission.Decoder) *NodeMutatingHandler {
+func NewNodeStatusMutatingHandler(c client.Client, d admission.Decoder) *NodeMutatingHandler {
 	handler := &NodeMutatingHandler{
 		ignoreFilter: shouldIgnoreIfNotNodeStatus,
 		Client:       c,
@@ -157,7 +157,7 @@ func (n *NodeMutatingHandler) InjectClient(c client.Client) error {
 // var _ admission.DecoderInjector = &NodeMutatingHandler{}
 
 // InjectDecoder injects the decoder into the PodMutatingHandler
-func (n *NodeMutatingHandler) InjectDecoder(d *admission.Decoder) error {
+func (n *NodeMutatingHandler) InjectDecoder(d admission.Decoder) error {
 	n.Decoder = d
 	return nil
 }

@@ -40,20 +40,20 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 
 	testCases := []struct {
 		name      string
-		fn        func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface)
+		fn        func(handler *EnqueueRequestForNodeMetric, q workqueue.TypedRateLimitingInterface[reconcile.Request])
 		hasEvent  bool
 		eventName string
 	}{
 		{
 			name: "create nodemetric event",
-			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Create(context.TODO(), event.CreateEvent{}, q)
 			},
 			hasEvent: false,
 		},
 		{
 			name: "delete nodemetric event",
-			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
@@ -67,7 +67,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		},
 		{
 			name: "delete event not nodemetric",
-			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Delete(context.TODO(), event.DeleteEvent{
 					Object: &corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
@@ -80,14 +80,14 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		},
 		{
 			name: "generic event ignore",
-			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Generic(context.TODO(), event.GenericEvent{}, q)
 			},
 			hasEvent: false,
 		},
 		{
 			name: "update nodemetric event",
-			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
@@ -109,7 +109,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 		},
 		{
 			name: "update nodemetric event ignore",
-			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.RateLimitingInterface) {
+			fn: func(handler *EnqueueRequestForNodeMetric, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 				handler.Update(context.TODO(), event.UpdateEvent{
 					ObjectOld: &slov1alpha1.NodeMetric{
 						ObjectMeta: metav1.ObjectMeta{
@@ -129,7 +129,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			queue := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+			queue := workqueue.NewTypedRateLimitingQueue[reconcile.Request](workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 			handler := &EnqueueRequestForNodeMetric{}
 			tc.fn(handler, queue)
 			if tc.hasEvent {
@@ -137,7 +137,7 @@ func Test_EnqueueRequestForNodeMetricMetric(t *testing.T) {
 					t.Error("expected event but queue is empty")
 				}
 				e, _ := queue.Get()
-				assert.Equal(tc.eventName, e.(reconcile.Request).Name)
+				assert.Equal(tc.eventName, e.Name)
 			}
 			if !tc.hasEvent && queue.Len() > 0 {
 				e, _ := queue.Get()

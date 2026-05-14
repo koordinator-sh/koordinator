@@ -17,7 +17,6 @@ limitations under the License.
 package v1alpha2
 
 import (
-	"k8s.io/utils/pointer"
 	"net"
 	"strconv"
 	"time"
@@ -27,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	componentbaseconfigv1alpha1 "k8s.io/component-base/config/v1alpha1"
+	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 
 	sev1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -156,7 +156,8 @@ func SetDefaults_DeschedulerConfiguration(obj *DeschedulerConfiguration) {
 	componentbaseconfigv1alpha1.RecommendedDefaultLeaderElectionConfiguration(&obj.LeaderElection)
 
 	if len(obj.ClientConnection.ContentType) == 0 {
-		obj.ClientConnection.ContentType = "application/vnd.kubernetes.protobuf"
+		obj.ClientConnection.ContentType = runtime.ContentTypeProtobuf
+		obj.ClientConnection.AcceptContentTypes = runtime.ContentTypeProtobuf + "," + runtime.ContentTypeJSON
 	}
 	// Scheduler has an opinion about QPS/Burst, setting specific defaults for itself, instead of generic settings.
 	if obj.ClientConnection.QPS == 0.0 {

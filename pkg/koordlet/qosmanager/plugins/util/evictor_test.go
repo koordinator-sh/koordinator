@@ -20,10 +20,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 
@@ -89,7 +89,7 @@ func Test_EvictPodIfNotEvicted(t *testing.T) {
 			defer ctl.Finish()
 			fakeRecorder := &testutil.FakeRecorder{}
 			client := clientsetfake.NewSimpleClientset()
-			r := NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+			r := NewEvictor(client, fakeRecorder, policyv1.SchemeGroupVersion.Version)
 			stop := make(chan struct{})
 			err := r.podsEvicted.Run(stop)
 			assert.NoError(t, err)
@@ -126,7 +126,7 @@ func Test_EvictPodsIfNotEvicted(t *testing.T) {
 
 	fakeRecorder := &testutil.FakeRecorder{}
 	client := clientsetfake.NewSimpleClientset()
-	r := NewEvictor(client, fakeRecorder, policyv1beta1.SchemeGroupVersion.Version)
+	r := NewEvictor(client, fakeRecorder, policyv1.SchemeGroupVersion.Version)
 	stop := make(chan struct{})
 	err := r.podsEvicted.Run(stop)
 	assert.NoError(t, err)

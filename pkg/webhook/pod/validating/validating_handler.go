@@ -45,7 +45,7 @@ type PodValidatingHandler struct {
 	Client client.Client
 
 	// Decoder decodes objects
-	Decoder *admission.Decoder
+	Decoder admission.Decoder
 
 	// QuotaEvaluator evaluate pod quota usage
 	QuotaEvaluator quotaevaluate.Evaluator
@@ -155,7 +155,7 @@ func (h *PodValidatingHandler) InjectClient(c client.Client) error {
 // var _ admission.DecoderInjector = &PodValidatingHandler{}
 
 // InjectDecoder injects the decoder into the PodValidatingHandler
-func (h *PodValidatingHandler) InjectDecoder(d *admission.Decoder) error {
+func (h *PodValidatingHandler) InjectDecoder(d admission.Decoder) error {
 	h.Decoder = d
 	return nil
 }

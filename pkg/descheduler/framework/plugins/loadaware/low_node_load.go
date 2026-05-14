@@ -60,7 +60,7 @@ type LowNodeLoad struct {
 }
 
 // NewLowNodeLoad builds plugin from its arguments while passing a handle
-func NewLowNodeLoad(args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
+func NewLowNodeLoad(ctx context.Context, args runtime.Object, handle framework.Handle) (framework.Plugin, error) {
 	loadLoadUtilizationArgs, ok := args.(*deschedulerconfig.LowNodeLoadArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type LowNodeLoadArgs, got %T", args)
@@ -104,8 +104,8 @@ func NewLowNodeLoad(args runtime.Object, handle framework.Handle) (framework.Plu
 	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(koordClientSet, 0)
 	nodeMetricInformer := koordSharedInformerFactory.Slo().V1alpha1().NodeMetrics()
 	nodeMetricInformer.Informer()
-	koordSharedInformerFactory.Start(context.TODO().Done())
-	koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
+	koordSharedInformerFactory.Start(ctx.Done())
+	koordSharedInformerFactory.WaitForCacheSync(ctx.Done())
 
 	nodeAnomalyDetectors := gocache.New(loadLoadUtilizationArgs.DetectorCacheTimeout.Duration, loadLoadUtilizationArgs.DetectorCacheTimeout.Duration)
 	prodAnomalyDetectors := gocache.New(loadLoadUtilizationArgs.DetectorCacheTimeout.Duration, loadLoadUtilizationArgs.DetectorCacheTimeout.Duration)

@@ -188,10 +188,6 @@ func Test_listPodsForProfile(t *testing.T) {
 			},
 			arg: testProfile,
 			want: &corev1.PodList{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "PodList",
-				},
 				Items: []corev1.Pod{
 					*testPod,
 				},
@@ -253,10 +249,6 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 		{
 			name: "mutating pod",
 			pod: &corev1.Pod{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "Pod",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-pod-1",
@@ -319,10 +311,6 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 				},
 			},
 			wantPod: &corev1.Pod{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "Pod",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-pod-1",
@@ -441,10 +429,6 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 				},
 			},
 			wantPod: &corev1.Pod{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "Pod",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-pod-1",
@@ -554,10 +538,6 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 				},
 			},
 			wantPod: &corev1.Pod{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "Pod",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-pod-1",
@@ -673,10 +653,6 @@ func Test_updatePodByClusterColocationProfile(t *testing.T) {
 				},
 			},
 			wantPod: &corev1.Pod{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: "v1",
-					Kind:       "Pod",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "default",
 					Name:      "test-pod-1",

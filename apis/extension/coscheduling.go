@@ -22,6 +22,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
 const (
@@ -94,7 +96,21 @@ func GetGangTotalNum(obj metav1.Object) (int, error) {
 }
 
 func GetGangName(pod *corev1.Pod) string {
-	return pod.Annotations[AnnotationGangName]
+	if pod == nil {
+		return ""
+	}
+	var gangName string
+	if gangName = pod.Labels[v1alpha1.PodGroupLabel]; gangName == "" {
+		// nolint:staticcheck // SA1019: extension.LabelLightweightCoschedulingPodGroupName is deprecated
+		if gangName = pod.Labels[LabelLightweightCoschedulingPodGroupName]; gangName == "" {
+			gangName = pod.Annotations[AnnotationGangName]
+		}
+	}
+	return gangName
+}
+
+func IsGangPod(pod *corev1.Pod) bool {
+	return GetGangName(pod) != ""
 }
 
 func GetGangMatchPolicy(obj metav1.Object) string {

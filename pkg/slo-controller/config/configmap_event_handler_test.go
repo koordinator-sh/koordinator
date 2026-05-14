@@ -40,8 +40,8 @@ func cacheChangedFalse(configMap *corev1.ConfigMap) bool {
 	return false
 }
 
-func enqueueRequest(q *workqueue.RateLimitingInterface) {
-	(*q).Add(reconcile.Request{
+func enqueueRequest(q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+	q.Add(reconcile.Request{
 		NamespacedName: types.NamespacedName{
 			Name: "test",
 		},
@@ -138,7 +138,7 @@ func Test_common_Create(t *testing.T) {
 			if tt.args.cacheChangedReturn != nil {
 				p.SyncCacheIfChanged = tt.args.cacheChangedReturn
 			}
-			q := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+			q := workqueue.NewTypedRateLimitingQueue[reconcile.Request](workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 			p.Create(context.TODO(), tt.args.evt, q)
 
 			assert.Equal(t, q.Len(), len(tt.want.objs), "Create() test fail, len expect equal!")
@@ -299,7 +299,7 @@ func Test_common_Update(t *testing.T) {
 			if tt.args.cacheChangedReturn != nil {
 				p.SyncCacheIfChanged = tt.args.cacheChangedReturn
 			}
-			q := workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter())
+			q := workqueue.NewTypedRateLimitingQueue[reconcile.Request](workqueue.DefaultTypedControllerRateLimiter[reconcile.Request]())
 			p.Update(context.TODO(), tt.args.evt, q)
 
 			assert.Equal(t, q.Len(), len(tt.want.objs), "update() test fail, len expect equal!")

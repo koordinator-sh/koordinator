@@ -27,7 +27,6 @@ import (
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
@@ -84,9 +83,6 @@ func TestTransformPod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
-					},
-					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "/",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -168,9 +164,6 @@ func TestTransformPod(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
-					},
-					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "/",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -265,7 +258,6 @@ func TestTransformPod(t *testing.T) {
 					Labels: map[string]string{
 						apiext.LabelPodQoS:              string(apiext.QoSLSR),
 						apiext.LabelPodPreemptionPolicy: string(corev1.PreemptNever),
-						apiext.LabelQuestionedObjectKey: "/",
 					},
 					Annotations: map[string]string{
 						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
@@ -362,8 +354,7 @@ func TestTransformPod(t *testing.T) {
 			wantPod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						apiext.LabelPodQoS:              string(apiext.QoSLSR),
-						apiext.LabelQuestionedObjectKey: "/",
+						apiext.LabelPodQoS: string(apiext.QoSLSR),
 					},
 					Annotations: map[string]string{
 						apiext.AnnotationDeviceAllocated: `{"gpu":[{"minor":1,"resources":{"koordinator.sh/gpu-core":"60","koordinator.sh/gpu-memory":"8Gi","koordinator.sh/gpu-memory-ratio":"50"}}]}`,
@@ -462,9 +453,6 @@ func TestTransformPod(t *testing.T) {
 					Annotations: map[string]string{
 						apiext.AnnotationPodReplaceResources: "cpu:,memory:example.io/memory",
 					},
-					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "/",
-					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -561,9 +549,6 @@ func TestTransformPod(t *testing.T) {
 					Annotations: map[string]string{
 						apiext.AnnotationPodReplaceResources: "cpu:,memory:example.io/memory",
 					},
-					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "/",
-					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -615,148 +600,62 @@ func TestTransformPod(t *testing.T) {
 	}
 }
 
-func TestTransformScheduleExplanationObjectKey(t *testing.T) {
+func TestTransformSchedulerName(t *testing.T) {
 	tests := []struct {
-		name    string
-		pod     *corev1.Pod
-		wantPod *corev1.Pod
+		name              string
+		pod               *corev1.Pod
+		wantSchedulerName string
+		wantOriginalSaved bool
+		wantOriginalValue string
 	}{
 		{
-			name: "gang-master",
+			name: "label overrides spec, saves original",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "prefix-master-0",
 					Labels: map[string]string{
-						v1alpha1.PodGroupLabel: "gang-master",
+						apiext.LabelSchedulerName: "koord-scheduler",
 					},
-					Namespace: "default",
 				},
+				Spec: corev1.PodSpec{SchedulerName: "default-scheduler"},
 			},
-			wantPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "prefix-master-0",
-					Labels: map[string]string{
-						v1alpha1.PodGroupLabel:          "gang-master",
-						apiext.LabelQuestionedObjectKey: "default/gang",
-					},
-					Namespace: "default",
-				},
-			},
+			wantSchedulerName: "koord-scheduler",
+			wantOriginalSaved: true,
+			wantOriginalValue: "default-scheduler",
 		},
 		{
-			name: "gang-worker",
+			name: "no label, no change, no annotation",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "prefix-worker-0",
-					Labels: map[string]string{
-						v1alpha1.PodGroupLabel: "gang-worker",
-					},
-					Namespace: "default",
-				},
+				Spec: corev1.PodSpec{SchedulerName: "default-scheduler"},
 			},
-			wantPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "prefix-worker-0",
-					Labels: map[string]string{
-						v1alpha1.PodGroupLabel:          "gang-worker",
-						apiext.LabelQuestionedObjectKey: "default/gang",
-					},
-					Namespace: "default",
-				},
-			},
+			wantSchedulerName: "default-scheduler",
+			wantOriginalSaved: false,
 		},
 		{
-			name: "annotation-gang",
+			name: "label same as spec, no annotation needed",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "prefix-worker-0",
-					Annotations: map[string]string{
-						apiext.AnnotationGangName: "annotation-gang",
-					},
-					Namespace: "default",
-				},
-			},
-			wantPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "prefix-worker-0",
-					Annotations: map[string]string{
-						apiext.AnnotationGangName: "annotation-gang",
-					},
 					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "default/annotation-gang",
-					},
-					Namespace: "default",
-				},
-			},
-		},
-		{
-			name: "annotation-gang-with-gangGroup",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "prefix-worker-0",
-					Annotations: map[string]string{
-						apiext.AnnotationGangName:   "gangA",
-						apiext.AnnotationGangGroups: "[default/gangA, default/gangB]",
+						apiext.LabelSchedulerName: "default-scheduler",
 					},
 				},
+				Spec: corev1.PodSpec{SchedulerName: "default-scheduler"},
 			},
-			wantPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "prefix-worker-0",
-					Annotations: map[string]string{
-						apiext.AnnotationGangName:   "gangA",
-						apiext.AnnotationGangGroups: "[default/gangA, default/gangB]",
-					},
-					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "[default/gangA, default/gangB]",
-					},
-				},
-			},
-		},
-		{
-			name: "bare pod",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "prefix-worker-0",
-					Namespace: "default",
-				},
-			},
-			wantPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "prefix-worker-0",
-					Namespace: "default",
-					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "default/prefix-worker-0",
-					},
-				},
-			},
-		},
-		{
-			name: "already exists key",
-			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "prefix-worker-0",
-					Namespace: "default",
-					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "default/prefix-worker-c",
-					},
-				},
-			},
-			wantPod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "prefix-worker-0",
-					Namespace: "default",
-					Labels: map[string]string{
-						apiext.LabelQuestionedObjectKey: "default/prefix-worker-c",
-					},
-				},
-			},
+			wantSchedulerName: "default-scheduler",
+			wantOriginalSaved: false,
 		},
 	}
+	transform := TransformSchedulerName()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			TransformScheduleExplanationObjectKey()(tt.pod)
-			assert.Equal(t, tt.wantPod, tt.pod)
+			pod := tt.pod.DeepCopy()
+			transform(pod)
+			assert.Equal(t, tt.wantSchedulerName, pod.Spec.SchedulerName)
+			if tt.wantOriginalSaved {
+				assert.Equal(t, tt.wantOriginalValue, pod.Annotations[apiext.AnnotationOriginalSchedulerName])
+			} else {
+				_, exists := pod.Annotations[apiext.AnnotationOriginalSchedulerName]
+				assert.False(t, exists)
+			}
 		})
 	}
 }

@@ -26,6 +26,9 @@ import (
 
 const (
 	AnnotationNodeReservation = NodeDomainPrefix + "/reservation"
+
+	// LabelNodeEnableNUMAReservation indicates whether to enable NUMA-level allocatable reservation.
+	LabelNodeEnableNUMAReservation = NodeDomainPrefix + "/enable-numa-reservation"
 )
 
 // NodeReservation resource reserved by node.annotation,

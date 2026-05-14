@@ -24,11 +24,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/klog/v2"
+	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
-var AssignedPodDelete = framework.ClusterEvent{Resource: framework.Pod, ActionType: framework.Delete, Label: "AssignedPodDelete"}
+var AssignedPodDelete = fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete, CustomLabel: "AssignedPodDelete"}
 
 var podPool = &sync.Pool{
 	New: func() interface{} {
@@ -64,14 +65,14 @@ type SchedulerCache interface {
 type PreEnqueueCheck func(pod *corev1.Pod) bool
 
 type SchedulingQueue interface {
-	Add(logger klog.Logger, pod *corev1.Pod) error
-	Update(logger klog.Logger, oldPod, newPod *corev1.Pod) error
-	Delete(pod *corev1.Pod) error
+	Add(logger klog.Logger, pod *corev1.Pod)
+	Update(logger klog.Logger, oldPod, newPod *corev1.Pod)
+	Delete(pod *corev1.Pod)
 	AddUnschedulableIfNotPresent(logger klog.Logger, pod *framework.QueuedPodInfo, podSchedulingCycle int64) error
 	SchedulingCycle() int64
 	AssignedPodAdded(logger klog.Logger, pod *corev1.Pod)
-	AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev1.Pod)
-	MoveAllToActiveOrBackoffQueue(logger klog.Logger, event framework.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck)
+	AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev1.Pod, event fwktype.ClusterEvent)
+	MoveAllToActiveOrBackoffQueue(logger klog.Logger, event fwktype.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck)
 	Activate(logger klog.Logger, pods map[string]*corev1.Pod)
 	Done(types.UID)
 }
@@ -90,7 +91,7 @@ func (s *SchedulerAdapter) GetSchedulingQueue() SchedulingQueue {
 	return &queueAdapter{s.Scheduler}
 }
 
-func (s *SchedulerAdapter) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event framework.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck) {
+func (s *SchedulerAdapter) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event fwktype.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck) {
 	s.Scheduler.SchedulingQueue.MoveAllToActiveOrBackoffQueue(logger, event, oldObj, newObj, func(pod *corev1.Pod) bool {
 		if preCheck != nil {
 			return preCheck(pod)
@@ -152,16 +153,16 @@ type queueAdapter struct {
 	scheduler *scheduler.Scheduler
 }
 
-func (q *queueAdapter) Add(logger klog.Logger, pod *corev1.Pod) error {
-	return q.scheduler.SchedulingQueue.Add(logger, pod)
+func (q *queueAdapter) Add(logger klog.Logger, pod *corev1.Pod) {
+	q.scheduler.SchedulingQueue.Add(logger, pod)
 }
 
-func (q *queueAdapter) Update(logger klog.Logger, oldPod, newPod *corev1.Pod) error {
-	return q.scheduler.SchedulingQueue.Update(logger, oldPod, newPod)
+func (q *queueAdapter) Update(logger klog.Logger, oldPod, newPod *corev1.Pod) {
+	q.scheduler.SchedulingQueue.Update(logger, oldPod, newPod)
 }
 
-func (q *queueAdapter) Delete(pod *corev1.Pod) error {
-	return q.scheduler.SchedulingQueue.Delete(pod)
+func (q *queueAdapter) Delete(pod *corev1.Pod) {
+	q.scheduler.SchedulingQueue.Delete(pod)
 }
 
 func (q *queueAdapter) AddUnschedulableIfNotPresent(logger klog.Logger, pInfo *framework.QueuedPodInfo, podSchedulingCycle int64) error {
@@ -176,11 +177,11 @@ func (q *queueAdapter) AssignedPodAdded(logger klog.Logger, pod *corev1.Pod) {
 	q.scheduler.SchedulingQueue.AssignedPodAdded(logger, pod)
 }
 
-func (q *queueAdapter) AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev1.Pod) {
-	q.scheduler.SchedulingQueue.AssignedPodUpdated(logger, oldPod, newPod)
+func (q *queueAdapter) AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev1.Pod, event fwktype.ClusterEvent) {
+	q.scheduler.SchedulingQueue.AssignedPodUpdated(logger, oldPod, newPod, event)
 }
 
-func (q *queueAdapter) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event framework.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck) {
+func (q *queueAdapter) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event fwktype.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck) {
 	q.scheduler.SchedulingQueue.MoveAllToActiveOrBackoffQueue(logger, event, oldObj, newObj, func(pod *corev1.Pod) bool {
 		if preCheck != nil {
 			return preCheck(pod)
@@ -294,26 +295,23 @@ func (f *FakeScheduler) InvalidNodeInfo(logger klog.Logger, nodeName string) err
 		f.NodeInfos[nodeName] = nodeInfo
 	}
 	nodeInfo.AddPod(pod)
-	return nodeInfo.RemovePod(pod)
+	return nodeInfo.RemovePod(logger, pod)
 }
 
-func (f *FakeQueue) Add(logger klog.Logger, pod *corev1.Pod) error {
+func (f *FakeQueue) Add(logger klog.Logger, pod *corev1.Pod) {
 	key, _ := framework.GetPodKey(pod)
 	f.Pods[key] = pod
-	return nil
 }
 
-func (f *FakeQueue) Update(logger klog.Logger, oldPod, newPod *corev1.Pod) error {
+func (f *FakeQueue) Update(logger klog.Logger, oldPod, newPod *corev1.Pod) {
 	key, _ := framework.GetPodKey(newPod)
 	f.Pods[key] = newPod
-	return nil
 }
 
-func (f *FakeQueue) Delete(pod *corev1.Pod) error {
+func (f *FakeQueue) Delete(pod *corev1.Pod) {
 	key, _ := framework.GetPodKey(pod)
 	delete(f.Pods, key)
 	delete(f.UnschedulablePods, key)
-	return nil
 }
 
 func (f *FakeQueue) AddUnschedulableIfNotPresent(logger klog.Logger, pod *framework.QueuedPodInfo, podSchedulingCycle int64) error {
@@ -331,12 +329,12 @@ func (f *FakeQueue) AssignedPodAdded(logger klog.Logger, pod *corev1.Pod) {
 	f.AssignedPods[key] = pod
 }
 
-func (f *FakeQueue) AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev1.Pod) {
+func (f *FakeQueue) AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev1.Pod, event fwktype.ClusterEvent) {
 	key, _ := framework.GetPodKey(newPod)
 	f.AssignedUpdatedPods[key] = newPod
 }
 
-func (f *FakeQueue) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event framework.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck) {
+func (f *FakeQueue) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event fwktype.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck) {
 
 }
 

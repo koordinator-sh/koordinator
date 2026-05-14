@@ -18,7 +18,6 @@ package dispatcher
 
 import (
 	"context"
-	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -62,7 +61,7 @@ func (rd *RuntimeHookDispatcher) dispatchInternal(ctx context.Context, hookType 
 	case config.PostStopContainer:
 		return client.PostStopContainerHook(ctx, request.(*v1alpha1.ContainerResourceHookRequest))
 	}
-	return nil, status.Errorf(codes.Unimplemented, fmt.Sprintf("method %v not implemented", string(hookType)))
+	return nil, status.Errorf(codes.Unimplemented, "method %v not implemented", string(hookType))
 }
 
 func (rd *RuntimeHookDispatcher) Dispatch(ctx context.Context, runtimeRequestPath config.RuntimeRequestPath,

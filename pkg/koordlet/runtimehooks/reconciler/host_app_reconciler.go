@@ -43,7 +43,7 @@ type hostAppReconciler struct {
 func RegisterHostAppReconciler(resource system.Resource, description string, fn reconcileFunc, opt *ReconcilerOption) {
 	for _, r := range globalHostAppReconcilers.hostApps {
 		if resource.ResourceType() == r.resourceFile.ResourceType() {
-			klog.Fatal("%v file already registered by %v", resource.ResourceType(), r.description)
+			klog.Fatalf("%v file already registered by %v", resource.ResourceType(), r.description)
 		}
 	}
 
