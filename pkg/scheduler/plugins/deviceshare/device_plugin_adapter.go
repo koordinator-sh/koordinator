@@ -272,12 +272,30 @@ func unlockNode(node *corev1.Node, lockKey string) {
 	delete(node.Annotations, lockKey)
 }
 
+func ensureAnnotations(object metav1.Object) map[string]string {
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+		object.SetAnnotations(annotations)
+	}
+	return annotations
+}
+
+func ensureLabels(object metav1.Object) map[string]string {
+	labels := object.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+		object.SetLabels(labels)
+	}
+	return labels
+}
+
 // generalDevicePluginAdapter annotates the bind timestamp to pod which enables users to write their own device plugins
 // that can be used with koord-scheduler.
 type generalDevicePluginAdapter struct{}
 
 func (a *generalDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, _ []*apiext.DeviceAllocation) error {
-	object.GetAnnotations()[AnnotationBindTimestamp] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
+	ensureAnnotations(object)[AnnotationBindTimestamp] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
 	return nil
 }
 
@@ -287,9 +305,9 @@ type generalGPUDevicePluginAdapter struct {
 }
 
 func (a *generalGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
-	object.GetAnnotations()[AnnotationGPUMinors] = buildGPUMinorsStr(allocation, "")
+	ensureAnnotations(object)[AnnotationGPUMinors] = buildGPUMinorsStr(allocation, "")
 	if object.GetLabels()[apiext.LabelGPUIsolationProvider] == string(apiext.GPUIsolationProviderHAMICore) {
-		object.GetLabels()[apiext.LabelHAMIVGPUNodeName] = ctx.node.Name
+		ensureLabels(object)[apiext.LabelHAMIVGPUNodeName] = ctx.node.Name
 	}
 	return nil
 }
@@ -297,17 +315,18 @@ func (a *generalGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, obj
 type huaweiGPUDevicePluginAdapter struct{}
 
 func (a *huaweiGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
-	object.GetAnnotations()[AnnotationPredicateTime] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
+	annotations := ensureAnnotations(object)
+	annotations[AnnotationPredicateTime] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
 	switch ctx.gpuModel {
 	case "Ascend-310P3-300I-DUO":
-		object.GetAnnotations()[AnnotationHuaweiAscend310P] = buildGPUMinorsStr(allocation, "Ascend310P-")
+		annotations[AnnotationHuaweiAscend310P] = buildGPUMinorsStr(allocation, "Ascend310P-")
 	default:
 		if allocation[0].Extension != nil && allocation[0].Extension.GPUSharedResourceTemplate != "" {
 			// vNPU
-			object.GetAnnotations()[AnnotationHuaweiNPUCore] = fmt.Sprintf("%d-%s", allocation[0].Minor, allocation[0].Extension.GPUSharedResourceTemplate)
+			annotations[AnnotationHuaweiNPUCore] = fmt.Sprintf("%d-%s", allocation[0].Minor, allocation[0].Extension.GPUSharedResourceTemplate)
 		} else {
 			// full NPU
-			object.GetAnnotations()[AnnotationHuaweiNPUCore] = buildGPUMinorsStr(allocation, "")
+			annotations[AnnotationHuaweiNPUCore] = buildGPUMinorsStr(allocation, "")
 		}
 	}
 	return nil
@@ -332,8 +351,9 @@ func (a *cambriconGPUDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, obj
 	}
 	vmemory := memory.Value() / cambriconVMemoryUnit
 
-	object.GetAnnotations()[AnnotationCambriconDsmluAssigned] = "false"
-	object.GetAnnotations()[AnnotationCambriconDsmluProfile] = fmt.Sprintf("%d_%d_%d", allocation[0].Minor, vcore, vmemory)
+	annotations := ensureAnnotations(object)
+	annotations[AnnotationCambriconDsmluAssigned] = "false"
+	annotations[AnnotationCambriconDsmluProfile] = fmt.Sprintf("%d_%d_%d", allocation[0].Minor, vcore, vmemory)
 	return nil
 }
 
@@ -375,7 +395,7 @@ func (a *metaxDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object met
 		return err
 	}
 
-	object.GetAnnotations()[AnnotationMetaXGPUDevicesAllocated] = string(allocatedData)
+	ensureAnnotations(object)[AnnotationMetaXGPUDevicesAllocated] = string(allocatedData)
 	return nil
 }
 
