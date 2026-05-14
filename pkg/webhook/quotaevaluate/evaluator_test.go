@@ -185,7 +185,7 @@ func TestEvaluate(t *testing.T) {
 			client := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(tc.quota).Build()
 
-			quotaAccessor := NewQuotaAccessor(client)
+			quotaAccessor := NewQuotaAccessor(client, client)
 			evaluator := NewQuotaEvaluator(quotaAccessor, 16, make(chan struct{}))
 
 			err := evaluator.Evaluate(tc.attribute)
