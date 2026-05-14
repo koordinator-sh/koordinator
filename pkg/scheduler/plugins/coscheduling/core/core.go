@@ -333,7 +333,11 @@ func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, cycleState fw
 			networkTopologySpec: gang.NetworkTopologySpec,
 		}
 		if gangSchedulingContext.networkTopologySpec != nil {
-			gangSchedulingContext.networkTopologySnapshot = pgMgr.handle.(frameworkext.ExtendedHandle).GetNetworkTopologyTreeManager().GetSnapshot()
+			extHandle, ok := pgMgr.handle.(frameworkext.ExtendedHandle)
+			if !ok {
+				return fmt.Errorf("handle does not implement ExtendedHandle, required for NetworkTopologySpec")
+			}
+			gangSchedulingContext.networkTopologySnapshot = extHandle.GetNetworkTopologyTreeManager().GetSnapshot()
 			if gangSchedulingContext.networkTopologySnapshot == nil {
 				return errors.New(ErrNoClusterNetworkTopology)
 			}
