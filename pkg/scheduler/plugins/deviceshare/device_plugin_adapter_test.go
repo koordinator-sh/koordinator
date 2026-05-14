@@ -64,6 +64,22 @@ func TestGeneralDevicePluginAdapter_Adapt(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "nil annotations",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+					},
+				},
+			},
+		},
 	}
 
 	adapter := &generalDevicePluginAdapter{}
@@ -111,6 +127,25 @@ func TestGeneralGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						AnnotationGPUMinors: "0,1",
+					},
+				},
+			},
+		},
+		{
+			name: "nil annotations",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationGPUMinors: "0",
 					},
 				},
 			},
