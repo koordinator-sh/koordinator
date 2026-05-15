@@ -96,7 +96,7 @@ func TestExtendedResourceSpecMutatingPod(t *testing.T) {
 	assert.NoError(err)
 
 	req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
-	err = handler.extendedResourceSpecMutatingPod(context.TODO(), req, pod)
+	err = handler.extendedResourceSpecMutatingPod(context.TODO(), req, pod, nil)
 	assert.NoError(err)
 
 	expectPod := &corev1.Pod{

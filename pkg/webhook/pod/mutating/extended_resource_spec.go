@@ -29,7 +29,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
-func (h *PodMutatingHandler) extendedResourceSpecMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
+func (h *PodMutatingHandler) extendedResourceSpecMutatingPod(ctx context.Context, req admission.Request, pod, oldPod *corev1.Pod) error {
 	if req.Operation != admissionv1.Create && req.Operation != admissionv1.Update {
 		return nil
 	}

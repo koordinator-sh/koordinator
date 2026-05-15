@@ -34,7 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
 
-func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
+func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Context, req admission.Request, pod, oldPod *corev1.Pod) error {
 	if req.Operation != admissionv1.Create {
 		return nil
 	}

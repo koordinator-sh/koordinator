@@ -51,7 +51,7 @@ var (
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=config.koordinator.sh,resources=clustercolocationprofiles,verbs=get;list;watch
 
-func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
+func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Context, req admission.Request, pod, oldPod *corev1.Pod) error {
 	if req.Operation != admissionv1.Create {
 		return nil
 	}
@@ -76,7 +76,7 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 			}
 		}
 		if profile.Spec.Selector != nil {
-			matched, err := h.matchObjectSelector(pod, nil, profile.Spec.Selector)
+			matched, err := h.matchObjectSelector(pod, oldPod, profile.Spec.Selector)
 			if !matched && err == nil {
 				continue
 			}
