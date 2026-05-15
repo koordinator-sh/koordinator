@@ -55,7 +55,10 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, state fwktype.Cycle
 		return nil, nil
 	}
 
-	if len(gangSchedulingContext.alreadyAttemptedPods) > 1 {
+	gangSchedulingContext.RLock()
+	attempted := len(gangSchedulingContext.alreadyAttemptedPods)
+	gangSchedulingContext.RUnlock()
+	if attempted > 1 {
 		plannedNode := gangSchedulingContext.networkTopologyPlannedNodes[framework.GetNamespacedName(pod.Namespace, pod.Name)]
 		if plannedNode == "" {
 			// this shouldn't happen. If happens, return err to exposing problems
@@ -75,7 +78,10 @@ func (pgMgr *PodGroupManager) FindOneNode(ctx context.Context, cycleState fwktyp
 		return "", fwktype.NewStatus(fwktype.Skip)
 	}
 
-	if len(gangSchedulingContext.alreadyAttemptedPods) > 1 {
+	gangSchedulingContext.RLock()
+	attempted := len(gangSchedulingContext.alreadyAttemptedPods)
+	gangSchedulingContext.RUnlock()
+	if attempted > 1 {
 		if len(gangSchedulingContext.networkTopologyPlannedNodes) == 0 {
 			// this shouldn't happen. If happens, return err to exposing problems
 			return "", fwktype.NewStatus(fwktype.Error, ErrorNoPlannedNodes)
@@ -177,7 +183,10 @@ func (ev *preemptionEvaluatorImpl) PlanNodes(
 	preemptionState := preemptionStateFromContext(ctx)
 	preemptionState.SchedulingMode = frameworkext.JobSchedulingMode
 
-	if len(preemptionState.gangSchedulingContext.alreadyAttemptedPods) > 1 {
+	preemptionState.gangSchedulingContext.RLock()
+	attempted := len(preemptionState.gangSchedulingContext.alreadyAttemptedPods)
+	preemptionState.gangSchedulingContext.RUnlock()
+	if attempted > 1 {
 		return nil, nil, nil, fwktype.NewStatus(fwktype.Unschedulable, ErrorInvalidPlan)
 	}
 
