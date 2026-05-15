@@ -28,7 +28,7 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 )
 
-func (h *PodMutatingHandler) deviceResourceSpecMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
+func (h *PodMutatingHandler) deviceResourceSpecMutatingPod(ctx context.Context, req admission.Request, pod, oldPod *corev1.Pod) error {
 	if req.Operation != admissionv1.Create && req.Operation != admissionv1.Update {
 		return nil
 	}
@@ -68,10 +68,16 @@ func (h *PodMutatingHandler) mutateByDeviceResources(pod *corev1.Pod) error {
 }
 
 func injectResourceContainerSpec(c *corev1.Container, s *extension.ExtendedResourceContainerSpec) {
+	if len(s.Requests) > 0 && c.Resources.Requests == nil {
+		c.Resources.Requests = corev1.ResourceList{}
+	}
 	for resource := range s.Requests {
 		c.Resources.Requests[resource] = s.Requests[resource]
 	}
 
+	if len(s.Limits) > 0 && c.Resources.Limits == nil {
+		c.Resources.Limits = corev1.ResourceList{}
+	}
 	for resource := range s.Limits {
 		c.Resources.Limits[resource] = s.Limits[resource]
 	}

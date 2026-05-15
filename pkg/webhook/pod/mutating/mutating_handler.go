@@ -70,6 +70,14 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 	clone := obj.DeepCopy()
+	var oldObj *corev1.Pod
+	if req.Operation == admissionv1.Update {
+		oldObj = &corev1.Pod{}
+		if err := h.Decoder.DecodeRaw(req.OldObject, oldObj); err != nil {
+			return admission.Errored(http.StatusBadRequest, err)
+		}
+	}
+
 	// when pod.namespace is empty, using req.namespace
 	var isNamespaceEmpty bool
 	if obj.Namespace == "" {
@@ -78,10 +86,8 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 	}
 
 	switch req.Operation {
-	case admissionv1.Create:
-		err = h.handleCreate(ctx, req, obj)
-	case admissionv1.Update:
-		err = h.handleUpdate(ctx, req, obj)
+	case admissionv1.Create, admissionv1.Update:
+		err = h.handleMutatePod(ctx, req, obj, oldObj)
 	default:
 		return admission.Allowed("")
 	}
@@ -110,9 +116,9 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 	return admission.PatchResponseFromRaw(original, marshaled)
 }
 
-func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
+func (h *PodMutatingHandler) handleMutatePod(ctx context.Context, req admission.Request, obj, oldObj *corev1.Pod) error {
 	start := time.Now()
-	if err := h.clusterColocationProfileMutatingPod(ctx, req, obj); err != nil {
+	if err := h.clusterColocationProfileMutatingPod(ctx, req, obj, oldObj); err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by ClusterColocationProfile, err: %v", obj.Namespace, obj.Name, err)
 		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
 			metrics.Pod, string(req.Operation), err, ClusterColocationProfile, time.Since(start).Seconds())
@@ -122,7 +128,7 @@ func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Req
 		metrics.Pod, string(req.Operation), nil, ClusterColocationProfile, time.Since(start).Seconds())
 
 	start = time.Now()
-	if err := h.extendedResourceSpecMutatingPod(ctx, req, obj); err != nil {
+	if err := h.extendedResourceSpecMutatingPod(ctx, req, obj, oldObj); err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by ExtendedResourceSpec, err: %v", obj.Namespace, obj.Name, err)
 		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
 			metrics.Pod, string(req.Operation), err, ExtendedResourceSpec, time.Since(start).Seconds())
@@ -132,7 +138,7 @@ func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Req
 		metrics.Pod, string(req.Operation), nil, ExtendedResourceSpec, time.Since(start).Seconds())
 
 	start = time.Now()
-	if err := h.addNodeAffinityForMultiQuotaTree(ctx, req, obj); err != nil {
+	if err := h.addNodeAffinityForMultiQuotaTree(ctx, req, obj, oldObj); err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by MultiQuotaTree, err: %v", obj.Namespace, obj.Name, err)
 		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
 			metrics.Pod, string(req.Operation), err, MultiQuotaTree, time.Since(start).Seconds())
@@ -142,7 +148,7 @@ func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Req
 		metrics.Pod, string(req.Operation), nil, MultiQuotaTree, time.Since(start).Seconds())
 
 	start = time.Now()
-	if err := h.deviceResourceSpecMutatingPod(ctx, req, obj); err != nil {
+	if err := h.deviceResourceSpecMutatingPod(ctx, req, obj, oldObj); err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by DeviceResourceSpec, err: %v", obj.Namespace, obj.Name, err)
 		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
 			metrics.Pod, string(req.Operation), err, DeviceResourceSpec, time.Since(start).Seconds())
@@ -151,11 +157,6 @@ func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Req
 	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
 		metrics.Pod, string(req.Operation), nil, DeviceResourceSpec, time.Since(start).Seconds())
 
-	return nil
-}
-
-func (h *PodMutatingHandler) handleUpdate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
-	// TODO: add mutating logic for pod update here
 	return nil
 }
 
