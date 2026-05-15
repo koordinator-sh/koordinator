@@ -56,6 +56,7 @@ type ReservationInfo struct {
 	AllocatedPorts        fwktype.HostPortInfo
 	AssignedPods          map[types.UID]*PodRequirement
 	OwnerMatchers         []reservationutil.ReservationOwnerMatcher
+	IsNodeLevel           bool
 	ParseError            error
 }
 
@@ -127,6 +128,7 @@ func NewReservationInfo(r *schedulingv1alpha1.Reservation) *ReservationInfo {
 		AllocatablePorts: util.RequestedHostPorts(reservedPod),
 		AssignedPods:     map[types.UID]*PodRequirement{},
 		OwnerMatchers:    ownerMatchers,
+		IsNodeLevel:      apiext.IsNodeLevelReservation(r),
 		ParseError:       parseError,
 	}
 }
@@ -173,6 +175,7 @@ func NewReservationInfoFromPod(pod *corev1.Pod) *ReservationInfo {
 		AllocatablePorts: util.RequestedHostPorts(pod),
 		AssignedPods:     map[types.UID]*PodRequirement{},
 		OwnerMatchers:    ownerMatchers,
+		IsNodeLevel:      apiext.IsNodeLevelReservation(pod),
 		ParseError:       parseError,
 	}
 }
@@ -393,6 +396,7 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 		AllocatedPorts:        util.CloneHostPorts(ri.AllocatedPorts),
 		AssignedPods:          assignedPods,
 		OwnerMatchers:         ri.OwnerMatchers,
+		IsNodeLevel:           ri.IsNodeLevel,
 		ParseError:            ri.ParseError,
 	}
 }
@@ -416,6 +420,7 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 
 	ri.Reservation = r
 	ri.Pod = reservationutil.NewReservePod(r)
+	ri.IsNodeLevel = apiext.IsNodeLevelReservation(r)
 	ri.AllocatablePorts = util.RequestedHostPorts(ri.Pod)
 	if ri.Allocated != nil {
 		ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
@@ -457,6 +462,7 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 	ri.ResourceNames = resourceNames
 
 	ri.Pod = pod
+	ri.IsNodeLevel = apiext.IsNodeLevelReservation(pod)
 	ri.AllocatablePorts = util.RequestedHostPorts(pod)
 	ri.Allocated = quotav1.Mask(ri.Allocated, ri.ResourceNames)
 	reserved := util.GetNodeReservationFromAnnotation(pod.Annotations)

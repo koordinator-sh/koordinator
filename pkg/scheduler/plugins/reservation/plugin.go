@@ -91,6 +91,7 @@ var (
 
 	_ frameworkext.ControllerProvider      = &Plugin{}
 	_ frameworkext.PreFilterTransformer    = &Plugin{}
+	_ frameworkext.PostFilterNodeDecorator = &Plugin{}
 	_ frameworkext.ReservationCache        = &Plugin{}
 	_ frameworkext.ReservationNominator    = &Plugin{}
 	_ frameworkext.ReservationFilterPlugin = &Plugin{}
@@ -98,17 +99,18 @@ var (
 )
 
 type Plugin struct {
-	handle                         frameworkext.ExtendedHandle
-	args                           *config.ReservationArgs
-	rLister                        listerschedulingv1alpha1.ReservationLister
-	podLister                      listercorev1.PodLister
-	client                         clientschedulingv1alpha1.SchedulingV1alpha1Interface
-	reservationCache               *reservationCache
-	nominator                      *nominator
-	preemptionMgr                  *PreemptionMgr
-	enableLazyReservationRestore   bool
-	enableSkipReservationFitsNode  bool
-	enablePreAllocationClusterMode bool
+	handle                                frameworkext.ExtendedHandle
+	args                                  *config.ReservationArgs
+	rLister                               listerschedulingv1alpha1.ReservationLister
+	podLister                             listercorev1.PodLister
+	client                                clientschedulingv1alpha1.SchedulingV1alpha1Interface
+	reservationCache                      *reservationCache
+	nominator                             *nominator
+	preemptionMgr                         *PreemptionMgr
+	enableLazyReservationRestore          bool
+	enableNodeLevelReservationLightweight bool
+	enableSkipReservationFitsNode         bool
+	enablePreAllocationClusterMode        bool
 }
 
 func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
@@ -135,15 +137,16 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 	registerPodEventHandler(extendedHandle, cache, nm, sharedInformerFactory)
 
 	p := &Plugin{
-		handle:                        extendedHandle,
-		args:                          pluginArgs,
-		rLister:                       reservationLister,
-		podLister:                     podLister,
-		client:                        extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
-		reservationCache:              cache,
-		nominator:                     nm,
-		enableLazyReservationRestore:  k8sfeature.DefaultFeatureGate.Enabled(features.LazyReservationRestore),
-		enableSkipReservationFitsNode: k8sfeature.DefaultFeatureGate.Enabled(features.SkipReservationFitsNode),
+		handle:                                extendedHandle,
+		args:                                  pluginArgs,
+		rLister:                               reservationLister,
+		podLister:                             podLister,
+		client:                                extendedHandle.KoordinatorClientSet().SchedulingV1alpha1(),
+		reservationCache:                      cache,
+		nominator:                             nm,
+		enableLazyReservationRestore:          k8sfeature.DefaultFeatureGate.Enabled(features.LazyReservationRestore),
+		enableNodeLevelReservationLightweight: k8sfeature.DefaultFeatureGate.Enabled(features.NodeLevelReservationLightweight),
+		enableSkipReservationFitsNode:         k8sfeature.DefaultFeatureGate.Enabled(features.SkipReservationFitsNode),
 	}
 
 	if pluginArgs.EnablePreemption {
@@ -384,7 +387,22 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod
 				preemptible := state.preemptible[node.Name]
 				preemptibleResource := framework.NewResource(preemptible)
 				nodeAllocatable := nodeInfo.GetAllocatable().(*framework.Resource)
-				insufficientResources := fitsNode(state.podRequestsResources, nodeAllocatable, nodeRState.podRequested, nodeRState.rAllocated, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.GetPods()), preemptibleResource)
+				// Determine allPodsRequested and allRAllocated based on path
+				var allPodsRequested fwktype.Resource
+				var allRAllocated fwktype.Resource
+				if nodeRState.isNodeLevel {
+					// explicitly add unmatchedHold to requested (nodeInfo is NOT modified)
+					if nodeRState.unmatchedHold != nil {
+						allPodsRequested = addUnmatchedHoldToRequested(nodeInfo.GetRequested(), nodeRState.unmatchedHold)
+					} else {
+						allPodsRequested = nodeInfo.GetRequested()
+					}
+				} else {
+					// Baseline: use captured values
+					allPodsRequested = nodeRState.podRequested
+					allRAllocated = nodeRState.rAllocated
+				}
+				insufficientResources := fitsNode(state.podRequestsResources, nodeAllocatable, allPodsRequested, allRAllocated, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.GetPods()), preemptibleResource)
 				if len(insufficientResources) != 0 {
 					// Return Unschedulable (not UnschedulableAndUnresolvable) so that the preemption evaluator
 					// can consider this node as a potential preemption candidate via NodesForStatusCode(Unschedulable).
@@ -416,10 +434,43 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 	state := getStateData(cycleState)
 	nodeRState := state.nodeReservationStates[node.Name]
 
+	// Determine allPodsRequested and allRAllocated based on path
+	var allPodsRequested fwktype.Resource
+	var allRAllocated fwktype.Resource
+	if nodeRState.isNodeLevel {
+		// explicitly add unmatchedHold to requested (nodeInfo is NOT modified)
+		if nodeRState.unmatchedHold != nil {
+			allPodsRequested = addUnmatchedHoldToRequested(nodeInfo.GetRequested(), nodeRState.unmatchedHold)
+		} else {
+			allPodsRequested = nodeInfo.GetRequested()
+		}
+	} else {
+		// Baseline: use captured values
+		allPodsRequested = nodeRState.podRequested
+		allRAllocated = nodeRState.rAllocated
+	}
+
 	// For reservation-ignored pods, the transformer has already restored all reservation resources back to the node.
 	// NodeResourceFit plugin will validate if the node has sufficient resources for the pod.
-	// So we can skip the resource validation here and return success directly.
+	// For node-level path, check if unmatchedHold makes the node too full for the ignored pod.
 	if apiext.IsReservationIgnored(pod) {
+		if nodeRState.isNodeLevel && nodeRState.unmatchedHold != nil {
+			// Check: podRequest <= allocatable - (nodeInfo.Requested + unmatchedHold)
+			preemptible := dummyResource
+			state.preemptLock.RLock()
+			if state.preemptible[node.Name] != nil {
+				preemptible = framework.NewResource(state.preemptible[node.Name])
+			}
+			state.preemptLock.RUnlock()
+			insufficientResources := fitsNode(state.podRequestsResources, nodeInfo.GetAllocatable(), allPodsRequested, nil, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.GetPods()), preemptible)
+			if len(insufficientResources) > 0 {
+				failureReasons := make([]string, 0, len(insufficientResources))
+				for _, r := range insufficientResources {
+					failureReasons = append(failureReasons, fmt.Sprintf("Insufficient %s by node", r))
+				}
+				return fwktype.NewStatus(fwktype.Unschedulable, failureReasons...)
+			}
+		}
 		klog.V(5).InfoS("Skip duplicated filter for reservation-ignored pod", "pod", klog.KObj(pod), "node", node.Name, "matchedReservations", len(matchedReservations))
 		return nil
 	}
@@ -465,8 +516,8 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 		}
 		state.preemptLock.RUnlock()
 
-		insufficientResourcesByNode, insufficientResourceReasonsByReservation := fitsNodeAndReservation(state.podRequestsResources, nodeRState.podRequested,
-			nodeRState.rAllocated, preemptibleWithRR, rInfo.GetAvailable(), state.podRequests, preemptibleInRR, pod, rInfo, nodeInfo, len(nodeRState.matchedOrIgnored),
+		insufficientResourcesByNode, insufficientResourceReasonsByReservation := fitsNodeAndReservation(state.podRequestsResources, allPodsRequested,
+			allRAllocated, preemptibleWithRR, rInfo.GetAvailable(), state.podRequests, preemptibleInRR, pod, rInfo, nodeInfo, len(nodeRState.matchedOrIgnored),
 			requireDetailReasons, isFitsNodeSkipped)
 		allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
 		allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, insufficientResourceReasonsByReservation...)
@@ -511,7 +562,7 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 			failureReasons = buildNodeFailureReasons(allInsufficientResourcesByNode.List())
 		} else {
 			// try to allocate from node alone
-			insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo.GetAllocatable(), nodeRState.podRequested, nodeRState.rAllocated, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.GetPods()), preemptible)
+			insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo.GetAllocatable(), allPodsRequested, allRAllocated, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.GetPods()), preemptible)
 			failureReasons = buildNodeFailureReasons(insufficientResourcesByNode)
 		}
 		if len(failureReasons) > 0 {
@@ -849,6 +900,27 @@ func sortPreAllocatablePodsForDefaultMode(ctx context.Context, extender framewor
 }
 
 var dummyResource = framework.NewResource(nil)
+
+// addUnmatchedHoldToRequested creates a new Resource that sums the requested resources and unmatchedHold.
+// This is used in node-level path to explicitly account for unmatched reservations' held resources
+// without modifying nodeInfo.
+func addUnmatchedHoldToRequested(requested fwktype.Resource, unmatchedHold *framework.Resource) *framework.Resource {
+	r, ok := requested.(*framework.Resource)
+	if !ok {
+		return unmatchedHold.Clone()
+	}
+	result := r.Clone()
+	result.MilliCPU += unmatchedHold.MilliCPU
+	result.Memory += unmatchedHold.Memory
+	result.EphemeralStorage += unmatchedHold.EphemeralStorage
+	if result.ScalarResources == nil && len(unmatchedHold.ScalarResources) > 0 {
+		result.ScalarResources = map[corev1.ResourceName]int64{}
+	}
+	for rName, rQuant := range unmatchedHold.ScalarResources {
+		result.ScalarResources[rName] += rQuant
+	}
+	return result
+}
 
 func fitsNodeAndReservation(podRequestsResources, allPodsRequested, allRAllocated, preemptible, rRemained fwktype.Resource,
 	podRequests, preemptibleInRR corev1.ResourceList, pod *corev1.Pod, rInfo *frameworkext.ReservationInfo,

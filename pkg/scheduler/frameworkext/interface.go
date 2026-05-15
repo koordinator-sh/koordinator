@@ -64,6 +64,9 @@ type ExtendedHandle interface {
 	// It returns nil when the feature is not enabled or not configured.
 	GetCrossSchedulerPodNominator() *CrossSchedulerPodNominator
 	GetWorkloadAuditor() workloadauditor.WorkloadAuditor
+	// GetPostFilterNodeDecorators returns the registered PostFilterNodeDecorators
+	// that inject additional preemptable pods into nodeInfo for preemption evaluation.
+	GetPostFilterNodeDecorators() []PostFilterNodeDecorator
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.
@@ -150,6 +153,17 @@ type ScoreTransformer interface {
 type PostFilterTransformer interface {
 	SchedulingTransformer
 	AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader)
+}
+
+// PostFilterNodeDecorator allows plugins to inject additional preemptable pods
+// into nodeInfo before preemption evaluation. This is used by the reservation
+// plugin to make node-level reservation reserve pods visible to preemption
+// evaluators, even though they are not stored in the SchedulerCache.
+type PostFilterNodeDecorator interface {
+	// DecorateNodeForPostFilter injects reserve pods into the given nodeInfo
+	// snapshot for preemption visibility. Called per-node by the decorated snapshot.
+	DecorateNodeForPostFilter(ctx context.Context, cycleState fwktype.CycleState,
+		pod *corev1.Pod, nodeInfo fwktype.NodeInfo) error
 }
 
 // PluginToReservationRestoreStates declares a map from plugin name to its ReservationRestoreState.

@@ -580,13 +580,16 @@ func (s *RequiredReservationAffinity) MatchAffinity(node *corev1.Node) bool {
 	if s == nil {
 		return true
 	}
+	// try the lightweight nodeSelector match first
+	if s.nodeSelector != nil {
+		if !s.nodeSelector.Match(node) {
+			return false
+		}
+	}
 	if s.labelSelector != nil {
 		if !s.labelSelector.Matches(labels.Set(node.Labels)) {
 			return false
 		}
-	}
-	if s.nodeSelector != nil {
-		return s.nodeSelector.Match(node)
 	}
 	return true
 }

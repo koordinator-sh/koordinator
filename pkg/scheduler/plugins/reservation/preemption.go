@@ -48,6 +48,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
+
+	schedframework "k8s.io/kubernetes/pkg/scheduler/framework"
 )
 
 var (
@@ -104,8 +106,19 @@ func (pm *PreemptionMgr) PostFilter(ctx context.Context, state fwktype.CycleStat
 		metrics.PreemptionAttempts.Inc()
 	}()
 
-	pe := preemption.NewEvaluator(Name, pm.fh, pm, false)
+	// Create a local handle with decorated snapshot for preemption visibility,
+	// scoped to this evaluator call to avoid global state mutation.
+	handle := fwktype.Handle(pm.fh)
+	decorators := pm.fh.GetPostFilterNodeDecorators()
+	if len(decorators) > 0 {
+		handle = frameworkext.NewPostFilterHandle(pm.fh, decorators, ctx, state, pod)
+	}
+
+	pe := preemption.NewEvaluator(Name, handle, pm, false)
 	pe.PodLister = newDelegatingPodLister(pm.podLister, pm.reservationLister, pod)
+	// wrap PreemptPod to handle reserve pod deletion via Reservation API
+	pe.PreemptPod = frameworkext.WrapPreemptPodForReservation(
+		pe.PreemptPod, pm.fh.KoordinatorClientSet())
 	klog.V(4).InfoS("Attempt to do reservation preemption in the PostFilter", "pod", klog.KObj(pod))
 
 	result, status := pe.Preempt(ctx, state, pod, m)
@@ -356,4 +369,29 @@ func getPreemptionArgs(pluginArgs *config.ReservationArgs) (*schedulerconfig.Def
 		MinCandidateNodesAbsolute:   pluginArgs.MinCandidateNodesAbsolute,
 	}
 	return preemptionArgs, nil
+}
+
+// DecorateNodeForPostFilter injects node-level reserve pods into nodeInfo
+// for preemption visibility.
+func (pl *Plugin) DecorateNodeForPostFilter(ctx context.Context, cycleState fwktype.CycleState,
+	pod *corev1.Pod, nodeInfo fwktype.NodeInfo) error {
+	if !pl.enableNodeLevelReservationLightweight {
+		return nil
+	}
+	nodeName := nodeInfo.Node().Name
+	rInfos := pl.reservationCache.ListMatchableReservationsOnNode(nodeName)
+	for _, rInfo := range rInfos {
+		if !rInfo.IsNodeLevel {
+			continue // Non-node-level reservations are still in NodeInfo (ledgered)
+		}
+		reservePod := rInfo.GetReservePod()
+		podInfo, err := schedframework.NewPodInfo(reservePod)
+		if err != nil {
+			klog.V(4).ErrorS(err, "Failed to create PodInfo for reserve pod",
+				"reservation", rInfo.GetName(), "node", nodeName)
+			continue
+		}
+		nodeInfo.AddPodInfo(podInfo)
+	}
+	return nil
 }

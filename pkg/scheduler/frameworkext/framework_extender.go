@@ -101,6 +101,8 @@ type frameworkExtenderImpl struct {
 	metricsRecorder *metrics.MetricAsyncRecorder
 
 	crossSchedulerNominator *CrossSchedulerPodNominator
+
+	postFilterNodeDecorators []PostFilterNodeDecorator // decorators for PostFilter
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -219,6 +221,10 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 		} else {
 			klog.Warningf("framework extender got multiple PreferNodesPlugin registered, using the first one with name: %s", ext.preferNodesPlugin.Name())
 		}
+	}
+	if decorator, ok := pl.(PostFilterNodeDecorator); ok {
+		ext.postFilterNodeDecorators = append(ext.postFilterNodeDecorators, decorator)
+		klog.V(4).InfoS("framework extender got PostFilterNodeDecorator registered", "profile", ext.ProfileName(), "plugin", pl.Name())
 	}
 }
 
@@ -450,9 +456,15 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state fwk
 	return pluginToNodeScores, status
 }
 
+// GetPostFilterNodeDecorators returns the registered PostFilterNodeDecorators.
+func (ext *frameworkExtenderImpl) GetPostFilterNodeDecorators() []PostFilterNodeDecorator {
+	return ext.postFilterNodeDecorators
+}
+
 func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) (_ *fwktype.PostFilterResult, status *fwktype.Status) {
 	schedulingphase.RecordPhase(state, schedulingphase.PostFilter)
 	defer func() { schedulingphase.RecordPhase(state, "") }()
+
 	defer func() {
 		for _, transformer := range ext.postFilterTransformersEnabled {
 			startTime := time.Now()

@@ -34,9 +34,12 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 )
 
 func TestRestoreReservation(t *testing.T) {
@@ -2503,4 +2506,444 @@ func TestAfterPreFilter_WithSchedulingHint(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_allNodeLevelReservation(t *testing.T) {
+	makeRI := func(isNodeLevel bool) *frameworkext.ReservationInfo {
+		return &frameworkext.ReservationInfo{IsNodeLevel: isNodeLevel}
+	}
+
+	tests := []struct {
+		name             string
+		matchedOrIgnored []*frameworkext.ReservationInfo
+		unmatched        []*frameworkext.ReservationInfo
+		want             bool
+	}{
+		{
+			name:             "both empty => false",
+			matchedOrIgnored: nil,
+			unmatched:        nil,
+			want:             false,
+		},
+		{
+			name:             "all node-level in matchedOrIgnored only",
+			matchedOrIgnored: []*frameworkext.ReservationInfo{makeRI(true), makeRI(true)},
+			unmatched:        nil,
+			want:             true,
+		},
+		{
+			name:             "all node-level in unmatched only",
+			matchedOrIgnored: nil,
+			unmatched:        []*frameworkext.ReservationInfo{makeRI(true)},
+			want:             true,
+		},
+		{
+			name:             "all node-level across both slices",
+			matchedOrIgnored: []*frameworkext.ReservationInfo{makeRI(true)},
+			unmatched:        []*frameworkext.ReservationInfo{makeRI(true)},
+			want:             true,
+		},
+		{
+			name:             "one non-node-level in matchedOrIgnored",
+			matchedOrIgnored: []*frameworkext.ReservationInfo{makeRI(true), makeRI(false)},
+			unmatched:        []*frameworkext.ReservationInfo{makeRI(true)},
+			want:             false,
+		},
+		{
+			name:             "one non-node-level in unmatched",
+			matchedOrIgnored: []*frameworkext.ReservationInfo{makeRI(true)},
+			unmatched:        []*frameworkext.ReservationInfo{makeRI(false)},
+			want:             false,
+		},
+		{
+			name:             "single non-node-level in matchedOrIgnored",
+			matchedOrIgnored: []*frameworkext.ReservationInfo{makeRI(false)},
+			unmatched:        nil,
+			want:             false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := allNodeLevelReservation(tt.matchedOrIgnored, tt.unmatched)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+// TestBeforePreFilter_NodeLevelReservationLightweight verifies that when
+// NodeLevelReservationLightweight is enabled and ALL reservations on a node are
+// node-level, BeforePreFilter:
+//  1. marks nodeRState.isNodeLevel = true
+//  2. skips the eager restore (skipRestoreNodeInfo || isNodeLevel path)
+func TestBeforePreFilter_NodeLevelReservationLightweight(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+
+	// node-level reservation that has an allocated pod
+	nodeLevelReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "node-level-r",
+			Labels: map[string]string{
+				apiext.LabelReservationLevel: apiext.ReservationLevelNode,
+			},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: ptr.To[bool](false),
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "test"},
+					},
+				},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("8"),
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	nodeLevelReservation.Status = schedulingv1alpha1.ReservationStatus{
+		Phase:    schedulingv1alpha1.ReservationAvailable,
+		NodeName: node.Name,
+		Allocatable: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("8"),
+			corev1.ResourceMemory: resource.MustParse("16Gi"),
+		},
+	}
+
+	// a pod that was assigned to the node-level reservation
+	allocatedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID: uuid.NewUUID(), Name: "allocated-pod", Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+			Containers: []corev1.Container{
+				{Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("4"),
+						corev1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				}},
+			},
+		},
+	}
+
+	allPods := []*corev1.Pod{reservationutil.NewReservePod(nodeLevelReservation), allocatedPod}
+
+	tests := []struct {
+		name              string
+		enableFeatureGate bool
+		wantIsNodeLevel   bool
+		// should NOT be pre-restored when FG is on (restore is deferred to BeforeFilter)
+		wantPreRestored bool
+	}{
+		{
+			name:              "feature gate ON: isNodeLevel=true, skip nodeInfo restore",
+			enableFeatureGate: true,
+			wantIsNodeLevel:   true,
+			wantPreRestored:   true, // preRestore runs but skips nodeInfo (lightweight path)
+		},
+		{
+			name:              "feature gate OFF: isNodeLevel=false, eager restore happens",
+			enableFeatureGate: false,
+			wantIsNodeLevel:   false,
+			wantPreRestored:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.NodeLevelReservationLightweight, tt.enableFeatureGate)()
+
+			suit := newPluginTestSuitWith(t, allPods, []*corev1.Node{node})
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			pl.enableNodeLevelReservationLightweight = tt.enableFeatureGate
+			pl.enableLazyReservationRestore = false // eager mode
+
+			pl.reservationCache.updateReservation(nodeLevelReservation)
+			pl.reservationCache.addPod(nodeLevelReservation.UID, allocatedPod)
+
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "test"}},
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				}}},
+			}
+
+			nodeInfoBefore, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+			assert.NoError(t, err)
+			beforeCPU := nodeInfoBefore.(*framework.NodeInfo).Requested.MilliCPU
+
+			cycleState := framework.NewCycleState()
+			_, _, status := pl.BeforePreFilter(context.TODO(), cycleState, pod)
+			assert.True(t, status.IsSuccess())
+
+			state := getStateData(cycleState)
+			nodeRState := state.nodeReservationStates[node.Name]
+			assert.NotNil(t, nodeRState)
+			assert.Equal(t, tt.wantIsNodeLevel, nodeRState.isNodeLevel)
+			assert.Equal(t, tt.wantPreRestored, nodeRState.preRestored)
+
+			if tt.enableFeatureGate {
+				// nodeInfo should NOT be modified in eager mode when isNodeLevel=true
+				nodeInfoAfter, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+				assert.NoError(t, err)
+				assert.Equal(t, beforeCPU, nodeInfoAfter.(*framework.NodeInfo).Requested.MilliCPU,
+					"nodeInfo should not be modified for node-level reservation in BeforePreFilter")
+			}
+		})
+	}
+}
+
+// TestBeforeFilter_NodeLevelRestore verifies that BeforeFilter in node-level path
+// does NOT modify nodeInfo. The unmatchedHold accounting is moved to Reservation Filter.
+//   - no fake reserve pods in cache/nodeInfo, only real pods
+//   - BeforeFilter no longer injects unmatchedHold; it only handles nominated reserve pods
+func TestBeforeFilter_NodeLevelRestore(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+
+	// ---- matched node-level reservation (8C16Gi) ----
+	matchedR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "matched-node-level",
+			Labels: map[string]string{
+				apiext.LabelReservationLevel: apiext.ReservationLevelNode,
+			},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: ptr.To[bool](false),
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "test"}}},
+			},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("8"),
+						corev1.ResourceMemory: resource.MustParse("16Gi"),
+					},
+				}}}},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationAvailable, NodeName: node.Name,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+	}
+
+	// ---- unmatched node-level reservation (12C24Gi) with 4C8Gi allocated pod ----
+	unmatchedR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "unmatched-node-level",
+			Labels: map[string]string{
+				apiext.LabelReservationLevel: apiext.ReservationLevelNode,
+			},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: ptr.To[bool](false),
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("12"),
+						corev1.ResourceMemory: resource.MustParse("24Gi"),
+					},
+				}}}},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationAvailable, NodeName: node.Name,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("12"),
+				corev1.ResourceMemory: resource.MustParse("24Gi"),
+			},
+		},
+	}
+
+	unmatchedAllocatedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{UID: uuid.NewUUID(), Name: "unmatched-alloc-pod", Namespace: "default"},
+		Spec: corev1.PodSpec{
+			NodeName: node.Name,
+			Containers: []corev1.Container{{Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				},
+			}}},
+		},
+	}
+
+	// snapshot contains only real pods, no fake reserve pods
+	allPods := []*corev1.Pod{
+		unmatchedAllocatedPod,
+	}
+
+	suit := newPluginTestSuitWith(t, allPods, []*corev1.Node{node})
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	pl.enableNodeLevelReservationLightweight = true
+	pl.enableLazyReservationRestore = false
+
+	pl.reservationCache.updateReservation(matchedR)
+	pl.reservationCache.updateReservation(unmatchedR)
+	pl.reservationCache.addPod(unmatchedR.UID, unmatchedAllocatedPod)
+
+	// Confirm both rInfos are marked node-level
+	matchedRInfo := pl.reservationCache.getReservationInfoByUID(matchedR.UID)
+	assert.NotNil(t, matchedRInfo)
+	assert.True(t, matchedRInfo.IsNodeLevel)
+	unmatchedRInfo := pl.reservationCache.getReservationInfoByUID(unmatchedR.UID)
+	assert.NotNil(t, unmatchedRInfo)
+	assert.True(t, unmatchedRInfo.IsNodeLevel)
+
+	// ---- Run BeforePreFilter to build state ----
+	schedulingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "test"}},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+			},
+		}}},
+	}
+	cycleState := framework.NewCycleState()
+	_, _, status := pl.BeforePreFilter(context.TODO(), cycleState, schedulingPod)
+	assert.True(t, status.IsSuccess())
+
+	state := getStateData(cycleState)
+	nodeRState := state.nodeReservationStates[node.Name]
+	assert.NotNil(t, nodeRState)
+	assert.True(t, nodeRState.isNodeLevel, "nodeRState should be node-level")
+	assert.True(t, nodeRState.preRestored, "node-level path marks preRestored=true")
+
+	// ---- Snapshot BEFORE BeforeFilter: contains only real pods ----
+	nodeInfoBefore, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	// total CPU = unmatchedAllocatedPod(4) = 4C (no fake reserve pods)
+	assert.Equal(t, int64(4000), nodeInfoBefore.(*framework.NodeInfo).Requested.MilliCPU)
+
+	// ---- Run BeforeFilter ----
+	_, nodeInfoOut, modified, filterStatus := pl.BeforeFilter(context.TODO(), cycleState, schedulingPod, nodeInfoBefore)
+	assert.True(t, filterStatus.IsSuccess())
+	// BeforeFilter no longer modifies nodeInfo for unmatchedHold injection.
+	// Without nominated reserve pods, modified should be false.
+	assert.False(t, modified, "BeforeFilter should NOT modify nodeInfo (unmatchedHold moved to Filter)")
+
+	// nodeInfoOut should be the same as nodeInfoBefore (not modified)
+	outNI, ok := nodeInfoOut.(*framework.NodeInfo)
+	assert.True(t, ok)
+
+	// snapshot Requested remains unchanged (only real pods: 4C)
+	assert.Equal(t, int64(4000), outNI.Requested.MilliCPU,
+		"BeforeFilter should NOT inject unmatchedHold into snapshot Requested")
+}
+
+// TestBeforeFilter_NodeLevelRestore_FGDisabled verifies that when the feature gate is
+// disabled, BeforeFilter does NOT perform the V2 node-level restore (isNodeLevel stays false).
+func TestBeforeFilter_NodeLevelRestore_FGDisabled(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("32"),
+				corev1.ResourceMemory: resource.MustParse("64Gi"),
+			},
+		},
+	}
+
+	nodeLevelR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID: uuid.NewUUID(), Name: "r1",
+			Labels: map[string]string{apiext.LabelReservationLevel: apiext.ReservationLevelNode},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: ptr.To[bool](false),
+			Owners:       []schedulingv1alpha1.ReservationOwner{{LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "test"}}}},
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")},
+					},
+				}}},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationAvailable, NodeName: node.Name,
+			Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")},
+		},
+	}
+
+	suit := newPluginTestSuitWith(t, []*corev1.Pod{reservationutil.NewReservePod(nodeLevelR)}, []*corev1.Node{node})
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	pl.enableNodeLevelReservationLightweight = false // FG disabled
+	pl.enableLazyReservationRestore = false
+
+	pl.reservationCache.updateReservation(nodeLevelR)
+
+	schedulingPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "test"}},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+			},
+		}}},
+	}
+	cycleState := framework.NewCycleState()
+	_, _, status := pl.BeforePreFilter(context.TODO(), cycleState, schedulingPod)
+	assert.True(t, status.IsSuccess())
+
+	// FG=off => isNodeLevel must be false regardless of reservation labels
+	state := getStateData(cycleState)
+	nodeRState := state.nodeReservationStates[node.Name]
+	assert.NotNil(t, nodeRState)
+	assert.False(t, nodeRState.isNodeLevel, "isNodeLevel must be false when feature gate is disabled")
+
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+
+	// With FG off, no node-level restore in BeforeFilter; nominated infos empty => returns false
+	_, _, modified, filterStatus := pl.BeforeFilter(context.TODO(), cycleState, schedulingPod, nodeInfo)
+	assert.True(t, filterStatus.IsSuccess())
+	assert.False(t, modified, "no modification expected when FG is disabled")
 }
