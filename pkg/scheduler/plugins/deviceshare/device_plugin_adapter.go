@@ -277,7 +277,12 @@ func unlockNode(node *corev1.Node, lockKey string) {
 type generalDevicePluginAdapter struct{}
 
 func (a *generalDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object metav1.Object, _ []*apiext.DeviceAllocation) error {
-	object.GetAnnotations()[AnnotationBindTimestamp] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	annotations[AnnotationBindTimestamp] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
+	object.SetAnnotations(annotations)
 	return nil
 }
 
@@ -287,9 +292,19 @@ type generalGPUDevicePluginAdapter struct {
 }
 
 func (a *generalGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
-	object.GetAnnotations()[AnnotationGPUMinors] = buildGPUMinorsStr(allocation, "")
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	annotations[AnnotationGPUMinors] = buildGPUMinorsStr(allocation, "")
+	object.SetAnnotations(annotations)
 	if object.GetLabels()[apiext.LabelGPUIsolationProvider] == string(apiext.GPUIsolationProviderHAMICore) {
-		object.GetLabels()[apiext.LabelHAMIVGPUNodeName] = ctx.node.Name
+		labels := object.GetLabels()
+		if labels == nil {
+			labels = make(map[string]string)
+		}
+		labels[apiext.LabelHAMIVGPUNodeName] = ctx.node.Name
+		object.SetLabels(labels)
 	}
 	return nil
 }
@@ -297,19 +312,24 @@ func (a *generalGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, obj
 type huaweiGPUDevicePluginAdapter struct{}
 
 func (a *huaweiGPUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
-	object.GetAnnotations()[AnnotationPredicateTime] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	annotations[AnnotationPredicateTime] = strconv.FormatInt(dpAdapterClock.Now().UnixNano(), 10)
 	switch ctx.gpuModel {
 	case "Ascend-310P3-300I-DUO":
-		object.GetAnnotations()[AnnotationHuaweiAscend310P] = buildGPUMinorsStr(allocation, "Ascend310P-")
+		annotations[AnnotationHuaweiAscend310P] = buildGPUMinorsStr(allocation, "Ascend310P-")
 	default:
 		if allocation[0].Extension != nil && allocation[0].Extension.GPUSharedResourceTemplate != "" {
 			// vNPU
-			object.GetAnnotations()[AnnotationHuaweiNPUCore] = fmt.Sprintf("%d-%s", allocation[0].Minor, allocation[0].Extension.GPUSharedResourceTemplate)
+			annotations[AnnotationHuaweiNPUCore] = fmt.Sprintf("%d-%s", allocation[0].Minor, allocation[0].Extension.GPUSharedResourceTemplate)
 		} else {
 			// full NPU
-			object.GetAnnotations()[AnnotationHuaweiNPUCore] = buildGPUMinorsStr(allocation, "")
+			annotations[AnnotationHuaweiNPUCore] = buildGPUMinorsStr(allocation, "")
 		}
 	}
+	object.SetAnnotations(annotations)
 	return nil
 }
 
@@ -332,8 +352,13 @@ func (a *cambriconGPUDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, obj
 	}
 	vmemory := memory.Value() / cambriconVMemoryUnit
 
-	object.GetAnnotations()[AnnotationCambriconDsmluAssigned] = "false"
-	object.GetAnnotations()[AnnotationCambriconDsmluProfile] = fmt.Sprintf("%d_%d_%d", allocation[0].Minor, vcore, vmemory)
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	annotations[AnnotationCambriconDsmluAssigned] = "false"
+	annotations[AnnotationCambriconDsmluProfile] = fmt.Sprintf("%d_%d_%d", allocation[0].Minor, vcore, vmemory)
+	object.SetAnnotations(annotations)
 	return nil
 }
 
@@ -375,7 +400,12 @@ func (a *metaxDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object met
 		return err
 	}
 
-	object.GetAnnotations()[AnnotationMetaXGPUDevicesAllocated] = string(allocatedData)
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	annotations[AnnotationMetaXGPUDevicesAllocated] = string(allocatedData)
+	object.SetAnnotations(annotations)
 	return nil
 }
 
