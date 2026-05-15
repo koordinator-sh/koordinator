@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -34,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
@@ -201,4 +203,55 @@ func (h *PodMutatingHandler) InjectCache(cache sigcache.Cache) error {
 		DeleteFunc: qt.OnQuotaDelete,
 	})
 	return nil
+}
+
+func TestHandleUpdate_SkippedWithoutLabel(t *testing.T) {
+	handler, _ := makeTestHandler()
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	}
+	// No LabelPodMutatingUpdate label → handler must be a no-op
+	err := handler.handleUpdate(context.TODO(), admission.Request{}, pod)
+	assert.NoError(t, err)
+	// pod must be unmodified
+	assert.Nil(t, pod.Labels)
+}
+
+func TestHandleUpdate_RunsPluginsWhenLabelSet(t *testing.T) {
+	handler, _ := makeTestHandler()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			Labels: map[string]string{
+				extension.LabelPodMutatingUpdate: "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "test-container",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							extension.BatchCPU: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+						Limits: corev1.ResourceList{
+							extension.BatchCPU: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := handler.handleUpdate(context.TODO(), admission.Request{
+		AdmissionRequest: admissionv1.AdmissionRequest{
+			Operation: admissionv1.Update,
+		},
+	}, pod)
+	assert.NoError(t, err)
+	// assert expected pod mutations were applied by ExtendedResourceSpec
+	// The koordinator.sh/extended-resource-spec annotation should be set
+	assert.NotEmpty(t, pod.Annotations[extension.AnnotationExtendedResourceSpec])
 }
