@@ -180,10 +180,13 @@ func (pgMgr *PodGroupManager) NextPod() *corev1.Pod {
 		for _, pod := range pods {
 			podKey := util.GetId(pod.Namespace, pod.Name)
 
-			if !gangSchedulingContext.alreadyAttemptedPods.Has(podKey) {
-				gangSchedulingContext.Lock()
+			gangSchedulingContext.Lock()
+			alreadyAttempted := gangSchedulingContext.alreadyAttemptedPods.Has(podKey)
+			if !alreadyAttempted {
 				gangSchedulingContext.alreadyAttemptedPods.Insert(podKey)
-				gangSchedulingContext.Unlock()
+			}
+			gangSchedulingContext.Unlock()
+			if !alreadyAttempted {
 				klog.Infof("NextPod: return pod %s/%s/%s, gangGroup: %+v, gangGroupStartTime: %+v", pod.Namespace, pod.Name, pod.UID, gangGroup, gangSchedulingContext.startTime)
 				// correct podInfo.Time and podInfo.Attempts
 				return frameworkext.CopyQueueInfoToPod(firstPod, pod)
