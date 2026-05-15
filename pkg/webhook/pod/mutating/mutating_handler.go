@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/metrics"
 )
 
@@ -110,53 +111,43 @@ func (h *PodMutatingHandler) Handle(ctx context.Context, req admission.Request) 
 	return admission.PatchResponseFromRaw(original, marshaled)
 }
 
-func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
-	start := time.Now()
-	if err := h.clusterColocationProfileMutatingPod(ctx, req, obj); err != nil {
-		klog.Errorf("Failed to mutating Pod %s/%s by ClusterColocationProfile, err: %v", obj.Namespace, obj.Name, err)
-		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
-			metrics.Pod, string(req.Operation), err, ClusterColocationProfile, time.Since(start).Seconds())
-		return err
+// runMutatingPlugins executes all pod-mutating plugins in sequence, recording
+// per-plugin metrics. It is called by both handleCreate and handleUpdate.
+func (h *PodMutatingHandler) runMutatingPlugins(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
+	type step struct {
+		name string
+		fn   func(context.Context, admission.Request, *corev1.Pod) error
 	}
-	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
-		metrics.Pod, string(req.Operation), nil, ClusterColocationProfile, time.Since(start).Seconds())
-
-	start = time.Now()
-	if err := h.extendedResourceSpecMutatingPod(ctx, req, obj); err != nil {
-		klog.Errorf("Failed to mutating Pod %s/%s by ExtendedResourceSpec, err: %v", obj.Namespace, obj.Name, err)
-		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
-			metrics.Pod, string(req.Operation), err, ExtendedResourceSpec, time.Since(start).Seconds())
-		return err
+	steps := []step{
+		{ClusterColocationProfile, h.clusterColocationProfileMutatingPod},
+		{ExtendedResourceSpec, h.extendedResourceSpecMutatingPod},
+		{MultiQuotaTree, h.addNodeAffinityForMultiQuotaTree},
+		{DeviceResourceSpec, h.deviceResourceSpecMutatingPod},
 	}
-	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
-		metrics.Pod, string(req.Operation), nil, ExtendedResourceSpec, time.Since(start).Seconds())
-
-	start = time.Now()
-	if err := h.addNodeAffinityForMultiQuotaTree(ctx, req, obj); err != nil {
-		klog.Errorf("Failed to mutating Pod %s/%s by MultiQuotaTree, err: %v", obj.Namespace, obj.Name, err)
+	for _, s := range steps {
+		start := time.Now()
+		if err := s.fn(ctx, req, obj); err != nil {
+			klog.Errorf("Failed to mutating Pod %s/%s by %s, err: %v",
+				obj.Namespace, obj.Name, s.name, err)
+			metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+				metrics.Pod, string(req.Operation), err, s.name, time.Since(start).Seconds())
+			return err
+		}
 		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
-			metrics.Pod, string(req.Operation), err, MultiQuotaTree, time.Since(start).Seconds())
-		return err
+			metrics.Pod, string(req.Operation), nil, s.name, time.Since(start).Seconds())
 	}
-	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
-		metrics.Pod, string(req.Operation), nil, MultiQuotaTree, time.Since(start).Seconds())
-
-	start = time.Now()
-	if err := h.deviceResourceSpecMutatingPod(ctx, req, obj); err != nil {
-		klog.Errorf("Failed to mutating Pod %s/%s by DeviceResourceSpec, err: %v", obj.Namespace, obj.Name, err)
-		metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
-			metrics.Pod, string(req.Operation), err, DeviceResourceSpec, time.Since(start).Seconds())
-		return err
-	}
-	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
-		metrics.Pod, string(req.Operation), nil, DeviceResourceSpec, time.Since(start).Seconds())
-
 	return nil
 }
 
+func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
+	return h.runMutatingPlugins(ctx, req, obj)
+}
+
 func (h *PodMutatingHandler) handleUpdate(ctx context.Context, req admission.Request, obj *corev1.Pod) error {
-	// TODO: add mutating logic for pod update here
-	return nil
+	if obj.Labels[extension.LabelPodMutatingUpdate] != "true" {
+		return nil
+	}
+	return h.runMutatingPlugins(ctx, req, obj)
 }
 
 // var _ inject.Client = &PodMutatingHandler{}
