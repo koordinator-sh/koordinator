@@ -3763,3 +3763,37 @@ func Test_nodeTopoInformer_getNodeKubeletReservedResources(t *testing.T) {
 		})
 	}
 }
+
+func Test_convertCPUsToSharePool(t *testing.T) {
+	t.Run("uses unique socket for single-socket node pool", func(t *testing.T) {
+		cpuIDMap := map[int32]*extension.CPUInfo{
+			1: {ID: 1, Node: 0, Socket: 2},
+			0: {ID: 0, Node: 0, Socket: 2},
+			3: {ID: 3, Node: 1, Socket: 3},
+			2: {ID: 2, Node: 1, Socket: 3},
+		}
+
+		got := convertCPUsToSharePool(cpuIDMap)
+		want := []extension.CPUSharedPool{
+			{Socket: 2, Node: 0, CPUSet: "0-1"},
+			{Socket: 3, Node: 1, CPUSet: "2-3"},
+		}
+
+		assert.Equal(t, want, got)
+	})
+
+	t.Run("uses unknown socket for node pool spanning multiple sockets and stays stable", func(t *testing.T) {
+		cpuIDMap := map[int32]*extension.CPUInfo{
+			3: {ID: 3, Node: 0, Socket: 3},
+			1: {ID: 1, Node: 0, Socket: 1},
+			2: {ID: 2, Node: 0, Socket: 2},
+			0: {ID: 0, Node: 0, Socket: 0},
+		}
+
+		want := []extension.CPUSharedPool{{Socket: -1, Node: 0, CPUSet: "0-3"}}
+		for i := 0; i < 100; i++ {
+			got := convertCPUsToSharePool(cpuIDMap)
+			assert.Equal(t, want, got)
+		}
+	})
+}

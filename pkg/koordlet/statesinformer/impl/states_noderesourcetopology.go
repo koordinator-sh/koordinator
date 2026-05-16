@@ -773,17 +773,23 @@ func (s *nodeTopoInformer) calCPUSharePools(lsSharedPoolCPUs map[int32]*extensio
 		}
 	}
 
-	lsSharePools = covertCPUsToSharePool(lsSharedPoolCPUs)
-	beSharePools = covertCPUsToSharePool(beSharedPoolCPUs)
+	lsSharePools = convertCPUsToSharePool(lsSharedPoolCPUs)
+	beSharePools = convertCPUsToSharePool(beSharedPoolCPUs)
 	return
 }
 
-func covertCPUsToSharePool(cpuIDMap map[int32]*extension.CPUInfo) (sharePools []extension.CPUSharedPool) {
+func convertCPUsToSharePool(cpuIDMap map[int32]*extension.CPUInfo) (sharePools []extension.CPUSharedPool) {
 	// nodeID -> cpulist
 	nodeIDToCpus := make(map[int32][]int)
+	// nodeID -> socket set
+	nodeIDToSockets := make(map[int32]map[int32]struct{})
 	for cpuID, info := range cpuIDMap {
 		if info != nil {
 			nodeIDToCpus[info.Node] = append(nodeIDToCpus[info.Node], int(cpuID))
+			if nodeIDToSockets[info.Node] == nil {
+				nodeIDToSockets[info.Node] = map[int32]struct{}{}
+			}
+			nodeIDToSockets[info.Node][info.Socket] = struct{}{}
 		}
 	}
 
@@ -791,19 +797,28 @@ func covertCPUsToSharePool(cpuIDMap map[int32]*extension.CPUInfo) (sharePools []
 		if len(cpus) <= 0 {
 			continue
 		}
+		sort.Ints(cpus)
+
+		// Shared pools are node-scoped. Use the socket only when all CPUs in the node pool
+		// belong to the same socket; otherwise keep it as -1 to avoid unstable/misleading data.
+		socket := int32(-1)
+		if sockets := nodeIDToSockets[nodeID]; len(sockets) == 1 {
+			for s := range sockets {
+				socket = s
+			}
+		}
 		set := cpuset.NewCPUSet(cpus...)
 		sharePools = append(sharePools, extension.CPUSharedPool{
 			CPUSet: set.String(),
 			Node:   nodeID,
-			Socket: cpuIDMap[int32(cpus[0])].Socket,
+			Socket: socket,
 		})
 	}
 	sort.Slice(sharePools, func(i, j int) bool {
-		iPool := sharePools[i]
-		jPool := sharePools[j]
-		iID := int(iPool.Socket)<<32 | int(iPool.Node)
-		jID := int(jPool.Socket)<<32 | int(jPool.Node)
-		return iID < jID
+		if sharePools[i].Node != sharePools[j].Node {
+			return sharePools[i].Node < sharePools[j].Node
+		}
+		return sharePools[i].Socket < sharePools[j].Socket
 	})
 	return
 }
