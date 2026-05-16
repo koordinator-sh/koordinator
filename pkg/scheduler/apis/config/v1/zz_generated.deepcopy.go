@@ -102,6 +102,11 @@ func (in *DeviceShareArgs) DeepCopyInto(out *DeviceShareArgs) {
 		*out = make([]GPUShareUnsupportedModel, len(*in))
 		copy(*out, *in)
 	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 
@@ -370,6 +375,11 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 		*out = make([]corev1.ResourceName, len(*in))
 		copy(*out, *in)
 	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 
@@ -409,6 +419,11 @@ func (in *NodeNUMAResourceArgs) DeepCopyInto(out *NodeNUMAResourceArgs) {
 		in, out := &in.NUMAScoringStrategy, &out.NUMAScoringStrategy
 		*out = new(ScoringStrategy)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
 	}
 	return
 }
@@ -522,6 +537,11 @@ func (in *ReservationArgs) DeepCopyInto(out *ReservationArgs) {
 		in, out := &in.ReservationSelectorIndex, &out.ReservationSelectorIndex
 		*out = new(ReservationSelectorIndexArgs)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
 	}
 	return
 }
