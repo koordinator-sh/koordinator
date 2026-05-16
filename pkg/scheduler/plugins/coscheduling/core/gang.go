@@ -605,3 +605,9 @@ func (gang *Gang) ClearCurrentRepresentative(reason string) {
 	defer gang.lock.Unlock()
 	gang.GangGroupInfo.ClearCurrentRepresentative(reason)
 }
+
+func (gang *Gang) hasGangInit() bool {
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
+	return gang.HasGangInit
+}

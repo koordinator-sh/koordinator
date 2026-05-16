@@ -739,7 +739,9 @@ func TestBeforePreFilter_SuggestionPropagation(t *testing.T) {
 				gangId := util.GetId(tt.pg.Namespace, tt.pg.Name)
 				gang := mgr.cache.getGangFromCacheByGangId(gangId, false)
 				if gang != nil {
+					gang.lock.Lock()
 					gang.HasGangInit = true
+					gang.lock.Unlock()
 				}
 			}
 			mgr.cache.onPodAdd(tt.pod)
