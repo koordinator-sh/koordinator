@@ -137,3 +137,62 @@ func TestExtendedResourceSpecMutatingPod(t *testing.T) {
 	}
 	assert.Equal(expectPod, pod)
 }
+
+func TestExtendedResourceSpecMutatingPod_InitContainers(t *testing.T) {
+	assert := assert.New(t)
+
+	client := fake.NewClientBuilder().Build()
+	decoder := admission.NewDecoder(scheme.Scheme)
+	handler := &PodMutatingHandler{
+		Client:  client,
+		Decoder: decoder,
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod-init",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{
+					Name: "init-container-a",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("500"),
+							extension.BatchMemory: resource.MustParse("1Gi"),
+						},
+						Requests: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("500"),
+							extension.BatchMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+			Containers: []corev1.Container{
+				{
+					Name: "main-container-a",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("1000"),
+							extension.BatchMemory: resource.MustParse("4Gi"),
+						},
+						Requests: corev1.ResourceList{
+							extension.BatchCPU:    resource.MustParse("1000"),
+							extension.BatchMemory: resource.MustParse("4Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
+	err := handler.extendedResourceSpecMutatingPod(context.TODO(), req, pod)
+	assert.NoError(err)
+
+	spec, err := extension.GetExtendedResourceSpec(pod.Annotations)
+	assert.NoError(err)
+	assert.NotNil(spec)
+	assert.Contains(spec.Containers, "main-container-a")
+	assert.Contains(spec.Containers, "init-container-a")
+}
