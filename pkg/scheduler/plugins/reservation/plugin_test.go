@@ -4512,6 +4512,67 @@ func TestUnreserve(t *testing.T) {
 	}
 }
 
+func TestUnreserveWhenReservationDeleted(t *testing.T) {
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{},
+			},
+		},
+	}
+
+	suit := newPluginTestSuit(t)
+	suit.start(t)
+	client := suit.extenderFactory.KoordinatorClientSet()
+	_, err := client.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	state := &stateData{}
+	cycleState := framework.NewCycleState()
+	cycleState.Write(stateKey, state)
+
+	// Manually assume the reservation
+	assumedReservation := reservation.DeepCopy()
+	assumedReservation.Status.NodeName = "test-node"
+	pl.reservationCache.assumeReservation(assumedReservation)
+
+	// Verify reservation is in cache after assume
+	rInfo := pl.reservationCache.getReservationInfoByUID(reservation.UID)
+	assert.NotNil(t, rInfo)
+
+	// Delete the reservation to simulate the scenario where reservation is deleted before binding completes
+	err = client.SchedulingV1alpha1().Reservations().Delete(context.TODO(), reservation.Name, metav1.DeleteOptions{})
+	assert.NoError(t, err)
+
+	// Wait until the reservation deletion is observed by the lister, so that Unreserve
+	// exercises the intended NotFound error-path.
+	ctx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
+	defer cancel()
+	err = wait.PollUntilContextCancel(ctx, 10*time.Millisecond, true, func(context.Context) (bool, error) {
+		_, getErr := pl.rLister.Get(reservation.Name)
+		if apierrors.IsNotFound(getErr) {
+			return true, nil
+		}
+		return false, nil
+	})
+	assert.NoError(t, err)
+
+	// Unreserve should clean up the cache even if reservation is deleted
+	reservePod := reservationutil.NewReservePod(reservation)
+	pl.Unreserve(context.TODO(), cycleState, reservePod, "test-node")
+
+	// Verify reservation is removed from cache
+	rInfo = pl.reservationCache.getReservationInfoByUID(reservation.UID)
+	assert.Nil(t, rInfo)
+}
+
 func TestPreBind(t *testing.T) {
 	tests := []struct {
 		name               string

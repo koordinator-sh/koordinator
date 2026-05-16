@@ -770,4 +770,55 @@ func TestReservationsNominator(t *testing.T) {
 	assert.True(t, update)
 	assert.True(t, status.IsSuccess())
 	assert.Equal(t, 2, len(nodeInfoOut.GetPods()))
+
+	// Test gang scenario: same-job nominated reserve pods should be excluded from BeforeFilter.
+	t.Run("gang same-job exclusion", func(t *testing.T) {
+		gangPod0 := pods[0] // nominated on node-1
+		gangPod1 := pods[1] // nominated on node-1
+
+		// Mark gangPod0 as a same-job pod (gang-mate of gangPod1).
+		gangState := framework.NewCycleState()
+		frameworkext.MakeNominatedPodsOfTheSameJob(gangState, []string{string(gangPod0.UID)})
+
+		// Scheduling gangPod1: gangPod0 (same-job) should be excluded;
+		// gangPod1 itself is excluded by UID check (rInfo.Pod.UID != pod.UID).
+		// Result: 0 pods added.
+		_, nodeInfoOut, update, status := pl.BeforeFilter(ctx, gangState, gangPod1, nodeInfo)
+		assert.True(t, update)
+		assert.True(t, status.IsSuccess())
+		assert.Equal(t, 0, len(nodeInfoOut.GetPods()),
+			"gang-mate nominated pod should be excluded from BeforeFilter")
+
+		// Without same-job marking, gangPod0 should be included.
+		noGangState := framework.NewCycleState()
+		_, nodeInfoOut2, update2, status2 := pl.BeforeFilter(ctx, noGangState, gangPod1, nodeInfo)
+		assert.True(t, update2)
+		assert.True(t, status2.IsSuccess())
+		assert.Equal(t, 1, len(nodeInfoOut2.GetPods()),
+			"without same-job marking, nominated pod should be included")
+
+		// Mixed nomination: verify only same-job pods are excluded, others are included.
+		// pods[2] is scheduling; pods[0] is same-job; pods[1] is not.
+		// Result: pods[1] included, pods[0] excluded.
+		mixedState := framework.NewCycleState()
+		frameworkext.MakeNominatedPodsOfTheSameJob(mixedState, []string{string(gangPod0.UID)})
+		_, nodeInfoOut3, update3, status3 := pl.BeforeFilter(ctx, mixedState, pods[2], nodeInfo)
+		assert.True(t, update3)
+		assert.True(t, status3.IsSuccess())
+		assert.Equal(t, 1, len(nodeInfoOut3.GetPods()),
+			"mixed: non-same-job nominated pod should still be included")
+		// Verify the included pod is pods[1] (non-same-job), not pods[0] (same-job).
+		podUIDs := make([]string, len(nodeInfoOut3.GetPods()))
+		for i, p := range nodeInfoOut3.GetPods() {
+			podUIDs[i] = string(p.GetPod().UID)
+		}
+		assert.Contains(t, podUIDs, string(gangPod1.UID),
+			"mixed: non-same-job nominated pod should be included")
+		assert.NotContains(t, podUIDs, string(gangPod0.UID),
+			"mixed: same-job nominated pod should be excluded")
+
+		// Clean up nominated pods.
+		nominatorImpl.DeleteNominatedReservePod(gangPod0)
+		nominatorImpl.DeleteNominatedReservePod(gangPod1)
+	})
 }

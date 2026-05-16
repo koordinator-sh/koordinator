@@ -266,6 +266,84 @@ func TestRuntimeQuotaCalculator_IterationAdjustQuota(t *testing.T) {
 	}
 }
 
+// TestRuntimeQuotaCalculator_IterationAdjustQuota_IntegerDistribution verifies
+// that integer-typed resources (e.g. GPU) are fully distributed to child quotas
+// without being lost due to per-node rounding. Previously the redistribution
+// step used `int64(w*t/W + 0.5)` independently per node, which could round every
+// child's share down to zero when many siblings shared a small residual (common
+// for GPU), making sum(children.runtime) strictly less than parent.runtime.
+func TestRuntimeQuotaCalculator_IterationAdjustQuota_IntegerDistribution(t *testing.T) {
+	const gpu = corev1.ResourceName("nvidia.com/gpu")
+
+	// Scenario reproducing the observed "3 GPU missing" case:
+	// - parent totalResource = 81 (== sum of mins, fully partitioned by min)
+	// - one donor child has request<min, allow-lent=true (contributes 3 to pool)
+	// - ten borrower children each have request>min, equal weights
+	// With the old rounding each borrower got 0 extra (3/10 + 0.5 = 0),
+	// losing all 3 GPUs.
+	type nodeSpec struct {
+		name         string
+		sharedWeight int64
+		request      int64
+		min          int64
+		allowLent    bool
+	}
+
+	var nodes []nodeSpec
+	nodes = append(nodes, nodeSpec{
+		name: "donor", sharedWeight: 1, request: 0, min: 3, allowLent: true,
+	})
+	for i := 0; i < 10; i++ {
+		nodes = append(nodes, nodeSpec{
+			name:         fmt.Sprintf("borrower-%02d", i),
+			sharedWeight: 1, request: 100, min: 78 / 10, allowLent: true,
+			// each borrower's min is 7 (or 8 for the first few) so that
+			// sum(min) = 3 + 78 = 81.
+		})
+	}
+	// Set each borrower's min explicitly so borrowers total 78; with the donor's
+	// min of 3, the overall sum(min) is 81.
+	perBorrowerMin := []int64{8, 8, 8, 8, 8, 8, 8, 8, 7, 7} // sums to 78
+	for i := 0; i < 10; i++ {
+		nodes[i+1].min = perBorrowerMin[i]
+	}
+
+	total := int64(0)
+	for _, n := range nodes {
+		total += n.min
+	}
+	assert.Equal(t, int64(81), total, "test setup: sum(min) must equal parent total (81)")
+
+	qtw := NewRuntimeQuotaCalculator("test-tree-integer-redistribution")
+	qtw.updateResourceKeys(map[corev1.ResourceName]struct{}{gpu: {}})
+	qtw.totalResource = corev1.ResourceList{
+		gpu: *resource.NewQuantity(81, resource.DecimalSI),
+	}
+	for _, n := range nodes {
+		qtw.quotaTree[gpu].insert(n.name, n.sharedWeight, n.request, n.min, 0, n.allowLent)
+	}
+
+	qtw.calculateRuntimeNoLock()
+
+	sum := int64(0)
+	for _, n := range nodes {
+		sum += qtw.quotaTree[gpu].quotaNodes[n.name].runtimeQuota
+	}
+	assert.Equal(t, int64(81), sum,
+		"sum of children runtime must equal parent total (no resources lost to rounding)")
+
+	// Donor's runtime must be clamped to its request (0), not inflated.
+	assert.Equal(t, int64(0), qtw.quotaTree[gpu].quotaNodes["donor"].runtimeQuota)
+
+	// Every borrower must at least get its min (guarantee).
+	for i := 0; i < 10; i++ {
+		name := fmt.Sprintf("borrower-%02d", i)
+		got := qtw.quotaTree[gpu].quotaNodes[name].runtimeQuota
+		assert.GreaterOrEqual(t, got, perBorrowerMin[i],
+			"borrower %s must receive at least its min", name)
+	}
+}
+
 func createQuotaInfoWithRes(name string, max, min corev1.ResourceList) *QuotaInfo {
 	quotaInfo := NewQuotaInfo(true, true, name, "")
 	quotaInfo.CalculateInfo.Max = max.DeepCopy()

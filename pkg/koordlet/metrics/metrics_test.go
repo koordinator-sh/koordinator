@@ -446,3 +446,59 @@ func TestHostApplicationCollectors(t *testing.T) {
 		ResetHostApplicationResourceUsage()
 	})
 }
+
+func TestCPUSetCollectors(t *testing.T) {
+	testingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test-node",
+			Labels: map[string]string{},
+		},
+	}
+
+	t.Run("test not panic", func(t *testing.T) {
+		Register(testingNode)
+		defer Register(nil)
+
+		RecordCPUSetSharePoolCores(8)
+		RecordCPUSetBESharePoolCores(4)
+		RecordCPUSetSharePoolInfo(0)
+		RecordCPUSetSharePoolInfo(1)
+		RecordCPUSetBESharePoolInfo(2)
+		RecordCPUSetBESharePoolInfo(3)
+		ResetCPUSetSharePoolInfo()
+		ResetCPUSetBESharePoolInfo()
+	})
+
+	t.Run("test value collection", func(t *testing.T) {
+		Register(testingNode)
+		defer Register(nil)
+
+		// Record share pool cores and verify value
+		RecordCPUSetSharePoolCores(8)
+		gauge, err := CPUSetSharePoolCPUS.GetMetricWithLabelValues("test-node")
+		assert.NoError(t, err)
+		assert.NotNil(t, gauge)
+
+		// Record BE share pool cores and verify value
+		RecordCPUSetBESharePoolCores(4)
+		gauge, err = CPUSetBESharePoolCPUS.GetMetricWithLabelValues("test-node")
+		assert.NoError(t, err)
+		assert.NotNil(t, gauge)
+
+		// Record per-CPU info
+		RecordCPUSetSharePoolInfo(0)
+		RecordCPUSetSharePoolInfo(1)
+		gauge, err = CPUSetSharePoolInfo.GetMetricWithLabelValues("test-node", "0")
+		assert.NoError(t, err)
+		assert.NotNil(t, gauge)
+
+		RecordCPUSetBESharePoolInfo(2)
+		gauge, err = CPUSetBESharePoolInfo.GetMetricWithLabelValues("test-node", "2")
+		assert.NoError(t, err)
+		assert.NotNil(t, gauge)
+
+		// Reset and verify cleared
+		ResetCPUSetSharePoolInfo()
+		ResetCPUSetBESharePoolInfo()
+	})
+}

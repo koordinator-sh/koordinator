@@ -35,6 +35,11 @@ const (
 	AnnotationJobCreatedBy = "koordinator.sh/job-created-by"
 )
 
+var applyJobContextFn = func(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
+	jobCtx := FromContext(ctx)
+	return jobCtx.ApplyTo(job)
+}
+
 // Evict evicts a pod
 func (r *Reconciler) Evict(ctx context.Context, pod *corev1.Pod, evictOptions framework.EvictOptions) bool {
 	framework.FillEvictOptionsFromContext(ctx, &evictOptions)
@@ -86,8 +91,7 @@ func CreatePodMigrationJob(ctx context.Context, pod *corev1.Pod, evictOptions fr
 		},
 	}
 
-	jobCtx := FromContext(ctx)
-	if err := jobCtx.ApplyTo(job); err != nil {
+	if err := applyJobContextFn(ctx, job); err != nil {
 		klog.Errorf("Failed to apply JobContext to PodMigrationJob for Pod %s/%s, err: %v", pod.Namespace, pod.Name, err)
 		return err
 	}

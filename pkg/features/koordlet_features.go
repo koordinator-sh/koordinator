@@ -190,6 +190,17 @@ const (
 	//
 	// HamiCoreVGPUMonitor enables the vGPU monitoring for HAMi-core.
 	HamiCoreVGPUMonitor featuregate.Feature = "HamiCoreVGPUMonitor"
+
+	// owner: @tan90github
+	// alpha: v1.8
+	//
+	// PerCPUMetric enables recording per-cpu info metrics of share pool and BE share pool.
+	// NOTE: Enabling this feature will generate high-cardinality time series at node × share pool cpu numbers level:
+	// - koordlet_cpuset_share_pool_info{node, cpu}
+	// - koordlet_cpuset_be_share_pool_info{node, cpu}
+	// which may significantly increase the pressure on Prometheus/TSDB/remote-write.
+	// It is recommended to enable it only during small clusters or troubleshooting/capacity assessment.
+	PerCPUMetric featuregate.Feature = "PerCPUMetric"
 )
 
 func init() {
@@ -227,6 +238,7 @@ var (
 		HugePageReport:         {Default: false, PreRelease: featuregate.Alpha},
 		PodResourcesProxy:      {Default: false, PreRelease: featuregate.Alpha},
 		HamiCoreVGPUMonitor:    {Default: false, PreRelease: featuregate.Alpha},
+		PerCPUMetric:           {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 

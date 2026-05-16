@@ -37,6 +37,24 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/loadaware/estimator"
 )
 
+// makeReservePod creates a reserve pod (fake pod) for testing.
+// A reserve pod has the annotation scheduling.koordinator.sh/reserve-pod=true,
+// which is the key identifier used by reservationutil.IsReservePod().
+func makeReservePod(nodeName, name, uid string) *corev1.Pod {
+	pod := st.MakePod().
+		UID(uid).
+		Namespace(corev1.NamespaceDefault).
+		Name(name).
+		Node(nodeName).
+		Phase(corev1.PodRunning).
+		Obj()
+	if pod.Annotations == nil {
+		pod.Annotations = map[string]string{}
+	}
+	pod.Annotations["scheduling.koordinator.sh/reserve-pod"] = "true"
+	return pod
+}
+
 func TestPodAssignCache_OnAdd(t *testing.T) {
 	vectorizer := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
 	node := "test-node"
@@ -118,6 +136,13 @@ func TestPodAssignCache_OnAdd(t *testing.T) {
 				s := sets.New(NamespacedName{Namespace: "default", Name: "test"})
 				assert.Equal(t, s, n.nodeDeltaPods)
 				assert.Equal(t, s, n.nodeEstimatedPods)
+			},
+		},
+		{
+			name: "add reserve pod - should be skipped",
+			pod:  makeReservePod(node, "test-reservation", "reserve-uid-123"),
+			want: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, 0, len(n.podInfos), "reserve pod should not be added to podAssignCache")
 			},
 		},
 	}
