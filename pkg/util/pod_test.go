@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -58,6 +59,87 @@ func Test_GetCPUSetFromPod(t *testing.T) {
 			}
 			got, err := GetCPUSetFromPod(tt.args.podAnnotations)
 			assert.Equal(t, tt.wantErr, err != nil)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGetPodTargetExtendedResources(t *testing.T) {
+	tests := []struct {
+		name string
+		pod  *corev1.Pod
+		want *apiext.ExtendedResourceSpec
+	}{
+		{
+			name: "nil pod returns nil",
+			pod:  nil,
+			want: nil,
+		},
+		{
+			name: "only regular containers",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("1000")},
+								Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("1000")},
+							},
+						},
+					},
+				},
+			},
+			want: &apiext.ExtendedResourceSpec{
+				Containers: map[string]apiext.ExtendedResourceContainerSpec{
+					"main": {
+						Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("1000")},
+						Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("1000")},
+					},
+				},
+			},
+		},
+		{
+			name: "init container is included",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "init",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("500")},
+								Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("500")},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("1000")},
+								Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("1000")},
+							},
+						},
+					},
+				},
+			},
+			want: &apiext.ExtendedResourceSpec{
+				Containers: map[string]apiext.ExtendedResourceContainerSpec{
+					"init": {
+						Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("500")},
+						Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("500")},
+					},
+					"main": {
+						Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("1000")},
+						Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("1000")},
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetPodTargetExtendedResources(tt.pod, apiext.BatchCPU)
 			assert.Equal(t, tt.want, got)
 		})
 	}

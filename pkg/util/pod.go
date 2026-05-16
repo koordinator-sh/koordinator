@@ -44,9 +44,16 @@ func GetPodTargetExtendedResources(pod *corev1.Pod, resourceNames ...corev1.Reso
 
 	extendedResources := GetEmptyPodExtendedResources()
 
-	// TODO: count init containers and pod overhead
 	for i := range pod.Spec.Containers {
 		container := &pod.Spec.Containers[i]
+		r := GetContainerTargetExtendedResources(container, resourceNames...)
+		if r == nil {
+			continue
+		}
+		extendedResources.Containers[container.Name] = *r
+	}
+	for i := range pod.Spec.InitContainers {
+		container := &pod.Spec.InitContainers[i]
 		r := GetContainerTargetExtendedResources(container, resourceNames...)
 		if r == nil {
 			continue
