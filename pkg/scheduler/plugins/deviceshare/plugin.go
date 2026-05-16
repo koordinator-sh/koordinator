@@ -83,6 +83,7 @@ type Plugin struct {
 	gpuSharedResourceTemplatesMatchedResources []corev1.ResourceName
 	gpuShareUnsupportedModels                  map[string]sets.Set[string]
 	scorer                                     *resourceAllocationScorer
+	enableQueueHint                            bool
 }
 
 type preFilterState struct {
@@ -180,10 +181,18 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("devices.%v.%v", schedulingv1alpha1.GroupVersion.Version, schedulingv1alpha1.GroupVersion.Group)
-	return []fwktype.ClusterEventWithHint{
+	events := []fwktype.ClusterEventWithHint{
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
-	}, nil
+	}
+
+	if p.enableQueueHint {
+		events = []fwktype.ClusterEventWithHint{
+			{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}, QueueingHintFn: p.isSchedulableAfterPodDeletion},
+			{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}, QueueingHintFn: p.isSchedulableAfterDeviceChanged},
+		}
+	}
+	return events, nil
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
@@ -851,5 +860,6 @@ func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktyp
 		gpuShareUnsupportedModels:                  gpuShareUnsupportedModels,
 		scorer:                                     scorePlugin(args),
 		disableDeviceNUMATopologyAlignment:         args.DisableDeviceNUMATopologyAlignment,
+		enableQueueHint:                            args.EnableQueueHint,
 	}, nil
 }

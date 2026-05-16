@@ -109,6 +109,7 @@ type Plugin struct {
 	enableLazyReservationRestore   bool
 	enableSkipReservationFitsNode  bool
 	enablePreAllocationClusterMode bool
+	enableQueueHint                bool
 }
 
 func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
@@ -156,6 +157,7 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 	if pluginArgs.PreAllocationConfig != nil && pluginArgs.PreAllocationConfig.EnableClusterMode {
 		p.enablePreAllocationClusterMode = true
 	}
+	p.enableQueueHint = pluginArgs.EnableQueueHint
 
 	return p, nil
 }
@@ -176,10 +178,18 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("reservations.%v.%v", schedulingv1alpha1.GroupVersion.Version, schedulingv1alpha1.GroupVersion.Group)
-	return []fwktype.ClusterEventWithHint{
+	events := []fwktype.ClusterEventWithHint{
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
-	}, nil
+	}
+
+	if pl.enableQueueHint {
+		events = []fwktype.ClusterEventWithHint{
+			{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}, QueueingHintFn: pl.isSchedulableAfterPodDeletion},
+			{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}, QueueingHintFn: pl.isSchedulableAfterReservationChanged},
+		}
+	}
+	return events, nil
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
