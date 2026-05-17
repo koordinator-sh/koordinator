@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	listerv1 "k8s.io/client-go/listers/core/v1"
+	listerschedulingv1alpha1 "k8s.io/client-go/listers/scheduling/v1alpha1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -95,6 +96,8 @@ type PodGroupManager struct {
 	pgClient pgclientset.Interface
 	// pgLister is podgroup lister
 	pgLister pglister.PodGroupLister
+	// workloadLister is native workload lister
+	workloadLister listerschedulingv1alpha1.WorkloadLister
 	// podLister is pod lister
 	podLister listerv1.PodLister
 	// cache stores gang info
@@ -117,14 +120,35 @@ func NewPodGroupManager(
 ) *PodGroupManager {
 	pgInformer := pgSharedInformerFactory.Scheduling().V1alpha1().PodGroups()
 	podInformer := sharedInformerFactory.Core().V1().Pods()
-	gangCache := NewGangCache(args, podInformer.Lister(), pgInformer.Lister(), pgClient, handle)
+
+	workloadAPIEnabled := false
+	if handle != nil && handle.ClientSet() != nil {
+		resources, err := handle.ClientSet().Discovery().ServerResourcesForGroupVersion("scheduling.k8s.io/v1alpha1")
+		if err == nil && resources != nil {
+			for _, res := range resources.APIResources {
+				if res.Name == "workloads" {
+					workloadAPIEnabled = true
+					break
+				}
+			}
+		}
+	}
+
+	var workloadLister listerschedulingv1alpha1.WorkloadLister
+	if workloadAPIEnabled {
+		workloadInformer := sharedInformerFactory.Scheduling().V1alpha1().Workloads()
+		workloadLister = workloadInformer.Lister()
+	}
+
+	gangCache := NewGangCache(args, podInformer.Lister(), pgInformer.Lister(), workloadLister, pgClient, handle)
 	pgMgr := &PodGroupManager{
-		handle:    handle,
-		args:      args,
-		pgClient:  pgClient,
-		pgLister:  pgInformer.Lister(),
-		podLister: podInformer.Lister(),
-		cache:     gangCache,
+		handle:         handle,
+		args:           args,
+		pgClient:       pgClient,
+		pgLister:       pgInformer.Lister(),
+		workloadLister: workloadLister,
+		podLister:      podInformer.Lister(),
+		cache:          gangCache,
 	}
 	if extHandle, ok := handle.(frameworkext.ExtendedHandle); ok {
 		pgMgr.workloadAuditor = extHandle.GetWorkloadAuditor()
@@ -141,6 +165,16 @@ func NewPodGroupManager(
 		DeleteFunc: gangCache.onPodGroupDelete,
 	}
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), pgSharedInformerFactory, pgInformer.Informer(), podGroupEventHandler)
+
+	if workloadAPIEnabled {
+		workloadInformer := sharedInformerFactory.Scheduling().V1alpha1().Workloads()
+		workloadEventHandler := cache.ResourceEventHandlerFuncs{
+			AddFunc:    gangCache.onWorkloadAdd,
+			UpdateFunc: gangCache.onWorkloadUpdate,
+			DeleteFunc: gangCache.onWorkloadDelete,
+		}
+		frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, workloadInformer.Informer(), workloadEventHandler)
+	}
 
 	podEventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    gangCache.onPodAdd,

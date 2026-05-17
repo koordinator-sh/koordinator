@@ -605,7 +605,7 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 				args: &config.CoschedulingArgs{
 					EnablePreemption: ptr.To[bool](tt.enablePreemption),
 				},
-				cache:               NewGangCache(nil, nil, nil, nil, nil),
+				cache:               NewGangCache(nil, nil, nil, nil, nil, nil),
 				preemptionEvaluator: tt.preemptionEvaluator,
 			}
 			frameworkext.InitDiagnosis(tt.args.state, tt.args.pod)
@@ -659,7 +659,7 @@ func TestAfterPostFilter_SuggestionPropagation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handle := NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil)
-			gangCache := NewGangCache(nil, nil, nil, nil, handle)
+			gangCache := NewGangCache(nil, nil, nil, nil, nil, handle)
 			gangCache.onPodAdd(tt.pod)
 			pgMgr := &PodGroupManager{
 				handle: handle,

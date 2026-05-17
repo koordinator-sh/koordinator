@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
@@ -590,7 +591,7 @@ func TestGangCache_OnPodAdd(t *testing.T) {
 			pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 			pglister := pgInformer.Lister()
 
-			gangCache := NewGangCache(defaultArgs, nil, pglister, pgClientSet, nil)
+			gangCache := NewGangCache(defaultArgs, nil, pglister, nil, pgClientSet, nil)
 			for _, pod := range tt.pods {
 				gangCache.onPodAdd(pod)
 			}
@@ -768,7 +769,7 @@ func TestGangCache_OnPodUpdate(t *testing.T) {
 			pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 			pglister := pgInformer.Lister()
 
-			gangCache := NewGangCache(defaultArgs, nil, pglister, pgClientSet, nil)
+			gangCache := NewGangCache(defaultArgs, nil, pglister, nil, pgClientSet, nil)
 			for _, pod := range tt.pods {
 				gangCache.onPodUpdate(pod, pod)
 			}
@@ -940,7 +941,7 @@ func TestGangCache_OnPodDelete(t *testing.T) {
 			pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 			pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 			pglister := pgInformer.Lister()
-			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}, DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied}, nil, pglister, pgClient, nil)
+			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}, DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied}, nil, pglister, nil, pgClient, nil)
 			for _, pg := range tt.podGroups {
 				err := retry.OnError(
 					retry.DefaultRetry,
@@ -1107,7 +1108,7 @@ func TestGangCache_OnPodGroupAdd(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pgClient := fakepgclientset.NewSimpleClientset()
-			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}, DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied}, nil, nil, pgClient, nil)
+			gangCache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}, DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied}, nil, nil, nil, pgClient, nil)
 			for _, pg := range tt.pgs {
 				gangCache.onPodGroupAdd(pg)
 			}
@@ -1141,7 +1142,7 @@ func TestGangCache_OnGangDelete(t *testing.T) {
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 	pglister := pgInformer.Lister()
-	cache := NewGangCache(&config.CoschedulingArgs{DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied}, nil, pglister, pgClient, nil)
+	cache := NewGangCache(&config.CoschedulingArgs{DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied}, nil, pglister, nil, pgClient, nil)
 
 	// case1: pg that created by crd,delete pg then will delete the gang
 	podGroup := &v1alpha1.PodGroup{
@@ -1252,7 +1253,7 @@ func TestGangCache_onPodGroupUpdate(t *testing.T) {
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 	pglister := pgInformer.Lister()
-	cache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, pglister, pgClient, nil)
+	cache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, pglister, nil, pgClient, nil)
 
 	// init gang
 	podGroup := &v1alpha1.PodGroup{
@@ -1288,7 +1289,7 @@ func TestGetGangGroupInfo_DeleteGangGroupInfo(t *testing.T) {
 	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 	pglister := pgInformer.Lister()
-	cache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, pglister, pgClient, nil)
+	cache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, pglister, nil, pgClient, nil)
 
 	gangGroupInfo, _ := cache.getGangGroupInfo("aa", []string{"aa"}, false)
 	assert.True(t, gangGroupInfo == nil)
@@ -1360,7 +1361,7 @@ func TestOnPodAdd_OnPodDeleteWithGangGroupInfo(t *testing.T) {
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 	pglister := pgInformer.Lister()
 
-	gangCache := NewGangCache(defaultArgs, nil, pglister, pgClientSet, nil)
+	gangCache := NewGangCache(defaultArgs, nil, pglister, nil, pgClientSet, nil)
 	for _, pod := range pods {
 		gangCache.onPodAdd(pod)
 	}
@@ -1439,7 +1440,7 @@ func TestOnPgAdd_OnPgDeleteWithGangGroupInfo(t *testing.T) {
 	pgInformer := pgInformerFactory.Scheduling().V1alpha1().PodGroups()
 	pglister := pgInformer.Lister()
 
-	gangCache := NewGangCache(defaultArgs, nil, pglister, pgClientSet, nil)
+	gangCache := NewGangCache(defaultArgs, nil, pglister, nil, pgClientSet, nil)
 
 	gangCache.onPodAdd(pods[0])
 
@@ -1538,7 +1539,7 @@ func TestGangCache_getPendingPods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gangCache := NewGangCache(nil, nil, nil, nil, nil)
+			gangCache := NewGangCache(nil, nil, nil, nil, nil, nil)
 			for _, pod := range tt.pods {
 				gangCache.onPodAdd(pod)
 			}
@@ -1596,7 +1597,7 @@ func TestGangCache_getPendingPodsNum(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gangCache := NewGangCache(nil, nil, nil, nil, nil)
+			gangCache := NewGangCache(nil, nil, nil, nil, nil, nil)
 			for _, pod := range tt.pods {
 				gangCache.onPodAdd(pod)
 			}
@@ -1684,7 +1685,7 @@ func TestGangCache_getWaitingPods(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gangCache := NewGangCache(nil, nil, nil, nil, nil)
+			gangCache := NewGangCache(nil, nil, nil, nil, nil, nil)
 			for gangName, pod := range tt.podsOfGang {
 				gang := gangCache.getGangFromCacheByGangId(gangName, true)
 				gang.addAssumedPod(pod[0])
@@ -1752,7 +1753,7 @@ func TestGangCache_getWaitingPodsNum(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gangCache := NewGangCache(nil, nil, nil, nil, nil)
+			gangCache := NewGangCache(nil, nil, nil, nil, nil, nil)
 			for gangName, pod := range tt.podsOfGang {
 				gang := gangCache.getGangFromCacheByGangId(gangName, true)
 				gang.addAssumedPod(pod[0])
@@ -1782,7 +1783,7 @@ func TestGangCache_onPodDelete_Tombstone(t *testing.T) {
 		gangCache := NewGangCache(&config.CoschedulingArgs{
 			DefaultTimeout:     metav1.Duration{Duration: time.Second},
 			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
-		}, nil, nil, nil, nil)
+		}, nil, nil, nil, nil, nil)
 
 		gangCache.onPodAdd(pod)
 		gangId := util.GetId("default", "ganga")
@@ -1800,7 +1801,7 @@ func TestGangCache_onPodDelete_Tombstone(t *testing.T) {
 		gangCache := NewGangCache(&config.CoschedulingArgs{
 			DefaultTimeout:     metav1.Duration{Duration: time.Second},
 			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
-		}, nil, nil, nil, nil)
+		}, nil, nil, nil, nil, nil)
 
 		gangCache.onPodAdd(pod)
 		gangId := util.GetId("default", "ganga")
@@ -1818,7 +1819,7 @@ func TestGangCache_onPodDelete_Tombstone(t *testing.T) {
 		gangCache := NewGangCache(&config.CoschedulingArgs{
 			DefaultTimeout:     metav1.Duration{Duration: time.Second},
 			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
-		}, nil, nil, nil, nil)
+		}, nil, nil, nil, nil, nil)
 
 		gangCache.onPodAdd(pod)
 		gangId := util.GetId("default", "ganga")
@@ -1846,7 +1847,7 @@ func TestGangCache_onPodGroupDelete_Tombstone(t *testing.T) {
 	t.Run("valid tombstone removes podgroup gang from cache", func(t *testing.T) {
 		gangCache := NewGangCache(&config.CoschedulingArgs{
 			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
-		}, nil, nil, nil, nil)
+		}, nil, nil, nil, nil, nil)
 
 		gangId := util.GetId("default", "ganga")
 		gangTmp := gangCache.getGangFromCacheByGangId(gangId, true)
@@ -1862,7 +1863,7 @@ func TestGangCache_onPodGroupDelete_Tombstone(t *testing.T) {
 	t.Run("non-podgroup tombstone is ignored without panic", func(t *testing.T) {
 		gangCache := NewGangCache(&config.CoschedulingArgs{
 			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
-		}, nil, nil, nil, nil)
+		}, nil, nil, nil, nil, nil)
 
 		gangId := util.GetId("default", "ganga")
 		gangTmp := gangCache.getGangFromCacheByGangId(gangId, true)
@@ -1879,7 +1880,7 @@ func TestGangCache_onPodGroupDelete_Tombstone(t *testing.T) {
 	t.Run("unknown object type is ignored without panic", func(t *testing.T) {
 		gangCache := NewGangCache(&config.CoschedulingArgs{
 			DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
-		}, nil, nil, nil, nil)
+		}, nil, nil, nil, nil, nil)
 
 		gangId := util.GetId("default", "ganga")
 		gangTmp := gangCache.getGangFromCacheByGangId(gangId, true)
@@ -1890,4 +1891,67 @@ func TestGangCache_onPodGroupDelete_Tombstone(t *testing.T) {
 
 		assert.Equal(t, 1, len(gangCache.gangItems))
 	})
+}
+
+func TestGangCache_OnWorkloadEvents(t *testing.T) {
+	preTimeNowFn := timeNowFn
+	defer func() {
+		timeNowFn = preTimeNowFn
+	}()
+	timeNowFn = fakeTimeNowFn
+
+	pgClient := fakepgclientset.NewSimpleClientset()
+	defaultArgs := getTestDefaultCoschedulingArgs(t)
+	gangCache := NewGangCache(defaultArgs, nil, nil, nil, pgClient, nil)
+
+	wl := &schedulingv1alpha1.Workload{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:         "default",
+			Name:              "wl-a",
+			CreationTimestamp: metav1.Now(),
+		},
+		Spec: schedulingv1alpha1.WorkloadSpec{
+			PodGroups: []schedulingv1alpha1.PodGroup{
+				{
+					Name: "wl-pg-1",
+					Policy: schedulingv1alpha1.PodGroupPolicy{
+						Gang: &schedulingv1alpha1.GangSchedulingPolicy{
+							MinCount: 3,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// 1. Test onWorkloadAdd
+	gangCache.onWorkloadAdd(wl)
+	gangId := util.GetId("default", "wl-pg-1")
+	gang := gangCache.gangItems[gangId]
+	assert.NotNil(t, gang)
+	assert.Equal(t, "default/wl-pg-1", gang.Name)
+	assert.Equal(t, 3, gang.MinRequiredNumber)
+	assert.Equal(t, GangFromNativeWorkload, gang.GangFrom)
+
+	// 2. Test onWorkloadUpdate
+	wlNew := wl.DeepCopy()
+	wlNew.Spec.PodGroups[0].Policy.Gang.MinCount = 5
+	gangCache.onWorkloadUpdate(wl, wlNew)
+	gang = gangCache.gangItems[gangId]
+	assert.NotNil(t, gang)
+	assert.Equal(t, 5, gang.MinRequiredNumber)
+
+	// 3. Test onWorkloadDelete
+	gangCache.onWorkloadDelete(wlNew)
+	assert.Nil(t, gangCache.gangItems[gangId])
+
+	// 4. Test onWorkloadDelete with tombstone
+	gangCache.onWorkloadAdd(wl)
+	assert.NotNil(t, gangCache.gangItems[gangId])
+	tombstone := cache.DeletedFinalStateUnknown{
+		Key: "default/wl-a",
+		Obj: wl,
+	}
+	gangCache.onWorkloadDelete(tombstone)
+	assert.Nil(t, gangCache.gangItems[gangId])
 }
