@@ -44,7 +44,14 @@ func GetPodTargetExtendedResources(pod *corev1.Pod, resourceNames ...corev1.Reso
 
 	extendedResources := GetEmptyPodExtendedResources()
 
-	// TODO: count init containers and pod overhead
+	for i := range pod.Spec.InitContainers {
+		container := &pod.Spec.InitContainers[i]
+		r := GetContainerTargetExtendedResources(container, resourceNames...)
+		if r == nil {
+			continue
+		}
+		extendedResources.Containers[container.Name] = *r
+	}
 	for i := range pod.Spec.Containers {
 		container := &pod.Spec.Containers[i]
 		r := GetContainerTargetExtendedResources(container, resourceNames...)
@@ -97,4 +104,9 @@ func GetCPUSetFromPod(podAnnotations map[string]string) (string, error) {
 		return "", err
 	}
 	return podAlloc.CPUSet, nil
+}
+
+func IsSidecarContainer(container *corev1.Container) bool {
+	return container != nil && container.RestartPolicy != nil &&
+		*container.RestartPolicy == corev1.ContainerRestartPolicyAlways
 }

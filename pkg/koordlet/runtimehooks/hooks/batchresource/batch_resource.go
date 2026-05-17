@@ -136,16 +136,46 @@ func (p *plugin) SetPodCPUShares(proto protocol.HooksProtocol) error {
 	}
 
 	milliCPURequest := int64(0)
-	// TODO: count init container and pod overhead
-	for _, c := range extendedResourceSpec.Containers {
-		if c.Requests == nil {
-			continue
+	pod := podCtx.Request.Pod
+	if pod == nil {
+		for _, c := range extendedResourceSpec.Containers {
+			if c.Requests != nil {
+				containerRequest := util.GetBatchMilliCPUFromResourceList(c.Requests)
+				if containerRequest > 0 {
+					milliCPURequest += containerRequest
+				}
+			}
 		}
-		containerRequest := util.GetBatchMilliCPUFromResourceList(c.Requests)
-		if containerRequest <= 0 {
-			continue
+	} else {
+		appCPUMilliReq := int64(0)
+		sidecarCPUMilliReq := int64(0)
+		maxInitCPUMilliReq := int64(0)
+
+		for _, container := range pod.Spec.Containers {
+			if c, ok := extendedResourceSpec.Containers[container.Name]; ok {
+				if c.Requests != nil {
+					containerRequest := util.GetBatchMilliCPUFromResourceList(c.Requests)
+					if containerRequest > 0 {
+						appCPUMilliReq += containerRequest
+					}
+				}
+			}
 		}
-		milliCPURequest += containerRequest
+		for _, container := range pod.Spec.InitContainers {
+			if c, ok := extendedResourceSpec.Containers[container.Name]; ok {
+				if c.Requests != nil {
+					containerRequest := util.GetBatchMilliCPUFromResourceList(c.Requests)
+					if containerRequest > 0 {
+						if util.IsSidecarContainer(&container) {
+							sidecarCPUMilliReq += containerRequest
+						} else {
+							maxInitCPUMilliReq = util.MaxInt64(maxInitCPUMilliReq, containerRequest)
+						}
+					}
+				}
+			}
+		}
+		milliCPURequest = util.MaxInt64(maxInitCPUMilliReq, appCPUMilliReq+sidecarCPUMilliReq)
 	}
 
 	cpuShares := sysutil.MilliCPUToShares(milliCPURequest)
@@ -180,18 +210,80 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 	}
 
 	milliCPULimit := int64(0)
-	// TODO: count init container and pod overhead
-	for _, c := range extendedResourceSpec.Containers {
-		if c.Limits == nil {
-			milliCPULimit = -1
-			break
+	pod := podCtx.Request.Pod
+	if pod == nil {
+		for _, c := range extendedResourceSpec.Containers {
+			if c.Limits == nil {
+				milliCPULimit = -1
+				break
+			}
+			containerLimit := util.GetBatchMilliCPUFromResourceList(c.Limits)
+			if containerLimit <= 0 { // pod unlimited once a container is unlimited
+				milliCPULimit = -1
+				break
+			}
+			milliCPULimit += containerLimit
 		}
-		containerLimit := util.GetBatchMilliCPUFromResourceList(c.Limits)
-		if containerLimit <= 0 { // pod unlimited once a container is unlimited
-			milliCPULimit = -1
-			break
+	} else {
+		appCPUMilliLimit := int64(0)
+		sidecarCPUMilliLimit := int64(0)
+		maxInitCPUMilliLimit := int64(0)
+
+		for _, container := range pod.Spec.Containers {
+			if c, ok := extendedResourceSpec.Containers[container.Name]; ok {
+				if c.Limits == nil {
+					appCPUMilliLimit = -1
+					break
+				}
+				containerLimit := util.GetBatchMilliCPUFromResourceList(c.Limits)
+				if containerLimit <= 0 { // pod unlimited once a container is unlimited
+					appCPUMilliLimit = -1
+					break
+				}
+				appCPUMilliLimit += containerLimit
+			}
 		}
-		milliCPULimit += containerLimit
+
+		if appCPUMilliLimit >= 0 {
+			for _, container := range pod.Spec.InitContainers {
+				if c, ok := extendedResourceSpec.Containers[container.Name]; ok {
+					if c.Limits == nil {
+						if util.IsSidecarContainer(&container) {
+							sidecarCPUMilliLimit = -1
+							break
+						} else {
+							maxInitCPUMilliLimit = -1
+						}
+					} else {
+						containerLimit := util.GetBatchMilliCPUFromResourceList(c.Limits)
+						if containerLimit <= 0 {
+							if util.IsSidecarContainer(&container) {
+								sidecarCPUMilliLimit = -1
+								break
+							} else {
+								maxInitCPUMilliLimit = -1
+							}
+						} else {
+							if util.IsSidecarContainer(&container) {
+								if sidecarCPUMilliLimit >= 0 {
+									sidecarCPUMilliLimit += containerLimit
+								}
+							} else {
+								if maxInitCPUMilliLimit >= 0 {
+									maxInitCPUMilliLimit = util.MaxInt64(maxInitCPUMilliLimit, containerLimit)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if appCPUMilliLimit < 0 || sidecarCPUMilliLimit < 0 || maxInitCPUMilliLimit < 0 {
+			milliCPULimit = -1
+		} else {
+			milliCPULimit = util.MaxInt64(maxInitCPUMilliLimit, appCPUMilliLimit+sidecarCPUMilliLimit)
+		}
 	}
 
 	cfsQuota := sysutil.MilliCPUToQuota(milliCPULimit)
@@ -223,18 +315,80 @@ func (p *plugin) SetPodMemoryLimit(proto protocol.HooksProtocol) error {
 	}
 
 	memoryLimit := int64(0)
-	// TODO: count init container and pod overhead
-	for _, c := range extendedResourceSpec.Containers {
-		if c.Limits == nil {
-			memoryLimit = -1
-			break
+	pod := podCtx.Request.Pod
+	if pod == nil {
+		for _, c := range extendedResourceSpec.Containers {
+			if c.Limits == nil {
+				memoryLimit = -1
+				break
+			}
+			containerLimit := util.GetBatchMemoryFromResourceList(c.Limits)
+			if containerLimit <= 0 { // pod unlimited once a container is unlimited
+				memoryLimit = -1
+				break
+			}
+			memoryLimit += containerLimit
 		}
-		containerLimit := util.GetBatchMemoryFromResourceList(c.Limits)
-		if containerLimit <= 0 { // pod unlimited once a container is unlimited
-			memoryLimit = -1
-			break
+	} else {
+		appMemoryLimit := int64(0)
+		sidecarMemoryLimit := int64(0)
+		maxInitMemoryLimit := int64(0)
+
+		for _, container := range pod.Spec.Containers {
+			if c, ok := extendedResourceSpec.Containers[container.Name]; ok {
+				if c.Limits == nil {
+					appMemoryLimit = -1
+					break
+				}
+				containerLimit := util.GetBatchMemoryFromResourceList(c.Limits)
+				if containerLimit <= 0 { // pod unlimited once a container is unlimited
+					appMemoryLimit = -1
+					break
+				}
+				appMemoryLimit += containerLimit
+			}
 		}
-		memoryLimit += containerLimit
+
+		if appMemoryLimit >= 0 {
+			for _, container := range pod.Spec.InitContainers {
+				if c, ok := extendedResourceSpec.Containers[container.Name]; ok {
+					if c.Limits == nil {
+						if util.IsSidecarContainer(&container) {
+							sidecarMemoryLimit = -1
+							break
+						} else {
+							maxInitMemoryLimit = -1
+						}
+					} else {
+						containerLimit := util.GetBatchMemoryFromResourceList(c.Limits)
+						if containerLimit <= 0 {
+							if util.IsSidecarContainer(&container) {
+								sidecarMemoryLimit = -1
+								break
+							} else {
+								maxInitMemoryLimit = -1
+							}
+						} else {
+							if util.IsSidecarContainer(&container) {
+								if sidecarMemoryLimit >= 0 {
+									sidecarMemoryLimit += containerLimit
+								}
+							} else {
+								if maxInitMemoryLimit >= 0 {
+									maxInitMemoryLimit = util.MaxInt64(maxInitMemoryLimit, containerLimit)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if appMemoryLimit < 0 || sidecarMemoryLimit < 0 || maxInitMemoryLimit < 0 {
+			memoryLimit = -1
+		} else {
+			memoryLimit = util.MaxInt64(maxInitMemoryLimit, appMemoryLimit+sidecarMemoryLimit)
+		}
 	}
 
 	podCtx.Response.Resources.MemoryLimit = ptr.To[int64](memoryLimit)

@@ -323,13 +323,21 @@ func (p *Plugin) getAllContainerPIDs(podMeta *statesinformer.PodMeta) []*contain
 	}
 
 	// for containers
-	containerMap := make(map[string]*corev1.Container, len(pod.Spec.Containers))
+	containerMap := make(map[string]*corev1.Container, len(pod.Spec.Containers)+len(pod.Spec.InitContainers))
+	for i := range pod.Spec.InitContainers {
+		container := &pod.Spec.InitContainers[i]
+		containerMap[container.Name] = container
+	}
 	for i := range pod.Spec.Containers {
 		container := &pod.Spec.Containers[i]
 		containerMap[container.Name] = container
 	}
-	for i := range pod.Status.ContainerStatuses {
-		containerStat := &pod.Status.ContainerStatuses[i]
+
+	allContainerStatuses := make([]corev1.ContainerStatus, 0, len(pod.Status.ContainerStatuses)+len(pod.Status.InitContainerStatuses))
+	allContainerStatuses = append(allContainerStatuses, pod.Status.InitContainerStatuses...)
+	allContainerStatuses = append(allContainerStatuses, pod.Status.ContainerStatuses...)
+
+	for _, containerStat := range allContainerStatuses {
 		if containerStat.State.Running == nil || len(containerStat.ContainerID) <= 0 {
 			klog.V(6).Infof("skip sync core sched cookie for non-running container %s/%s, ID %s, state %+v",
 				podMeta.Key(), containerStat.Name, containerStat.ContainerID, containerStat.State)
@@ -343,7 +351,7 @@ func (p *Plugin) getAllContainerPIDs(podMeta *statesinformer.PodMeta) []*contain
 			continue
 		}
 
-		containerPIDs, err := p.getNormalContainerPIDs(podMeta, containerStat)
+		containerPIDs, err := p.getNormalContainerPIDs(podMeta, &containerStat)
 		if err != nil {
 			klog.V(5).Infof("failed to get container %s PID for pod %s, err: %s",
 				container.Name, podMeta.Key(), err)
