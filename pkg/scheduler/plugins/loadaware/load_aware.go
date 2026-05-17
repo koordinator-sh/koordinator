@@ -70,13 +70,14 @@ var (
 )
 
 type Plugin struct {
-	handle         fwktype.Handle
-	args           *config.LoadAwareSchedulingArgs
-	vectorizer     ResourceVectorizer
-	filterProfile  *usageThresholdsFilterProfile
-	scoreWeights   ResourceVector
-	estimator      estimator.Estimator
-	podAssignCache *podAssignCache
+	handle          fwktype.Handle
+	args            *config.LoadAwareSchedulingArgs
+	vectorizer      ResourceVectorizer
+	filterProfile   *usageThresholdsFilterProfile
+	scoreWeights    ResourceVector
+	estimator       estimator.Estimator
+	podAssignCache  *podAssignCache
+	enableQueueHint bool
 }
 
 func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
@@ -114,13 +115,14 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 		scoreWeights = nil
 	}
 	return &Plugin{
-		handle:         handle,
-		args:           pluginArgs,
-		vectorizer:     vectorizer,
-		filterProfile:  NewUsageThresholdsFilterProfile(pluginArgs, vectorizer),
-		scoreWeights:   scoreWeights,
-		estimator:      estimator,
-		podAssignCache: assignCache,
+		handle:          handle,
+		args:            pluginArgs,
+		vectorizer:      vectorizer,
+		filterProfile:   NewUsageThresholdsFilterProfile(pluginArgs, vectorizer),
+		scoreWeights:    scoreWeights,
+		estimator:       estimator,
+		podAssignCache:  assignCache,
+		enableQueueHint: pluginArgs.EnableQueueHint,
 	}, nil
 }
 
@@ -130,10 +132,18 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("nodemetrics.%v.%v", slov1alpha1.GroupVersion.Version, slov1alpha1.GroupVersion.Group)
-	return []fwktype.ClusterEventWithHint{
+	events := []fwktype.ClusterEventWithHint{
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
-	}, nil
+	}
+
+	if p.enableQueueHint {
+		events = []fwktype.ClusterEventWithHint{
+			{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}, QueueingHintFn: p.isSchedulableAfterPodDeletion},
+			{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}, QueueingHintFn: p.isSchedulableAfterNodeMetricChanged},
+		}
+	}
+	return events, nil
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {

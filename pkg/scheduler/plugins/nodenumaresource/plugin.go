@@ -87,6 +87,7 @@ type Plugin struct {
 	numaScorer             *resourceAllocationScorer
 	resourceManager        ResourceManager
 	topologyOptionsManager TopologyOptionsManager
+	enableQueueHint        bool
 }
 
 type Option func(*pluginOptions)
@@ -164,6 +165,7 @@ func NewWithOptions(args runtime.Object, handle fwktype.Handle, opts ...Option) 
 		numaScorer:             numaScorer,
 		resourceManager:        options.resourceManager,
 		topologyOptionsManager: options.topologyOptionsManager,
+		enableQueueHint:        pluginArgs.EnableQueueHint,
 	}, nil
 }
 
@@ -258,10 +260,18 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("noderesourcetopologies.%v.%v", nrtv1alpha1.SchemeGroupVersion.Version, nrtv1alpha1.SchemeGroupVersion.Group)
-	return []fwktype.ClusterEventWithHint{
+	events := []fwktype.ClusterEventWithHint{
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
-	}, nil
+	}
+
+	if p.enableQueueHint {
+		events = []fwktype.ClusterEventWithHint{
+			{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}, QueueingHintFn: p.isSchedulableAfterPodDeletion},
+			{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}, QueueingHintFn: p.isSchedulableAfterNRTChanged},
+		}
+	}
+	return events, nil
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {

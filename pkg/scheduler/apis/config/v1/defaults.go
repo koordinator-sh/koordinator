@@ -122,6 +122,9 @@ func SetDefaults_LoadAwareSchedulingArgs(obj *LoadAwareSchedulingArgs) {
 			}
 		}
 	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
+	}
 }
 
 // SetDefaults_NodeNUMAResourceArgs sets the default parameters for NodeNUMANodeResource plugin.
@@ -160,6 +163,9 @@ func SetDefaults_NodeNUMAResourceArgs(obj *NodeNUMAResourceArgs) {
 			},
 		}
 	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
+	}
 }
 
 func SetDefaults_ReservationArgs(obj *ReservationArgs) {
@@ -183,6 +189,9 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	}
 	if obj.ResyncIntervalSeconds == 0 {
 		obj.ResyncIntervalSeconds = *defaultResyncIntervalSeconds
+	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
 	}
 }
 
@@ -278,6 +287,9 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 	}
 	if obj.GPUSharedResourceTemplatesConfig == nil {
 		obj.GPUSharedResourceTemplatesConfig = defaultGPUSharedResourceTemplatesConfig
+	}
+	if obj.EnableQueueHint == nil {
+		obj.EnableQueueHint = defaultEnableQueueHint
 	}
 }
 

@@ -79,6 +79,8 @@ type LoadAwareSchedulingArgs struct {
 	// and only set up in custom node annotations,
 	// we should pass these resource names in plugin args explicitly.
 	SupportedResources []corev1.ResourceName `json:"supportedResources,omitempty"`
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint *bool `json:"enableQueueHint,omitempty"`
 }
 
 type LoadAwareSchedulingAggregatedArgs struct {
@@ -131,6 +133,8 @@ type NodeNUMAResourceArgs struct {
 	ScoringStrategy *ScoringStrategy `json:"scoringStrategy,omitempty"`
 	// NUMAScoringStrategy is used to configure the scoring strategy of the NUMANode-level
 	NUMAScoringStrategy *ScoringStrategy `json:"numaScoringStrategy,omitempty"`
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint *bool `json:"enableQueueHint,omitempty"`
 }
 
 // CPUBindPolicy defines the CPU binding policy
@@ -211,6 +215,8 @@ type ReservationArgs struct {
 	// PreAllocationConfig defines the configuration for pre-allocation feature.
 	// +optional
 	PreAllocationConfig *PreAllocationConfig `json:"preAllocationConfig,omitempty"`
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint *bool `json:"enableQueueHint,omitempty"`
 }
 
 // PreAllocationConfig defines the configuration for pre-allocation feature.
@@ -339,6 +345,8 @@ type DeviceShareArgs struct {
 	// GPUShareUnsupportedModels lists GPU vendor-model pairs that do not support GPU sharing (e.g. vNPU).
 	// Pods requesting gpu.shared resources will be filtered out from nodes matching any of these models.
 	GPUShareUnsupportedModels []GPUShareUnsupportedModel `json:"gpuShareUnsupportedModels,omitempty"`
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint *bool `json:"enableQueueHint,omitempty"`
 }
 
 // GPUShareUnsupportedModel identifies a GPU model that does not support GPU sharing.
