@@ -606,7 +606,7 @@ func TestPodGroupManager_PostFilter(t *testing.T) {
 				args: &config.CoschedulingArgs{
 					EnablePreemption: ptr.To[bool](tt.enablePreemption),
 				},
-				cache:               NewGangCache(nil, nil, nil, nil, nil),
+				cache:               NewGangCache(nil, nil, nil, nil, nil, nil),
 				preemptionEvaluator: tt.preemptionEvaluator,
 			}
 			frameworkext.InitDiagnosis(tt.args.state, tt.args.pod)
@@ -660,7 +660,7 @@ func TestAfterPostFilter_SuggestionPropagation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handle := NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil)
-			gangCache := NewGangCache(nil, nil, nil, nil, handle)
+			gangCache := NewGangCache(nil, nil, nil, nil, nil, handle)
 			gangCache.onPodAdd(tt.pod)
 			pgMgr := &PodGroupManager{
 				handle: handle,
@@ -907,7 +907,7 @@ func TestPatchGangPendingPodsCondition(t *testing.T) {
 
 			// Create PodGroupManager
 			args := &config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: 300 * time.Second}}
-			gangCache := NewGangCache(args, nil, nil, nil, handle)
+			gangCache := NewGangCache(args, nil, nil, nil, nil, handle)
 			pgMgr := &PodGroupManager{
 				handle: handle,
 				cache:  gangCache,
@@ -1002,7 +1002,7 @@ func TestPostFilter_PreemptionMessageForNonRootCausePod(t *testing.T) {
 				args: &config.CoschedulingArgs{
 					EnablePreemption: ptr.To[bool](false),
 				},
-				cache: NewGangCache(nil, nil, nil, nil, nil),
+				cache: NewGangCache(nil, nil, nil, nil, nil, nil),
 			}
 			state := framework.NewCycleState()
 			frameworkext.InitDiagnosis(state, tt.pod)
@@ -1067,7 +1067,7 @@ func TestAfterPostFilter_PreemptionDiagnosisFailedMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handle := NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil)
-			gangCache := NewGangCache(nil, nil, nil, nil, handle)
+			gangCache := NewGangCache(nil, nil, nil, nil, nil, handle)
 			gangCache.onPodAdd(tt.pod)
 
 			gangSchedulingContext := &GangSchedulingContext{
@@ -1113,7 +1113,7 @@ func TestAfterPostFilter_PatchConditionOnlyOnce(t *testing.T) {
 
 	// Create PodGroupManager with holder
 	args := &config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: 300 * time.Second}}
-	gangCache := NewGangCache(args, nil, nil, nil, handle)
+	gangCache := NewGangCache(args, nil, nil, nil, nil, handle)
 	pgMgr := &PodGroupManager{
 		handle: handle,
 		cache:  gangCache,
