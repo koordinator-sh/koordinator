@@ -42,7 +42,17 @@ func (h *PodMutatingHandler) mutateByExtendedResources(pod *corev1.Pod) error {
 	extendedResourceSpec := &extension.ExtendedResourceSpec{}
 	containersSpec := map[string]extension.ExtendedResourceContainerSpec{}
 
-	// TODO: count init containers and pod overhead
+	for i := range pod.Spec.InitContainers {
+		container := &pod.Spec.InitContainers[i]
+		r := getContainerExtendedResourcesRequirement(container, []corev1.ResourceName{
+			extension.BatchCPU,
+			extension.BatchMemory,
+		})
+		if r == nil {
+			continue
+		}
+		containersSpec[container.Name] = *r
+	}
 	for i := range pod.Spec.Containers {
 		container := &pod.Spec.Containers[i]
 		r := getContainerExtendedResourcesRequirement(container, []corev1.ResourceName{

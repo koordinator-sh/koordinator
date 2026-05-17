@@ -73,6 +73,7 @@ type PodRequest struct {
 	Resources         *Resources // TODO: support proxy & nri mode
 	ExtendedResources *apiext.ExtendedResourceSpec
 	ContainerTaskIds  map[string][]int32
+	Pod               *corev1.Pod
 }
 
 func (p *PodRequest) FromNri(pod *api.PodSandbox) {
@@ -108,6 +109,7 @@ func (p *PodRequest) FromProxy(req *runtimeapi.PodSandboxHookRequest) {
 }
 
 func (p *PodRequest) FromReconciler(podMeta *statesinformer.PodMeta) {
+	p.Pod = podMeta.Pod
 	p.PodMeta.FromReconciler(podMeta.Pod.ObjectMeta)
 	p.Labels = podMeta.Pod.Labels
 	p.Annotations = podMeta.Pod.Annotations
