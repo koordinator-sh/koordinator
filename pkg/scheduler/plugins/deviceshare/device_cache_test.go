@@ -236,3 +236,63 @@ func Test_nodeDevice_calcFreeWithPreemptible(t *testing.T) {
 		})
 	}
 }
+
+func Test_nodeDevice_calcFreeWithPreemptible_preemptibleCases(t *testing.T) {
+	gpu8Gi := corev1.ResourceList{apiext.ResourceGPUMemory: resource.MustParse("8Gi")}
+	gpu4Gi := corev1.ResourceList{apiext.ResourceGPUMemory: resource.MustParse("4Gi")}
+
+	tests := []struct {
+		name        string
+		deviceTotal deviceResources
+		deviceUsed  deviceResources
+		deviceFree  deviceResources
+		preemptible deviceResources
+		wantFree    deviceResources
+	}{
+		{
+			// minor 0 is in both preemptible and deviceTotal; pod using 4Gi is
+			// preemptible, so after preemption used=0 and full 8Gi is free.
+			name:        "normal preemptible minor frees used resources",
+			deviceTotal: deviceResources{0: gpu8Gi.DeepCopy()},
+			deviceUsed:  deviceResources{0: gpu4Gi.DeepCopy()},
+			deviceFree:  deviceResources{0: gpu4Gi.DeepCopy()},
+			preemptible: deviceResources{0: gpu4Gi.DeepCopy()},
+			wantFree:    deviceResources{0: gpu8Gi.DeepCopy()},
+		},
+		{
+			// minor 99 is in preemptible but absent from deviceTotal — it is a
+			// phantom entry and must not appear in the result.
+			name:        "phantom minor absent from deviceTotal is skipped",
+			deviceTotal: deviceResources{0: gpu8Gi.DeepCopy()},
+			deviceUsed:  deviceResources{0: gpu4Gi.DeepCopy()},
+			deviceFree:  deviceResources{0: gpu4Gi.DeepCopy()},
+			preemptible: deviceResources{
+				0:  gpu4Gi.DeepCopy(),
+				99: gpu8Gi.DeepCopy(), // phantom — not in deviceTotal
+			},
+			wantFree: deviceResources{0: gpu8Gi.DeepCopy()},
+		},
+		{
+			// minor 1 is in preemptible and deviceTotal but absent from
+			// deviceUsed. The preemptible pod is the sole user so after
+			// preemption used=0 and remaining=total (all 8Gi free).
+			name:        "minor absent from deviceUsed treated as zero used",
+			deviceTotal: deviceResources{0: gpu8Gi.DeepCopy(), 1: gpu8Gi.DeepCopy()},
+			deviceUsed:  deviceResources{0: gpu4Gi.DeepCopy()},
+			deviceFree:  deviceResources{0: gpu4Gi.DeepCopy()},
+			preemptible: deviceResources{1: gpu4Gi.DeepCopy()},
+			wantFree:    deviceResources{0: gpu4Gi.DeepCopy(), 1: gpu8Gi.DeepCopy()},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			n := &nodeDevice{
+				deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{schedulingv1alpha1.GPU: tt.deviceTotal},
+				deviceUsed:  map[schedulingv1alpha1.DeviceType]deviceResources{schedulingv1alpha1.GPU: tt.deviceUsed},
+				deviceFree:  map[schedulingv1alpha1.DeviceType]deviceResources{schedulingv1alpha1.GPU: tt.deviceFree},
+			}
+			got := n.calcFreeWithPreemptible(schedulingv1alpha1.GPU, tt.preemptible, nil)
+			assert.Equal(t, tt.wantFree, got)
+		})
+	}
+}
