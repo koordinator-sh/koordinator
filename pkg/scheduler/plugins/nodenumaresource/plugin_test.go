@@ -2258,6 +2258,13 @@ func TestPlugin_PreBind(t *testing.T) {
 			Namespace: "default",
 			Name:      "test-pod-1",
 		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "main-container",
+				},
+			},
+		},
 	}
 
 	_, status := suit.Handle.ClientSet().CoreV1().Pods("default").Create(context.TODO(), pod, metav1.CreateOptions{})
@@ -2286,6 +2293,7 @@ func TestPlugin_PreBind(t *testing.T) {
 		CPUSet: "0-3",
 	}
 	assert.Equal(t, expectResourceStatus, resourceStatus)
+	assert.Equal(t, "[\"koordlet_nri\"]", pod.Annotations["required-plugins.noderesource.dev/container.main-container"])
 }
 
 func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
@@ -2304,6 +2312,13 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 			UID:       uuid.NewUUID(),
 			Namespace: "default",
 			Name:      "test-pod-1",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "main-container",
+				},
+			},
 		},
 	}
 
@@ -2341,6 +2356,7 @@ func TestPlugin_PreBindWithCPUBindPolicyNone(t *testing.T) {
 		PreferredCPUBindPolicy: extension.CPUBindPolicyFullPCPUs,
 	}
 	assert.Equal(t, expectedResourceSpec, resourceSpec)
+	assert.Equal(t, "[\"koordlet_nri\"]", pod.Annotations["required-plugins.noderesource.dev/container.main-container"])
 }
 
 func TestPlugin_PreBindReservation(t *testing.T) {

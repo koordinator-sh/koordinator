@@ -739,6 +739,9 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState fwktype.CycleStat
 		if err := appendResourceSpecIfMissed(object, state, node, &topologyOptions); err != nil {
 			return fwktype.AsStatus(err)
 		}
+		if pod, ok := object.(*corev1.Pod); ok {
+			extension.SetPodRequiredNRIPlugins(pod)
+		}
 	}
 
 	resourceStatus := &extension.ResourceStatus{

@@ -730,6 +730,10 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState fwktype.CycleStat
 		return fwktype.NewStatus(fwktype.Error, err.Error())
 	}
 
+	if pod, ok := object.(*corev1.Pod); ok {
+		apiext.SetPodRequiredNRIPlugins(pod)
+	}
+
 	if k8sfeature.DefaultMutableFeatureGate.Enabled(features.DevicePluginAdaption) {
 		if err := p.adaptForDevicePlugin(ctx, object, state.allocationResult, nodeName); err != nil {
 			return fwktype.AsStatus(err)
