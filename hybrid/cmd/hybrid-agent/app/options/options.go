@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	config "hybrid/config/collector"
 	"hybrid/pkg/collector"
@@ -51,11 +52,20 @@ type AgentOptions struct {
 
 	// OutputDir is the directory where prediction CSV files are stored.
 	OutputDir string
+
+	// SaveModelResults controls whether raw model result JSON responses from the
+	// algorithm service are persisted to disk under <OutputDir>/hybrid-results/.
+	SaveModelResults bool
+
+	// ModelResultsRetention is how long model result files are kept before
+	// the cleanup goroutine deletes them.  Defaults to 24h.
+	ModelResultsRetention time.Duration
 }
 
 func NewAgentOptions() *AgentOptions {
 	opts := &AgentOptions{
-		OutputDir: constants.DefaultOutputDir,
+		OutputDir:             constants.DefaultOutputDir,
+		ModelResultsRetention: 24 * time.Hour,
 	}
 
 	if home := homedir.HomeDir(); home != "" {
@@ -77,6 +87,12 @@ func (o *AgentOptions) AddFlags(fs *pflag.FlagSet) {
 
 	fs.StringVar(&o.OutputDir, "output-dir", o.OutputDir,
 		"Directory to store downloaded prediction CSV files.")
+
+	fs.BoolVar(&o.SaveModelResults, "save-model-results", o.SaveModelResults,
+		"Persist raw model result JSON responses to <output-dir>/hybrid-results/ as gzip files.")
+
+	fs.DurationVar(&o.ModelResultsRetention, "model-results-retention", o.ModelResultsRetention,
+		"How long to keep model result files before they are deleted (e.g. 24h, 48h).")
 }
 
 func (o *AgentOptions) Validate() error {
@@ -131,7 +147,7 @@ func (o *AgentOptions) NewAgent() (*Agent, error) {
 
 	downloadService := predictor.NewDownloadService(algoClient, o.OutputDir)
 
-	fetchService := predictor.NewFetchService(algoClient)
+	fetchService := predictor.NewFetchService(algoClient, o.OutputDir, o.SaveModelResults, o.ModelResultsRetention)
 
 	hybridManager := controller.NewManager(options.ManagerOptions{
 		Client:            k8sClient,

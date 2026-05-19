@@ -28,6 +28,11 @@ agent:
         - ALL
   extraArgs:
     - "--exclude-namespaces=hybrid-system"
+  # 模型返回原始 JSON 数据的持久化配置
+  # 启用后将数据保存至 /data/hybrid-results/, 目录结构与 Prometheus 导出保持一致
+  modelResults:
+    save: false         # 是否持久化模型返回的原始 JSON 数据
+    retentionHours: 24h # 文件保留时长, 超期自动清理
 
 config:
   prometheus:

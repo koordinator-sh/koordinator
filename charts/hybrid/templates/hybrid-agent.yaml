@@ -31,6 +31,13 @@ spec:
           command: [ "hybrid-agent" ]
           args:
             - --exclude-namespaces=hybrid-system
+            {{- if .Values.agent.modelResults.save }}
+            - --save-model-results=true
+            - --model-results-retention={{ .Values.agent.modelResults.retentionHours }}
+            {{- end }}
+            {{- range .Values.agent.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
           env:
             - name: AI_SERVER
               valueFrom:
