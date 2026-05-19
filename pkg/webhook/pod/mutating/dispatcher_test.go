@@ -105,10 +105,24 @@ func TestMultiSchedulerDispatch(t *testing.T) {
 			},
 			expectedSchedulerName: SchedulerBatch,
 		},
-		{
+ 		{
 			name: "Default workload",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{},
+			},
+			expectedSchedulerName: SchedulerDefault,
+		},
+		{
+			name: "Explicit koord-scheduler workload",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					SchedulerName: SchedulerDefault,
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"koordinator.sh/qosClass": "BE",
+					},
+				},
 			},
 			expectedSchedulerName: SchedulerDefault,
 		},
