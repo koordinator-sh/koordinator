@@ -1,6 +1,28 @@
+# Build stage: cross-compile for target arch (CGO disabled)
+FROM golang:1.25-alpine AS builder
+
+ARG TARGETARCH=amd64
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
+    go build -ldflags="-s -w" \
+    -o bin/hybrid-agent cmd/hybrid-agent/main.go
+
+# Final stage: matches the compiled binary's target platform
 FROM alpine:3.20
 
-COPY ./bin/hybrid-agent /usr/local/bin/
+RUN apk add --no-cache tzdata && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    apk del tzdata
+
+COPY --from=builder /app/bin/hybrid-agent /usr/local/bin/
 
 WORKDIR /
 
