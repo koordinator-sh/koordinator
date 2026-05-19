@@ -157,6 +157,45 @@ func TestBuildSandboxSchedulingHint(t *testing.T) {
 			},
 			wantNil: true,
 		},
+		{
+			name: "gVisor pod with runtimeclass unavailable",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelSandboxRuntimeClass: "gvisor",
+					},
+				},
+			},
+			diagnosis: &Diagnosis{
+				ScheduleDiagnosis: &ScheduleDiagnosis{
+					NodeFailedDetails: v1alpha1.NodeFailedDetails{
+						&v1alpha1.NodeFailedDetail{
+							NodeFailedStatus: v1alpha1.NodeFailedStatus{
+								Reason: "runtimeclass not found: gvisor",
+							},
+						},
+					},
+				},
+			},
+			wantNil:      false,
+			wantReason:   "runtimeClassUnavailable",
+			wantNextStep: "use-different-node-pool",
+			wantRuntime:  extension.SandboxRuntimeGVisor,
+		},
+		{
+			name: "nil ScheduleDiagnosis produces no hint",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelSandboxRuntimeClass: "gvisor",
+					},
+				},
+			},
+			diagnosis: &Diagnosis{
+				ScheduleDiagnosis: nil,
+			},
+			wantNil: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -224,4 +263,25 @@ func TestSetSandboxSchedulingHint_NilAnnotations(t *testing.T) {
 	require.NoError(t, SetSandboxSchedulingHint(pod, hint))
 	assert.NotNil(t, pod.Annotations)
 	assert.NotEmpty(t, pod.Annotations[extension.AnnotationSandboxSchedulingHint])
+}
+
+func TestSandboxDiagnosisProcessor_NilPod(t *testing.T) {
+	// Should not panic with nil TargetPod
+	sandboxDiagnosisProcessor(&Diagnosis{TargetPod: nil})
+}
+
+func TestSandboxDiagnosisProcessor_NonSandboxPod(t *testing.T) {
+	// Should return early without logging for non-sandbox pods
+	sandboxDiagnosisProcessor(&Diagnosis{
+		TargetPod: &corev1.Pod{
+			Spec: corev1.PodSpec{RuntimeClassName: strPtr("runc")},
+		},
+		ScheduleDiagnosis: &ScheduleDiagnosis{
+			NodeFailedDetails: v1alpha1.NodeFailedDetails{
+				&v1alpha1.NodeFailedDetail{
+					NodeFailedStatus: v1alpha1.NodeFailedStatus{Reason: "insufficient cpu"},
+				},
+			},
+		},
+	})
 }
