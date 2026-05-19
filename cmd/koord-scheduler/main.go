@@ -25,6 +25,7 @@ import (
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/arbitrator"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/defaultprebind"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/deviceshare"
@@ -43,6 +44,7 @@ import (
 )
 
 var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
+	arbitrator.Name:              arbitrator.New,
 	loadaware.Name:               loadaware.New,
 	nodenumaresource.Name:        nodenumaresource.New,
 	reservation.Name:             reservation.New,
