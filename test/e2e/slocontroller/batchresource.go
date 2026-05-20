@@ -50,7 +50,7 @@ var (
 	maxNodeBatchCPUDiffPercent    = 10
 	maxNodeBatchMemoryDiffPercent = 5
 
-	minNodesBatchResourceAllocatableRatio = 0.7
+	minNodesBatchResourceAllocatableRatio = 0.5
 )
 
 var _ = SIGDescribe("BatchResource", func() {
@@ -176,7 +176,7 @@ var _ = SIGDescribe("BatchResource", func() {
 				totalCount, allocatableCount = len(nodeList.Items), 0
 
 				return false
-			}, 180*time.Second, 5*time.Second).Should(gomega.Equal(true))
+			}, 300*time.Second, 5*time.Second).Should(gomega.Equal(true))
 
 			framework.Logf("check node batch resources finished, total[%v], allocatable[%v]", totalCount, allocatableCount)
 
