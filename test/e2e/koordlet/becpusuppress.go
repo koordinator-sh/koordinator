@@ -93,7 +93,7 @@ var _ = SIGDescribe("BECPUSuppress", func() {
 			// Poll for cgroup cpu.cfs_quota_us
 			gomega.Eventually(func() bool {
 				cmd := `path=$(cat /proc/self/cgroup | grep ':cpu,' | head -1 | cut -d: -f3); if [ -z "$path" ]; then echo NOT_SUPPORTED; exit 0; fi; if [ ! -f "/sys/fs/cgroup/cpu$path/cpu.cfs_quota_us" ]; then echo NOT_SUPPORTED; exit 0; fi; cat /sys/fs/cgroup/cpu$path/cpu.cfs_quota_us`
-				out, err := f.ExecCommandInContainerWithFullOutput(podName, "busybox", "/bin/sh", "-c", cmd)
+				out, _, err := f.ExecCommandInContainerWithFullOutput(podName, "busybox", "/bin/sh", "-c", cmd)
 				if err != nil {
 					return false
 				}
@@ -166,7 +166,7 @@ var _ = SIGDescribe("BECPUSuppress", func() {
 			// Poll for cgroup cpu.cfs_quota_us to be suppressed
 			gomega.Eventually(func() bool {
 				cmd := `path=$(cat /proc/self/cgroup | grep ':cpu,' | head -1 | cut -d: -f3); if [ -z "$path" ]; then echo NOT_SUPPORTED; exit 0; fi; if [ ! -f "/sys/fs/cgroup/cpu$path/cpu.cfs_quota_us" ]; then echo NOT_SUPPORTED; exit 0; fi; cat /sys/fs/cgroup/cpu$path/cpu.cfs_quota_us`
-				out, err := f.ExecCommandInContainerWithFullOutput(podName, "busybox", "/bin/sh", "-c", cmd)
+				out, _, err := f.ExecCommandInContainerWithFullOutput(podName, "busybox", "/bin/sh", "-c", cmd)
 				if err != nil {
 					return false
 				}
@@ -191,7 +191,7 @@ var _ = SIGDescribe("BECPUSuppress", func() {
 			// Poll for cgroup cpu.cfs_quota_us to be restored to -1
 			gomega.Eventually(func() bool {
 				cmd := `path=$(cat /proc/self/cgroup | grep ':cpu,' | head -1 | cut -d: -f3); if [ -z "$path" ]; then echo NOT_SUPPORTED; exit 0; fi; if [ ! -f "/sys/fs/cgroup/cpu$path/cpu.cfs_quota_us" ]; then echo NOT_SUPPORTED; exit 0; fi; cat /sys/fs/cgroup/cpu$path/cpu.cfs_quota_us`
-				out, err := f.ExecCommandInContainerWithFullOutput(podName, "busybox", "/bin/sh", "-c", cmd)
+				out, _, err := f.ExecCommandInContainerWithFullOutput(podName, "busybox", "/bin/sh", "-c", cmd)
 				if err != nil {
 					return false
 				}
