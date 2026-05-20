@@ -42,19 +42,21 @@ type Downloader interface {
 	DownloadModel6(ctx context.Context) error
 }
 
-// Fetcher is the interface for fetching the latest prediction result from the AI server.
+// Fetcher is the interface for fetching prediction results from the AI server.
+// taskID 为触发本次 sync 的任务 ID；当 FetchService.useTaskID=true 时会附加到请求 URL，
+// 确保多集群场景下只取本集群的结果。传空串时退回为取最新结果。
 type Fetcher interface {
-	// FetchModel4Results fetches the latest classify result.
-	FetchModel4Results(ctx context.Context) ([]PodRecord, error)
+	// FetchModel4Results fetches the classify result for the given taskID.
+	FetchModel4Results(ctx context.Context, taskID string) ([]PodRecord, error)
 
-	// FetchModel5ShortResults fetches the latest replica prediction results (MODEL5 short).
-	FetchModel5ShortResults(ctx context.Context) ([]ReplicasShortRecord, error)
+	// FetchModel5ShortResults fetches the short-term replica prediction result for the given taskID.
+	FetchModel5ShortResults(ctx context.Context, taskID string) ([]ReplicasShortRecord, error)
 
-	// FetchModel5LongResults fetches the latest replica prediction results (MODEL5 long).
-	FetchModel5LongResults(ctx context.Context) ([]ReplicasLongRecord, error)
+	// FetchModel5LongResults fetches the long-term replica prediction result for the given taskID.
+	FetchModel5LongResults(ctx context.Context, taskID string) ([]ReplicasLongRecord, error)
 
-	// FetchModel6Results fetches the latest interference analysis result (MODEL6).
-	FetchModel6Results(ctx context.Context) ([]InterferenceRecord, error)
+	// FetchModel6Results fetches the interference analysis result for the given taskID.
+	FetchModel6Results(ctx context.Context, taskID string) ([]InterferenceRecord, error)
 }
 
 type Record struct {

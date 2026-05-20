@@ -29,11 +29,14 @@ const controllerName = "replicas-controller"
 
 // Controller syncs AI replica prediction results (short-term and long-term)
 // onto Kubernetes workload annotations.
+// Short-term (Model5Short) and long-term (Model5Long) tasks are monitored
+// independently: each triggers only its own sync when it completes.
 type Controller struct {
 	patchers          controller.WorkloadPatcherRegistry
 	downloader        predictor.Downloader
 	fetcher           predictor.Fetcher
-	notify            <-chan algorithm.TaskEvent // 订阅 Model5 运行成功事件
+	notifyShort       <-chan algorithm.TaskEvent // 订阅 Model5Short 运行成功事件
+	notifyLong        <-chan algorithm.TaskEvent // 订阅 Model5Long 运行成功事件
 	excludeNamespaces sets.Set[string]
 	outputDir         string
 }
@@ -47,7 +50,8 @@ func (c *Controller) Start(ctx context.Context, mgr *controller.Manager) error {
 	c.patchers = controller.NewWorkloadPatcherRegistry(mgr.Client)
 	c.downloader = mgr.DownloadService
 	c.fetcher = mgr.FetchService
-	c.notify = mgr.Notifier.Subscribe(algorithm.Model5)
+	c.notifyShort = mgr.Notifier.Subscribe(algorithm.Model5Short)
+	c.notifyLong = mgr.Notifier.Subscribe(algorithm.Model5Long)
 	c.excludeNamespaces = mgr.ExcludeNamespaces
 	c.outputDir = mgr.OutputDir
 
@@ -58,44 +62,56 @@ func (c *Controller) Start(ctx context.Context, mgr *controller.Manager) error {
 		case <-ctx.Done():
 			klog.Info("ReplicasController stopping")
 			return nil
-		case event, ok := <-c.notify:
+		case event, ok := <-c.notifyShort:
 			if !ok {
 				return nil
 			}
-			klog.InfoS("ReplicasController received model5 task completion", "taskID", event.TaskID)
-			if err := c.sync(ctx); err != nil {
-				klog.ErrorS(err, "ReplicasController sync failed", "taskID", event.TaskID)
+			klog.InfoS("ReplicasController received model5 short task completion", "taskID", event.TaskID)
+			if err := c.syncShort(ctx, event.TaskID); err != nil {
+				klog.ErrorS(err, "ReplicasController short sync failed", "taskID", event.TaskID)
+			}
+		case event, ok := <-c.notifyLong:
+			if !ok {
+				return nil
+			}
+			klog.InfoS("ReplicasController received model5 long task completion", "taskID", event.TaskID)
+			if err := c.syncLong(ctx, event.TaskID); err != nil {
+				klog.ErrorS(err, "ReplicasController long sync failed", "taskID", event.TaskID)
 			}
 		}
 	}
 }
 
-// sync executes one full fetch → annotate cycle for both short and long term predictions.
-func (c *Controller) sync(ctx context.Context) error {
+// syncShort fetches short-term predictions and applies them to workload annotations.
+func (c *Controller) syncShort(ctx context.Context, taskID string) error {
 	start := time.Now()
 
-	// Fetch short-term predictions from algorithm service
-	shortRecords, err := c.fetcher.FetchModel5ShortResults(ctx)
+	records, err := c.fetcher.FetchModel5ShortResults(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch model5 short results: %w", err)
 	}
 
-	// Apply short-term predictions (30min)
-	shortCount, shortErrCount := c.applyShortTermPredictionsFromRecords(ctx, shortRecords)
+	count, errCount := c.applyShortTermPredictionsFromRecords(ctx, records)
 
-	// Fetch long-term predictions from algorithm service
-	longRecords, err := c.fetcher.FetchModel5LongResults(ctx)
+	klog.InfoS("Short-term replica prediction sync complete",
+		"total", count, "errors", errCount, "elapsed", time.Since(start))
+
+	return nil
+}
+
+// syncLong fetches long-term predictions and applies them to workload annotations.
+func (c *Controller) syncLong(ctx context.Context, taskID string) error {
+	start := time.Now()
+
+	records, err := c.fetcher.FetchModel5LongResults(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch model5 long results: %w", err)
 	}
 
-	// Apply long-term predictions (24h)
-	longCount, longErrCount := c.applyLongTermPredictionsFromRecords(ctx, longRecords)
+	count, errCount := c.applyLongTermPredictionsFromRecords(ctx, records)
 
-	klog.InfoS("Replica prediction sync complete",
-		"shortTotal", shortCount, "shortErrors", shortErrCount,
-		"longTotal", longCount, "longErrors", longErrCount,
-		"elapsed", time.Since(start))
+	klog.InfoS("Long-term replica prediction sync complete",
+		"total", count, "errors", errCount, "elapsed", time.Since(start))
 
 	return nil
 }

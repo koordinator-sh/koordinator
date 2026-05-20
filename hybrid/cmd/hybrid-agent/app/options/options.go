@@ -60,12 +60,34 @@ type AgentOptions struct {
 	// ModelResultsRetention is how long model result files are kept before
 	// the cleanup goroutine deletes them.  Defaults to 24h.
 	ModelResultsRetention time.Duration
+
+	// UseModelResultTaskID controls whether model result API calls include the
+	// task_id query parameter. When true (default), each cluster fetches only its
+	// own results, preventing result cross-contamination in multi-cluster setups.
+	UseModelResultTaskID bool
+
+	// PollInterval is the status polling interval for Model4, Model5Short, and Model6 tasks.
+	PollInterval time.Duration
+
+	// PollTimeout is the maximum wait time for Model4, Model5Short, and Model6 tasks.
+	PollTimeout time.Duration
+
+	// LongPollInterval is the status polling interval for Model5Long tasks.
+	LongPollInterval time.Duration
+
+	// LongPollTimeout is the maximum wait time for Model5Long tasks (should exceed 24h).
+	LongPollTimeout time.Duration
 }
 
 func NewAgentOptions() *AgentOptions {
 	opts := &AgentOptions{
 		OutputDir:             constants.DefaultOutputDir,
 		ModelResultsRetention: 24 * time.Hour,
+		UseModelResultTaskID:  true,
+		PollInterval:          10 * time.Second,
+		PollTimeout:           120 * time.Minute,
+		LongPollInterval:      15 * time.Minute,
+		LongPollTimeout:       30 * time.Hour,
 	}
 
 	if home := homedir.HomeDir(); home != "" {
@@ -93,6 +115,21 @@ func (o *AgentOptions) AddFlags(fs *pflag.FlagSet) {
 
 	fs.DurationVar(&o.ModelResultsRetention, "model-results-retention", o.ModelResultsRetention,
 		"How long to keep model result files before they are deleted (e.g. 24h, 48h).")
+
+	fs.BoolVar(&o.UseModelResultTaskID, "use-model-result-task-id", o.UseModelResultTaskID,
+		"Fetch model results by task ID instead of global latest. Recommended when multiple clusters share the AI server.")
+
+	fs.DurationVar(&o.PollInterval, "poll-interval", o.PollInterval,
+		"Status polling interval for Model4, Model5Short, and Model6 tasks (e.g. 10s, 30s).")
+
+	fs.DurationVar(&o.PollTimeout, "poll-timeout", o.PollTimeout,
+		"Maximum wait time for Model4, Model5Short, and Model6 tasks (e.g. 120m, 2h).")
+
+	fs.DurationVar(&o.LongPollInterval, "long-poll-interval", o.LongPollInterval,
+		"Status polling interval for Model5Long tasks (e.g. 15m, 20m).")
+
+	fs.DurationVar(&o.LongPollTimeout, "long-poll-timeout", o.LongPollTimeout,
+		"Maximum wait time for Model5Long tasks; should exceed 24h (e.g. 30h, 48h).")
 }
 
 func (o *AgentOptions) Validate() error {
@@ -143,11 +180,16 @@ func (o *AgentOptions) NewAgent() (*Agent, error) {
 	notifier := algorithm.NewNotifier()
 
 	// Watcher: 异步轮询任务状态, 成功后调用 notifier.notify
-	watcher := algorithm.NewWatcher(algoClient, notifier)
+	watcher := algorithm.NewWatcher(algoClient, notifier, algorithm.WatcherOptions{
+		PollInterval:     o.PollInterval,
+		PollTimeout:      o.PollTimeout,
+		LongPollInterval: o.LongPollInterval,
+		LongPollTimeout:  o.LongPollTimeout,
+	})
 
 	downloadService := predictor.NewDownloadService(algoClient, o.OutputDir)
 
-	fetchService := predictor.NewFetchService(algoClient, o.OutputDir, o.SaveModelResults, o.ModelResultsRetention)
+	fetchService := predictor.NewFetchService(algoClient, o.OutputDir, o.SaveModelResults, o.ModelResultsRetention, o.UseModelResultTaskID)
 
 	hybridManager := controller.NewManager(options.ManagerOptions{
 		Client:            k8sClient,

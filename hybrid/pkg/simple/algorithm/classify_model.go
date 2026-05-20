@@ -43,16 +43,24 @@ func (c *Client) RunAlgorithm4Status(ctx context.Context, taskID string) (*Model
 	return &resp, c.do(req, &resp)
 }
 
-func (c *Client) Algorithm4Result(ctx context.Context, w io.Writer) error {
-	req, err := c.newRequest(ctx, http.MethodGet, model4ResultsPath, nil, "")
+func (c *Client) Algorithm4Result(ctx context.Context, taskID string, w io.Writer) error {
+	path := model4ResultsPath
+	if taskID != "" {
+		path += "?task_id=" + url.QueryEscape(taskID)
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return err
 	}
 	return c.doDownload(req, w)
 }
 
-func (c *Client) Algorithm4CSV(ctx context.Context, w io.Writer) error {
-	req, err := c.newRequest(ctx, http.MethodGet, model4CSVPath, nil, "")
+func (c *Client) Algorithm4CSV(ctx context.Context, taskID string, w io.Writer) error {
+	path := model4CSVPath
+	if taskID != "" {
+		path += "?task_id=" + url.QueryEscape(taskID)
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return err
 	}

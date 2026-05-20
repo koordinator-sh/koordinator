@@ -35,6 +35,13 @@ spec:
             - --save-model-results=true
             - --model-results-retention={{ .Values.agent.modelResults.retentionHours }}
             {{- end }}
+            - --use-model-result-task-id={{ .Values.agent.modelResults.useTaskID }}
+            {{- with .Values.agent.watcher }}
+            - --poll-interval={{ .pollInterval }}
+            - --poll-timeout={{ .pollTimeout }}
+            - --long-poll-interval={{ .longPollInterval }}
+            - --long-poll-timeout={{ .longPollTimeout }}
+            {{- end }}
             {{- range .Values.agent.extraArgs }}
             - {{ . | quote }}
             {{- end }}

@@ -56,32 +56,48 @@ func (c *Client) RunAlgorithm5Status(ctx context.Context, taskID string) (*Model
 	return &resp, c.do(req, &resp)
 }
 
-func (c *Client) Algorithm5ShortResult(ctx context.Context, w io.Writer) error {
-	req, err := c.newRequest(ctx, http.MethodGet, model5ShortResultPath, nil, "")
+func (c *Client) Algorithm5ShortResult(ctx context.Context, taskID string, w io.Writer) error {
+	path := model5ShortResultPath
+	if taskID != "" {
+		path += "?task_id=" + url.QueryEscape(taskID)
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return err
 	}
 	return c.doDownload(req, w)
 }
 
-func (c *Client) Algorithm5LongResult(ctx context.Context, w io.Writer) error {
-	req, err := c.newRequest(ctx, http.MethodGet, model5LongResultPath, nil, "")
+func (c *Client) Algorithm5LongResult(ctx context.Context, taskID string, w io.Writer) error {
+	path := model5LongResultPath
+	if taskID != "" {
+		path += "?task_id=" + url.QueryEscape(taskID)
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return err
 	}
 	return c.doDownload(req, w)
 }
 
-func (c *Client) Algorithm5ShortCSV(ctx context.Context, w io.Writer) error {
-	req, err := c.newRequest(ctx, http.MethodGet, model5ShortCSVPath, nil, "")
+func (c *Client) Algorithm5ShortCSV(ctx context.Context, taskID string, w io.Writer) error {
+	path := model5ShortCSVPath
+	if taskID != "" {
+		path += "?task_id=" + url.QueryEscape(taskID)
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return err
 	}
 	return c.doDownload(req, w)
 }
 
-func (c *Client) Algorithm5LongCSV(ctx context.Context, w io.Writer) error {
-	req, err := c.newRequest(ctx, http.MethodGet, model5LongCSVPath, nil, "")
+func (c *Client) Algorithm5LongCSV(ctx context.Context, taskID string, w io.Writer) error {
+	path := model5LongCSVPath
+	if taskID != "" {
+		path += "?task_id=" + url.QueryEscape(taskID)
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return err
 	}

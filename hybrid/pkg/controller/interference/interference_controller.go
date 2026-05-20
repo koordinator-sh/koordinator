@@ -62,7 +62,7 @@ func (c *Controller) Start(ctx context.Context, mgr *controller.Manager) error {
 				return nil
 			}
 			klog.InfoS("InterferenceController received model6 task completion", "taskID", event.TaskID)
-			if err := c.sync(ctx); err != nil {
+			if err := c.sync(ctx, event.TaskID); err != nil {
 				klog.ErrorS(err, "InterferenceController sync failed", "taskID", event.TaskID)
 			}
 		}
@@ -70,11 +70,11 @@ func (c *Controller) Start(ctx context.Context, mgr *controller.Manager) error {
 }
 
 // sync executes one full fetch → annotate cycle for interference analysis.
-func (c *Controller) sync(ctx context.Context) error {
+func (c *Controller) sync(ctx context.Context, taskID string) error {
 	start := time.Now()
 
 	// Fetch MODEL6 interference analysis results from algorithm service
-	records, err := c.fetcher.FetchModel6Results(ctx)
+	records, err := c.fetcher.FetchModel6Results(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch model6 results: %w", err)
 	}

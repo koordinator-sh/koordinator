@@ -64,7 +64,7 @@ func (c *Controller) Start(ctx context.Context, mgr *controller.Manager) error {
 				return nil
 			}
 			klog.InfoS("ClassifyController received model4 task completion", "taskID", event.TaskID)
-			if err := c.sync(ctx); err != nil {
+			if err := c.sync(ctx, event.TaskID); err != nil {
 				klog.ErrorS(err, "ClassifyController sync failed", "taskID", event.TaskID)
 			}
 		}
@@ -72,11 +72,11 @@ func (c *Controller) Start(ctx context.Context, mgr *controller.Manager) error {
 }
 
 // sync executes one full download → parse → annotate cycle.
-func (c *Controller) sync(ctx context.Context) error {
+func (c *Controller) sync(ctx context.Context, taskID string) error {
 	start := time.Now()
 
 	// 获取 MODEL4 的结果
-	records, err := c.fetcher.FetchModel4Results(ctx)
+	records, err := c.fetcher.FetchModel4Results(ctx, taskID)
 	if err != nil {
 		return fmt.Errorf("failed to parse: %w", err)
 	}

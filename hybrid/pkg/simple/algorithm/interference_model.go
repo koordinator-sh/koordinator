@@ -43,16 +43,24 @@ func (c *Client) RunAlgorithm6Status(ctx context.Context, taskID string) (*Model
 	return &resp, c.do(req, &resp)
 }
 
-func (c *Client) Algorithm6Result(ctx context.Context, w io.Writer) error {
-	req, err := c.newRequest(ctx, http.MethodGet, model6ResultsPath, nil, "")
+func (c *Client) Algorithm6Result(ctx context.Context, taskID string, w io.Writer) error {
+	path := model6ResultsPath
+	if taskID != "" {
+		path += "?task_id=" + url.QueryEscape(taskID)
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return err
 	}
 	return c.doDownload(req, w)
 }
 
-func (c *Client) Algorithm6CSV(ctx context.Context, w io.Writer) error {
-	req, err := c.newRequest(ctx, http.MethodGet, model6CSVPath, nil, "")
+func (c *Client) Algorithm6CSV(ctx context.Context, taskID string, w io.Writer) error {
+	path := model6CSVPath
+	if taskID != "" {
+		path += "?task_id=" + url.QueryEscape(taskID)
+	}
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return err
 	}

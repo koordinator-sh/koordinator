@@ -33,6 +33,20 @@ agent:
   modelResults:
     save: false         # 是否持久化模型返回的原始 JSON 数据
     retentionHours: 24h # 文件保留时长, 超期自动清理
+    # useTaskID: 是否在拉取模型结果时携带 task_id 查询参数
+    # true（默认）: 按触发本次推理的任务 ID 取结果，多集群共用同一 AI 服务时
+    #              可避免拿到其他集群的推理结果
+    # false: 取全局最新结果（单集群场景可使用）
+    useTaskID: true
+
+  # 任务状态轮询配置
+  # 短期/其他模型（Model4、Model5Short、Model6）使用 pollInterval/pollTimeout
+  # 长期模型（Model5Long）使用 longPollInterval/longPollTimeout
+  watcher:
+    pollInterval: 10s    # 短期/其他任务状态查询间隔（建议 10s~30s）
+    pollTimeout: 120m    # 短期/其他任务最长等待时间（超时视为失败）
+    longPollInterval: 15m # 长期任务（Model5Long）状态查询间隔（建议 10m~20m）
+    longPollTimeout: 30h  # 长期任务最长等待时间（长期训练通常超过 24h，需配置足够大）
 
 config:
   prometheus:

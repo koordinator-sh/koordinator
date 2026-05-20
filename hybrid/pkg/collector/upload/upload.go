@@ -352,41 +352,50 @@ func (s *Service) triggerAlgorithm(sig algorithm.Signal) error {
 
 	switch algorithm.ModelType(sig.Model) {
 	case algorithm.Model4:
+		if s.watcher.IsRunning(algorithm.Model4) {
+			klog.Infof("model4 previous task still running, skipping trigger")
+			return nil
+		}
 		resp, err := s.client.RunAlgorithm4(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to run model4 algorithm: %w", err)
 		}
 		klog.Infof("model4 algorithm started, taskID=%s", resp.TaskID)
-		// 启动异步状态轮询
 		s.watcher.Watch(s.mgrCtx, algorithm.Model4, resp.TaskID)
 
 	case algorithm.Model5:
-		respShort, err := s.client.RunAlgorithm5Short(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to run model5 algorithm for short: %w", err)
+		if s.watcher.IsRunning(algorithm.Model5Short) {
+			klog.Infof("model5 short previous task still running, skipping trigger")
+		} else {
+			respShort, err := s.client.RunAlgorithm5Short(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to run model5 algorithm for short: %w", err)
+			}
+			klog.Infof("model5 algorithm for short started, taskID=%s", respShort.TaskID)
+			s.watcher.Watch(s.mgrCtx, algorithm.Model5Short, respShort.TaskID)
 		}
-		klog.Infof("model5 algorithm for short started, taskID=%s", respShort.TaskID)
-		// 启动异步状态轮询
-		s.watcher.Watch(s.mgrCtx, algorithm.Model5, respShort.TaskID)
 
-		respLong, err := s.client.RunAlgorithm5Long(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to run model5 algorithm for long: %w", err)
+		if s.watcher.IsRunning(algorithm.Model5Long) {
+			klog.Infof("model5 long previous task still running, skipping trigger")
+		} else {
+			respLong, err := s.client.RunAlgorithm5Long(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to run model5 algorithm for long: %w", err)
+			}
+			klog.Infof("model5 algorithm for long started, taskID=%s", respLong.TaskID)
+			s.watcher.Watch(s.mgrCtx, algorithm.Model5Long, respLong.TaskID)
 		}
-		klog.Infof("model5 algorithm for long started, taskID=%s", respLong.TaskID)
-
-		// Model5 Short 和 Long 各自独立监听,任意一个完成都会触发 Controller sync
-		// Watcher 内同一 model 同时只跑一个协程, long 的 Watch 在 short 完成后才开始生效
-		// 启动异步状态轮询
-		s.watcher.Watch(s.mgrCtx, algorithm.Model5, respShort.TaskID)
 
 	case algorithm.Model6:
+		if s.watcher.IsRunning(algorithm.Model6) {
+			klog.Infof("model6 previous task still running, skipping trigger")
+			return nil
+		}
 		resp, err := s.client.RunAlgorithm6(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to run model6 algorithm: %w", err)
 		}
 		klog.Infof("model6 algorithm started, taskID=%s", resp.TaskID)
-		// 启动异步状态轮询
 		s.watcher.Watch(s.mgrCtx, algorithm.Model6, resp.TaskID)
 
 	default:

@@ -75,21 +75,21 @@ func (s *DownloadService) Download(ctx context.Context) error {
 func (s *DownloadService) DownloadModel4(ctx context.Context) error {
 	dest := filepath.Join(s.outputDir, constants.DefaultPredictionFile)
 	return s.atomicDownload(ctx, dest, func(ctx context.Context, f *os.File) error {
-		return s.client.Algorithm4CSV(ctx, f)
+		return s.client.Algorithm4CSV(ctx, "", f)
 	})
 }
 
 func (s *DownloadService) DownloadModel5(ctx context.Context) error {
 	shortDest := filepath.Join(s.outputDir, constants.DefaultReplicaShortFile)
 	if err := s.atomicDownload(ctx, shortDest, func(ctx context.Context, f *os.File) error {
-		return s.client.Algorithm5ShortCSV(ctx, f)
+		return s.client.Algorithm5ShortCSV(ctx, "", f)
 	}); err != nil {
 		return fmt.Errorf("short result: %w", err)
 	}
 
 	longDest := filepath.Join(s.outputDir, constants.DefaultReplicaLongFile)
 	if err := s.atomicDownload(ctx, longDest, func(ctx context.Context, f *os.File) error {
-		return s.client.Algorithm5LongCSV(ctx, f)
+		return s.client.Algorithm5LongCSV(ctx, "", f)
 	}); err != nil {
 		return fmt.Errorf("long result: %w", err)
 	}
@@ -100,7 +100,7 @@ func (s *DownloadService) DownloadModel5(ctx context.Context) error {
 func (s *DownloadService) DownloadModel6(ctx context.Context) error {
 	dest := filepath.Join(s.outputDir, constants.DefaultInterferenceFile)
 	return s.atomicDownload(ctx, dest, func(ctx context.Context, f *os.File) error {
-		return s.client.Algorithm6CSV(ctx, f)
+		return s.client.Algorithm6CSV(ctx, "", f)
 	})
 }
 

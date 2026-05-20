@@ -15,28 +15,63 @@ import (
 )
 
 const (
-	// defaultPollInterval 轮询任务状态的间隔
-	defaultPollInterval = 10 * time.Second
-
-	// defaultPollTimeout 单个任务最长等待时间, 超时视为异常(模型五长期预测时间较长)
-	defaultPollTimeout = 120 * time.Minute
+	defaultPollInterval     = 10 * time.Second  // 短期/其他任务轮询间隔
+	defaultPollTimeout      = 120 * time.Minute // 短期/其他任务最长等待时间
+	defaultLongPollInterval = 15 * time.Minute  // 长期任务轮询间隔（Model5Long）
+	defaultLongPollTimeout  = 30 * time.Hour    // 长期任务最长等待时间（>24h）
 )
+
+// WatcherOptions 控制轮询行为的可配置参数。
+// 短期/其他模型使用 PollInterval/PollTimeout；
+// Model5Long 使用 LongPollInterval/LongPollTimeout。
+type WatcherOptions struct {
+	PollInterval     time.Duration
+	PollTimeout      time.Duration
+	LongPollInterval time.Duration
+	LongPollTimeout  time.Duration
+}
+
+func (o *WatcherOptions) applyDefaults() {
+	if o.PollInterval <= 0 {
+		o.PollInterval = defaultPollInterval
+	}
+	if o.PollTimeout <= 0 {
+		o.PollTimeout = defaultPollTimeout
+	}
+	if o.LongPollInterval <= 0 {
+		o.LongPollInterval = defaultLongPollInterval
+	}
+	if o.LongPollTimeout <= 0 {
+		o.LongPollTimeout = defaultLongPollTimeout
+	}
+}
 
 // Watcher 异步轮询每个模型算法的任务状态,任务运行成功后通过 Notifier 推送 TaskEvent 事件到对应控制器立即触发 sync
 // 同一个 ModelType 同一时刻只允许运行一个轮询协程,重复提交会直接跳过
 type Watcher struct {
 	client   *Client
 	notifier *Notifier // 任务运行成功后推送事件
+	opts     WatcherOptions
 	mu       sync.Mutex
 	running  map[ModelType]bool // 正在运行的模型
 }
 
-func NewWatcher(client *Client, notifier *Notifier) *Watcher {
+func NewWatcher(client *Client, notifier *Notifier, opts WatcherOptions) *Watcher {
+	opts.applyDefaults()
 	return &Watcher{
 		client:   client,
 		notifier: notifier,
+		opts:     opts,
 		running:  make(map[ModelType]bool),
 	}
+}
+
+// IsRunning 返回指定模型当前是否有轮询协程正在运行（即上一个任务尚未完成）。
+// 用于在启动新任务前判断是否应该跳过 RunAlgorithm 调用。
+func (w *Watcher) IsRunning(model ModelType) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.running[model]
 }
 
 // Watch 指定 MODEL 的 TaskID 启动异步状态轮询,同一 MODEL 若已有轮询正在运行,则跳过本次(上一个任务未完成时不重复监听)
@@ -64,10 +99,15 @@ func (w *Watcher) Watch(ctx context.Context, model ModelType, taskID string) {
 
 // poll 持续轮询直到任务完成、超时、ctx 被取消
 func (w *Watcher) poll(ctx context.Context, model ModelType, taskID string) {
-	timeoutCtx, cancel := context.WithTimeout(ctx, defaultPollTimeout)
+	interval, timeout := w.opts.PollInterval, w.opts.PollTimeout
+	if model == Model5Long {
+		interval, timeout = w.opts.LongPollInterval, w.opts.LongPollTimeout
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	ticker := time.NewTicker(defaultPollInterval)
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -78,7 +118,7 @@ func (w *Watcher) poll(ctx context.Context, model ModelType, taskID string) {
 				klog.V(4).InfoS("Watcher context cancelled", "model", model, "taskID", taskID)
 			} else {
 				// 算法自身发生超时
-				klog.ErrorS(nil, "Watcher timed out waiting for task", "model", model, "taskID", taskID, "timeout", defaultPollTimeout)
+				klog.ErrorS(nil, "Watcher timed out waiting for task", "model", model, "taskID", taskID, "timeout", timeout)
 			}
 			return
 
@@ -121,7 +161,7 @@ func (w *Watcher) queryStatus(ctx context.Context, model ModelType, taskID strin
 			return "", err
 		}
 		return processStatus(resp)
-	case Model5:
+	case Model5, Model5Short, Model5Long:
 		resp, err := w.client.RunAlgorithm5Status(ctx, taskID)
 		if err != nil {
 			return "", err

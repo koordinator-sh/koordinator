@@ -29,23 +29,36 @@ type FetchService struct {
 	saveEnabled bool          // whether to persist raw JSON responses to disk
 	resultsDir  string        // outputDir/hybrid-results; populated when saveEnabled
 	retention   time.Duration // max age of files in resultsDir; 0 means use default (24h)
+	useTaskID   bool          // when true, append ?task_id=<id> to result API requests
 }
 
 // NewFetchService creates a FetchService.
 // When saveEnabled is true, raw JSON responses from the algorithm service are
 // gzip-compressed and written to <outputDir>/hybrid-results/ with timestamp
 // filenames.  Files older than retention are automatically deleted.
-func NewFetchService(client *algorithm.Client, outputDir string, saveEnabled bool, retention time.Duration) *FetchService {
+// When useTaskID is true, each Fetch method appends the caller-supplied taskID
+// as a query parameter, so multi-cluster deployments always read their own results.
+func NewFetchService(client *algorithm.Client, outputDir string, saveEnabled bool, retention time.Duration, useTaskID bool) *FetchService {
 	svc := &FetchService{
 		client:      client,
 		outputDir:   outputDir,
 		saveEnabled: saveEnabled,
 		retention:   retention,
+		useTaskID:   useTaskID,
 	}
 	if saveEnabled && outputDir != "" {
 		svc.resultsDir = filepath.Join(outputDir, constants.ModelResultsSubDir)
 	}
 	return svc
+}
+
+// resolveTaskID 根据 useTaskID 决定是否将 taskID 透传给 client。
+// useTaskID=false 时始终返回空串，client 不附加 ?task_id= 参数，取全局最新结果。
+func (f *FetchService) resolveTaskID(taskID string) string {
+	if f.useTaskID {
+		return taskID
+	}
+	return ""
 }
 
 // saveResultJSON persists the raw JSON bytes returned by the algorithm service to a
@@ -123,10 +136,10 @@ func (f *FetchService) cleanup() {
 }
 
 // FetchModel4Results calls the MODEL4 result API and parses the response.
-func (f *FetchService) FetchModel4Results(ctx context.Context) ([]PodRecord, error) {
+func (f *FetchService) FetchModel4Results(ctx context.Context, taskID string) ([]PodRecord, error) {
 	var buf bytes.Buffer
 
-	if err := f.client.Algorithm4Result(ctx, &buf); err != nil {
+	if err := f.client.Algorithm4Result(ctx, f.resolveTaskID(taskID), &buf); err != nil {
 		return nil, fmt.Errorf("call model4 result API: %w", err)
 	}
 
@@ -137,15 +150,15 @@ func (f *FetchService) FetchModel4Results(ctx context.Context) ([]PodRecord, err
 		return nil, fmt.Errorf("parse model4 result JSON: %w", err)
 	}
 
-	klog.V(4).InfoS("Fetched model4 results", "count", len(records))
+	klog.V(4).InfoS("Fetched model4 results", "count", len(records), "taskID", taskID, "useTaskID", f.useTaskID)
 	return records, nil
 }
 
 // FetchModel5ShortResults calls the MODEL5 short-term result API and parses the response.
-func (f *FetchService) FetchModel5ShortResults(ctx context.Context) ([]ReplicasShortRecord, error) {
+func (f *FetchService) FetchModel5ShortResults(ctx context.Context, taskID string) ([]ReplicasShortRecord, error) {
 	var buf bytes.Buffer
 
-	if err := f.client.Algorithm5ShortResult(ctx, &buf); err != nil {
+	if err := f.client.Algorithm5ShortResult(ctx, f.resolveTaskID(taskID), &buf); err != nil {
 		return nil, fmt.Errorf("call model5 short result API: %w", err)
 	}
 
@@ -156,15 +169,15 @@ func (f *FetchService) FetchModel5ShortResults(ctx context.Context) ([]ReplicasS
 		return nil, fmt.Errorf("parse model5 short result JSON: %w", err)
 	}
 
-	klog.V(4).InfoS("Fetched model5 short results", "count", len(records))
+	klog.V(4).InfoS("Fetched model5 short results", "count", len(records), "taskID", taskID, "useTaskID", f.useTaskID)
 	return records, nil
 }
 
 // FetchModel5LongResults calls the MODEL5 long-term result API and parses the response.
-func (f *FetchService) FetchModel5LongResults(ctx context.Context) ([]ReplicasLongRecord, error) {
+func (f *FetchService) FetchModel5LongResults(ctx context.Context, taskID string) ([]ReplicasLongRecord, error) {
 	var buf bytes.Buffer
 
-	if err := f.client.Algorithm5LongResult(ctx, &buf); err != nil {
+	if err := f.client.Algorithm5LongResult(ctx, f.resolveTaskID(taskID), &buf); err != nil {
 		return nil, fmt.Errorf("call model5 long result API: %w", err)
 	}
 
@@ -175,15 +188,15 @@ func (f *FetchService) FetchModel5LongResults(ctx context.Context) ([]ReplicasLo
 		return nil, fmt.Errorf("parse model5 long result JSON: %w", err)
 	}
 
-	klog.V(4).InfoS("Fetched model5 long results", "count", len(records))
+	klog.V(4).InfoS("Fetched model5 long results", "count", len(records), "taskID", taskID, "useTaskID", f.useTaskID)
 	return records, nil
 }
 
 // FetchModel6Results calls the MODEL6 result API and parses the response.
-func (f *FetchService) FetchModel6Results(ctx context.Context) ([]InterferenceRecord, error) {
+func (f *FetchService) FetchModel6Results(ctx context.Context, taskID string) ([]InterferenceRecord, error) {
 	var buf bytes.Buffer
 
-	if err := f.client.Algorithm6Result(ctx, &buf); err != nil {
+	if err := f.client.Algorithm6Result(ctx, f.resolveTaskID(taskID), &buf); err != nil {
 		return nil, fmt.Errorf("call model6 result API: %w", err)
 	}
 
@@ -194,6 +207,6 @@ func (f *FetchService) FetchModel6Results(ctx context.Context) ([]InterferenceRe
 		return nil, fmt.Errorf("parse model6 result JSON: %w", err)
 	}
 
-	klog.V(4).InfoS("Fetched model6 results", "count", len(records))
+	klog.V(4).InfoS("Fetched model6 results", "count", len(records), "taskID", taskID, "useTaskID", f.useTaskID)
 	return records, nil
 }

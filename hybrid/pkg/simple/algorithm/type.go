@@ -14,9 +14,11 @@ package algorithm
 type ModelType string
 
 const (
-	Model4 ModelType = "MODEL4"
-	Model5 ModelType = "MODEL5"
-	Model6 ModelType = "MODEL6"
+	Model4      ModelType = "MODEL4"
+	Model5      ModelType = "MODEL5"       // 用于 upload/cleanup，触发短期+长期任务
+	Model5Short ModelType = "MODEL5_SHORT" // 用于 watcher/notifier/controller，独立监听短期任务
+	Model5Long  ModelType = "MODEL5_LONG"  // 用于 watcher/notifier/controller，独立监听长期任务
+	Model6      ModelType = "MODEL6"
 
 	StatusPending  = "PENDING"
 	StatusProgress = "PROCESS"
