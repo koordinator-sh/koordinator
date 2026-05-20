@@ -17,9 +17,7 @@ limitations under the License.
 package main
 
 import (
-	"math/rand"
 	"os"
-	"time"
 
 	"k8s.io/component-base/logs"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
@@ -66,8 +64,6 @@ func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {
 }
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-
 	// Register custom plugins to the scheduler framework.
 	// Later they can consist of scheduler profile(s) and hence
 	// used by various kinds of workloads.

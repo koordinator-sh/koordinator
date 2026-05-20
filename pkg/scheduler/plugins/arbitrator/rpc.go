@@ -127,8 +127,9 @@ func StartArbitratorRPCServer(port string, handle fwktype.Handle, cache *Arbitra
 
 	addr := fmt.Sprintf("0.0.0.0:%s", port)
 	klog.Infof("Starting ConflictArbitrator RPC Server on %s", addr)
+	srv := &http.Server{Addr: addr, Handler: mux}
 	go func() {
-		if err := http.ListenAndServe(addr, mux); err != nil {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			klog.Errorf("Arbitrator RPC Server failed: %v", err)
 		}
 	}()

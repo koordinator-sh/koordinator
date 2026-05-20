@@ -49,7 +49,7 @@ func (h *PodMutatingHandler) multiSchedulerDispatchMutatingPod(ctx context.Conte
 		workloadType = pod.Labels[LabelWorkloadType]
 	}
 
- 	// If user explicitly specified a custom scheduler name (not default-scheduler and not empty), do NOT overwrite it.
+	// If user explicitly specified a custom scheduler name (not default-scheduler and not empty), do NOT overwrite it.
 	if pod.Spec.SchedulerName != "" && pod.Spec.SchedulerName != "default-scheduler" {
 		return nil
 	}
