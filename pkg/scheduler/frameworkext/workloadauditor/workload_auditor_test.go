@@ -19,6 +19,7 @@ package workloadauditor
 import (
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -231,6 +232,41 @@ func TestRecordPodScheduleResult_Scheduled(t *testing.T) {
 	assert.Nil(t, w.getRecord("ns/p1/u1"))
 }
 
+// TestRecordPodScheduleResult_ScheduledConcurrent verifies the delete-before-unlock
+// invariant on the Scheduled path of RecordPodScheduleResult: once a Scheduled
+// outcome is recorded for a pod, the record must be evicted from the cache so that
+// no concurrent caller can mutate an already-finalized record. This test runs
+// under -race to catch any regression to the previous unlock-then-delete order,
+// which allowed stale appends after finalization.
+func TestRecordPodScheduleResult_ScheduledConcurrent(t *testing.T) {
+	w := newTestAuditor()
+	const rounds = 200
+	for i := 0; i < rounds; i++ {
+		pod := newPod("ns", "p", fmt.Sprintf("u%d", i))
+		w.AddPod(pod)
+		w.RecordAttemptPod(pod)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			w.RecordPodScheduleResult(pod, RecordTypeScheduleFailure, "no fit")
+		}()
+		go func() {
+			defer wg.Done()
+			w.RecordPodScheduleResult(pod, RecordTypeScheduled, "")
+		}()
+		wg.Wait()
+
+		// Regardless of how the two writers interleave, once Scheduled has been
+		// processed the record must be removed from the cache. With the previous
+		// unlock-then-delete order, a concurrent ScheduleFailure caller could
+		// observe and mutate a finalized record reference between unlock and
+		// delete; with delete-before-unlock the cache is guaranteed empty.
+		assert.Nil(t, w.getRecord(GetPodKey(pod)), "record must be cleared after Scheduled")
+	}
+}
+
 func TestRecordPodScheduleResult_PreemptNominated(t *testing.T) {
 	w := newTestAuditor()
 	pod := newPod("ns", "p1", "u1")
@@ -409,6 +445,33 @@ func TestRecordGangScheduleResult_Scheduled(t *testing.T) {
 	w.RecordGangScheduleResult("gang-1", RecordTypeScheduled, "")
 	// Record is deleted on scheduled.
 	assert.Nil(t, w.getRecord("gang-1"))
+}
+
+// TestRecordGangScheduleResult_ScheduledConcurrent is the gang-group counterpart of
+// TestRecordPodScheduleResult_ScheduledConcurrent: the Scheduled path of
+// RecordGangScheduleResult must delete the cache entry before releasing the
+// per-record lock to prevent stale appends from concurrent writers.
+func TestRecordGangScheduleResult_ScheduledConcurrent(t *testing.T) {
+	w := newTestAuditor()
+	const rounds = 200
+	for i := 0; i < rounds; i++ {
+		gangKey := fmt.Sprintf("gang-%d", i)
+		w.AddGangGroup(gangKey)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			w.RecordGangScheduleResult(gangKey, RecordTypeScheduleFailure, "no fit")
+		}()
+		go func() {
+			defer wg.Done()
+			w.RecordGangScheduleResult(gangKey, RecordTypeScheduled, "")
+		}()
+		wg.Wait()
+
+		assert.Nil(t, w.getRecord(gangKey), "gang record must be cleared after Scheduled")
+	}
 }
 
 func TestRecordGangScheduleResult_Failure(t *testing.T) {

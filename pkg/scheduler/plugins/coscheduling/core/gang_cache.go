@@ -322,11 +322,15 @@ func (gangCache *GangCache) onPodGroupUpdate(oldObj interface{}, newObj interfac
 	}
 
 	// When PodGroup transitions from a pending phase to a non-pending phase,
-	// delete the gang record from the workload auditor.
+	// delete the gang record from the workload auditor. The reverse transition
+	// (non-pending -> pending) is intentionally not handled: onPodGroupAdd
+	// already seeds the record when the PodGroup is first observed in pending
+	// state, and re-adding it here could leave stale/partial records behind.
 	if gangCache.workloadAuditor != nil {
-		oldPg, ok := oldObj.(*v1alpha1.PodGroup)
-		if ok && isPodGroupPendingPhase(oldPg.Status.Phase) && !isPodGroupPendingPhase(pg.Status.Phase) {
-			gangCache.workloadAuditor.DeleteGangGroup(gang.GangGroupId)
+		if oldPg, ok := oldObj.(*v1alpha1.PodGroup); ok {
+			if isPodGroupPendingPhase(oldPg.Status.Phase) && !isPodGroupPendingPhase(pg.Status.Phase) {
+				gangCache.workloadAuditor.DeleteGangGroup(gang.GangGroupId)
+			}
 		}
 	}
 

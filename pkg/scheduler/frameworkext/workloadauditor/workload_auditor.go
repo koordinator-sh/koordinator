@@ -334,8 +334,11 @@ func (w *workloadAuditorImpl) RecordPodScheduleResult(pod *corev1.Pod, recordTyp
 		klog.V(4).Infof("WorkloadAuditor delete(podScheduled): workloadKey=%s %s, attempts=%d",
 			record.WorkloadKey, record.labelDetail, record.Attempts)
 		finalizeWorkloadRecord(record, outcomeScheduled)
-		record.mu.Unlock()
+		// Delete the entry from the records map before releasing the per-record
+		// lock to prevent another goroutine that already obtained the same record
+		// reference from mutating an already-finalized record after deletion.
 		w.records.Delete(workloadKey)
+		record.mu.Unlock()
 		return
 	}
 	record.mu.Unlock()
@@ -360,8 +363,11 @@ func (w *workloadAuditorImpl) RecordGangScheduleResult(gangKey string, recordTyp
 		klog.V(4).Infof("WorkloadAuditor delete(gangScheduled): workloadKey=%s %s, attempts=%d",
 			record.WorkloadKey, record.labelDetail, record.Attempts)
 		finalizeWorkloadRecord(record, outcomeGangScheduled)
-		record.mu.Unlock()
+		// Delete the entry from the records map before releasing the per-record
+		// lock to prevent a concurrent goroutine that already obtained the same
+		// record reference from appending data to an already-finalized record.
 		w.records.Delete(gangKey)
+		record.mu.Unlock()
 		return
 	}
 	record.mu.Unlock()
