@@ -216,6 +216,39 @@ type ReservationArgs struct {
 	// PreAllocationConfig defines the configuration for pre-allocation feature.
 	// +optional
 	PreAllocationConfig *PreAllocationConfig
+	// ReservationSelectorIndex configures the reservationSelector white-list
+	// existence index. When enabled, pods carrying a reservationSelector whose
+	// key matches one of the configured prefixes can quickly enumerate the
+	// candidate nodes that hold any matching reservation, instead of scanning
+	// every node that owns reservations.
+	// +optional
+	ReservationSelectorIndex *ReservationSelectorIndexArgs
+}
+
+// ReservationSelectorIndexArgs configures the reservationSelector white-list
+// existence index. The index is a key-existence pre-filter only: it does NOT
+// look at label values. Downstream reservation matching remains the source of
+// truth for value-level checks.
+type ReservationSelectorIndexArgs struct {
+	// Enabled toggles the index on/off. Defaults to false.
+	Enabled bool
+	// KeyPrefixes lists the label key prefixes that participate in the
+	// inverted index. Reservations carrying any label whose key starts with
+	// one of these prefixes are indexed; pods whose reservationSelector keys
+	// match one of these prefixes go through the fast path. Empty/blank
+	// entries are ignored, duplicates are deduplicated.
+	KeyPrefixes []string
+	// Keys lists the exact label keys that participate in the inverted index.
+	// Reservations carrying any of these label keys are indexed; pods whose
+	// reservationSelector contains any of these keys go through the fast
+	// path via an exact-key bucket (no prefix match). Use this for short,
+	// non-namespaced label keys (e.g. "tenant", "team") where prefix matching
+	// would over-match (e.g. prefix="tenant" would also match "tenant-foo").
+	// Empty/blank entries are ignored, duplicates are deduplicated. Keys and
+	// KeyPrefixes are independent white-lists and may be configured together;
+	// when a label key matches both an exact entry and a prefix entry it is
+	// indexed in both buckets.
+	Keys []string
 }
 
 // PreAllocationConfig defines the configuration for pre-allocation feature.

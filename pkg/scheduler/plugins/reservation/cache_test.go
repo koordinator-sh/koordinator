@@ -17,8 +17,8 @@ limitations under the License.
 package reservation
 
 import (
-	"fmt"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,6 +33,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -908,120 +909,665 @@ func TestReservationCache_PreAllocatableOperations(t *testing.T) {
 	})
 }
 
-// BenchmarkPreAllocatablePodCache benchmarks the preAllocatablePodCache btree operations
-// with multi-node scenarios to simulate real cluster environments.
-func BenchmarkPreAllocatablePodCache(b *testing.B) {
-	// Scale configurations: nodes x podsPerNode
-	scales := []struct {
-		nodes       int
-		podsPerNode int
-	}{
-		{10, 100},   // 1000 total pods
-		{100, 100},  // 10000 total pods
-		{1000, 100}, // 100000 total pods
+const (
+	idxPrefixQuota  = "koordinator.sh/quota-node-binder-name-"
+	idxPrefixTenant = "tenant.dlc.alibaba-inc.com/"
+)
+
+func newIndexedCache() *reservationCache {
+	c := newReservationCache(nil)
+	c.setReservationSelectorIndexConfig(&config.ReservationSelectorIndexArgs{
+		Enabled: true,
+		KeyPrefixes: []string{
+			idxPrefixQuota,
+			idxPrefixQuota, // duplicate, should be deduplicated
+			idxPrefixTenant,
+			"  ", // should be ignored
+			"",
+		},
+	})
+	return c
+}
+
+// idxExactTeam / idxExactProject simulate the "plain key" pattern (no
+// namespace separator), which is exactly what KeyPrefixes cannot safely
+// handle: a prefix="team" would also match label keys like "team-foo". The
+// exact-key white-list is the right tool for these.
+const (
+	idxExactTeam    = "team"
+	idxExactProject = "project"
+)
+
+func newIndexedCacheWithKeys() *reservationCache {
+	c := newReservationCache(nil)
+	c.setReservationSelectorIndexConfig(&config.ReservationSelectorIndexArgs{
+		Enabled: true,
+		KeyPrefixes: []string{
+			idxPrefixQuota,
+			idxPrefixTenant,
+		},
+		Keys: []string{
+			idxExactTeam,
+			idxExactTeam, // duplicate, should be deduplicated
+			idxExactProject,
+			"  ", // should be ignored
+			"",
+		},
+	})
+	return c
+}
+
+func newIndexTestReservation(uid, name, node string, labels map[string]string) *schedulingv1alpha1.Reservation {
+	return &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:    types.UID(uid),
+			Name:   name,
+			Labels: labels,
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: node,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+		},
+	}
+}
+
+func TestSetReservationSelectorIndexConfig(t *testing.T) {
+	t.Run("nil args", func(t *testing.T) {
+		c := newReservationCache(nil)
+		c.setReservationSelectorIndexConfig(nil)
+		assert.False(t, c.indexEnabled)
+	})
+	t.Run("disabled", func(t *testing.T) {
+		c := newReservationCache(nil)
+		c.setReservationSelectorIndexConfig(&config.ReservationSelectorIndexArgs{
+			Enabled:     false,
+			KeyPrefixes: []string{idxPrefixQuota},
+		})
+		assert.False(t, c.indexEnabled)
+	})
+	t.Run("only blanks", func(t *testing.T) {
+		c := newReservationCache(nil)
+		c.setReservationSelectorIndexConfig(&config.ReservationSelectorIndexArgs{
+			Enabled:     true,
+			KeyPrefixes: []string{"  ", ""},
+		})
+		assert.False(t, c.indexEnabled)
+	})
+	t.Run("dedup prefixes", func(t *testing.T) {
+		c := newIndexedCache()
+		assert.True(t, c.indexEnabled)
+		assert.Equal(t, []string{idxPrefixQuota, idxPrefixTenant}, c.indexedPrefixes)
+	})
+	t.Run("matchedPrefix", func(t *testing.T) {
+		c := newIndexedCache()
+		assert.Equal(t, idxPrefixQuota, c.matchedPrefix(idxPrefixQuota+"q1"))
+		assert.Equal(t, idxPrefixTenant, c.matchedPrefix(idxPrefixTenant+"t1"))
+		assert.Equal(t, "", c.matchedPrefix("unrelated/label"))
+	})
+	t.Run("only exact keys", func(t *testing.T) {
+		c := newReservationCache(nil)
+		c.setReservationSelectorIndexConfig(&config.ReservationSelectorIndexArgs{
+			Enabled: true,
+			Keys:    []string{idxExactTeam, idxExactProject, "  ", ""},
+		})
+		assert.True(t, c.indexEnabled)
+		assert.Empty(t, c.indexedPrefixes)
+		assert.True(t, c.indexedKeys.Has(idxExactTeam))
+		assert.True(t, c.indexedKeys.Has(idxExactProject))
+		assert.Equal(t, 2, c.indexedKeys.Len())
+	})
+	t.Run("both prefixes and keys", func(t *testing.T) {
+		c := newIndexedCacheWithKeys()
+		assert.True(t, c.indexEnabled)
+		assert.Equal(t, []string{idxPrefixQuota, idxPrefixTenant}, c.indexedPrefixes)
+		assert.Equal(t, 2, c.indexedKeys.Len())
+	})
+	t.Run("matchedKey exact only", func(t *testing.T) {
+		c := newIndexedCacheWithKeys()
+		assert.True(t, c.matchedKey(idxExactTeam))
+		assert.True(t, c.matchedKey(idxExactProject))
+		// exact key must NOT be matched as a prefix even if a label key
+		// happens to start with it (the prefix white-list does not contain
+		// these short tokens).
+		assert.False(t, c.matchedKey("team-foo"))
+		assert.Equal(t, "", c.matchedPrefix("team-foo"))
+	})
+}
+
+func TestReservationCacheIndexAddRemoveAndUpdate(t *testing.T) {
+	c := newIndexedCache()
+	r1 := newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{
+		idxPrefixQuota + "qA":  "qA",
+		idxPrefixTenant + "t1": "t1",
+		"unrelated":            "ignored",
+	})
+	r2 := newIndexTestReservation("uid-2", "r2", "node-b", map[string]string{
+		idxPrefixQuota + "qB": "qB",
+	})
+	r3 := newIndexTestReservation("uid-3", "r3", "node-c", map[string]string{
+		idxPrefixTenant + "t2": "t2",
+	})
+	c.updateReservation(r1)
+	c.updateReservation(r2)
+	c.updateReservation(r3)
+
+	// per-uid index entry tracks both the matched prefixes and the bound node.
+	assert.ElementsMatch(t, []string{idxPrefixQuota, idxPrefixTenant}, c.indexEntryByUID["uid-1"].prefixes.UnsortedList())
+	assert.Equal(t, "node-a", c.indexEntryByUID["uid-1"].node)
+	assert.ElementsMatch(t, []string{idxPrefixQuota}, c.indexEntryByUID["uid-2"].prefixes.UnsortedList())
+	assert.Equal(t, "node-b", c.indexEntryByUID["uid-2"].node)
+	assert.ElementsMatch(t, []string{idxPrefixTenant}, c.indexEntryByUID["uid-3"].prefixes.UnsortedList())
+	assert.Equal(t, "node-c", c.indexEntryByUID["uid-3"].node)
+
+	// nodesByPrefix snapshot: per-(prefix,node) UID set.
+	assert.ElementsMatch(t, []types.UID{"uid-1"}, c.nodesByPrefix[idxPrefixQuota]["node-a"].UnsortedList())
+	assert.ElementsMatch(t, []types.UID{"uid-2"}, c.nodesByPrefix[idxPrefixQuota]["node-b"].UnsortedList())
+	assert.ElementsMatch(t, []types.UID{"uid-1"}, c.nodesByPrefix[idxPrefixTenant]["node-a"].UnsortedList())
+	assert.ElementsMatch(t, []types.UID{"uid-3"}, c.nodesByPrefix[idxPrefixTenant]["node-c"].UnsortedList())
+
+	// any selector key under prefix `quota` => candidate nodes are r1's + r2's.
+	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "anything": "ignored-value"})
+	assert.True(t, hit)
+	sort.Strings(nodes)
+	assert.Equal(t, []string{"node-a", "node-b"}, nodes)
+
+	// AND across prefixes: a node must hold a reservation contributing to BOTH prefixes => only node-a.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{
+		idxPrefixQuota + "x":  "x",
+		idxPrefixTenant + "y": "y",
+	})
+	assert.True(t, hit)
+	assert.Equal(t, []string{"node-a"}, nodes)
+
+	// no configured prefix => indexHit=false (caller falls back).
+	nodes, hit = c.FilterByReservationSelector(map[string]string{"foo": "bar"})
+	assert.False(t, hit)
+	assert.Nil(t, nodes)
+
+	// update r1 to drop the tenant-prefixed label.
+	updated := newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{
+		idxPrefixQuota + "qA": "qA",
+	})
+	c.updateReservation(updated)
+	assert.ElementsMatch(t, []string{idxPrefixQuota}, c.indexEntryByUID["uid-1"].prefixes.UnsortedList())
+	// node-a no longer appears under tenant prefix.
+	_, exists := c.nodesByPrefix[idxPrefixTenant]["node-a"]
+	assert.False(t, exists)
+
+	// after update, only r3/node-c remains under tenant prefix.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxPrefixTenant + "x": "x"})
+	assert.True(t, hit)
+	assert.Equal(t, []string{"node-c"}, nodes)
+
+	// delete r3 => prefix `tenant` becomes completely empty (top-level entry removed).
+	c.DeleteReservation(r3)
+	_, hasUID := c.indexEntryByUID["uid-3"]
+	assert.False(t, hasUID)
+	_, hasPrefix := c.nodesByPrefix[idxPrefixTenant]
+	assert.False(t, hasPrefix)
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxPrefixTenant + "x": "x"})
+	assert.True(t, hit)
+	assert.Empty(t, nodes)
+}
+
+func TestReservationCacheIndexDisabledNoOp(t *testing.T) {
+	c := newReservationCache(nil)
+	r := newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{idxPrefixQuota + "q": "q"})
+	c.updateReservation(r)
+	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "q": "q"})
+	assert.False(t, hit)
+	assert.Nil(t, nodes)
+}
+
+func TestReservationCacheIndexUnboundReservationSkipped(t *testing.T) {
+	// A reservation without status.NodeName must NOT contribute a candidate
+	// node to the index (it cannot be a real candidate yet anyway).
+	c := newIndexedCache()
+	unbound := newIndexTestReservation("uid-x", "rx", "", map[string]string{idxPrefixQuota + "q": "q"})
+	c.updateReservation(unbound)
+	_, hasEntry := c.indexEntryByUID["uid-x"]
+	assert.False(t, hasEntry, "reservation without nodeName should not be indexed")
+	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "q": "q"})
+	assert.True(t, hit)
+	assert.Empty(t, nodes)
+}
+
+func TestReservationCacheIndexConcurrent(t *testing.T) {
+	c := newIndexedCache()
+	const n = 200
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			r := newIndexTestReservation("u"+itoa(i), "r"+itoa(i), "node-"+itoa(i%10), map[string]string{
+				idxPrefixQuota + itoa(i): itoa(i),
+			})
+			c.updateReservation(r)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < n; i++ {
+			c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "any": "v"})
+		}
+	}()
+	wg.Wait()
+	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "any": "v"})
+	assert.True(t, hit)
+	assert.NotEmpty(t, nodes)
+}
+
+func TestReservationCacheIndexStartupBackfill(t *testing.T) {
+	// Populate reservationInfos BEFORE the index is enabled (simulates a
+	// future wiring order where setReservationSelectorIndexConfig runs after
+	// some reservations have already been admitted into the cache).
+	c := newReservationCache(nil)
+	c.updateReservation(newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{idxPrefixQuota + "q": "q"}))
+	c.updateReservation(newIndexTestReservation("uid-2", "r2", "node-b", map[string]string{idxPrefixTenant + "t": "t"}))
+	c.updateReservation(newIndexTestReservation("uid-3", "r3", "", map[string]string{idxPrefixQuota + "q": "q"})) // unbound: skipped
+	assert.False(t, c.indexEnabled)
+	assert.Empty(t, c.indexEntryByUID, "index must be empty while disabled")
+
+	// Enabling the index must backfill the existing reservationInfos.
+	c.setReservationSelectorIndexConfig(&config.ReservationSelectorIndexArgs{
+		Enabled:     true,
+		KeyPrefixes: []string{idxPrefixQuota, idxPrefixTenant},
+	})
+	assert.True(t, c.indexEnabled)
+	assert.Len(t, c.indexEntryByUID, 2, "only bound reservations should be backfilled")
+	assert.Equal(t, "node-a", c.indexEntryByUID["uid-1"].node)
+	assert.Equal(t, "node-b", c.indexEntryByUID["uid-2"].node)
+	assert.ElementsMatch(t, []types.UID{"uid-1"}, c.nodesByPrefix[idxPrefixQuota]["node-a"].UnsortedList())
+	assert.ElementsMatch(t, []types.UID{"uid-2"}, c.nodesByPrefix[idxPrefixTenant]["node-b"].UnsortedList())
+	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
+}
+
+func TestReservationCacheIndexReconfigure(t *testing.T) {
+	c := newIndexedCache()
+	c.updateReservation(newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{
+		idxPrefixQuota + "q":  "q",
+		idxPrefixTenant + "t": "t",
+	}))
+	c.updateReservation(newIndexTestReservation("uid-2", "r2", "node-b", map[string]string{idxPrefixQuota + "q": "q"}))
+	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
+
+	// Narrow the index to only the tenant prefix: every previously-indexed
+	// quota-only entry must be evicted, and the surviving entries must be
+	// rebuilt from reservationInfos with the new prefix set.
+	c.setReservationSelectorIndexConfig(&config.ReservationSelectorIndexArgs{
+		Enabled:     true,
+		KeyPrefixes: []string{idxPrefixTenant},
+	})
+	assert.Equal(t, []string{idxPrefixTenant}, c.indexedPrefixes)
+	assert.NotContains(t, c.nodesByPrefix, idxPrefixQuota, "stale prefix bucket must be dropped")
+	assert.ElementsMatch(t, []types.UID{"uid-1"}, c.nodesByPrefix[idxPrefixTenant]["node-a"].UnsortedList())
+	_, hasUID2 := c.indexEntryByUID["uid-2"] // r2 only has quota label => no longer indexed
+	assert.False(t, hasUID2)
+	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
+
+	// Disable the index entirely: every backing structure must be released.
+	c.setReservationSelectorIndexConfig(nil)
+	assert.False(t, c.indexEnabled)
+	assert.Nil(t, c.nodesByPrefix)
+	assert.Nil(t, c.indexEntryByUID)
+	assert.Nil(t, c.indexedPrefixes)
+}
+
+// TestReservationCacheIndexExactKey covers the "plain key" indexing path
+// (label pattern "xxx: yyy"), which is bucketed by (key, value) tuple so a
+// selector `{xxx: yyy}` lands directly on the precise candidate set without
+// over-matching reservations that only share the same key.
+func TestReservationCacheIndexExactKey(t *testing.T) {
+	c := newIndexedCacheWithKeys()
+
+	// r1/r2/r3 share the same indexed key "team" but with DIFFERENT values:
+	// r1=alpha on node-a, r2=beta on node-b, r3=alpha on node-c. The (k,v)
+	// bucketing must keep alpha and beta in separate value-level sub-buckets
+	// so a selector {team:alpha} returns only node-a + node-c (NOT node-b).
+	// r4 hits exact key "project" with value=x on node-a.
+	// r5 has key "team-foo" which MUST NOT be over-matched as exact "team"
+	// nor matched by any indexed prefix.
+	c.updateReservation(newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{idxExactTeam: "alpha"}))
+	c.updateReservation(newIndexTestReservation("uid-2", "r2", "node-b", map[string]string{idxExactTeam: "beta"}))
+	c.updateReservation(newIndexTestReservation("uid-3", "r3", "node-c", map[string]string{idxExactTeam: "alpha"}))
+	c.updateReservation(newIndexTestReservation("uid-4", "r4", "node-a", map[string]string{idxExactProject: "x"}))
+	c.updateReservation(newIndexTestReservation("uid-5", "r5", "node-d", map[string]string{idxExactTeam + "-foo": "y"}))
+
+	// Bucket layout: nodesByExactKV["team"]["alpha"]={node-a:{uid-1}, node-c:{uid-3}};
+	// nodesByExactKV["team"]["beta"]={node-b:{uid-2}}; nodesByExactKV["project"]["x"]={node-a:{uid-4}};
+	// r5 is NOT indexed at all.
+	assert.ElementsMatch(t, []types.UID{"uid-1"}, c.nodesByExactKV[idxExactTeam]["alpha"]["node-a"].UnsortedList())
+	assert.ElementsMatch(t, []types.UID{"uid-3"}, c.nodesByExactKV[idxExactTeam]["alpha"]["node-c"].UnsortedList())
+	assert.ElementsMatch(t, []types.UID{"uid-2"}, c.nodesByExactKV[idxExactTeam]["beta"]["node-b"].UnsortedList())
+	assert.ElementsMatch(t, []types.UID{"uid-4"}, c.nodesByExactKV[idxExactProject]["x"]["node-a"].UnsortedList())
+	_, hasUID5 := c.indexEntryByUID["uid-5"]
+	assert.False(t, hasUID5, "label key 'team-foo' must NOT be over-matched as exact 'team'")
+	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
+
+	// Selector value precision: {team:alpha} hits only node-a + node-c; the
+	// node-b reservation (team=beta) MUST NOT leak into the candidate set.
+	nodes, hit := c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha"})
+	assert.True(t, hit)
+	assert.ElementsMatch(t, []string{"node-a", "node-c"}, nodes)
+
+	// {team:beta} hits only node-b.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "beta"})
+	assert.True(t, hit)
+	assert.ElementsMatch(t, []string{"node-b"}, nodes)
+
+	// {team:nonexistent}: indexed key but no reservation has that value =>
+	// hit=true with an empty candidate set so the caller can short-circuit.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "nonexistent"})
+	assert.True(t, hit)
+	assert.Empty(t, nodes)
+
+	// {project:x} hits only node-a.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactProject: "x"})
+	assert.True(t, hit)
+	assert.ElementsMatch(t, []string{"node-a"}, nodes)
+
+	// AND-join across two exact-(k,v) buckets: only node-a hosts BOTH
+	// {team:alpha} and {project:x}.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha", idxExactProject: "x"})
+	assert.True(t, hit)
+	assert.ElementsMatch(t, []string{"node-a"}, nodes)
+
+	// AND-join with a value mismatch on one axis short-circuits to empty:
+	// node-a has team=alpha (not beta), so {team:beta, project:x} => [].
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "beta", idxExactProject: "x"})
+	assert.True(t, hit)
+	assert.Empty(t, nodes)
+
+	// Selector key that is neither in KeyPrefixes nor in Keys MUST fall through
+	// (hit=false) so the caller falls back to the legacy O(N) scan.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam + "-foo": "y"})
+	assert.False(t, hit)
+	assert.Nil(t, nodes)
+
+	// Update r1's value alpha->gamma: the (team,alpha)[node-a] cell must drop
+	// uid-1 (and since uid-1 was the only one there, the cell is reclaimed),
+	// while a brand-new (team,gamma)[node-a] cell appears.
+	c.updateReservation(newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{idxExactTeam: "gamma"}))
+	assert.Nil(t, c.nodesByExactKV[idxExactTeam]["alpha"]["node-a"], "team[alpha][node-a] must be released after r1's value changed")
+	assert.ElementsMatch(t, []types.UID{"uid-3"}, c.nodesByExactKV[idxExactTeam]["alpha"]["node-c"].UnsortedList())
+	assert.ElementsMatch(t, []types.UID{"uid-1"}, c.nodesByExactKV[idxExactTeam]["gamma"]["node-a"].UnsortedList())
+	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
+
+	// {team:alpha} now drops node-a, returns only node-c (uid-3).
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha"})
+	assert.True(t, hit)
+	assert.ElementsMatch(t, []string{"node-c"}, nodes)
+
+	// Drain remaining reservations and verify every backing bucket is reclaimed.
+	for _, uid := range []string{"uid-1", "uid-2", "uid-3", "uid-4", "uid-5"} {
+		c.DeleteReservation(&schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{UID: types.UID(uid)},
+			Status:     schedulingv1alpha1.ReservationStatus{NodeName: "node-a"},
+		})
+	}
+	assert.Empty(t, c.indexEntryByUID)
+	assert.Empty(t, c.nodesByExactKV)
+	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
+}
+
+// TestReservationCacheIndexMixedPrefixAndExactKey covers a workload that has
+// BOTH label patterns at the same time (the production scenario), and asserts
+// that the AND-join across a prefix bucket and an exact-(k,v) bucket only
+// returns nodes that satisfy every selector key+value simultaneously.
+func TestReservationCacheIndexMixedPrefixAndExactKey(t *testing.T) {
+	c := newIndexedCacheWithKeys()
+
+	// r1 hits both buckets: prefix "quota" key + exact "team=alpha" on node-a.
+	// r2 hits only the prefix bucket on node-b.
+	// r3 hits only the exact bucket with team=alpha on node-c.
+	// r4 hits only the exact bucket with team=beta on node-d (different value).
+	c.updateReservation(newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{
+		idxPrefixQuota + "q": "q",
+		idxExactTeam:         "alpha",
+	}))
+	c.updateReservation(newIndexTestReservation("uid-2", "r2", "node-b", map[string]string{idxPrefixQuota + "q": "q"}))
+	c.updateReservation(newIndexTestReservation("uid-3", "r3", "node-c", map[string]string{idxExactTeam: "alpha"}))
+	c.updateReservation(newIndexTestReservation("uid-4", "r4", "node-d", map[string]string{idxExactTeam: "beta"}))
+
+	// r1's entry must record BOTH a tracked prefix and the (key, value) tuple.
+	entry := c.indexEntryByUID["uid-1"]
+	assert.NotNil(t, entry)
+	assert.True(t, entry.prefixes.Has(idxPrefixQuota))
+	assert.Equal(t, "alpha", entry.kvs[idxExactTeam])
+	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
+
+	// Prefix-only selector: union of node-a (from r1) and node-b (from r2).
+	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "x": "v"})
+	assert.True(t, hit)
+	assert.ElementsMatch(t, []string{"node-a", "node-b"}, nodes)
+
+	// Exact (team=alpha) selector: only node-a (r1) and node-c (r3); node-d
+	// (team=beta) MUST NOT leak in.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha"})
+	assert.True(t, hit)
+	assert.ElementsMatch(t, []string{"node-a", "node-c"}, nodes)
+
+	// Exact (team=beta) selector: only node-d.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "beta"})
+	assert.True(t, hit)
+	assert.ElementsMatch(t, []string{"node-d"}, nodes)
+
+	// Mixed selector: AND-join => only node-a hosts a reservation that hits
+	// BOTH the prefix bucket AND the exact (team=alpha) bucket. node-b lacks
+	// the team label; node-c lacks the quota-prefixed key.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{
+		idxPrefixQuota + "x": "v",
+		idxExactTeam:         "alpha",
+	})
+	assert.True(t, hit)
+	assert.ElementsMatch(t, []string{"node-a"}, nodes)
+
+	// Mixed selector with a non-matching exact value: node-a has team=alpha
+	// (not gamma), so the AND-join collapses to empty even though the prefix
+	// path alone would yield {node-a, node-b}.
+	nodes, hit = c.FilterByReservationSelector(map[string]string{
+		idxPrefixQuota + "x": "v",
+		idxExactTeam:         "gamma",
+	})
+	assert.True(t, hit)
+	assert.Empty(t, nodes)
+
+	// Dump must expose ByKey (aggregated across values) and ByKeyValue
+	// (per-(k,v) granularity) alongside the prefix bucket.
+	snap := c.DumpReservationSelectorIndex(true)
+	assert.True(t, snap.Enabled)
+	assert.ElementsMatch(t, []string{idxExactTeam, idxExactProject}, snap.Keys)
+
+	// ByKey aggregates: team key has 3 reservations across 3 nodes (uid-1,3,4).
+	assert.NotNil(t, snap.ByKey[idxExactTeam])
+	assert.Equal(t, 3, snap.ByKey[idxExactTeam].Reservations)
+	assert.Equal(t, 3, snap.ByKey[idxExactTeam].Nodes)
+
+	// ByKeyValue exposes per-value sub-buckets:
+	//   team=alpha => 2 reservations on 2 nodes (r1@node-a, r3@node-c)
+	//   team=beta  => 1 reservation on 1 node (r4@node-d)
+	assert.NotNil(t, snap.ByKeyValue[idxExactTeam])
+	alphaStat := snap.ByKeyValue[idxExactTeam]["alpha"]
+	assert.NotNil(t, alphaStat)
+	assert.Equal(t, 2, alphaStat.Reservations)
+	assert.Equal(t, 2, alphaStat.Nodes)
+	betaStat := snap.ByKeyValue[idxExactTeam]["beta"]
+	assert.NotNil(t, betaStat)
+	assert.Equal(t, 1, betaStat.Reservations)
+	assert.Equal(t, 1, betaStat.Nodes)
+
+	// Prefix bucket: r1+r2 on node-a/node-b.
+	assert.NotNil(t, snap.ByPrefix[idxPrefixQuota])
+	assert.Equal(t, 2, snap.ByPrefix[idxPrefixQuota].Reservations)
+}
+
+func TestReservationCacheIndexConsistencyHighFrequency(t *testing.T) {
+	// Stress the index with concurrent add/update/delete + status flips and
+	// assert the internal auditor reports no inconsistency at the end.
+	c := newIndexedCache()
+	const (
+		nodes  = 8
+		rsvCnt = 64
+		rounds = 50
+	)
+	nodeOf := func(i int) string { return "node-" + itoa(i%nodes) }
+	uidOf := func(i int) types.UID { return types.UID("u" + itoa(i)) }
+	labelsOf := func(i int) map[string]string {
+		// Mix the two indexed prefixes to exercise both buckets.
+		if i%3 == 0 {
+			return map[string]string{idxPrefixQuota + itoa(i): itoa(i), idxPrefixTenant + itoa(i): itoa(i)}
+		}
+		if i%3 == 1 {
+			return map[string]string{idxPrefixQuota + itoa(i): itoa(i)}
+		}
+		return map[string]string{idxPrefixTenant + itoa(i): itoa(i)}
 	}
 
-	// Helper: create pods for multiple nodes
-	// Returns pods[nodeIndex][podIndex]
-	createPods := func(numNodes, podsPerNode int) [][]*corev1.Pod {
-		pods := make([][]*corev1.Pod, numNodes)
-		for n := 0; n < numNodes; n++ {
-			nodeName := fmt.Sprintf("node-%d", n)
-			pods[n] = make([]*corev1.Pod, podsPerNode)
-			for i := 0; i < podsPerNode; i++ {
-				pods[n][i] = createTestPreAllocatablePod(
-					fmt.Sprintf("pod-%d-%d", n, i),
-					nodeName,
-					"1", "1Gi",
-					fmt.Sprintf("%d", i%1000), // varying priorities
-				)
+	var wg sync.WaitGroup
+	wg.Add(4)
+	// Writer A: rapid add/update churn (re-add same UIDs with possibly changed
+	// labels to simulate label/binding updates).
+	go func() {
+		defer wg.Done()
+		for r := 0; r < rounds; r++ {
+			for i := 0; i < rsvCnt; i++ {
+				labels := labelsOf(i + r)
+				c.updateReservation(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{UID: uidOf(i), Name: "r" + itoa(i), Labels: labels},
+					Spec:       schedulingv1alpha1.ReservationSpec{Template: &corev1.PodTemplateSpec{Spec: corev1.PodSpec{}}},
+					Status:     schedulingv1alpha1.ReservationStatus{NodeName: nodeOf(i), Phase: schedulingv1alpha1.ReservationAvailable},
+				})
 			}
 		}
-		return pods
-	}
-
-	// Helper: add all pods to cache
-	addAllPods := func(cache *reservationCache, pods [][]*corev1.Pod) {
-		for _, nodePods := range pods {
-			for _, pod := range nodePods {
-				cache.addPreAllocatableCandidateOnNode(pod)
+	}()
+	// Writer B: high-frequency delete-then-readd to simulate fast create/delete.
+	go func() {
+		defer wg.Done()
+		for r := 0; r < rounds; r++ {
+			for i := 0; i < rsvCnt; i += 2 {
+				c.DeleteReservation(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{UID: uidOf(i), Name: "r" + itoa(i)},
+					Status:     schedulingv1alpha1.ReservationStatus{NodeName: nodeOf(i)},
+				})
 			}
 		}
+	}()
+	// Writer C: status flip via updateReservationIfExists (Failed/Succeeded path).
+	go func() {
+		defer wg.Done()
+		for r := 0; r < rounds; r++ {
+			for i := 1; i < rsvCnt; i += 2 {
+				c.updateReservationIfExists(&schedulingv1alpha1.Reservation{
+					ObjectMeta: metav1.ObjectMeta{UID: uidOf(i), Name: "r" + itoa(i), Labels: labelsOf(i + r)},
+					Spec:       schedulingv1alpha1.ReservationSpec{Template: &corev1.PodTemplateSpec{Spec: corev1.PodSpec{}}},
+					Status:     schedulingv1alpha1.ReservationStatus{NodeName: nodeOf(i), Phase: schedulingv1alpha1.ReservationFailed},
+				})
+			}
+		}
+	}()
+	// Reader: concurrent filter calls to race against the writers.
+	go func() {
+		defer wg.Done()
+		for r := 0; r < rounds*4; r++ {
+			c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "any": "v"})
+			c.FilterByReservationSelector(map[string]string{idxPrefixTenant + "any": "v"})
+		}
+	}()
+	wg.Wait()
+
+	// Snapshot reservationInfos under lock, then drain everything to confirm
+	// the index is fully reversible (no ledger leak left behind).
+	c.lock.Lock()
+	remaining := make([]types.UID, 0, len(c.reservationInfos))
+	nodeByUID := make(map[types.UID]string, len(c.reservationInfos))
+	for uid, rInfo := range c.reservationInfos {
+		remaining = append(remaining, uid)
+		nodeByUID[uid] = rInfo.GetNodeName()
 	}
+	c.lock.Unlock()
 
-	// Benchmark: Add operation
-	b.Run("Add", func(b *testing.B) {
-		for _, s := range scales {
-			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
-				pods := createPods(s.nodes, s.podsPerNode)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					cache := newReservationCache(nil)
-					addAllPods(cache, pods)
-				}
-			})
-		}
+	// Auditor must already be clean BEFORE the drain (steady-state invariant).
+	assert.Empty(t, c.checkReservationSelectorIndexConsistency(), "index must be consistent under high-frequency concurrent churn")
+
+	for _, uid := range remaining {
+		c.DeleteReservation(&schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{UID: uid},
+			Status:     schedulingv1alpha1.ReservationStatus{NodeName: nodeByUID[uid]},
+		})
+	}
+	assert.Empty(t, c.indexEntryByUID, "every indexEntry must be released after full drain")
+	assert.Empty(t, c.nodesByPrefix, "every nodesByPrefix bucket must be released after full drain")
+	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
+}
+
+func TestDumpReservationSelectorIndex(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		c := newReservationCache(nil)
+		snap := c.DumpReservationSelectorIndex(true)
+		assert.NotNil(t, snap)
+		assert.False(t, snap.Enabled)
+		assert.Empty(t, snap.ByPrefix)
 	})
-
-	// Benchmark: Delete operation
-	b.Run("Delete", func(b *testing.B) {
-		for _, s := range scales {
-			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
-				pods := createPods(s.nodes, s.podsPerNode)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					b.StopTimer()
-					cache := newReservationCache(nil)
-					addAllPods(cache, pods)
-					b.StartTimer()
-
-					for n, nodePods := range pods {
-						nodeName := fmt.Sprintf("node-%d", n)
-						for _, pod := range nodePods {
-							cache.deletePreAllocatableCandidateOnNode(nodeName, pod.UID)
-						}
-					}
-				}
-			})
-		}
+	t.Run("enabled_detail", func(t *testing.T) {
+		c := newIndexedCache()
+		c.updateReservation(newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{idxPrefixQuota + "q": "q"}))
+		c.updateReservation(newIndexTestReservation("uid-2", "r2", "node-a", map[string]string{idxPrefixQuota + "q2": "q2"}))
+		c.updateReservation(newIndexTestReservation("uid-3", "r3", "node-b", map[string]string{idxPrefixTenant + "t": "t"}))
+		snap := c.DumpReservationSelectorIndex(true)
+		assert.True(t, snap.Enabled)
+		assert.ElementsMatch(t, []string{idxPrefixQuota, idxPrefixTenant}, snap.Prefixes)
+		assert.Equal(t, 3, snap.IndexedReservations)
+		quota := snap.ByPrefix[idxPrefixQuota]
+		assert.NotNil(t, quota)
+		assert.Equal(t, 1, quota.Nodes) // both r1 and r2 are on node-a
+		assert.Equal(t, 2, quota.Reservations)
+		assert.ElementsMatch(t, []types.UID{"uid-1", "uid-2"}, quota.ByNode["node-a"])
+		tenant := snap.ByPrefix[idxPrefixTenant]
+		assert.NotNil(t, tenant)
+		assert.Equal(t, []types.UID{"uid-3"}, tenant.ByNode["node-b"])
 	})
-
-	// Benchmark: UpdatePriority operation
-	b.Run("UpdatePriority", func(b *testing.B) {
-		for _, s := range scales {
-			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
-				pods := createPods(s.nodes, s.podsPerNode)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					b.StopTimer()
-					cache := newReservationCache(nil)
-					addAllPods(cache, pods)
-					b.StartTimer()
-
-					for _, nodePods := range pods {
-						for j, pod := range nodePods {
-							pod.Annotations[apiext.AnnotationPodPreAllocatablePriority] = fmt.Sprintf("%d", (j+500)%1000)
-							cache.updatePreAllocatableCandidatePriority(pod)
-						}
-					}
-				}
-			})
-		}
+	t.Run("enabled_summary_only", func(t *testing.T) {
+		c := newIndexedCache()
+		c.updateReservation(newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{idxPrefixQuota + "q": "q"}))
+		c.updateReservation(newIndexTestReservation("uid-2", "r2", "node-a", map[string]string{idxPrefixQuota + "q2": "q2"}))
+		c.updateReservation(newIndexTestReservation("uid-3", "r3", "node-b", map[string]string{idxPrefixTenant + "t": "t"}))
+		snap := c.DumpReservationSelectorIndex(false)
+		assert.True(t, snap.Enabled)
+		assert.Equal(t, 3, snap.IndexedReservations)
+		quota := snap.ByPrefix[idxPrefixQuota]
+		assert.NotNil(t, quota)
+		assert.Equal(t, 1, quota.Nodes)
+		assert.Equal(t, 2, quota.Reservations)
+		// summary mode must NOT expose per-node UID lists.
+		assert.Nil(t, quota.ByNode)
+		tenant := snap.ByPrefix[idxPrefixTenant]
+		assert.NotNil(t, tenant)
+		assert.Nil(t, tenant.ByNode)
 	})
+}
 
-	// Benchmark: GetAll operation
-	b.Run("GetAll", func(b *testing.B) {
-		for _, s := range scales {
-			b.Run(fmt.Sprintf("nodes_%d_podsPerNode_%d", s.nodes, s.podsPerNode), func(b *testing.B) {
-				pods := createPods(s.nodes, s.podsPerNode)
-				cache := newReservationCache(nil)
-				addAllPods(cache, pods)
-
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					_ = cache.getAllPreAllocatableCandidates()
-				}
-			})
-		}
-	})
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	digits := []byte{}
+	negative := false
+	if i < 0 {
+		negative = true
+		i = -i
+	}
+	for i > 0 {
+		digits = append([]byte{byte('0' + i%10)}, digits...)
+		i /= 10
+	}
+	if negative {
+		digits = append([]byte{'-'}, digits...)
+	}
+	return string(digits)
 }

@@ -141,6 +141,25 @@ var (
 		[]string{"reason", "job_size"},
 	)
 
+	ReservationSelectorIndexQueryTotal = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "reservation_selector_index_query_total",
+			Help:           "Total number of reservationSelector index queries, labeled by index hit/miss result.",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"result"},
+	)
+	ReservationSelectorIndexCandidates = metrics.NewHistogram(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "reservation_selector_index_candidates_count",
+			Help:           "The number of candidate nodes returned by the reservationSelector white-list index for an index-hit query.",
+			Buckets:        metrics.ExponentialBuckets(1, 2, 16),
+			StabilityLevel: metrics.ALPHA,
+		},
+	)
+
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ReservationStatusPhase,
@@ -152,6 +171,8 @@ var (
 		NextPodDeleteFromQueueLatency,
 		ElasticQuotaHookPluginLatency,
 		GangScheduleCycleDuration,
+		ReservationSelectorIndexQueryTotal,
+		ReservationSelectorIndexCandidates,
 	}
 
 	gcMetricsList = []prometheus.Collector{
