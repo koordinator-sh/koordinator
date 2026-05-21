@@ -37,9 +37,28 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
+
+// recordReservationSelectorIndexHit emits the index query metrics. It is called
+// only when the white-list index is consulted for a reservationSelector. The
+// candidates argument is meaningful only when hit=true; we deliberately skip
+// the histogram observation when candidates==0 (an empty result short-circuit)
+// because the histogram's first bucket starts at 1 and would otherwise mix
+// 0-candidate hits with 1-candidate hits. The miss vs. hit-empty distinction
+// is still observable through ReservationSelectorIndexQueryTotal.
+func recordReservationSelectorIndexHit(hit bool, candidates int) {
+	result := "miss"
+	if hit {
+		result = "hit"
+		if candidates > 0 {
+			metrics.ReservationSelectorIndexCandidates.Observe(float64(candidates))
+		}
+	}
+	metrics.ReservationSelectorIndexQueryTotal.WithLabelValues(result).Inc()
+}
 
 func (pl *Plugin) BeforePreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *fwktype.Status) {
 	var (
@@ -160,11 +179,32 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 	var allNodes []string
 	var skipRestoreNodeInfo bool
 	hintState, hasHint := getSchedulingHint(cycleState)
-	if !hasHint {
-		allNodes = pl.reservationCache.ListAllNodes(true)
-	} else { // use the hint nodes if exists
+	switch {
+	case hasHint:
+		// scheduling hint takes precedence: it is a pre-computed candidate set.
 		allNodes = hintState.PreFilterNodeInfos
 		skipRestoreNodeInfo = hintState.SkipRestoreNodeInfo
+	case reservationAffinity != nil && affinityReservationName != "":
+		// Name path: a single reservation is targeted, look it up via lister.
+		if r, err := pl.rLister.Get(affinityReservationName); err == nil && r.Status.NodeName != "" {
+			allNodes = []string{r.Status.NodeName}
+		} else {
+			allNodes = pl.reservationCache.ListAllNodes(true)
+		}
+	case pl.reservationCache.indexEnabled && reservationAffinity != nil:
+		rSelector := reservationAffinity.GetReservationSelector()
+		// Selector path: try to narrow down candidate nodes via the prefix existence index.
+		nodes, indexHit := pl.reservationCache.FilterByReservationSelector(rSelector)
+		if indexHit {
+			allNodes = nodes
+			recordReservationSelectorIndexHit(true, len(allNodes))
+		} else {
+			// no configured prefix matched any selector key; fall back to legacy path.
+			allNodes = pl.reservationCache.ListAllNodes(true)
+			recordReservationSelectorIndexHit(false, 0)
+		}
+	default:
+		allNodes = pl.reservationCache.ListAllNodes(true)
 	}
 	allNodeReservationStates := make([]*nodeReservationState, len(allNodes))
 	allNodeDiagnosisStates := make([]*nodeDiagnosisState, len(allNodes))
