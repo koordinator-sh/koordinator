@@ -147,13 +147,21 @@ func (s *podsInformer) GetAllPods() []*statesinformer.PodMeta {
 
 func (s *podsInformer) getTaskIds(podMeta *statesinformer.PodMeta) {
 	pod := podMeta.Pod
-	containerMap := make(map[string]*corev1.Container, len(pod.Spec.Containers))
+	containerMap := make(map[string]*corev1.Container, len(pod.Spec.Containers)+len(pod.Spec.InitContainers))
+	for i := range pod.Spec.InitContainers {
+		container := &pod.Spec.InitContainers[i]
+		containerMap[container.Name] = container
+	}
 	for i := range pod.Spec.Containers {
 		container := &pod.Spec.Containers[i]
 		containerMap[container.Name] = container
 	}
 
-	for _, containerStat := range pod.Status.ContainerStatuses {
+	allContainerStatuses := make([]corev1.ContainerStatus, 0, len(pod.Status.ContainerStatuses)+len(pod.Status.InitContainerStatuses))
+	allContainerStatuses = append(allContainerStatuses, pod.Status.InitContainerStatuses...)
+	allContainerStatuses = append(allContainerStatuses, pod.Status.ContainerStatuses...)
+
+	for _, containerStat := range allContainerStatuses {
 		container, exist := containerMap[containerStat.Name]
 		if !exist {
 			klog.Warningf("container %s/%s/%s lost during reconcile resctrl group", pod.Namespace,
@@ -330,11 +338,25 @@ func recordPodResourceMetrics(podMeta *statesinformer.PodMeta) {
 	}
 	pod := podMeta.Pod
 
-	// record (regular) container metrics
 	containerStatusMap := map[string]*corev1.ContainerStatus{}
+	for i := range pod.Status.InitContainerStatuses {
+		containerStatus := &pod.Status.InitContainerStatuses[i]
+		containerStatusMap[containerStatus.Name] = containerStatus
+	}
 	for i := range pod.Status.ContainerStatuses {
 		containerStatus := &pod.Status.ContainerStatuses[i]
 		containerStatusMap[containerStatus.Name] = containerStatus
+	}
+
+	for i := range pod.Spec.InitContainers {
+		c := &pod.Spec.InitContainers[i]
+		containerStatus, ok := containerStatusMap[c.Name]
+		if !ok {
+			klog.V(6).Infof("skip record container resources metric, init container %s/%s/%s status not exist",
+				pod.Namespace, pod.Name, c.Name)
+			continue
+		}
+		recordContainerResourceMetrics(c, containerStatus, pod)
 	}
 	for i := range pod.Spec.Containers {
 		c := &pod.Spec.Containers[i]

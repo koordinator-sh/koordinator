@@ -26,24 +26,44 @@ import (
 
 func GetPodMilliCPULimit(pod *corev1.Pod) int64 {
 	podCPUMilliLimit := int64(0)
+	sidecarCPUMilliLimit := int64(0)
+	maxInitCPUMilliLimit := int64(0)
+
 	for _, container := range pod.Spec.Containers {
 		containerCPUMilliLimit := GetContainerMilliCPULimit(&container)
 		if containerCPUMilliLimit <= 0 {
-			return -1
+			podCPUMilliLimit = -1
+			break
 		}
 		podCPUMilliLimit += containerCPUMilliLimit
 	}
 	for _, container := range pod.Spec.InitContainers {
 		containerCPUMilliLimit := GetContainerMilliCPULimit(&container)
-		if containerCPUMilliLimit <= 0 {
-			return -1
+		if IsSidecarContainer(&container) {
+			if containerCPUMilliLimit <= 0 {
+				sidecarCPUMilliLimit = -1
+			} else if sidecarCPUMilliLimit >= 0 {
+				sidecarCPUMilliLimit += containerCPUMilliLimit
+			}
+		} else {
+			if containerCPUMilliLimit <= 0 {
+				maxInitCPUMilliLimit = -1
+			} else if maxInitCPUMilliLimit >= 0 {
+				maxInitCPUMilliLimit = MaxInt64(maxInitCPUMilliLimit, containerCPUMilliLimit)
+			}
 		}
-		podCPUMilliLimit = MaxInt64(podCPUMilliLimit, containerCPUMilliLimit)
 	}
-	if podCPUMilliLimit <= 0 {
+
+	if podCPUMilliLimit >= 0 && sidecarCPUMilliLimit >= 0 {
+		podCPUMilliLimit += sidecarCPUMilliLimit
+	} else {
+		podCPUMilliLimit = -1
+	}
+
+	if podCPUMilliLimit < 0 || maxInitCPUMilliLimit < 0 {
 		return -1
 	}
-	return podCPUMilliLimit
+	return MaxInt64(podCPUMilliLimit, maxInitCPUMilliLimit)
 }
 
 func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1.ResourceList {
@@ -56,62 +76,139 @@ func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1
 
 func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 	podCPUMilliReq := int64(0)
-	// TODO: count init containers and pod overhead
+	sidecarCPUMilliReq := int64(0)
+	maxInitCPUMilliReq := int64(0)
+
 	for _, container := range pod.Spec.Containers {
 		containerCPUMilliReq := GetContainerBatchMilliCPURequest(&container)
-		if containerCPUMilliReq <= 0 {
-			containerCPUMilliReq = 0
+		if containerCPUMilliReq > 0 {
+			podCPUMilliReq += containerCPUMilliReq
 		}
-		podCPUMilliReq += containerCPUMilliReq
+	}
+	for _, container := range pod.Spec.InitContainers {
+		containerCPUMilliReq := GetContainerBatchMilliCPURequest(&container)
+		if IsSidecarContainer(&container) {
+			if containerCPUMilliReq > 0 {
+				sidecarCPUMilliReq += containerCPUMilliReq
+			}
+		} else {
+			if containerCPUMilliReq > 0 {
+				maxInitCPUMilliReq = MaxInt64(maxInitCPUMilliReq, containerCPUMilliReq)
+			}
+		}
 	}
 
-	return podCPUMilliReq
+	return MaxInt64(maxInitCPUMilliReq, podCPUMilliReq+sidecarCPUMilliReq)
 }
 
 func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
 	podCPUMilliLimit := int64(0)
-	// TODO: count init containers and pod overhead
+	sidecarCPUMilliLimit := int64(0)
+	maxInitCPUMilliLimit := int64(0)
+
 	for _, container := range pod.Spec.Containers {
 		containerCPUMilliLimit := GetContainerBatchMilliCPULimit(&container)
 		if containerCPUMilliLimit <= 0 {
-			return -1
+			podCPUMilliLimit = -1
+			break
 		}
 		podCPUMilliLimit += containerCPUMilliLimit
 	}
-	if podCPUMilliLimit <= 0 {
+	for _, container := range pod.Spec.InitContainers {
+		containerCPUMilliLimit := GetContainerBatchMilliCPULimit(&container)
+		if IsSidecarContainer(&container) {
+			if containerCPUMilliLimit <= 0 {
+				sidecarCPUMilliLimit = -1
+			} else if sidecarCPUMilliLimit >= 0 {
+				sidecarCPUMilliLimit += containerCPUMilliLimit
+			}
+		} else {
+			if containerCPUMilliLimit <= 0 {
+				maxInitCPUMilliLimit = -1
+			} else if maxInitCPUMilliLimit >= 0 {
+				maxInitCPUMilliLimit = MaxInt64(maxInitCPUMilliLimit, containerCPUMilliLimit)
+			}
+		}
+	}
+
+	if podCPUMilliLimit >= 0 && sidecarCPUMilliLimit >= 0 {
+		podCPUMilliLimit += sidecarCPUMilliLimit
+	} else {
+		podCPUMilliLimit = -1
+	}
+
+	if podCPUMilliLimit < 0 || maxInitCPUMilliLimit < 0 {
 		return -1
 	}
-	return podCPUMilliLimit
+	return MaxInt64(podCPUMilliLimit, maxInitCPUMilliLimit)
 }
 
 func GetPodBEMemoryByteRequestIgnoreUnlimited(pod *corev1.Pod) int64 {
 	podMemoryByteRequest := int64(0)
-	// TODO: count init containers and pod overhead
+	sidecarMemoryByteRequest := int64(0)
+	maxInitMemoryByteRequest := int64(0)
+
 	for _, container := range pod.Spec.Containers {
 		containerMemByteRequest := GetContainerBatchMemoryByteRequest(&container)
-		if containerMemByteRequest < 0 {
-			// consider request of unlimited container as 0
-			continue
+		if containerMemByteRequest > 0 {
+			podMemoryByteRequest += containerMemByteRequest
 		}
-		podMemoryByteRequest += containerMemByteRequest
 	}
-	return podMemoryByteRequest
+	for _, container := range pod.Spec.InitContainers {
+		containerMemByteRequest := GetContainerBatchMemoryByteRequest(&container)
+		if IsSidecarContainer(&container) {
+			if containerMemByteRequest > 0 {
+				sidecarMemoryByteRequest += containerMemByteRequest
+			}
+		} else {
+			if containerMemByteRequest > 0 {
+				maxInitMemoryByteRequest = MaxInt64(maxInitMemoryByteRequest, containerMemByteRequest)
+			}
+		}
+	}
+	return MaxInt64(maxInitMemoryByteRequest, podMemoryByteRequest+sidecarMemoryByteRequest)
 }
 
 func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
 	podMemoryByteLimit := int64(0)
-	// TODO: count init containers and pod overhead
+	sidecarMemoryByteLimit := int64(0)
+	maxInitMemoryByteLimit := int64(0)
+
 	for _, container := range pod.Spec.Containers {
 		containerMemByteLimit := GetContainerBatchMemoryByteLimit(&container)
 		if containerMemByteLimit <= 0 {
-			return -1
+			podMemoryByteLimit = -1
+			break
 		}
 		podMemoryByteLimit += containerMemByteLimit
 	}
-	if podMemoryByteLimit <= 0 {
+	for _, container := range pod.Spec.InitContainers {
+		containerMemByteLimit := GetContainerBatchMemoryByteLimit(&container)
+		if IsSidecarContainer(&container) {
+			if containerMemByteLimit <= 0 {
+				sidecarMemoryByteLimit = -1
+			} else if sidecarMemoryByteLimit >= 0 {
+				sidecarMemoryByteLimit += containerMemByteLimit
+			}
+		} else {
+			if containerMemByteLimit <= 0 {
+				maxInitMemoryByteLimit = -1
+			} else if maxInitMemoryByteLimit >= 0 {
+				maxInitMemoryByteLimit = MaxInt64(maxInitMemoryByteLimit, containerMemByteLimit)
+			}
+		}
+	}
+
+	if podMemoryByteLimit >= 0 && sidecarMemoryByteLimit >= 0 {
+		podMemoryByteLimit += sidecarMemoryByteLimit
+	} else {
+		podMemoryByteLimit = -1
+	}
+
+	if podMemoryByteLimit < 0 || maxInitMemoryByteLimit < 0 {
 		return -1
 	}
-	return podMemoryByteLimit
+	return MaxInt64(podMemoryByteLimit, maxInitMemoryByteLimit)
 }
 
 // AddResourceList adds the resources in newList to list.
