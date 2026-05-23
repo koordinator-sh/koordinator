@@ -316,6 +316,28 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	completedProfiles := make([]deschedulerconfig.DeschedulerProfile, 0)
 
+	// Ensure DetectorCacheTimeout >= DeschedulingInterval for LowNodeLoad plugins.
+	// If DetectorCacheTimeout is smaller than DeschedulingInterval, the anomaly
+	// detector cache entries expire between descheduling cycles, causing evictions
+	// to silently stop working because the detector never accumulates enough
+	// consecutive abnormalities.
+	deschedulingInterval := cc.ComponentConfig.DeschedulingInterval.Duration
+	if deschedulingInterval > 0 {
+		for i := range cc.ComponentConfig.Profiles {
+			for j := range cc.ComponentConfig.Profiles[i].PluginConfig {
+				if args, ok := cc.ComponentConfig.Profiles[i].PluginConfig[j].Args.(*deschedulerconfig.LowNodeLoadArgs); ok {
+					if args.DetectorCacheTimeout != nil && args.DetectorCacheTimeout.Duration < deschedulingInterval {
+						klog.InfoS("DetectorCacheTimeout is less than DeschedulingInterval, adjusting to avoid silent eviction failures",
+							"original", args.DetectorCacheTimeout.Duration,
+							"adjusted", deschedulingInterval,
+							"deschedulingInterval", deschedulingInterval)
+						args.DetectorCacheTimeout.Duration = deschedulingInterval
+					}
+				}
+			}
+		}
+	}
+
 	recorderFactory := func(name string) events.EventRecorder {
 		broadcaster := record.NewBroadcaster()
 		recorder := broadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: name})
