@@ -39,6 +39,9 @@ func GetResourceRequest(pod *corev1.Pod, resource corev1.ResourceName) int64 {
 }
 
 // GetResourceRequestQuantity finds and returns the request quantity for a specific resource.
+// It follows the KEP-753 sidecar container resource calculation:
+// sidecar containers (initContainers with restartPolicy=Always) are summed like regular containers,
+// while regular init containers use max-based comparison.
 func GetResourceRequestQuantity(pod *corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
 	requestQuantity := resource.Quantity{}
 	switch resourceName {
@@ -56,10 +59,19 @@ func GetResourceRequestQuantity(pod *corev1.Pod, resourceName corev1.ResourceNam
 		}
 	}
 
+	// Sidecar containers (initContainers with restartPolicy=Always) run alongside
+	// regular containers, so their requests should be summed.
+	// Regular init containers use max-based comparison.
 	for _, container := range pod.Spec.InitContainers {
-		if rQuantity, ok := container.Resources.Requests[resourceName]; ok {
-			if requestQuantity.Cmp(rQuantity) < 0 {
-				requestQuantity = rQuantity.DeepCopy()
+		if container.RestartPolicy != nil && *container.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+			if rQuantity, ok := container.Resources.Requests[resourceName]; ok {
+				requestQuantity.Add(rQuantity)
+			}
+		} else {
+			if rQuantity, ok := container.Resources.Requests[resourceName]; ok {
+				if requestQuantity.Cmp(rQuantity) < 0 {
+					requestQuantity = rQuantity.DeepCopy()
+				}
 			}
 		}
 	}

@@ -36,6 +36,7 @@ import (
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
+	"k8s.io/utils/ptr"
 
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -322,4 +323,139 @@ func (f *testSharedLister) HavePodsWithRequiredAntiAffinityList() ([]fwktype.Nod
 
 func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 	return f.nodeInfoMap[nodeName], nil
+}
+
+func Test_calculatePodResourceRequest_WithSidecar(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		resource corev1.ResourceName
+		want     int64
+	}{
+		{
+			name: "containers only",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("2"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("3"),
+								},
+							},
+						},
+					},
+				},
+			},
+			resource: corev1.ResourceCPU,
+			want:     5000,
+		},
+		{
+			name: "with regular init container (max-based)",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name: "init",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("10"),
+								},
+							},
+						},
+					},
+				},
+			},
+			resource: corev1.ResourceCPU,
+			want:     10000, // max(2000, 10000)
+		},
+		{
+			name: "with sidecar init container (sum-based)",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name:          "sidecar",
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			resource: corev1.ResourceCPU,
+			want:     3000, // 2000 + 1000
+		},
+		{
+			name: "with both sidecar and regular init containers",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name:          "sidecar",
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+						{
+							Name: "init",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("5"),
+								},
+							},
+						},
+					},
+				},
+			},
+			resource: corev1.ResourceCPU,
+			want:     5000, // max(2000+1000, 5000)
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := calculatePodResourceRequest(tt.pod, tt.resource)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

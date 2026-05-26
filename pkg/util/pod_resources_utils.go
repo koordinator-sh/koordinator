@@ -24,6 +24,12 @@ import (
 
 // NOTE: functions in this file can be overwritten for extension
 
+// IsSidecarContainer returns true if the container is an init container with
+// restartPolicy=Always, which means it is a sidecar container (KEP-753).
+func IsSidecarContainer(c corev1.Container) bool {
+	return c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways
+}
+
 func GetPodMilliCPULimit(pod *corev1.Pod) int64 {
 	podCPUMilliLimit := int64(0)
 	for _, container := range pod.Spec.Containers {
@@ -33,12 +39,21 @@ func GetPodMilliCPULimit(pod *corev1.Pod) int64 {
 		}
 		podCPUMilliLimit += containerCPUMilliLimit
 	}
+	// Sidecar containers (init containers with restartPolicy=Always) run alongside
+	// regular containers, so their limits should be summed rather than max-ed.
 	for _, container := range pod.Spec.InitContainers {
 		containerCPUMilliLimit := GetContainerMilliCPULimit(&container)
-		if containerCPUMilliLimit <= 0 {
-			return -1
+		if IsSidecarContainer(container) {
+			if containerCPUMilliLimit <= 0 {
+				return -1
+			}
+			podCPUMilliLimit += containerCPUMilliLimit
+		} else {
+			if containerCPUMilliLimit <= 0 {
+				return -1
+			}
+			podCPUMilliLimit = MaxInt64(podCPUMilliLimit, containerCPUMilliLimit)
 		}
-		podCPUMilliLimit = MaxInt64(podCPUMilliLimit, containerCPUMilliLimit)
 	}
 	if podCPUMilliLimit <= 0 {
 		return -1
@@ -56,7 +71,6 @@ func GetPodRequest(pod *corev1.Pod, resourceNames ...corev1.ResourceName) corev1
 
 func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 	podCPUMilliReq := int64(0)
-	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
 		containerCPUMilliReq := GetContainerBatchMilliCPURequest(&container)
 		if containerCPUMilliReq <= 0 {
@@ -64,19 +78,38 @@ func GetPodBEMilliCPURequest(pod *corev1.Pod) int64 {
 		}
 		podCPUMilliReq += containerCPUMilliReq
 	}
+	// Sidecar containers run alongside regular containers and should be summed.
+	for _, container := range pod.Spec.InitContainers {
+		if IsSidecarContainer(container) {
+			containerCPUMilliReq := GetContainerBatchMilliCPURequest(&container)
+			if containerCPUMilliReq <= 0 {
+				containerCPUMilliReq = 0
+			}
+			podCPUMilliReq += containerCPUMilliReq
+		}
+	}
 
 	return podCPUMilliReq
 }
 
 func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
 	podCPUMilliLimit := int64(0)
-	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
 		containerCPUMilliLimit := GetContainerBatchMilliCPULimit(&container)
 		if containerCPUMilliLimit <= 0 {
 			return -1
 		}
 		podCPUMilliLimit += containerCPUMilliLimit
+	}
+	// Sidecar containers run alongside regular containers and should be summed.
+	for _, container := range pod.Spec.InitContainers {
+		if IsSidecarContainer(container) {
+			containerCPUMilliLimit := GetContainerBatchMilliCPULimit(&container)
+			if containerCPUMilliLimit <= 0 {
+				return -1
+			}
+			podCPUMilliLimit += containerCPUMilliLimit
+		}
 	}
 	if podCPUMilliLimit <= 0 {
 		return -1
@@ -86,7 +119,6 @@ func GetPodBEMilliCPULimit(pod *corev1.Pod) int64 {
 
 func GetPodBEMemoryByteRequestIgnoreUnlimited(pod *corev1.Pod) int64 {
 	podMemoryByteRequest := int64(0)
-	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
 		containerMemByteRequest := GetContainerBatchMemoryByteRequest(&container)
 		if containerMemByteRequest < 0 {
@@ -95,18 +127,37 @@ func GetPodBEMemoryByteRequestIgnoreUnlimited(pod *corev1.Pod) int64 {
 		}
 		podMemoryByteRequest += containerMemByteRequest
 	}
+	// Sidecar containers run alongside regular containers and should be summed.
+	for _, container := range pod.Spec.InitContainers {
+		if IsSidecarContainer(container) {
+			containerMemByteRequest := GetContainerBatchMemoryByteRequest(&container)
+			if containerMemByteRequest < 0 {
+				continue
+			}
+			podMemoryByteRequest += containerMemByteRequest
+		}
+	}
 	return podMemoryByteRequest
 }
 
 func GetPodBEMemoryByteLimit(pod *corev1.Pod) int64 {
 	podMemoryByteLimit := int64(0)
-	// TODO: count init containers and pod overhead
 	for _, container := range pod.Spec.Containers {
 		containerMemByteLimit := GetContainerBatchMemoryByteLimit(&container)
 		if containerMemByteLimit <= 0 {
 			return -1
 		}
 		podMemoryByteLimit += containerMemByteLimit
+	}
+	// Sidecar containers run alongside regular containers and should be summed.
+	for _, container := range pod.Spec.InitContainers {
+		if IsSidecarContainer(container) {
+			containerMemByteLimit := GetContainerBatchMemoryByteLimit(&container)
+			if containerMemByteLimit <= 0 {
+				return -1
+			}
+			podMemoryByteLimit += containerMemByteLimit
+		}
 	}
 	if podMemoryByteLimit <= 0 {
 		return -1
