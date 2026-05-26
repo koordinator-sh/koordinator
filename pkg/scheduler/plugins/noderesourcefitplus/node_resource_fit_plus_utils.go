@@ -136,7 +136,8 @@ func calculateResourceAllocatableRequest(nodeInfo fwktype.NodeInfo, pod *v1.Pod,
 
 // calculatePodResourceRequest returns the total non-zero requests. If Overhead is defined for the pod and the
 // PodOverhead feature is enabled, the Overhead is added to the result.
-// podResourceRequest = max(sum(podSpec.Containers), podSpec.InitContainers) + overHead
+// It follows the KEP-753 sidecar container resource calculation:
+// podResourceRequest = max(sum(Containers) + sum(SidecarInitContainers), max(Regular_InitContainer + preceding_sidecars)) + overHead
 func calculatePodResourceRequest(pod *v1.Pod, resource v1.ResourceName) int64 {
 	var podRequest int64
 	for i := range pod.Spec.Containers {
@@ -145,11 +146,18 @@ func calculatePodResourceRequest(pod *v1.Pod, resource v1.ResourceName) int64 {
 		podRequest += value
 	}
 
+	// Sidecar containers (initContainers with restartPolicy=Always) run alongside
+	// regular containers, so their requests should be summed.
+	// Regular init containers use max-based comparison.
 	for i := range pod.Spec.InitContainers {
 		initContainer := &pod.Spec.InitContainers[i]
 		value := GetNonzeroRequestForResource(resource, &initContainer.Resources.Requests)
-		if podRequest < value {
-			podRequest = value
+		if initContainer.RestartPolicy != nil && *initContainer.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			podRequest += value
+		} else {
+			if podRequest < value {
+				podRequest = value
+			}
 		}
 	}
 

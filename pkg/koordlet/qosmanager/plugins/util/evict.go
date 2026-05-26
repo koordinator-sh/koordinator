@@ -239,6 +239,16 @@ func GetRequestTypeAndValueFromPod(pod *corev1.Pod, name corev1.ResourceName) (c
 			}
 			resContainerReq += containerReq
 		}
+		// Sidecar containers run alongside regular containers and should be summed.
+		for _, container := range pod.Spec.InitContainers {
+			if util.IsSidecarContainer(container) {
+				containerReq := getCRequest(&container)
+				if containerReq <= 0 {
+					containerReq = 0
+				}
+				resContainerReq += containerReq
+			}
+		}
 		return resContainerReq
 	}
 	var getCRequest func(*corev1.Container) int64
