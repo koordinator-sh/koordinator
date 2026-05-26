@@ -269,7 +269,7 @@ func (g *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, p
 	}
 	quotaInfo := mgr.GetQuotaInfoByName(quotaName)
 	if quotaInfo == nil {
-		return nil, fwktype.NewStatus(fwktype.Error, fmt.Sprintf("Could not find the specified ElasticQuota"))
+		return nil, fwktype.NewStatus(fwktype.Error, "Could not find the specified ElasticQuota")
 	}
 	state := g.snapshotPostFilterState(quotaInfo, cycleState)
 
