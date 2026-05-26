@@ -468,8 +468,8 @@ func TestEvaluate(t *testing.T) {
 
 func TestEvaluateSequential(t *testing.T) {
 	type step struct {
-		req         corev1.ResourceList
-		expectErr   string // substring; empty means success
+		req       corev1.ResourceList
+		expectErr string // substring; empty means success
 	}
 	tests := []struct {
 		name            string
@@ -499,7 +499,7 @@ func TestEvaluateSequential(t *testing.T) {
 				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")}).ChildRequest(
 				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")}).Obj(),
 			steps: []step{
-				{req: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}},                  // 8+1=9 <=10
+				{req: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}},                              // 8+1=9 <=10
 				{req: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")}, expectErr: "exceeded quota"}, // 9+3=12 >10
 			},
 		},
