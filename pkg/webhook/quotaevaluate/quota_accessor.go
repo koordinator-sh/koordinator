@@ -18,14 +18,18 @@ package quotaevaluate
 
 import (
 	"context"
+	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apiserver/pkg/storage"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/lru"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 )
 
@@ -34,14 +38,20 @@ import (
 type QuotaAccessor interface {
 	// UpdateQuotaStatus is called to persist final status.  This method should write to persistent storage.
 	// An error indicates that write didn't complete successfully.
-	UpdateQuotaStatus(newQuota *v1alpha1.ElasticQuota) error
+	//
+	// jitter is the upper bound of an optional decorrelation sleep injected on
+	// conflict, before the fresh-quota read. Caller passes 0 to disable. Actual
+	// sleep is drawn from [jitter/2, jitter).
+	UpdateQuotaStatus(newQuota *v1alpha1.ElasticQuota, jitter time.Duration) error
 
 	// GetQuota gets the specificated elastic quota.
 	GetQuota(key string) (*v1alpha1.ElasticQuota, error)
 }
 
 type quotaAccessor struct {
-	client client.Client
+	client    client.Client
+	apiReader client.Reader // non-cached reader for conflict recovery
+
 	// updatedQuotas holds a cache of quotas that we've updated.  This is used to pull the "really latest" during back to
 	// back quota evaluations that touch the same quota doc.  This only works because we can compare etcd resourceVersions
 	// for the same resource as integers.  Before this change: 22 updates with 12 conflicts.  after this change: 15 updates with 0 conflicts
@@ -49,23 +59,42 @@ type quotaAccessor struct {
 }
 
 // NewQuotaAccessor creates an object that conforms to the QuotaAccessor interface to be used to retrieve quota objects.
-func NewQuotaAccessor(c client.Client) *quotaAccessor {
+func NewQuotaAccessor(c client.Client, apiReader client.Reader) *quotaAccessor {
 	updatedCache := lru.New(100)
 	return &quotaAccessor{
 		client:        c,
+		apiReader:     apiReader,
 		updatedQuotas: updatedCache,
 	}
 }
 
-func (q *quotaAccessor) UpdateQuotaStatus(newQuota *v1alpha1.ElasticQuota) error {
+func (q *quotaAccessor) UpdateQuotaStatus(newQuota *v1alpha1.ElasticQuota, jitter time.Duration) error {
 	err := q.client.Update(context.TODO(), newQuota)
-	if err != nil {
-		return err
-	}
 	key := newQuota.Namespace + "/" + newQuota.Name
+	if err != nil {
+		if !apierrors.IsConflict(err) {
+			return err
+		}
+		// Sleep BEFORE the fresh read so the cached freshQuota is the freshest
+		// possible; sleeping after would leave a stale ResourceVersion that
+		// guarantees another conflict on the next update.
+		if jitter > 0 {
+			time.Sleep(wait.Jitter(jitter/2, 1.0))
+		}
+		freshQuota := &v1alpha1.ElasticQuota{}
+		if getErr := q.apiReader.Get(context.TODO(), types.NamespacedName{
+			Namespace: newQuota.Namespace,
+			Name:      newQuota.Name,
+		}, freshQuota); getErr != nil {
+			klog.ErrorS(getErr, "Failed to get fresh quota on conflict", "key", key)
+			return err
+		}
+		newQuota = freshQuota
+	}
 	q.updatedQuotas.Add(key, newQuota)
-	klog.Infof("quota acessor update status for: %v, usage: %v", key, newQuota.Status.Used)
-	return nil
+	klog.V(4).InfoS("Quota accessor cache updated", "key", key, "resourceVersion", newQuota.ResourceVersion,
+		"usage", newQuota.Annotations[extension.AnnotationChildRequest], "updateErr", err)
+	return err
 }
 
 var etcdVersioner = storage.APIObjectVersioner{}

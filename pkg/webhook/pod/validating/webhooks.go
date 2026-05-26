@@ -50,7 +50,7 @@ func (b *podValidateBuilder) Build() admission.Handler {
 		Client:  b.mgr.GetClient(),
 		Decoder: admission.NewDecoder(b.mgr.GetScheme()),
 	}
-	quotaAccessor := quotaevaluate.NewQuotaAccessor(h.Client)
+	quotaAccessor := quotaevaluate.NewQuotaAccessor(h.Client, b.mgr.GetAPIReader())
 	h.QuotaEvaluator = quotaevaluate.NewQuotaEvaluator(quotaAccessor, 16, make(chan struct{}))
 	h.PodEnhancedValidator = NewPodEnhancedValidator(b.mgr.GetClient())
 
