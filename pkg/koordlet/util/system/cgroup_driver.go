@@ -192,7 +192,7 @@ var cgroupPathFormatterInCgroupfs = Formatter{
 			return RuntimeTypeUnknown, "", fmt.Errorf("parse container id %s failed", id)
 		}
 		if hashID[0] == RuntimeTypeDocker || hashID[0] == RuntimeTypeContainerd || hashID[0] == RuntimeTypePouch || hashID[0] == RuntimeTypeCrio {
-			return hashID[0], fmt.Sprintf("%s", hashID[1]), nil
+			return hashID[0], hashID[1], nil
 		} else {
 			return RuntimeTypeUnknown, "", fmt.Errorf("unknown container protocol %s", id)
 		}
