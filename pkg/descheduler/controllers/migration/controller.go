@@ -514,7 +514,7 @@ func getLimiterKeyAndProcessScope(pod *corev1.Pod, limiterType deschedulerconfig
 		}
 	case deschedulerconfig.MigrationLimitObjectNamespace:
 		limiterKey = pod.Namespace
-		processScope = fmt.Sprintf("%s", pod.Namespace)
+		processScope = pod.Namespace
 	}
 	return limiterKey, processScope
 }
@@ -571,7 +571,7 @@ func (r *Reconciler) abortJobIfTimeout(ctx context.Context, job *sev1alpha1.PodM
 func (r *Reconciler) abortJobByInvalidPodRef(ctx context.Context, job *sev1alpha1.PodMigrationJob) error {
 	job.Status.Phase = sev1alpha1.PodMigrationJobFailed
 	job.Status.Reason = "InvalidPodRef"
-	job.Status.Message = fmt.Sprintf("Abort job caused by invalid PodRef")
+	job.Status.Message = "Abort job caused by invalid PodRef"
 	err := r.Status().Update(ctx, job)
 	if err == nil {
 		r.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, "InvalidPodRef", "Migrating", job.Status.Message)
