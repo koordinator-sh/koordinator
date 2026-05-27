@@ -151,6 +151,11 @@ func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Req
 	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
 		metrics.Pod, string(req.Operation), nil, DeviceResourceSpec, time.Since(start).Seconds())
 
+	if err := h.multiSchedulerDispatchMutatingPod(ctx, req, obj); err != nil {
+		klog.Errorf("Failed to mutating Pod %s/%s by MultiSchedulerDispatcher, err: %v", obj.Namespace, obj.Name, err)
+		return err
+	}
+
 	return nil
 }
 
