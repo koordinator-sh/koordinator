@@ -145,19 +145,20 @@ var (
 		&metrics.CounterOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
 			Name:           "reservation_selector_index_query_total",
-			Help:           "Total number of reservationSelector index queries, labeled by index hit/miss result.",
+			Help:           "Total number of reservationSelector index queries, labeled by index hit/miss result and matched index key.",
 			StabilityLevel: metrics.ALPHA,
 		},
-		[]string{"result"},
+		[]string{"result", "index_key"},
 	)
-	ReservationSelectorIndexCandidates = metrics.NewHistogram(
+	ReservationSelectorIndexCandidates = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
 			Name:           "reservation_selector_index_candidates_count",
-			Help:           "The number of candidate nodes returned by the reservationSelector white-list index for an index-hit query.",
+			Help:           "The number of candidate nodes returned by the reservationSelector white-list index for an index-hit query, labeled by matched index key.",
 			Buckets:        metrics.ExponentialBuckets(1, 2, 16),
 			StabilityLevel: metrics.ALPHA,
 		},
+		[]string{"index_key"},
 	)
 
 	metricsList = []metrics.Registerable{

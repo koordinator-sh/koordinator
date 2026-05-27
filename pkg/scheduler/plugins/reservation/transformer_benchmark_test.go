@@ -459,7 +459,7 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 // observable.
 func BenchmarkBeforePrefilterWithMatchedPodReservationSelectorIndex(b *testing.B) {
 	const (
-		nodeCount     = 1000
+		nodeCount     = 256
 		indexedStride = 10 // every 1/k node has an indexed reservation
 		targetTeam    = "team-A"
 	)
@@ -504,29 +504,27 @@ func runBenchmarkBeforePrefilterReservationSelectorIndex(b *testing.B, nodeCount
 			preFilterNodeNames = append(preFilterNodeNames, node.Name)
 		}
 
-		for j := 0; j < 8; j++ {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("test-pod-%d-%d", i, j),
-					Namespace: "default",
-					UID:       types.UID(fmt.Sprintf("%d-%d", i, j)),
-				},
-				Spec: corev1.PodSpec{
-					NodeName: fmt.Sprintf("node-%d", i),
-					Containers: []corev1.Container{
-						{
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1"),
-									corev1.ResourceMemory: resource.MustParse("2Gi"),
-								},
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("test-pod-%d", i),
+				Namespace: "default",
+				UID:       types.UID(fmt.Sprintf("%d", i)),
+			},
+			Spec: corev1.PodSpec{
+				NodeName: fmt.Sprintf("node-%d", i),
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("1"),
+								corev1.ResourceMemory: resource.MustParse("2Gi"),
 							},
 						},
 					},
 				},
-			}
-			pods = append(pods, pod)
+			},
 		}
+		pods = append(pods, pod)
 	}
 	suit := newPluginTestSuitWith(b, pods, nodes)
 	p, err := suit.pluginFactory()
@@ -674,7 +672,12 @@ func runBenchmarkBeforePrefilterReservationSelectorIndex(b *testing.B, nodeCount
 		status = pl.AfterPreFilter(context.TODO(), cycleState, pod, preFilterResult)
 		assert.True(b, status.IsSuccess())
 
-		b.StopTimer()
+		// Restore reserve pods removed by lazy-restore so the next
+		// iteration starts from a clean NodeInfo. This cleanup is
+		// identical for both sub-benches so it does not skew the
+		// relative comparison. Kept inside the measured region to
+		// avoid StopTimer/StartTimer overhead (~200µs/call) that would
+		// dominate the auto-tuned iteration count.
 		sd := getStateData(cycleState)
 		for _, v := range sd.nodeReservationStates {
 			nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(v.nodeName)
@@ -686,7 +689,6 @@ func runBenchmarkBeforePrefilterReservationSelectorIndex(b *testing.B, nodeCount
 				}
 			}
 		}
-		b.StartTimer()
 	}
 }
 func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testing.B) {

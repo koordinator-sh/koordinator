@@ -83,52 +83,40 @@ type reservationCache struct {
 	// preAllocatablePriorityAnnotationKey is the resolved annotation key for pod priority.
 	preAllocatablePriorityAnnotationKey string
 
-	// reservationSelector white-list inverted index. The index lets pods carrying a
-	// reservationSelector quickly enumerate the candidate NODES that hold any
-	// reservation matching the configured prefix(es) / exact key(s), without
-	// scanning every node that owns reservations.
+	// reservationSelector white-list inverted index.
 	//
-	// indexEnabled / indexedPrefixes / indexedKeys are immutable after
-	// initialization (set via setReservationSelectorIndexConfig before any
-	// event-handler is registered) so they can be read without taking the
-	// cache lock. nodesByPrefix, nodesByExactKV and indexEntryByUID are
-	// guarded by `lock`.
+	// Design principle: ROI-based initial filter, NOT precise pre-selection.
+	// The index returns the candidate node set from the FIRST matching bucket
+	// (in priority order); downstream full selector matching in
+	// checkReservationMatchedOrIgnored guarantees correctness.
 	//
-	// The index is organized at NODE level (instead of UID level), with two
-	// independent buckets that have intentionally different granularity:
+	// Priority order (read side):
+	//   1. KeyPrefixes (config order) — first prefix hit wins
+	//   2. Keys (config order) — first exact-key hit wins
+	// No AND-join across buckets; no dedup; no smallest-bucket selection.
 	//
-	//  - nodesByPrefix[p][node] is the set of reservation UIDs on that node
-	//    carrying any label whose key starts with prefix `p`. The prefix
-	//    bucket only narrows the candidate set by KEY (label values are NOT
-	//    considered here), because in the production label pattern
-	//    `xxxyyy: yyy` the dynamic part already lives in the key, so
-	//    downstream selector full-match recovers (key, value) precision
-	//    cheaply against this small candidate set.
+	// Indexing scope: only matchable reservations (IsMatchable() == true)
+	// are indexed. Non-matchable reservations (Failed/Succeeded/expired)
+	// are excluded to keep the candidate set tight. State transitions
+	// (matchable ↔ non-matchable) are handled by the existing
+	// removeFromIndex + addToIndex pattern in updateReservation.
 	//
-	//  - nodesByExactKV[k][v][node] is the set of reservation UIDs on that
-	//    node carrying the exact label `k=v`. The exact bucket is a
-	//    (key, value) tuple bucket on purpose: in the production label
-	//    pattern `xxx: yyy` the key is fixed across reservations and the
-	//    value is what discriminates them, so a key-only bucket would
-	//    over-match and provide no real speedup. Indexing by (k, v) lets
-	//    a selector `{xxx: yyy}` jump straight to the exact node set.
+	// Concurrency: indexEnabled / indexedPrefixes / indexedKeys are
+	// immutable after initialization so they can be read lock-free.
+	// nodesByPrefix, nodesByExactKV and indexEntryByUID are guarded by
+	// `lock`.
 	//
-	// Two independent buckets are kept so that a configured prefix and a
-	// configured exact key never collide in the same map: a prefix="tenant"
-	// and an exact key="tenant" remain isolated, with consistent matching
-	// semantics on the read side (selector key="tenant" only consults the
-	// exact bucket; selector key="tenant-foo" only consults the prefix
-	// bucket). This avoids accidental over-match when prefix="tenant" would
-	// otherwise sweep label keys like "tenant-foo".
+	// Bucket types:
+	//  - nodesByPrefix[p][node] → set[uid]: keyed by label-key prefix
+	//  - nodesByExactKV[k][v][node] → set[uid]: keyed by (key, value) tuple
 	//
-	// We deliberately keep the per-(bucket, node) UID set instead of a
-	// refcount: reservation count per node is small (node-level scenarios
-	// <= a few), and an explicit set guarantees no over/under-decrement
-	// under bug or replay, and is easy to dump for online troubleshooting
-	// via the debug Service.
+	// We keep the per-(bucket, node) UID set instead of a refcount:
+	// reservation count per node is small, and an explicit set guarantees
+	// no over/under-decrement under bug or replay.
 	indexEnabled    bool
 	indexedPrefixes []string
-	indexedKeys     sets.Set[string]
+	indexedKeys     sets.Set[string]                                     // O(1) lookup for matchedKey
+	indexedKeyList  []string                                             // config order for priority-based lookup
 	nodesByPrefix   map[string]map[string]sets.Set[types.UID]            // prefix -> node -> set[uid]
 	nodesByExactKV  map[string]map[string]map[string]sets.Set[types.UID] // exact key -> value -> node -> set[uid]
 	indexEntryByUID map[types.UID]*reservationIndexEntry
@@ -203,6 +191,7 @@ func (cache *reservationCache) setReservationSelectorIndexConfig(args *config.Re
 	cache.indexEnabled = false
 	cache.indexedPrefixes = nil
 	cache.indexedKeys = nil
+	cache.indexedKeyList = nil
 	cache.nodesByPrefix = nil
 	cache.nodesByExactKV = nil
 	cache.indexEntryByUID = nil
@@ -221,12 +210,16 @@ func (cache *reservationCache) setReservationSelectorIndexConfig(args *config.Re
 		prefixes = append(prefixes, p)
 	}
 	keys := sets.New[string]()
+	var keyList []string
+	seenKey := sets.New[string]()
 	for _, k := range args.Keys {
 		k = strings.TrimSpace(k)
-		if k == "" {
+		if k == "" || seenKey.Has(k) {
 			continue
 		}
+		seenKey.Insert(k)
 		keys.Insert(k)
+		keyList = append(keyList, k)
 	}
 	if len(prefixes) == 0 && keys.Len() == 0 {
 		return
@@ -236,6 +229,7 @@ func (cache *reservationCache) setReservationSelectorIndexConfig(args *config.Re
 	// guaranteed to also see fully initialized white-lists.
 	cache.indexedPrefixes = prefixes
 	cache.indexedKeys = keys
+	cache.indexedKeyList = keyList
 	cache.nodesByPrefix = map[string]map[string]sets.Set[types.UID]{}
 	cache.nodesByExactKV = map[string]map[string]map[string]sets.Set[types.UID]{}
 	cache.indexEntryByUID = map[types.UID]*reservationIndexEntry{}
@@ -278,16 +272,20 @@ func (cache *reservationCache) matchedKey(key string) bool {
 // addToIndex inserts the existence entries of the given reservation into the
 // inverted index. Caller MUST hold cache.lock for writing.
 //
-// Reservations not yet bound to a node are skipped (they cannot contribute a
-// candidate node anyway). They will be picked up on the subsequent
-// updateReservation when the binding becomes available.
+// Only matchable reservations (IsMatchable() == true) that are bound to a
+// node are indexed. Non-matchable reservations are skipped to keep the
+// candidate set tight; they will be picked up on a subsequent
+// updateReservation when they become matchable. The existing
+// removeFromIndex + addToIndex pattern in updateReservation handles the
+// matchable ↔ non-matchable state transition automatically.
 //
 // Each label key is independently checked against the prefix white-list and
-// the exact-key white-list; a key matching both contributes to both buckets,
-// which keeps the read-side semantics consistent for any selector that may
-// query the same key via either bucket.
+// the exact-key white-list; a key matching both contributes to both buckets.
 func (cache *reservationCache) addToIndex(rInfo *frameworkext.ReservationInfo) {
 	if !cache.indexEnabled || rInfo == nil {
+		return
+	}
+	if !rInfo.IsMatchable() {
 		return
 	}
 	obj := rInfo.GetObject()
@@ -423,137 +421,68 @@ func (cache *reservationCache) removeFromIndex(uid types.UID) {
 	}
 }
 
-// FilterByReservationSelector returns the candidate node names that hold at
-// least one reservation contributing to EVERY bucket triggered by the given
-// selector. A bucket is either a configured prefix (selector key starts with
-// prefix) or a configured exact key (selector key matches exactly). Exact
-// match takes precedence: a selector key on the exact-key white-list only
-// consults the exact bucket, not the prefix buckets.
+// FilterByReservationSelector returns the candidate node names from the
+// first matching index bucket, using a priority-based lookup:
 //
-// The match is performed at NODE level: for a multi-bucket selector,
-// different reservations on the same node may individually satisfy
-// different buckets (this is a node-level existence pre-filter, NOT a
-// per-reservation match). The returned indexHit reports whether at least one
-// selector key matched a configured prefix or exact key; when it is false,
-// the caller should fall back to the legacy ListAllNodes path (the index has
-// nothing to say about this selector). When indexHit is true and the
-// candidate slice is empty, the caller can short-circuit the BeforePreFilter
-// scan.
+//  1. KeyPrefixes (config order): for each configured prefix, scan selector
+//     keys; the first selector key that starts with this prefix triggers a
+//     nodesByPrefix bucket lookup → return immediately.
+//  2. Keys (config order): for each configured exact key, check if the
+//     selector contains it; the first hit triggers a nodesByExactKV bucket
+//     lookup → return immediately.
 //
-// Note: prefix-bucket matching is a key-existence pre-filter only (label
-// values are NOT considered for that bucket), so the per-reservation "matches
-// all selector keys" check still runs downstream in that case. Exact-bucket
-// matching, however, is indexed by the (key, value) tuple, so a hit there is
-// already precise on both axes -- though the downstream selector full-match
-// remains the source of truth and idempotently re-validates the value.
-func (cache *reservationCache) FilterByReservationSelector(selector map[string]string) ([]string, bool) {
+// No AND-join, no dedup, no smallest-bucket selection. The first hit is the
+// highest-ROI initial filter; downstream full selector matching in
+// checkReservationMatchedOrIgnored guarantees correctness.
+//
+// When no configured prefix or key matches any selector key, indexHit=false
+// and the caller falls back to ListAllNodes.
+//
+// The returned matchedKey reports which index key (prefix or exact key) triggered
+// the hit, for observability and debugging. It is empty when indexHit=false.
+func (cache *reservationCache) FilterByReservationSelector(selector map[string]string) ([]string, string, bool) {
 	if !cache.indexEnabled || len(selector) == 0 {
-		return nil, false
+		return nil, "", false
 	}
 
-	// Compute the matched bucket sets OUTSIDE of the cache lock: this only
-	// depends on the immutable indexedPrefixes/indexedKeys config and the
-	// caller-supplied selector, so we can keep the RLock critical section
-	// minimal.
-	var matchedPrefixes []string
-	// matchedKVs maps an exact-indexed key to the value the selector demands
-	// for it. The value drives a direct (k, v) bucket lookup at read time, so
-	// the candidate set is already narrowed on both axes for the exact path.
-	var matchedKVs map[string]string
-	for k, v := range selector {
-		// exact match wins: do not also consult prefix buckets, otherwise a
-		// selector key that exactly hits the exact white-list would also
-		// match an unrelated prefix that happens to be a strict prefix of k.
-		if cache.matchedKey(k) {
-			if matchedKVs == nil {
-				matchedKVs = map[string]string{}
-			}
-			// selector keys are unique by Go map semantics, no dedup needed.
-			matchedKVs[k] = v
-			continue
-		}
-		p := cache.matchedPrefix(k)
-		if p == "" {
-			continue
-		}
-		already := false
-		for _, mp := range matchedPrefixes {
-			if mp == p {
-				already = true
-				break
+	// Phase 1 — prefix buckets (config order): first prefix hit wins.
+	// The prefix/key match check only depends on immutable config and the
+	// caller-supplied selector, so it runs lock-free. The lock is acquired
+	// only for the bucket read and released explicitly (no defer) so the
+	// critical section stays tightly scoped even if future edits insert
+	// code between the read and the return.
+	for _, p := range cache.indexedPrefixes {
+		for k := range selector {
+			if strings.HasPrefix(k, p) {
+				cache.lock.RLock()
+				bn := cache.nodesByPrefix[p]
+				out := make([]string, 0, len(bn))
+				for n := range bn {
+					out = append(out, n)
+				}
+				cache.lock.RUnlock()
+				return out, p, true
 			}
 		}
-		if !already {
-			matchedPrefixes = append(matchedPrefixes, p)
-		}
-	}
-	if len(matchedPrefixes) == 0 && len(matchedKVs) == 0 {
-		return nil, false
 	}
 
+	// Phase 2 — exact-key buckets (config order): first key hit wins.
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
-
-	// Collect every matched bucket as a byNode map ref. Each ref already
-	// represents a node-level set of UIDs; the AND join is then a pure
-	// node-level intersection across refs.
-	total := len(matchedPrefixes) + len(matchedKVs)
-	buckets := make([]map[string]sets.Set[types.UID], 0, total)
-	for _, p := range matchedPrefixes {
-		bn := cache.nodesByPrefix[p]
-		if len(bn) == 0 {
-			return []string{}, true
+	for _, k := range cache.indexedKeyList {
+		v, ok := selector[k]
+		if !ok {
+			continue
 		}
-		buckets = append(buckets, bn)
-	}
-	for k, v := range matchedKVs {
-		byValue := cache.nodesByExactKV[k]
-		if len(byValue) == 0 {
-			return []string{}, true
-		}
-		bn := byValue[v]
-		if len(bn) == 0 {
-			return []string{}, true
-		}
-		buckets = append(buckets, bn)
-	}
-
-	// Find the smallest bucket to drive the join.
-	smallestIdx := 0
-	for i := 1; i < len(buckets); i++ {
-		if len(buckets[i]) < len(buckets[smallestIdx]) {
-			smallestIdx = i
-		}
-	}
-	smallest := buckets[smallestIdx]
-
-	// Single-bucket fast path: directly enumerate candidate nodes, no join.
-	if len(buckets) == 1 {
-		out := make([]string, 0, len(smallest))
-		for n := range smallest {
+		bn := cache.nodesByExactKV[k][v]
+		out := make([]string, 0, len(bn))
+		for n := range bn {
 			out = append(out, n)
 		}
-		return out, true
+		return out, k, true
 	}
 
-	// Multi-bucket AND: a node must appear in every bucket's byNode map.
-	out := make([]string, 0, len(smallest))
-	for n := range smallest {
-		matchAll := true
-		for i, bn := range buckets {
-			if i == smallestIdx {
-				continue
-			}
-			if _, ok := bn[n]; !ok {
-				matchAll = false
-				break
-			}
-		}
-		if matchAll {
-			out = append(out, n)
-		}
-	}
-	return out, true
+	return nil, "", false
 }
 
 // DumpReservationSelectorIndex returns a snapshot of the inverted index for
@@ -572,8 +501,8 @@ func (cache *reservationCache) DumpReservationSelectorIndex(detail bool) *Reserv
 		Enabled:  cache.indexEnabled,
 		Prefixes: append([]string(nil), cache.indexedPrefixes...),
 	}
-	if cache.indexedKeys != nil && cache.indexedKeys.Len() > 0 {
-		snap.Keys = cache.indexedKeys.UnsortedList()
+	if len(cache.indexedKeyList) > 0 {
+		snap.Keys = append([]string(nil), cache.indexedKeyList...)
 	}
 	if !cache.indexEnabled {
 		return snap
@@ -665,131 +594,6 @@ type ReservationSelectorIndexBucketStat struct {
 // for ReservationSelectorIndexBucketStat so external callers that already
 // reference the old name keep compiling. Prefer the new name in new code.
 type ReservationSelectorIndexPrefixStat = ReservationSelectorIndexBucketStat
-
-// checkReservationSelectorIndexConsistency performs an O(N) internal audit of
-// the inverted index against reservationInfos and indexEntryByUID. It returns
-// the list of inconsistencies found (empty when the index is fully consistent).
-// Intended for tests and ad-hoc debugging; callers must hold no special lock.
-func (cache *reservationCache) checkReservationSelectorIndexConsistency() []string {
-	if !cache.indexEnabled {
-		return nil
-	}
-	cache.lock.RLock()
-	defer cache.lock.RUnlock()
-	var issues []string
-
-	// 1. Every entry's (node, prefixes/keys) must be present in the matching
-	//    bucket map.
-	for uid, entry := range cache.indexEntryByUID {
-		if entry == nil {
-			issues = append(issues, "nil indexEntry for uid="+string(uid))
-			continue
-		}
-		if entry.node == "" {
-			issues = append(issues, "empty node in indexEntry for uid="+string(uid))
-		}
-		for p := range entry.prefixes {
-			byNode := cache.nodesByPrefix[p]
-			if byNode == nil {
-				issues = append(issues, "missing nodesByPrefix["+p+"] for uid="+string(uid))
-				continue
-			}
-			uids := byNode[entry.node]
-			if uids == nil || !uids.Has(uid) {
-				issues = append(issues, "uid="+string(uid)+" missing from nodesByPrefix["+p+"]["+entry.node+"]")
-			}
-		}
-		for k, v := range entry.kvs {
-			byValue := cache.nodesByExactKV[k]
-			if byValue == nil {
-				issues = append(issues, "missing nodesByExactKV["+k+"] for uid="+string(uid))
-				continue
-			}
-			byNode := byValue[v]
-			if byNode == nil {
-				issues = append(issues, "missing nodesByExactKV["+k+"]["+v+"] for uid="+string(uid))
-				continue
-			}
-			uids := byNode[entry.node]
-			if uids == nil || !uids.Has(uid) {
-				issues = append(issues, "uid="+string(uid)+" missing from nodesByExactKV["+k+"]["+v+"]["+entry.node+"]")
-			}
-		}
-	}
-
-	// 2a. Every UID in nodesByPrefix must point back to an indexEntry that
-	//     references (this prefix, this node). Catches phantom leaks.
-	for p, byNode := range cache.nodesByPrefix {
-		if len(byNode) == 0 {
-			issues = append(issues, "orphan empty nodesByPrefix["+p+"] (should be deleted on drain)")
-			continue
-		}
-		for node, uids := range byNode {
-			if uids.Len() == 0 {
-				issues = append(issues, "orphan empty nodesByPrefix["+p+"]["+node+"] (should be deleted on drain)")
-				continue
-			}
-			for uid := range uids {
-				entry, ok := cache.indexEntryByUID[uid]
-				if !ok || entry == nil {
-					issues = append(issues, "phantom uid="+string(uid)+" in nodesByPrefix["+p+"]["+node+"] (no indexEntry)")
-					continue
-				}
-				if entry.node != node {
-					issues = append(issues, "stale node in nodesByPrefix["+p+"]["+node+"] for uid="+string(uid)+" (entry.node="+entry.node+")")
-				}
-				if !entry.prefixes.Has(p) {
-					issues = append(issues, "prefix "+p+" missing from entry.prefixes for uid="+string(uid))
-				}
-			}
-		}
-	}
-
-	// 2b. Every UID in nodesByExactKV must point back to an indexEntry that
-	//     references (this exact key, this value, this node). Catches phantom leaks.
-	for k, byValue := range cache.nodesByExactKV {
-		if len(byValue) == 0 {
-			issues = append(issues, "orphan empty nodesByExactKV["+k+"] (should be deleted on drain)")
-			continue
-		}
-		for v, byNode := range byValue {
-			if len(byNode) == 0 {
-				issues = append(issues, "orphan empty nodesByExactKV["+k+"]["+v+"] (should be deleted on drain)")
-				continue
-			}
-			for node, uids := range byNode {
-				if uids.Len() == 0 {
-					issues = append(issues, "orphan empty nodesByExactKV["+k+"]["+v+"]["+node+"] (should be deleted on drain)")
-					continue
-				}
-				for uid := range uids {
-					entry, ok := cache.indexEntryByUID[uid]
-					if !ok || entry == nil {
-						issues = append(issues, "phantom uid="+string(uid)+" in nodesByExactKV["+k+"]["+v+"]["+node+"] (no indexEntry)")
-						continue
-					}
-					if entry.node != node {
-						issues = append(issues, "stale node in nodesByExactKV["+k+"]["+v+"]["+node+"] for uid="+string(uid)+" (entry.node="+entry.node+")")
-					}
-					if gotV, ok := entry.kvs[k]; !ok {
-						issues = append(issues, "key "+k+" missing from entry.kvs for uid="+string(uid))
-					} else if gotV != v {
-						issues = append(issues, "value mismatch for entry.kvs["+k+"]="+gotV+" vs bucket value "+v+" for uid="+string(uid))
-					}
-				}
-			}
-		}
-	}
-
-	// 3. Every indexed UID must correspond to a known reservationInfo. Catches
-	//    leaked entries after a reservation has been removed from the cache.
-	for uid := range cache.indexEntryByUID {
-		if _, ok := cache.reservationInfos[uid]; !ok {
-			issues = append(issues, "indexEntry for uid="+string(uid)+" has no matching reservationInfo (ledger leak)")
-		}
-	}
-	return issues
-}
 
 func (cache *reservationCache) updateReservationsOnNode(nodeName string, uid types.UID) {
 	if nodeName == "" {

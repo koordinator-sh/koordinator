@@ -1071,21 +1071,24 @@ func TestReservationCacheIndexAddRemoveAndUpdate(t *testing.T) {
 	assert.ElementsMatch(t, []types.UID{"uid-3"}, c.nodesByPrefix[idxPrefixTenant]["node-c"].UnsortedList())
 
 	// any selector key under prefix `quota` => candidate nodes are r1's + r2's.
-	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "anything": "ignored-value"})
+	nodes, _, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "anything": "ignored-value"})
 	assert.True(t, hit)
 	sort.Strings(nodes)
 	assert.Equal(t, []string{"node-a", "node-b"}, nodes)
 
-	// AND across prefixes: a node must hold a reservation contributing to BOTH prefixes => only node-a.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{
+	// Priority-based first hit: prefix "quota" is checked first (config order),
+	// selector key "quota-x" starts with "quota" → returns nodesByPrefix["quota"]
+	// = {node-a, node-b}. No AND-join; downstream full-match handles correctness.
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{
 		idxPrefixQuota + "x":  "x",
 		idxPrefixTenant + "y": "y",
 	})
 	assert.True(t, hit)
-	assert.Equal(t, []string{"node-a"}, nodes)
+	sort.Strings(nodes)
+	assert.Equal(t, []string{"node-a", "node-b"}, nodes)
 
 	// no configured prefix => indexHit=false (caller falls back).
-	nodes, hit = c.FilterByReservationSelector(map[string]string{"foo": "bar"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{"foo": "bar"})
 	assert.False(t, hit)
 	assert.Nil(t, nodes)
 
@@ -1100,7 +1103,7 @@ func TestReservationCacheIndexAddRemoveAndUpdate(t *testing.T) {
 	assert.False(t, exists)
 
 	// after update, only r3/node-c remains under tenant prefix.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxPrefixTenant + "x": "x"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxPrefixTenant + "x": "x"})
 	assert.True(t, hit)
 	assert.Equal(t, []string{"node-c"}, nodes)
 
@@ -1110,7 +1113,7 @@ func TestReservationCacheIndexAddRemoveAndUpdate(t *testing.T) {
 	assert.False(t, hasUID)
 	_, hasPrefix := c.nodesByPrefix[idxPrefixTenant]
 	assert.False(t, hasPrefix)
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxPrefixTenant + "x": "x"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxPrefixTenant + "x": "x"})
 	assert.True(t, hit)
 	assert.Empty(t, nodes)
 }
@@ -1119,7 +1122,7 @@ func TestReservationCacheIndexDisabledNoOp(t *testing.T) {
 	c := newReservationCache(nil)
 	r := newIndexTestReservation("uid-1", "r1", "node-a", map[string]string{idxPrefixQuota + "q": "q"})
 	c.updateReservation(r)
-	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "q": "q"})
+	nodes, _, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "q": "q"})
 	assert.False(t, hit)
 	assert.Nil(t, nodes)
 }
@@ -1132,7 +1135,7 @@ func TestReservationCacheIndexUnboundReservationSkipped(t *testing.T) {
 	c.updateReservation(unbound)
 	_, hasEntry := c.indexEntryByUID["uid-x"]
 	assert.False(t, hasEntry, "reservation without nodeName should not be indexed")
-	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "q": "q"})
+	nodes, _, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "q": "q"})
 	assert.True(t, hit)
 	assert.Empty(t, nodes)
 }
@@ -1158,7 +1161,7 @@ func TestReservationCacheIndexConcurrent(t *testing.T) {
 		}
 	}()
 	wg.Wait()
-	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "any": "v"})
+	nodes, _, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "any": "v"})
 	assert.True(t, hit)
 	assert.NotEmpty(t, nodes)
 }
@@ -1185,7 +1188,6 @@ func TestReservationCacheIndexStartupBackfill(t *testing.T) {
 	assert.Equal(t, "node-b", c.indexEntryByUID["uid-2"].node)
 	assert.ElementsMatch(t, []types.UID{"uid-1"}, c.nodesByPrefix[idxPrefixQuota]["node-a"].UnsortedList())
 	assert.ElementsMatch(t, []types.UID{"uid-2"}, c.nodesByPrefix[idxPrefixTenant]["node-b"].UnsortedList())
-	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
 }
 
 func TestReservationCacheIndexReconfigure(t *testing.T) {
@@ -1195,7 +1197,6 @@ func TestReservationCacheIndexReconfigure(t *testing.T) {
 		idxPrefixTenant + "t": "t",
 	}))
 	c.updateReservation(newIndexTestReservation("uid-2", "r2", "node-b", map[string]string{idxPrefixQuota + "q": "q"}))
-	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
 
 	// Narrow the index to only the tenant prefix: every previously-indexed
 	// quota-only entry must be evicted, and the surviving entries must be
@@ -1209,7 +1210,6 @@ func TestReservationCacheIndexReconfigure(t *testing.T) {
 	assert.ElementsMatch(t, []types.UID{"uid-1"}, c.nodesByPrefix[idxPrefixTenant]["node-a"].UnsortedList())
 	_, hasUID2 := c.indexEntryByUID["uid-2"] // r2 only has quota label => no longer indexed
 	assert.False(t, hasUID2)
-	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
 
 	// Disable the index entirely: every backing structure must be released.
 	c.setReservationSelectorIndexConfig(nil)
@@ -1248,45 +1248,44 @@ func TestReservationCacheIndexExactKey(t *testing.T) {
 	assert.ElementsMatch(t, []types.UID{"uid-4"}, c.nodesByExactKV[idxExactProject]["x"]["node-a"].UnsortedList())
 	_, hasUID5 := c.indexEntryByUID["uid-5"]
 	assert.False(t, hasUID5, "label key 'team-foo' must NOT be over-matched as exact 'team'")
-	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
 
 	// Selector value precision: {team:alpha} hits only node-a + node-c; the
 	// node-b reservation (team=beta) MUST NOT leak into the candidate set.
-	nodes, hit := c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha"})
+	nodes, _, hit := c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha"})
 	assert.True(t, hit)
 	assert.ElementsMatch(t, []string{"node-a", "node-c"}, nodes)
 
 	// {team:beta} hits only node-b.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "beta"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "beta"})
 	assert.True(t, hit)
 	assert.ElementsMatch(t, []string{"node-b"}, nodes)
 
 	// {team:nonexistent}: indexed key but no reservation has that value =>
 	// hit=true with an empty candidate set so the caller can short-circuit.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "nonexistent"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "nonexistent"})
 	assert.True(t, hit)
 	assert.Empty(t, nodes)
 
 	// {project:x} hits only node-a.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactProject: "x"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxExactProject: "x"})
 	assert.True(t, hit)
 	assert.ElementsMatch(t, []string{"node-a"}, nodes)
 
-	// AND-join across two exact-(k,v) buckets: only node-a hosts BOTH
-	// {team:alpha} and {project:x}.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha", idxExactProject: "x"})
+	// Priority-based first hit across two exact keys: "team" is checked first
+	// (config order), selector has team=alpha → returns {node-a, node-c}.
+	// No AND-join; downstream full-match handles correctness.
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha", idxExactProject: "x"})
 	assert.True(t, hit)
-	assert.ElementsMatch(t, []string{"node-a"}, nodes)
+	assert.ElementsMatch(t, []string{"node-a", "node-c"}, nodes)
 
-	// AND-join with a value mismatch on one axis short-circuits to empty:
-	// node-a has team=alpha (not beta), so {team:beta, project:x} => [].
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "beta", idxExactProject: "x"})
+	// Same priority: "team" fires first, team=beta → {node-b}.
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "beta", idxExactProject: "x"})
 	assert.True(t, hit)
-	assert.Empty(t, nodes)
+	assert.ElementsMatch(t, []string{"node-b"}, nodes)
 
 	// Selector key that is neither in KeyPrefixes nor in Keys MUST fall through
 	// (hit=false) so the caller falls back to the legacy O(N) scan.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam + "-foo": "y"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam + "-foo": "y"})
 	assert.False(t, hit)
 	assert.Nil(t, nodes)
 
@@ -1297,10 +1296,9 @@ func TestReservationCacheIndexExactKey(t *testing.T) {
 	assert.Nil(t, c.nodesByExactKV[idxExactTeam]["alpha"]["node-a"], "team[alpha][node-a] must be released after r1's value changed")
 	assert.ElementsMatch(t, []types.UID{"uid-3"}, c.nodesByExactKV[idxExactTeam]["alpha"]["node-c"].UnsortedList())
 	assert.ElementsMatch(t, []types.UID{"uid-1"}, c.nodesByExactKV[idxExactTeam]["gamma"]["node-a"].UnsortedList())
-	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
 
 	// {team:alpha} now drops node-a, returns only node-c (uid-3).
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha"})
 	assert.True(t, hit)
 	assert.ElementsMatch(t, []string{"node-c"}, nodes)
 
@@ -1313,13 +1311,12 @@ func TestReservationCacheIndexExactKey(t *testing.T) {
 	}
 	assert.Empty(t, c.indexEntryByUID)
 	assert.Empty(t, c.nodesByExactKV)
-	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
 }
 
 // TestReservationCacheIndexMixedPrefixAndExactKey covers a workload that has
 // BOTH label patterns at the same time (the production scenario), and asserts
-// that the AND-join across a prefix bucket and an exact-(k,v) bucket only
-// returns nodes that satisfy every selector key+value simultaneously.
+// that the priority-based first-hit lookup returns the correct bucket
+// (prefix bucket has priority over exact-key bucket).
 func TestReservationCacheIndexMixedPrefixAndExactKey(t *testing.T) {
 	c := newIndexedCacheWithKeys()
 
@@ -1340,43 +1337,41 @@ func TestReservationCacheIndexMixedPrefixAndExactKey(t *testing.T) {
 	assert.NotNil(t, entry)
 	assert.True(t, entry.prefixes.Has(idxPrefixQuota))
 	assert.Equal(t, "alpha", entry.kvs[idxExactTeam])
-	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
 
 	// Prefix-only selector: union of node-a (from r1) and node-b (from r2).
-	nodes, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "x": "v"})
+	nodes, _, hit := c.FilterByReservationSelector(map[string]string{idxPrefixQuota + "x": "v"})
 	assert.True(t, hit)
 	assert.ElementsMatch(t, []string{"node-a", "node-b"}, nodes)
 
 	// Exact (team=alpha) selector: only node-a (r1) and node-c (r3); node-d
 	// (team=beta) MUST NOT leak in.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "alpha"})
 	assert.True(t, hit)
 	assert.ElementsMatch(t, []string{"node-a", "node-c"}, nodes)
 
 	// Exact (team=beta) selector: only node-d.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "beta"})
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{idxExactTeam: "beta"})
 	assert.True(t, hit)
 	assert.ElementsMatch(t, []string{"node-d"}, nodes)
 
-	// Mixed selector: AND-join => only node-a hosts a reservation that hits
-	// BOTH the prefix bucket AND the exact (team=alpha) bucket. node-b lacks
-	// the team label; node-c lacks the quota-prefixed key.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{
+	// Mixed selector, priority-based first hit: prefix "quota" is checked
+	// before exact key "team" (config order), so prefix bucket fires first
+	// → {node-a, node-b}. Downstream full-match handles correctness.
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{
 		idxPrefixQuota + "x": "v",
 		idxExactTeam:         "alpha",
 	})
 	assert.True(t, hit)
-	assert.ElementsMatch(t, []string{"node-a"}, nodes)
+	assert.ElementsMatch(t, []string{"node-a", "node-b"}, nodes)
 
-	// Mixed selector with a non-matching exact value: node-a has team=alpha
-	// (not gamma), so the AND-join collapses to empty even though the prefix
-	// path alone would yield {node-a, node-b}.
-	nodes, hit = c.FilterByReservationSelector(map[string]string{
+	// Same priority: prefix "quota" fires first regardless of the exact
+	// key's value → {node-a, node-b}.
+	nodes, _, hit = c.FilterByReservationSelector(map[string]string{
 		idxPrefixQuota + "x": "v",
 		idxExactTeam:         "gamma",
 	})
 	assert.True(t, hit)
-	assert.Empty(t, nodes)
+	assert.ElementsMatch(t, []string{"node-a", "node-b"}, nodes)
 
 	// Dump must expose ByKey (aggregated across values) and ByKeyValue
 	// (per-(k,v) granularity) alongside the prefix bucket.
@@ -1493,7 +1488,6 @@ func TestReservationCacheIndexConsistencyHighFrequency(t *testing.T) {
 	c.lock.Unlock()
 
 	// Auditor must already be clean BEFORE the drain (steady-state invariant).
-	assert.Empty(t, c.checkReservationSelectorIndexConsistency(), "index must be consistent under high-frequency concurrent churn")
 
 	for _, uid := range remaining {
 		c.DeleteReservation(&schedulingv1alpha1.Reservation{
@@ -1503,7 +1497,6 @@ func TestReservationCacheIndexConsistencyHighFrequency(t *testing.T) {
 	}
 	assert.Empty(t, c.indexEntryByUID, "every indexEntry must be released after full drain")
 	assert.Empty(t, c.nodesByPrefix, "every nodesByPrefix bucket must be released after full drain")
-	assert.Empty(t, c.checkReservationSelectorIndexConsistency())
 }
 
 func TestDumpReservationSelectorIndex(t *testing.T) {

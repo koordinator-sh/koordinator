@@ -220,7 +220,7 @@ func BenchmarkReservationSelectorIndexHit(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				nodes, hit := c.FilterByReservationSelector(selector)
+				nodes, _, hit := c.FilterByReservationSelector(selector)
 				if !hit {
 					nodes = c.ListAllNodes(true)
 				}
@@ -242,7 +242,7 @@ func BenchmarkReservationSelectorIndexHitHighRatio(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		nodes, hit := c.FilterByReservationSelector(selector)
+		nodes, _, hit := c.FilterByReservationSelector(selector)
 		if !hit {
 			nodes = c.ListAllNodes(true)
 		}
@@ -260,7 +260,7 @@ func BenchmarkReservationSelectorIndexHitHalfRatio(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		nodes, hit := c.FilterByReservationSelector(selector)
+		nodes, _, hit := c.FilterByReservationSelector(selector)
 		if !hit {
 			nodes = c.ListAllNodes(true)
 		}
@@ -282,7 +282,7 @@ func BenchmarkReservationSelectorIndexMiss(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				nodes, hit := c.FilterByReservationSelector(selector)
+				nodes, _, hit := c.FilterByReservationSelector(selector)
 				if !hit {
 					nodes = c.ListAllNodes(true)
 				}

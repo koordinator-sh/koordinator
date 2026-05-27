@@ -49,15 +49,15 @@ import (
 // because the histogram's first bucket starts at 1 and would otherwise mix
 // 0-candidate hits with 1-candidate hits. The miss vs. hit-empty distinction
 // is still observable through ReservationSelectorIndexQueryTotal.
-func recordReservationSelectorIndexHit(hit bool, candidates int) {
+func recordReservationSelectorIndexHit(hit bool, indexKey string, candidates int) {
 	result := "miss"
 	if hit {
 		result = "hit"
 		if candidates > 0 {
-			metrics.ReservationSelectorIndexCandidates.Observe(float64(candidates))
+			metrics.ReservationSelectorIndexCandidates.WithLabelValues(indexKey).Observe(float64(candidates))
 		}
 	}
-	metrics.ReservationSelectorIndexQueryTotal.WithLabelValues(result).Inc()
+	metrics.ReservationSelectorIndexQueryTotal.WithLabelValues(result, indexKey).Inc()
 }
 
 func (pl *Plugin) BeforePreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) (*corev1.Pod, bool, *fwktype.Status) {
@@ -194,14 +194,15 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 	case reservationAffinity != nil && len(reservationAffinity.GetReservationSelector()) > 0 && pl.reservationCache.indexEnabled:
 		// Selector path: try to narrow down candidate nodes via the prefix existence index.
 		selector := reservationAffinity.GetReservationSelector()
-		nodes, indexHit := pl.reservationCache.FilterByReservationSelector(selector)
+		nodes, indexKey, indexHit := pl.reservationCache.FilterByReservationSelector(selector)
 		if indexHit {
 			allNodes = nodes
-			recordReservationSelectorIndexHit(true, len(allNodes))
+			recordReservationSelectorIndexHit(true, indexKey, len(allNodes))
+			klog.V(5).InfoS("Hit ReservationSelector index for matchable reservations", "pod", klog.KObj(pod), "indexKey", indexKey, "candidateCount", len(allNodes))
 		} else {
 			// no configured prefix matched any selector key; fall back to legacy path.
 			allNodes = pl.reservationCache.ListAllNodes(true)
-			recordReservationSelectorIndexHit(false, 0)
+			recordReservationSelectorIndexHit(false, "", 0)
 		}
 	default:
 		allNodes = pl.reservationCache.ListAllNodes(true)
