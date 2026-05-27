@@ -43,15 +43,34 @@ func (h *PodValidatingHandler) evaluateQuota(ctx context.Context, req admission.
 	if !utilfeature.DefaultFeatureGate.Enabled(features.EnableQuotaAdmission) {
 		return true, "", nil
 	}
-
+	var quotaName string
 	switch req.Operation {
 	case admissionv1.Create:
+		if err := h.Decoder.DecodeRaw(req.Object, newPod); err != nil {
+			return false, "", err
+		}
+		quotaName = elasticquota.GetQuotaName(newPod, h.Client)
+	case admissionv1.Update:
+		if !utilfeature.DefaultFeatureGate.Enabled(features.EnableQuotaAdmissionOnUpdate) {
+			return true, "", nil
+		}
+		oldPod := &corev1.Pod{}
+		if err := h.Decoder.DecodeRaw(req.OldObject, oldPod); err != nil {
+			return false, "", err
+		}
+		if err := h.Decoder.DecodeRaw(req.Object, newPod); err != nil {
+			return false, "", err
+		}
+		oldQuotaName := elasticquota.GetQuotaName(oldPod, h.Client)
+		quotaName = elasticquota.GetQuotaName(newPod, h.Client)
+		if oldQuotaName == quotaName {
+			return true, "", nil
+		}
 	default:
 		return true, "", nil
 	}
 
 	// quota is system quota or empty, skip it.
-	quotaName := elasticquota.GetQuotaName(newPod, h.Client)
 	if quotaName == "" || quotaName == extension.DefaultQuotaName ||
 		quotaName == extension.SystemQuotaName || quotaName == extension.RootQuotaName {
 		return true, "", nil
