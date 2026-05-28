@@ -37,7 +37,7 @@ type RangeValidator struct {
 
 func (r *RangeValidator) Validate(value string) (bool, string) {
 	if value == "" {
-		return false, fmt.Sprintf("value is nil")
+		return false, "value is nil"
 	}
 	var v int64
 	var err error

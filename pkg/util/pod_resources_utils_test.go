@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
@@ -211,6 +212,41 @@ func Test_GetPodBEMilliCPURequest(t *testing.T) {
 			wantRequest: 0,
 			wantLimit:   -1,
 		},
+		{
+			name: "with sidecar init container",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("2000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("4000"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name:          "sidecar",
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("1000"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchCPU: resource.MustParse("2000"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRequest: 3000,
+			wantLimit:   6000,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -296,12 +332,210 @@ func Test_GetPodBEMemoryRequest(t *testing.T) {
 			wantRequest: 0,
 			wantLimit:   -1,
 		},
+		{
+			name: "with sidecar init container",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("4Mi"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name:          "sidecar",
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("1Mi"),
+								},
+								Limits: corev1.ResourceList{
+									apiext.BatchMemory: resource.MustParse("2Mi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantRequest: 3145728, // 2Mi + 1Mi
+			wantLimit:   6291456, // 4Mi + 2Mi
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(tc.wantRequest, GetPodBEMemoryByteRequestIgnoreUnlimited(tc.pod))
 			assert.Equal(tc.wantLimit, GetPodBEMemoryByteLimit(tc.pod))
+		})
+	}
+}
+
+func Test_IsSidecarContainer(t *testing.T) {
+	tests := []struct {
+		name      string
+		container corev1.Container
+		want      bool
+	}{
+		{
+			name:      "regular container",
+			container: corev1.Container{Name: "app"},
+			want:      false,
+		},
+		{
+			name: "init container without restartPolicy",
+			container: corev1.Container{
+				Name: "init",
+			},
+			want: false,
+		},
+		{
+			name: "init container with restartPolicy=Always",
+			container: corev1.Container{
+				Name:          "sidecar",
+				RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsSidecarContainer(tt.container))
+		})
+	}
+}
+
+func Test_GetPodMilliCPULimit_WithSidecar(t *testing.T) {
+	tests := []struct {
+		name string
+		pod  *corev1.Pod
+		want int64
+	}{
+		{
+			name: "containers only",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("2"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("3"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: 5000,
+		},
+		{
+			name: "with regular init container (max-based)",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name: "init",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("10"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: 10000, // max(2000, 10000)
+		},
+		{
+			name: "with sidecar init container (sum-based)",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name:          "sidecar",
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: 3000, // 2000 + 1000
+		},
+		{
+			name: "with both sidecar and regular init containers",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name:          "sidecar",
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("1"),
+								},
+							},
+						},
+						{
+							Name: "init",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("5"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: 5000, // max(2000+1000, 5000)
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, GetPodMilliCPULimit(tt.pod))
 		})
 	}
 }

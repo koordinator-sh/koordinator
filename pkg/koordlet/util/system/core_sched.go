@@ -395,7 +395,7 @@ func SetCoreSchedFeatureEnabled() (bool, string) {
 	content, err := os.ReadFile(featurePath)
 	if err != nil {
 		klog.V(5).Infof("Core Sched is unsupported by sched_features %s, read err: %s", featurePath, err)
-		return false, fmt.Sprintf("failed to read sched_features")
+		return false, "failed to read sched_features"
 	}
 
 	features := strings.Fields(string(content))
