@@ -149,8 +149,8 @@ func TestFiltering(t *testing.T) {
 			nil,
 			false,
 			false,
-			false,
 			true,
+			false,
 		},
 		{
 			"testCase2: nonRetryable:failed, retryable: passed",
@@ -232,6 +232,51 @@ func TestAdd(t *testing.T) {
 	}
 	expectedJobs := []string{"test-job-1", "test-job-2", "test-job-3", "test-job-4", "test-job-5"}
 	assert.ElementsMatchf(t, expectedJobs, actualJobs, "failed")
+}
+
+func TestDoOnceArbitrateMissingPodFails(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = clientgoscheme.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithStatusSubresource(&v1alpha1.PodMigrationJob{}).WithScheme(scheme).Build()
+
+	job := makePodMigrationJob("test-job", time.Now(), nil)
+	assert.Nil(t, fakeClient.Create(context.TODO(), job))
+
+	a := &arbitratorImpl{
+		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
+		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
+			return jobs
+		}},
+		filter: &filter{
+			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
+			retryablePodFilter: func(pod *corev1.Pod) bool {
+				return true
+			},
+			arbitratedPodMigrationJobs: map[types.UID]bool{},
+		},
+		client:        fakeClient,
+		mu:            sync.Mutex{},
+		eventRecorder: &events.FakeRecorder{},
+		interval:      0,
+	}
+
+	a.doOnceArbitrate()
+
+	assert.Equal(t, 0, len(a.waitingCollection))
+
+	actualJob := &v1alpha1.PodMigrationJob{}
+	assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
+		Namespace: job.Namespace,
+		Name:      job.Name,
+	}, actualJob))
+	assert.Equal(t, v1alpha1.PodMigrationJobFailed, actualJob.Status.Phase)
+	assert.Equal(t, v1alpha1.PodMigrationJobReasonMissingPod, actualJob.Status.Reason)
+	if actualJob.Annotations != nil {
+		assert.NotEqual(t, "true", actualJob.Annotations[AnnotationPassedArbitration])
+	}
 }
 
 func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
