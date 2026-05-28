@@ -235,47 +235,81 @@ func TestAdd(t *testing.T) {
 }
 
 func TestDoOnceArbitrateMissingPodFails(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = v1alpha1.AddToScheme(scheme)
-	_ = clientgoscheme.AddToScheme(scheme)
-	fakeClient := fake.NewClientBuilder().WithStatusSubresource(&v1alpha1.PodMigrationJob{}).WithScheme(scheme).Build()
-
-	job := makePodMigrationJob("test-job", time.Now(), nil)
-	assert.Nil(t, fakeClient.Create(context.TODO(), job))
-
-	a := &arbitratorImpl{
-		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
-		sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
-			return jobs
-		}},
-		filter: &filter{
-			nonRetryablePodFilter: func(pod *corev1.Pod) bool {
-				return true
-			},
-			retryablePodFilter: func(pod *corev1.Pod) bool {
-				return true
-			},
-			arbitratedPodMigrationJobs: map[types.UID]bool{},
+	testCases := []struct {
+		name            string
+		job             *v1alpha1.PodMigrationJob
+		expectedMessage string
+	}{
+		{
+			name:            "podRef nil",
+			job:             makePodMigrationJob("test-job-nil-podref", time.Now(), nil),
+			expectedMessage: `Pod "<nil>" is missing for PodMigrationJob`,
 		},
-		client:        fakeClient,
-		mu:            sync.Mutex{},
-		eventRecorder: &events.FakeRecorder{},
-		interval:      0,
+		{
+			name: "podRef set but pod not found",
+			job: &v1alpha1.PodMigrationJob{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "test-job-missing-pod",
+					Namespace:         "default",
+					CreationTimestamp: metav1.Time{Time: time.Now()},
+					UID:               types.UID("test-job-missing-pod-uid"),
+				},
+				Spec: v1alpha1.PodMigrationJobSpec{
+					PodRef: &corev1.ObjectReference{
+						Namespace: "default",
+						Name:      "missing-pod",
+					},
+				},
+			},
+			expectedMessage: `Pod "default/missing-pod" is missing for PodMigrationJob`,
+		},
 	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			_ = v1alpha1.AddToScheme(scheme)
+			_ = clientgoscheme.AddToScheme(scheme)
+			fakeClient := fake.NewClientBuilder().WithStatusSubresource(&v1alpha1.PodMigrationJob{}).WithScheme(scheme).Build()
 
-	a.doOnceArbitrate()
+			job := testCase.job
+			assert.Nil(t, fakeClient.Create(context.TODO(), job))
 
-	assert.Equal(t, 0, len(a.waitingCollection))
+			a := &arbitratorImpl{
+				waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
+				sorts: []SortFn{func(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1alpha1.PodMigrationJob]*corev1.Pod) []*v1alpha1.PodMigrationJob {
+					return jobs
+				}},
+				filter: &filter{
+					nonRetryablePodFilter: func(pod *corev1.Pod) bool {
+						return true
+					},
+					retryablePodFilter: func(pod *corev1.Pod) bool {
+						return true
+					},
+					arbitratedPodMigrationJobs: map[types.UID]bool{},
+				},
+				client:        fakeClient,
+				mu:            sync.Mutex{},
+				eventRecorder: &events.FakeRecorder{},
+				interval:      0,
+			}
 
-	actualJob := &v1alpha1.PodMigrationJob{}
-	assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
-		Namespace: job.Namespace,
-		Name:      job.Name,
-	}, actualJob))
-	assert.Equal(t, v1alpha1.PodMigrationJobFailed, actualJob.Status.Phase)
-	assert.Equal(t, v1alpha1.PodMigrationJobReasonMissingPod, actualJob.Status.Reason)
-	if actualJob.Annotations != nil {
-		assert.NotEqual(t, "true", actualJob.Annotations[AnnotationPassedArbitration])
+			a.doOnceArbitrate()
+
+			assert.Equal(t, 0, len(a.waitingCollection))
+
+			actualJob := &v1alpha1.PodMigrationJob{}
+			assert.Nil(t, fakeClient.Get(context.TODO(), types.NamespacedName{
+				Namespace: job.Namespace,
+				Name:      job.Name,
+			}, actualJob))
+			assert.Equal(t, v1alpha1.PodMigrationJobFailed, actualJob.Status.Phase)
+			assert.Equal(t, v1alpha1.PodMigrationJobReasonMissingPod, actualJob.Status.Reason)
+			assert.Equal(t, testCase.expectedMessage, actualJob.Status.Message)
+			if actualJob.Annotations != nil {
+				assert.NotEqual(t, "true", actualJob.Annotations[AnnotationPassedArbitration])
+			}
+		})
 	}
 }
 
