@@ -441,8 +441,8 @@ func TestBuildSandboxSchedulingHint_PoolKeywordAlone(t *testing.T) {
 // capacity failures even when the message also contains "insufficient".
 func TestClassifyFailureMessage(t *testing.T) {
 	tests := []struct {
-		name      string
-		msg       string
+		name       string
+		msg        string
 		wantReason string
 		wantNext   string
 	}{
