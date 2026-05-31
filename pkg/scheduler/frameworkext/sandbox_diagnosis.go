@@ -28,13 +28,19 @@ import (
 )
 
 func init() {
+	// RegisterCustomDiagnosisProcessor wires sandboxDiagnosisProcessor into the
+	// scheduler's diagnosis pipeline. The processor runs after every failed
+	// scheduling attempt and derives a structured SandboxSchedulingHint for
+	// sandbox pods. PostFilter plugins that hold a Kubernetes client are
+	// responsible for patching the hint onto the live pod object via
+	// SetSandboxSchedulingHint — this processor only derives and logs.
 	RegisterCustomDiagnosisProcessor("sandbox-scheduling-hint", sandboxDiagnosisProcessor)
 }
 
 // sandboxDiagnosisProcessor is registered via RegisterCustomDiagnosisProcessor.
 // It derives a SandboxSchedulingHint from the Diagnosis and logs it at V(4).
 // Annotation patching onto the live pod object is handled by PostFilter plugins
-// that hold a Kubernetes client - not here.
+// that hold a Kubernetes client — not here.
 func sandboxDiagnosisProcessor(diagnosis *Diagnosis) {
 	if diagnosis.TargetPod == nil {
 		return
@@ -90,6 +96,8 @@ func sandboxRuntimeClass(pod *corev1.Pod) string {
 
 // sandboxFailureReason maps NodeFailedDetails failure messages to
 // machine-readable reason and nextStep strings for sandbox pods.
+// Each detail is classified independently; the first non-empty
+// classification wins.
 func sandboxFailureReason(diagnosis *Diagnosis) (reason, nextStep string) {
 	if diagnosis.ScheduleDiagnosis == nil || len(diagnosis.ScheduleDiagnosis.NodeFailedDetails) == 0 {
 		return "", ""
@@ -98,20 +106,41 @@ func sandboxFailureReason(diagnosis *Diagnosis) (reason, nextStep string) {
 		if detail == nil {
 			continue
 		}
-		msg := strings.ToLower(detail.Reason)
-		switch {
-		case strings.Contains(msg, "warm") || strings.Contains(msg, "pool"):
-			return "warmPoolExhausted", "scale-out-warm-pool"
-		case strings.Contains(msg, "gpu") && strings.Contains(msg, "memory"):
-			return "gpuMemoryInsufficient", "reduce-parallelism"
-		case strings.Contains(msg, "runtimeclass") || strings.Contains(msg, "runtime class"):
-			return "runtimeClassUnavailable", "use-different-node-pool"
-		case strings.Contains(msg, "insufficient") || strings.Contains(msg, "capacity"):
-			return "nodeCapacityExceeded", "wait-for-capacity"
+		if r, n := classifyFailureMessage(detail.Reason); r != "" {
+			return r, n
 		}
 	}
-	// Known sandbox pod with unrecognized failure message - default to capacity.
+	// Known sandbox pod with failure details that matched no specific pattern.
 	return "nodeCapacityExceeded", "wait-for-capacity"
+}
+
+// classifyFailureMessage maps a single scheduler failure reason string to a
+// (reason, nextStep) pair. Returns ("", "") if no pattern matches.
+//
+// Pattern precedence is intentional:
+//  1. GPU memory is checked first to avoid misclassifying "insufficient gpu memory"
+//     as a generic capacity failure — the correct action is to reduce parallelism.
+//  2. RuntimeClass unavailability is checked before warm/pool because real-world
+//     failure messages like "runtime class not installed on any node in pool"
+//     contain the word "pool" — runtimeclass is a topology problem, not a
+//     pool exhaustion problem.
+//  3. Warm/pool exhaustion is distinct from generic capacity — scale the pool,
+//     don't wait for node capacity.
+//  4. Generic insufficient/capacity is the catch-all.
+func classifyFailureMessage(msg string) (reason, nextStep string) {
+	lower := strings.ToLower(msg)
+	switch {
+	case strings.Contains(lower, "gpu") && strings.Contains(lower, "memory"):
+		return "gpuMemoryInsufficient", "reduce-parallelism"
+	case strings.Contains(lower, "runtimeclass") || strings.Contains(lower, "runtime class"):
+		return "runtimeClassUnavailable", "use-different-node-pool"
+	case strings.Contains(lower, "warm") || strings.Contains(lower, "pool"):
+		return "warmPoolExhausted", "scale-out-warm-pool"
+	case strings.Contains(lower, "insufficient") || strings.Contains(lower, "capacity"):
+		return "nodeCapacityExceeded", "wait-for-capacity"
+	default:
+		return "", ""
+	}
 }
 
 // SetSandboxSchedulingHint JSON-encodes hint and writes it to the pod's

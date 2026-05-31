@@ -18,6 +18,8 @@ package extension
 
 import (
 	"testing"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestKnownSandboxRuntimeClass(t *testing.T) {
@@ -94,5 +96,52 @@ func TestSandboxSchedulingHintConstants(t *testing.T) {
 		if len(k) == 0 {
 			t.Errorf("annotation/label constant must not be empty")
 		}
+	}
+}
+
+func TestDefaultRuntimeOverheadForSandbox(t *testing.T) {
+	tests := []struct {
+		name       string
+		rc         SandboxRuntimeClass
+		wantMemory string
+		wantCPU    string
+	}{
+		{
+			name:       "gVisor overhead reflects runsc supervisor cost",
+			rc:         SandboxRuntimeGVisor,
+			wantMemory: "50Mi",
+			wantCPU:    "50m",
+		},
+		{
+			name:       "Kata overhead reflects VM kernel and agent cost",
+			rc:         SandboxRuntimeKata,
+			wantMemory: "128Mi",
+			wantCPU:    "100m",
+		},
+		{
+			name:       "Wasm overhead is minimal for ephemeral skill executions",
+			rc:         SandboxRuntimeWasm,
+			wantMemory: "16Mi",
+			wantCPU:    "10m",
+		},
+		{
+			name:       "unknown runtime falls back to gVisor defaults",
+			rc:         SandboxRuntimeClass("unknown-runtime"),
+			wantMemory: "50Mi",
+			wantCPU:    "50m",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DefaultRuntimeOverheadForSandbox(tt.rc)
+			wantMem := resource.MustParse(tt.wantMemory)
+			wantCPU := resource.MustParse(tt.wantCPU)
+			if got.Memory.Cmp(wantMem) != 0 {
+				t.Errorf("Memory = %v, want %v", got.Memory.String(), tt.wantMemory)
+			}
+			if got.CPU.Cmp(wantCPU) != 0 {
+				t.Errorf("CPU = %v, want %v", got.CPU.String(), tt.wantCPU)
+			}
+		})
 	}
 }
