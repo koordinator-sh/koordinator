@@ -119,6 +119,7 @@ const (
 	// this pod. The device plugin will flip this annotation to "success" after
 	// Allocate() completes.
 	hygonBindPhaseAllocating = "allocating"
+	hygonBindPhaseSuccess    = "success"
 
 	// HAMi annotation encoding separators (see HAMi pkg/device/devices.go).
 	hygonDeviceSepSymbol    = ":" // OneContainerMultiDeviceSplitSymbol
@@ -461,13 +462,12 @@ func (a *hygonDCUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, objec
 		annotations = make(map[string]string)
 	}
 
-	deviceSegment, err := buildHygonDeviceSegment(pod, allocation)
+	dcuContainerIndex := findHygonDCUContainerIndex(pod)
+
+	allocationStr, err := buildHygonAllocationString(pod, allocation, dcuContainerIndex)
 	if err != nil {
 		return err
 	}
-
-	dcuContainerIndex := findHygonDCUContainerIndex(pod)
-	allocationStr := composeHygonAllocationString(pod, dcuContainerIndex, deviceSegment)
 
 	setHygonAllocationAnnotations(annotations, allocationStr)
 	setHygonContainerResourceAnnotations(annotations, pod, dcuContainerIndex, allocation)
@@ -482,9 +482,11 @@ func (a *hygonDCUDevicePluginAdapter) NodeLockKey() string {
 	return AnnotationHAMiLock
 }
 
-// buildHygonDeviceSegment builds the HAMi-format device segment for the
-// DCU-requesting container, e.g. "DCU-xxxx,DCU,31744,50:DCU-yyyy,DCU,31744,50:".
-func buildHygonDeviceSegment(pod *corev1.Pod, allocation []*apiext.DeviceAllocation) (string, error) {
+// buildHygonAllocationString builds the full HAMi-format allocation string.
+// Each device is encoded as "UUID,Type,Memory,Cores:ContainerIndex;" where
+// ContainerIndex is the index of the container that requests DCU resources.
+// For example: "DCU-xxxx,DCU,31744,50:0;DCU-yyyy,DCU,31744,50:0;".
+func buildHygonAllocationString(pod *corev1.Pod, allocation []*apiext.DeviceAllocation, containerIndex int) (string, error) {
 	var b strings.Builder
 	for _, alloc := range allocation {
 		core, ok := alloc.Resources[apiext.ResourceGPUCore]
@@ -499,8 +501,9 @@ func buildHygonDeviceSegment(pod *corev1.Pod, allocation []*apiext.DeviceAllocat
 
 		deviceID := normalizeHygonDeviceID(alloc.ID, alloc.Minor)
 
-		// Format: UUID,Type,Memory,Cores: (":" is the device separator, not a container index)
-		fmt.Fprintf(&b, "%s,%s,%d,%d%s", deviceID, hygonDCUDeviceType, memoryMB, core.Value(), hygonDeviceSepSymbol)
+		// Format: UUID,Type,Memory,Cores:ContainerIndex;
+		fmt.Fprintf(&b, "%s,%s,%d,%d%s%d%s", deviceID, hygonDCUDeviceType, memoryMB, core.Value(),
+			hygonDeviceSepSymbol, containerIndex, hygonContainerSepSymbol)
 	}
 	return b.String(), nil
 }
@@ -535,35 +538,17 @@ func findHygonDCUContainerIndex(pod *corev1.Pod) int {
 	return 0
 }
 
-// composeHygonAllocationString places deviceSegment at the position of the
-// DCU-requesting container, leaving the other containers' segments empty so
-// that the device plugin's PodDevices index stays aligned with the container
-// index. The result always ends with a trailing container separator.
-func composeHygonAllocationString(pod *corev1.Pod, dcuContainerIndex int, deviceSegment string) string {
-	segments := make([]string, len(pod.Spec.Containers))
-	if dcuContainerIndex >= 0 && dcuContainerIndex < len(segments) {
-		segments[dcuContainerIndex] = deviceSegment
-	}
-	return strings.Join(segments, hygonContainerSepSymbol) + hygonContainerSepSymbol
-}
-
 // setHygonAllocationAnnotations writes the allocation result and the bind-phase
 // metadata expected by HAMi DCU device plugin.
 //
-// Per HAMi PatchAnnotations behavior (see HAMi pkg/device/hygon/device.go), the
-// scheduler initially sets both "to-allocate" and "allocated" annotations to
-// the same content. The DCU device plugin will then:
-//   - read the request from "to-allocate" during Allocate()
-//   - clear "to-allocate" once allocation is done
-//   - keep "allocated" as the final allocation record
-//
-// Setting only "to-allocate" (or setting "to-allocate" to empty up front)
-// causes the device plugin to fail with "device request not found".
+// The "allocated" annotation records the final allocation; "to-allocate" is
+// cleared (set to ";") since the scheduler has already completed the allocation.
+// The bind-phase is set to "success" to indicate the allocation is done.
 func setHygonAllocationAnnotations(annotations map[string]string, allocationStr string) {
 	now := strconv.FormatInt(dpAdapterClock.Now().Unix(), 10)
 	annotations[AnnotationHygonDCUDevicesAllocated] = allocationStr
-	annotations[AnnotationHygonDCUDevicesToAllocate] = allocationStr
-	annotations[AnnotationHygonBindPhase] = hygonBindPhaseAllocating
+	annotations[AnnotationHygonDCUDevicesToAllocate] = hygonContainerSepSymbol
+	annotations[AnnotationHygonBindPhase] = hygonBindPhaseSuccess
 	annotations[AnnotationHygonBindTime] = now
 	annotations[AnnotationHygonVgpuTime] = now
 }
