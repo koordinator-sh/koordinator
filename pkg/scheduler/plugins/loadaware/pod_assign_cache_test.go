@@ -326,8 +326,98 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				assignCache.OnAdd(pod, true)
 			}
 			assignCache.OnUpdate(nil, tt.pod)
-			actual, _ := assignCache.getNodeInfo(node)
-			tt.want(t, actual)
+		actual, _ := assignCache.getNodeInfo(node)
+		tt.want(t, actual)
+	})
+}
+}
+
+func TestPodAssignCache_OnUpdate_NodeNameChange(t *testing.T) {
+	vectorizer := NewResourceVectorizer(corev1.ResourceCPU, corev1.ResourceMemory)
+	now := metav1.Now().Rfc3339Copy().Time
+	nodeA := "node-a"
+	nodeB := "node-b"
+	tests := []struct {
+		name        string
+		existingPod *corev1.Pod
+		updatedPod  *corev1.Pod
+		wantSrcNode func(*testing.T, *nodeInfo)
+		wantDstNode func(*testing.T, *nodeInfo)
+	}{
+		{
+		name:        "pod moves from node-a to node-b: source node cache must be cleared",
+		existingPod: st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeA).Phase(corev1.PodRunning).Obj(),
+		updatedPod:  st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeB).Phase(corev1.PodRunning).Obj(),
+		wantSrcNode: func(t *testing.T, n *nodeInfo) {
+			assert.Equal(t, 0, len(n.podInfos))
+			empty := sets.New[NamespacedName]()
+			assert.Equal(t, vectorizer.EmptyVec(), n.nodeDelta)
+			assert.Equal(t, vectorizer.EmptyVec(), n.nodeEstimated)
+			assert.Equal(t, empty, n.nodeDeltaPods)
+			assert.Equal(t, empty, n.nodeEstimatedPods)
+		},
+		wantDstNode: func(t *testing.T, n *nodeInfo) {
+			assert.Equal(t, 1, len(n.podInfos))
+			v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+				corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+			})
+			s := sets.New(NamespacedName{Namespace: "default", Name: "test-pod"})
+			assert.Equal(t, v, n.nodeDelta)
+			assert.Equal(t, v, n.nodeEstimated)
+			assert.Equal(t, s, n.nodeDeltaPods)
+			assert.Equal(t, s, n.nodeEstimatedPods)
+		},
+	},
+	{
+		name: "pod with resources moves from node-a to node-b: source node cache must be cleared",
+			existingPod: st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeA).Phase(corev1.PodRunning).
+				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
+			updatedPod: st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeB).Phase(corev1.PodRunning).
+				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
+			wantSrcNode: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, 0, len(n.podInfos))
+				empty := sets.New[NamespacedName]()
+				assert.Equal(t, vectorizer.EmptyVec(), n.nodeDelta)
+				assert.Equal(t, vectorizer.EmptyVec(), n.prodDelta)
+				assert.Equal(t, vectorizer.EmptyVec(), n.nodeEstimated)
+				assert.Equal(t, empty, n.nodeDeltaPods)
+				assert.Equal(t, empty, n.prodDeltaPods)
+				assert.Equal(t, empty, n.nodeEstimatedPods)
+			},
+			wantDstNode: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, 1, len(n.podInfos))
+				v := vectorizer.ToVec(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				})
+				s := sets.New(NamespacedName{Namespace: "default", Name: "test-pod"})
+				assert.Equal(t, v, n.nodeDelta)
+				assert.Equal(t, v, n.prodDelta)
+				assert.Equal(t, v, n.nodeEstimated)
+				assert.Equal(t, s, n.nodeDeltaPods)
+				assert.Equal(t, s, n.prodDeltaPods)
+				assert.Equal(t, s, n.nodeEstimatedPods)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := &config.LoadAwareSchedulingArgs{EstimatedScalingFactors: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    100,
+				corev1.ResourceMemory: 100,
+			}}
+			e, _ := estimator.NewDefaultEstimator(args, nil)
+			assignCache := newPodAssignCache(e, vectorizer, args)
+			assignCache.clock = clock.NewFakeClock(now)
+			assignCache.AddOrUpdateNodeMetric(&slov1alpha1.NodeMetric{ObjectMeta: metav1.ObjectMeta{Name: nodeA}})
+			assignCache.AddOrUpdateNodeMetric(&slov1alpha1.NodeMetric{ObjectMeta: metav1.ObjectMeta{Name: nodeB}})
+			assignCache.OnAdd(tt.existingPod, true)
+			assignCache.OnUpdate(tt.existingPod, tt.updatedPod)
+			srcInfo, _ := assignCache.getNodeInfo(nodeA)
+			dstInfo, _ := assignCache.getNodeInfo(nodeB)
+			tt.wantSrcNode(t, srcInfo)
+			tt.wantDstNode(t, dstInfo)
 		})
 	}
 }
