@@ -326,10 +326,10 @@ func TestPodAssignCache_OnUpdate(t *testing.T) {
 				assignCache.OnAdd(pod, true)
 			}
 			assignCache.OnUpdate(nil, tt.pod)
-		actual, _ := assignCache.getNodeInfo(node)
-		tt.want(t, actual)
-	})
-}
+			actual, _ := assignCache.getNodeInfo(node)
+			tt.want(t, actual)
+		})
+	}
 }
 
 func TestPodAssignCache_OnUpdate_NodeNameChange(t *testing.T) {
@@ -345,32 +345,32 @@ func TestPodAssignCache_OnUpdate_NodeNameChange(t *testing.T) {
 		wantDstNode func(*testing.T, *nodeInfo)
 	}{
 		{
-		name:        "pod moves from node-a to node-b: source node cache must be cleared",
-		existingPod: st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeA).Phase(corev1.PodRunning).Obj(),
-		updatedPod:  st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeB).Phase(corev1.PodRunning).Obj(),
-		wantSrcNode: func(t *testing.T, n *nodeInfo) {
-			assert.Equal(t, 0, len(n.podInfos))
-			empty := sets.New[NamespacedName]()
-			assert.Equal(t, vectorizer.EmptyVec(), n.nodeDelta)
-			assert.Equal(t, vectorizer.EmptyVec(), n.nodeEstimated)
-			assert.Equal(t, empty, n.nodeDeltaPods)
-			assert.Equal(t, empty, n.nodeEstimatedPods)
+			name:        "pod moves from node-a to node-b: source node cache must be cleared",
+			existingPod: st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeA).Phase(corev1.PodRunning).Obj(),
+			updatedPod:  st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeB).Phase(corev1.PodRunning).Obj(),
+			wantSrcNode: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, 0, len(n.podInfos))
+				empty := sets.New[NamespacedName]()
+				assert.Equal(t, vectorizer.EmptyVec(), n.nodeDelta)
+				assert.Equal(t, vectorizer.EmptyVec(), n.nodeEstimated)
+				assert.Equal(t, empty, n.nodeDeltaPods)
+				assert.Equal(t, empty, n.nodeEstimatedPods)
+			},
+			wantDstNode: func(t *testing.T, n *nodeInfo) {
+				assert.Equal(t, 1, len(n.podInfos))
+				v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
+					corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
+					corev1.ResourceMemory: estimator.DefaultMemoryRequest,
+				})
+				s := sets.New(NamespacedName{Namespace: "default", Name: "test-pod"})
+				assert.Equal(t, v, n.nodeDelta)
+				assert.Equal(t, v, n.nodeEstimated)
+				assert.Equal(t, s, n.nodeDeltaPods)
+				assert.Equal(t, s, n.nodeEstimatedPods)
+			},
 		},
-		wantDstNode: func(t *testing.T, n *nodeInfo) {
-			assert.Equal(t, 1, len(n.podInfos))
-			v := vectorizer.ToFactorVec(map[corev1.ResourceName]int64{
-				corev1.ResourceCPU:    estimator.DefaultMilliCPURequest,
-				corev1.ResourceMemory: estimator.DefaultMemoryRequest,
-			})
-			s := sets.New(NamespacedName{Namespace: "default", Name: "test-pod"})
-			assert.Equal(t, v, n.nodeDelta)
-			assert.Equal(t, v, n.nodeEstimated)
-			assert.Equal(t, s, n.nodeDeltaPods)
-			assert.Equal(t, s, n.nodeEstimatedPods)
-		},
-	},
-	{
-		name: "pod with resources moves from node-a to node-b: source node cache must be cleared",
+		{
+			name: "pod with resources moves from node-a to node-b: source node cache must be cleared",
 			existingPod: st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeA).Phase(corev1.PodRunning).
 				Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1", corev1.ResourceMemory: "4Gi"}).Obj(),
 			updatedPod: st.MakePod().UID("aaa").Namespace("default").Name("test-pod").Node(nodeB).Phase(corev1.PodRunning).
