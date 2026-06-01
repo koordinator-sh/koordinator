@@ -61,10 +61,10 @@ type AgentOptions struct {
 	// the cleanup goroutine deletes them.  Defaults to 24h.
 	ModelResultsRetention time.Duration
 
-	// UseModelResultTaskID controls whether model result API calls include the
+	// IsEnabledGetModelResultByTaskID controls whether model result API calls include the
 	// task_id query parameter. When true (default), each cluster fetches only its
 	// own results, preventing result cross-contamination in multi-cluster setups.
-	UseModelResultTaskID bool
+	IsEnabledGetModelResultByTaskID bool
 
 	// PollInterval is the status polling interval for Model4, Model5Short, and Model6 tasks.
 	PollInterval time.Duration
@@ -83,7 +83,7 @@ func NewAgentOptions() *AgentOptions {
 	opts := &AgentOptions{
 		OutputDir:             constants.DefaultOutputDir,
 		ModelResultsRetention: 24 * time.Hour,
-		UseModelResultTaskID:  true,
+		IsEnabledGetModelResultByTaskID: true,
 		PollInterval:          10 * time.Second,
 		PollTimeout:           120 * time.Minute,
 		LongPollInterval:      15 * time.Minute,
@@ -116,7 +116,7 @@ func (o *AgentOptions) AddFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&o.ModelResultsRetention, "model-results-retention", o.ModelResultsRetention,
 		"How long to keep model result files before they are deleted (e.g. 24h, 48h).")
 
-	fs.BoolVar(&o.UseModelResultTaskID, "use-model-result-task-id", o.UseModelResultTaskID,
+	fs.BoolVar(&o.IsEnabledGetModelResultByTaskID, "use-model-result-task-id", o.IsEnabledGetModelResultByTaskID,
 		"Fetch model results by task ID instead of global latest. Recommended when multiple clusters share the AI server.")
 
 	fs.DurationVar(&o.PollInterval, "poll-interval", o.PollInterval,
@@ -189,7 +189,7 @@ func (o *AgentOptions) NewAgent() (*Agent, error) {
 
 	downloadService := predictor.NewDownloadService(algoClient, o.OutputDir)
 
-	fetchService := predictor.NewFetchService(algoClient, o.OutputDir, o.SaveModelResults, o.ModelResultsRetention, o.UseModelResultTaskID)
+	fetchService := predictor.NewFetchService(algoClient, o.OutputDir, o.SaveModelResults, o.ModelResultsRetention, o.IsEnabledGetModelResultByTaskID)
 
 	hybridManager := controller.NewManager(options.ManagerOptions{
 		Client:            k8sClient,
