@@ -1562,3 +1562,225 @@ func TestHygonDCUDevicePluginAdapter_Adapt(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeHygonDeviceID(t *testing.T) {
+	tests := []struct {
+		name  string
+		rawID string
+		minor int32
+		want  string
+	}{
+		{
+			name:  "already has DCU- prefix",
+			rawID: "DCU-TS5V0916070401",
+			minor: 0,
+			want:  "DCU-TS5V0916070401",
+		},
+		{
+			name:  "missing DCU- prefix",
+			rawID: "TS5V0916070401",
+			minor: 0,
+			want:  "DCU-TS5V0916070401",
+		},
+		{
+			name:  "empty rawID falls back to minor",
+			rawID: "",
+			minor: 3,
+			want:  "DCU-3",
+		},
+		{
+			name:  "empty rawID with minor 0",
+			rawID: "",
+			minor: 0,
+			want:  "DCU-0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeHygonDeviceID(tt.rawID, tt.minor)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFindHygonDCUContainerIndex(t *testing.T) {
+	tests := []struct {
+		name string
+		pod  *corev1.Pod
+		want int
+	}{
+		{
+			name: "no DCU resource declared returns 0",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "app"},
+					},
+				},
+			},
+			want: 0,
+		},
+		{
+			name: "DCU in Limits of first container",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "dcu-container",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: 0,
+		},
+		{
+			name: "DCU in Requests of second container",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "sidecar"},
+						{
+							Name: "dcu-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceHygonDCUNum: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: 1,
+		},
+		{
+			name: "multi-container pod with DCU in Limits of third container",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "init"},
+						{Name: "sidecar"},
+						{
+							Name: "worker",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := findHygonDCUContainerIndex(tt.pod)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestHygonDCUDevicePluginAdapter_NodeLockKey(t *testing.T) {
+	adapter := &hygonDCUDevicePluginAdapter{}
+	assert.Equal(t, AnnotationHAMiLock, adapter.NodeLockKey())
+}
+
+func TestHygonDCUDevicePluginAdapter_Adapt_NotPod(t *testing.T) {
+	adapter := &hygonDCUDevicePluginAdapter{}
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test"}}
+	ctx := &DevicePluginAdaptContext{Context: context.TODO(), node: node}
+	err := adapter.Adapt(ctx, &metav1.ObjectMeta{Name: "not-a-pod"}, []*apiext.DeviceAllocation{
+		{ID: "DCU-0", Minor: 0, Resources: corev1.ResourceList{
+			apiext.ResourceGPUCore:   resource.MustParse("50"),
+			apiext.ResourceGPUMemory: resource.MustParse("3072Mi"),
+		}},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "object is not a pod")
+}
+
+func TestBuildHygonAllocationString(t *testing.T) {
+	tests := []struct {
+		name           string
+		pod            *corev1.Pod
+		allocation     []*apiext.DeviceAllocation
+		containerIndex int
+		want           string
+		wantErr        bool
+	}{
+		{
+			name: "device ID without DCU- prefix gets normalized",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
+			},
+			allocation: []*apiext.DeviceAllocation{
+				{
+					ID:    "TS5V0916070401",
+					Minor: 0,
+					Resources: corev1.ResourceList{
+						apiext.ResourceGPUCore:   resource.MustParse("50"),
+						apiext.ResourceGPUMemory: resource.MustParse("3072Mi"),
+					},
+				},
+			},
+			containerIndex: 0,
+			want:           "DCU-TS5V0916070401,DCU,3072,50:0;",
+			wantErr:        false,
+		},
+		{
+			name: "empty device ID falls back to minor",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}},
+			},
+			allocation: []*apiext.DeviceAllocation{
+				{
+					ID:    "",
+					Minor: 5,
+					Resources: corev1.ResourceList{
+						apiext.ResourceGPUCore:   resource.MustParse("100"),
+						apiext.ResourceGPUMemory: resource.MustParse("8192Mi"),
+					},
+				},
+			},
+			containerIndex: 0,
+			want:           "DCU-5,DCU,8192,100:0;",
+			wantErr:        false,
+		},
+		{
+			name: "container index 1 for multi-container pod",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "sidecar"}, {Name: "worker"}}},
+			},
+			allocation: []*apiext.DeviceAllocation{
+				{
+					ID:    "DCU-DEVICE-0",
+					Minor: 0,
+					Resources: corev1.ResourceList{
+						apiext.ResourceGPUCore:   resource.MustParse("30"),
+						apiext.ResourceGPUMemory: resource.MustParse("2048Mi"),
+					},
+				},
+			},
+			containerIndex: 1,
+			want:           "DCU-DEVICE-0,DCU,2048,30:1;",
+			wantErr:        false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildHygonAllocationString(tt.pod, tt.allocation, tt.containerIndex)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
