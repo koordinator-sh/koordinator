@@ -25,6 +25,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hodgesds/perf-utils v0.7.0
 	github.com/jaypipes/ghw v0.20.0
+	github.com/jaypipes/pcidb v1.1.1
 	github.com/jedib0t/go-pretty/v6 v6.4.0
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.1
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
@@ -144,7 +145,6 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jaypipes/pcidb v1.1.1 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
