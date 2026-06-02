@@ -41,6 +41,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 // podResources are the set of resources managed by quota associated with pods.
@@ -79,10 +80,10 @@ const (
 	defaultQuotaUpdateMaxRetries = 10
 
 	// defaultQuotaUpdateRetryJitter is the per-retry decorrelation upper bound.
-	// Actual sleep is in [jitter/2, jitter). 100ms is large enough to decorrelate
+	// Actual sleep is in [jitter/2, jitter). 50ms is large enough to decorrelate
 	// peer webhook pods given typical apiserver RTT (< 20ms) yet small enough
 	// to amortize across many retries within the total budget.
-	defaultQuotaUpdateRetryJitter = 20 * time.Millisecond
+	defaultQuotaUpdateRetryJitter = 50 * time.Millisecond
 	// defaultQuotaUpdateMaxTotalJitter bounds cumulative jitter per batch so
 	// Evaluate()'s 10s timeout never gets consumed by jitter alone.
 	defaultQuotaUpdateMaxTotalJitter = 1 * time.Second
@@ -171,18 +172,6 @@ type quotaCheckContext struct {
 	// calls. Persists across recursive checkQuota calls; capped at
 	// QuotaUpdateMaxTotalJitter so jitter cannot exhaust Evaluate()'s timeout.
 	totalJitterSpent time.Duration
-}
-
-// addResourceList adds the resources in newList to list.
-func addResourceList(list, newList corev1.ResourceList) {
-	for name, quantity := range newList {
-		if value, ok := list[name]; !ok {
-			list[name] = quantity.DeepCopy()
-		} else {
-			value.Add(quantity)
-			list[name] = value
-		}
-	}
 }
 
 // maskResourceList removes entries from resources that are not in nameSet or have zero values.
@@ -518,7 +507,7 @@ func (e *quotaEvaluator) checkRequest(quota *v1alpha1.ElasticQuota, a *Attribute
 
 	// Accumulate delta and update cached usage for next iteration
 	ctx.used = newUsage
-	addResourceList(ctx.delta, requestedUsage)
+	util.AddResourceList(ctx.delta, requestedUsage)
 
 	return nil
 }
