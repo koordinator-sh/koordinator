@@ -309,7 +309,11 @@ func (e *quotaEvaluator) checkAttributes(key string, admissionAttributes []*admi
 		return
 	}
 
-	e.checkQuota(quota, admissionAttributes, QuotaUpdateMaxRetries, nil)
+	startRetries := QuotaUpdateMaxRetries
+	if startRetries < quotaUpdateMinRetries {
+		startRetries = quotaUpdateMinRetries
+	}
+	e.checkQuota(quota, admissionAttributes, startRetries, nil)
 }
 
 func (e *quotaEvaluator) checkQuota(quota *v1alpha1.ElasticQuota, admissionAttributes []*admissionWaiter, remainingRetries int, ctx *quotaCheckContext) {
