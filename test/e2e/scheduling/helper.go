@@ -145,7 +145,10 @@ func runPodAndGetNodeName(f *framework.Framework, conf pausePodConfig) string {
 // GetNodeThatCanRunPod trying to launch a pod without a label to get a node which can launch it
 func GetNodeThatCanRunPod(f *framework.Framework) string {
 	ginkgo.By("Trying to launch a pod without a label to get a node which can launch it.")
-	return runPodAndGetNodeName(f, pausePodConfig{Name: "without-label"})
+	return runPodAndGetNodeName(f, pausePodConfig{
+		Name:          "without-label",
+		SchedulerName: framework.TestContext.KoordSchedulerName,
+	})
 }
 
 // Get2NodesThatCanRunPod return a 2-node slice where can run pod.
@@ -153,7 +156,8 @@ func Get2NodesThatCanRunPod(f *framework.Framework) []string {
 	firstNode := GetNodeThatCanRunPod(f)
 	ginkgo.By("Trying to launch a pod without a label to get a node which can launch it.")
 	pod := pausePodConfig{
-		Name: "without-label",
+		Name:          "without-label",
+		SchedulerName: framework.TestContext.KoordSchedulerName,
 		Affinity: &corev1.Affinity{
 			NodeAffinity: &corev1.NodeAffinity{
 				RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{

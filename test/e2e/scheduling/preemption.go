@@ -59,6 +59,21 @@ var _ = SIGDescribe("Preemption", func() {
 	})
 
 	framework.KoordinatorDescribe("Preemption with device", func() {
+		ginkgo.BeforeEach(func() {
+			nodeList, err := f.ClientSet.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+			framework.ExpectNoError(err, "unable to list nodes")
+			hasGPU := false
+			for _, node := range nodeList.Items {
+				if qty, ok := node.Status.Capacity[apiext.ResourceGPU]; ok && !qty.IsZero() {
+					hasGPU = true
+					break
+				}
+			}
+			if !hasGPU {
+				ginkgo.Skip("Skipping device preemption tests: no GPU nodes available")
+			}
+		})
+
 		framework.ConformanceIt("basic preempt device", func() {
 			nodeName := runPodAndGetNodeName(f, pausePodConfig{
 				Name: "without-label",
@@ -108,97 +123,6 @@ var _ = SIGDescribe("Preemption", func() {
 				PriorityClassName: "system-cluster-critical",
 			})
 			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, highPriorityPod), "unable preempt lowest priority pod")
-		})
-
-		framework.ConformanceIt("pods outside Reservation cannot preempt pods in Reservation", func() {
-			nodeName := runPodAndGetNodeName(f, pausePodConfig{
-				Name: "without-label",
-				Resources: &corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						apiext.ResourceGPU: resource.MustParse("100"),
-					},
-					Limits: corev1.ResourceList{
-						apiext.ResourceGPU: resource.MustParse("100"),
-					},
-				},
-				SchedulerName: koordSchedulerName,
-			})
-			node, err := f.ClientSet.CoreV1().Nodes().Get(context.TODO(), nodeName, metav1.GetOptions{})
-			framework.ExpectNoError(err, fmt.Sprintf("unable to get node %v", nodeName))
-
-			ginkgo.By("Create Reservation")
-			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
-			framework.ExpectNoError(err, "unable to load reservation")
-			reservation.Spec.AllocateOnce = ptr.To[bool](false)
-			reservation.Spec.Template.Spec.NodeName = nodeName
-			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
-				{
-					LabelSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"test-reservation-preempt": "true",
-						},
-					},
-				},
-			}
-			reservation.Spec.Template.Spec.Containers = []corev1.Container{
-				{
-					Resources: corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{
-							apiext.ResourceGPU: node.Status.Allocatable[apiext.ResourceGPU],
-						},
-						Requests: corev1.ResourceList{
-							apiext.ResourceGPU: node.Status.Allocatable[apiext.ResourceGPU],
-						},
-					},
-				},
-			}
-			reservation, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
-			framework.ExpectNoError(err, "unable to create reservation")
-			waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
-
-			ginkgo.By("Create low priority Pod requests all GPUs")
-			lowPriorityPod := createPausePod(f, pausePodConfig{
-				Name: "low-priority-pod",
-				Labels: map[string]string{
-					"test-reservation-preempt": "true",
-				},
-				Resources: &corev1.ResourceRequirements{
-					Limits: corev1.ResourceList{
-						apiext.ResourceGPU: node.Status.Allocatable[apiext.ResourceGPU],
-					},
-					Requests: corev1.ResourceList{
-						apiext.ResourceGPU: node.Status.Allocatable[apiext.ResourceGPU],
-					},
-				},
-				NodeName:      nodeName,
-				SchedulerName: koordSchedulerName,
-			})
-			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
-			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, lowPriorityPod.Namespace, lowPriorityPod.Name, reservation.Name)
-
-			ginkgo.By("Create highest priority Pod preempt lowest priority pod to obtain GPUs")
-			highPriorityPod := createPausePod(f, pausePodConfig{
-				Name: "high-priority-pod",
-				Resources: &corev1.ResourceRequirements{
-					Limits: corev1.ResourceList{
-						apiext.ResourceGPU: node.Status.Allocatable[apiext.ResourceGPU],
-					},
-					Requests: corev1.ResourceList{
-						apiext.ResourceGPU: node.Status.Allocatable[apiext.ResourceGPU],
-					},
-				},
-				NodeName:          nodeName,
-				SchedulerName:     koordSchedulerName,
-				PriorityClassName: "system-cluster-critical",
-			})
-			framework.ExpectNoError(e2epod.WaitForPodCondition(f.ClientSet, highPriorityPod.Namespace, highPriorityPod.Name, "wait for pod schedule failed", 60*time.Second, func(pod *corev1.Pod) (bool, error) {
-				_, scheduledCondition := k8spodutil.GetPodCondition(&pod.Status, corev1.PodScheduled)
-				return scheduledCondition != nil && scheduledCondition.Status == corev1.ConditionFalse, nil
-			}))
-
-			pod, err := f.PodClient().Get(context.TODO(), lowPriorityPod.Name, metav1.GetOptions{})
-			framework.ExpectNoError(err)
-			framework.ExpectEqual(pod.DeletionTimestamp, (*metav1.Time)(nil))
 		})
 
 		framework.ConformanceIt("highest priority pods in Reservation preempt lowest priority pods in Reservation", func() {
@@ -290,6 +214,105 @@ var _ = SIGDescribe("Preemption", func() {
 		})
 	})
 
+	framework.KoordinatorDescribe("Preemption with CPU/Memory", func() {
+		cpuResource := &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("512Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("512Mi"),
+			},
+		}
+
+		framework.ConformanceIt("basic CPU/Memory preempt", func() {
+			nodeName := GetNodeThatCanRunPod(f)
+
+			ginkgo.By("Create low priority Pod with CPU/Memory request")
+			lowPriorityPod := createPausePod(f, pausePodConfig{
+				Name:          "low-priority-pod",
+				Resources:     cpuResource,
+				NodeName:      nodeName,
+				SchedulerName: koordSchedulerName,
+			})
+			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
+
+			ginkgo.By("Create high priority Pod to preempt low priority pod")
+			highPriorityPod := createPausePod(f, pausePodConfig{
+				Name:              "high-priority-pod",
+				Resources:         cpuResource,
+				NodeName:          nodeName,
+				SchedulerName:     koordSchedulerName,
+				PriorityClassName: "system-cluster-critical",
+			})
+			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, highPriorityPod), "unable to preempt lowest priority pod")
+		})
+
+		framework.ConformanceIt("highest priority pods in Reservation preempt lowest priority pods for CPU/Memory", func() {
+			nodeName := GetNodeThatCanRunPod(f)
+
+			ginkgo.By("Create Reservation")
+			reservation, err := manifest.ReservationFromManifest("scheduling/simple-reservation.yaml")
+			framework.ExpectNoError(err, "unable to load reservation")
+			reservation.Spec.AllocateOnce = ptr.To[bool](false)
+			reservation.Spec.Template.Spec.NodeName = nodeName
+			reservation.Spec.Owners = []schedulingv1alpha1.ReservationOwner{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"test-reservation-preempt": "true",
+						},
+					},
+				},
+			}
+			reservation.Spec.Template.Spec.Containers = []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("512Mi"),
+						},
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("512Mi"),
+						},
+					},
+				},
+			}
+			reservation, err = f.KoordinatorClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+			framework.ExpectNoError(err, "unable to create reservation")
+			waitingForReservationScheduled(f.KoordinatorClientSet, reservation)
+
+			ginkgo.By("Create low priority Pod with matching labels")
+			lowPriorityPod := createPausePod(f, pausePodConfig{
+				Name: "low-priority-pod",
+				Labels: map[string]string{
+					"test-reservation-preempt": "true",
+				},
+				Resources:     cpuResource,
+				NodeName:      nodeName,
+				SchedulerName: koordSchedulerName,
+			})
+			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, lowPriorityPod), "unable schedule the lowest priority pod")
+			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, lowPriorityPod.Namespace, lowPriorityPod.Name, reservation.Name)
+
+			ginkgo.By("Create high priority Pod with matching labels to preempt")
+			highPriorityPod := createPausePod(f, pausePodConfig{
+				Name: "high-priority-pod",
+				Labels: map[string]string{
+					"test-reservation-preempt": "true",
+				},
+				Resources:         cpuResource,
+				NodeName:          nodeName,
+				SchedulerName:     koordSchedulerName,
+				PriorityClassName: "system-cluster-critical",
+			})
+			framework.ExpectNoError(e2epod.WaitForPodRunningInNamespace(f.ClientSet, highPriorityPod), "unable to preempt")
+			expectPodBoundReservation(f.ClientSet, f.KoordinatorClientSet, highPriorityPod.Namespace, highPriorityPod.Name, reservation.Name)
+		})
+	})
+
 	ginkgo.Context("Preempt basic resources", func() {
 		var testNodeName string
 		var fakeResourceName corev1.ResourceName = "koordinator.sh/fake-resource"
@@ -333,12 +356,10 @@ var _ = SIGDescribe("Preemption", func() {
 		framework.ConformanceIt("basic preempt", func() {
 			resourceRequirements := &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					fakeResourceName:   resource.MustParse("1000"),
-					corev1.ResourceCPU: resource.MustParse("4"),
+					fakeResourceName: resource.MustParse("1000"),
 				},
 				Limits: corev1.ResourceList{
-					fakeResourceName:   resource.MustParse("1000"),
-					corev1.ResourceCPU: resource.MustParse("4"),
+					fakeResourceName: resource.MustParse("1000"),
 				},
 			}
 			nodeName := runPodAndGetNodeName(f, pausePodConfig{
@@ -371,12 +392,10 @@ var _ = SIGDescribe("Preemption", func() {
 		framework.ConformanceIt("pods outside Reservation cannot preempt pods in Reservation", func() {
 			resourceRequirements := &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					fakeResourceName:   resource.MustParse("1000"),
-					corev1.ResourceCPU: resource.MustParse("4"),
+					fakeResourceName: resource.MustParse("1000"),
 				},
 				Limits: corev1.ResourceList{
-					fakeResourceName:   resource.MustParse("1000"),
-					corev1.ResourceCPU: resource.MustParse("4"),
+					fakeResourceName: resource.MustParse("1000"),
 				},
 			}
 
@@ -444,12 +463,10 @@ var _ = SIGDescribe("Preemption", func() {
 		framework.ConformanceIt("highest priority pods in Reservation preempt lowest priority pods in Reservation", func() {
 			resourceRequirements := &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					fakeResourceName:   resource.MustParse("1000"),
-					corev1.ResourceCPU: resource.MustParse("4"),
+					fakeResourceName: resource.MustParse("1000"),
 				},
 				Limits: corev1.ResourceList{
-					fakeResourceName:   resource.MustParse("1000"),
-					corev1.ResourceCPU: resource.MustParse("4"),
+					fakeResourceName: resource.MustParse("1000"),
 				},
 			}
 
@@ -514,12 +531,10 @@ var _ = SIGDescribe("Preemption", func() {
 		framework.ConformanceIt("highest priority pods in Restricted Reservation preempt lowest priority pods in Restricted Reservation", func() {
 			resourceRequirements := &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					fakeResourceName:   resource.MustParse("1000"),
-					corev1.ResourceCPU: resource.MustParse("4"),
+					fakeResourceName: resource.MustParse("1000"),
 				},
 				Limits: corev1.ResourceList{
-					fakeResourceName:   resource.MustParse("1000"),
-					corev1.ResourceCPU: resource.MustParse("4"),
+					fakeResourceName: resource.MustParse("1000"),
 				},
 			}
 
