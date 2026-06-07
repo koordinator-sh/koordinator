@@ -434,7 +434,7 @@ func TestAddNodeAffinityForMultiQuotaTree(t *testing.T) {
 			defer feature.SetFeatureGateDuringTest(t, feature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
 
 			req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
-			err := handler.addNodeAffinityForMultiQuotaTree(context.TODO(), req, tc.pod)
+			err := handler.addNodeAffinityForMultiQuotaTree(context.TODO(), req, tc.pod, nil)
 			assert.NoError(t, err)
 
 			assert.Equal(t, tc.expected, tc.pod)

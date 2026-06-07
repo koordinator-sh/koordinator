@@ -18,12 +18,15 @@ package mutating
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -34,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	configv1alpha1 "github.com/koordinator-sh/koordinator/apis/config/v1alpha1"
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
@@ -185,6 +189,145 @@ func TestMutatingHandler(t *testing.T) {
 	}
 }
 
+func TestMutatingHandler_Update(t *testing.T) {
+	handler, _ := makeTestHandler()
+	ctx := context.Background()
+
+	testCases := []struct {
+		name     string
+		pod      *corev1.Pod
+		hasPatch bool
+	}{
+		{
+			name: "pod update with extended resources",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod1",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									extension.BatchCPU: resource.MustParse("1000"),
+								},
+							},
+						},
+					},
+				},
+			},
+			hasPatch: true,
+		},
+		{
+			name: "pod update without changes",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod2",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+						},
+					},
+				},
+			},
+			hasPatch: false,
+		},
+		{
+			name: "pod update with GPU resources",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod3",
+					Namespace: "default",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									extension.ResourceGPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			hasPatch: true,
+		},
+		{
+			name: "pod update with GPU resources in limits only and empty namespace",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pod4",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									extension.ResourceGPU: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			hasPatch: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			podBytes, _ := json.Marshal(tc.pod)
+			req := admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Resource:  gvr("pods"),
+					Operation: admissionv1.Update,
+					Object: runtime.RawExtension{
+						Raw: podBytes,
+					},
+					OldObject: runtime.RawExtension{
+						Raw: podBytes, // For simplicity in this test, old and new are same or similar enough
+					},
+				},
+			}
+			response := handler.Handle(ctx, req)
+			assert.True(t, response.Allowed)
+			if tc.hasPatch {
+				assert.NotEmpty(t, response.Patches)
+				if tc.name == "pod update with extended resources" {
+					found := false
+					for _, p := range response.Patches {
+						if strings.Contains(p.Path, "annotations") {
+							found = true
+							break
+						}
+					}
+					assert.True(t, found, "ExtendedResourceSpec annotation patch not found")
+				}
+				if tc.name == "pod update with GPU resources" {
+					found := false
+					for _, p := range response.Patches {
+						if strings.Contains(p.Path, "koordinator.sh~1gpu-core") {
+							found = true
+							break
+						}
+					}
+					assert.True(t, found, "GPU core resource patch not found")
+				}
+			} else {
+				assert.Empty(t, response.Patches)
+			}
+		})
+	}
+}
+
 // var _ inject.Cache = &PodMutatingHandler{}
 
 func (h *PodMutatingHandler) InjectCache(cache sigcache.Cache) error {
@@ -201,4 +344,58 @@ func (h *PodMutatingHandler) InjectCache(cache sigcache.Cache) error {
 		DeleteFunc: qt.OnQuotaDelete,
 	})
 	return nil
+}
+
+func TestMutatingHandler_Handle_InvalidOldObject(t *testing.T) {
+	handler, _ := makeTestHandler()
+	ctx := context.Background()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod1",
+			Namespace: "default",
+		},
+	}
+	podBytes, _ := json.Marshal(pod)
+
+	req := admission.Request{
+		AdmissionRequest: admissionv1.AdmissionRequest{
+			Resource:  gvr("pods"),
+			Operation: admissionv1.Update,
+			Object: runtime.RawExtension{
+				Raw: podBytes,
+			},
+			OldObject: runtime.RawExtension{
+				Raw: []byte(`{"invalid": "json"`),
+			},
+		},
+	}
+	response := handler.Handle(ctx, req)
+	assert.False(t, response.Allowed)
+	assert.Equal(t, int32(http.StatusBadRequest), response.AdmissionResponse.Result.Code)
+}
+
+func TestMutatingHandler_Handle_CreateEmptyNamespace(t *testing.T) {
+	handler, _ := makeTestHandler()
+	ctx := context.Background()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pod1",
+		},
+	}
+	podBytes, _ := json.Marshal(pod)
+
+	req := admission.Request{
+		AdmissionRequest: admissionv1.AdmissionRequest{
+			Resource:  gvr("pods"),
+			Operation: admissionv1.Create,
+			Namespace: "default",
+			Object: runtime.RawExtension{
+				Raw: podBytes,
+			},
+		},
+	}
+	response := handler.Handle(ctx, req)
+	assert.True(t, response.Allowed)
 }

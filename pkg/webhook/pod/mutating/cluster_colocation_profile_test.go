@@ -1852,7 +1852,7 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 			assert.NoError(err)
 
 			req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
-			err = handler.clusterColocationProfileMutatingPod(context.TODO(), req, tc.pod)
+			err = handler.clusterColocationProfileMutatingPod(context.TODO(), req, tc.pod, nil)
 			assert.NoError(err)
 
 			assert.Equal(tc.expected, tc.pod)

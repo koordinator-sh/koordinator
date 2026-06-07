@@ -166,7 +166,7 @@ func TestDeviceResourceSpecMutatingPod(t *testing.T) {
 	req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
 	for i := range testCases {
 		pod.Spec.Containers[0].Resources = testCases[i].resourceRequirements
-		err := handler.deviceResourceSpecMutatingPod(context.TODO(), req, pod)
+		err := handler.deviceResourceSpecMutatingPod(context.TODO(), req, pod, nil)
 
 		assert.NoError(err)
 		assert.Equal(pod.Spec.Containers[0].Resources, testCases[i].expectedResourceRequirements)
