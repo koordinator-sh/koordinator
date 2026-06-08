@@ -34,6 +34,7 @@ import (
 	noderesourcesfitplus "github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/noderesourcefitplus"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scarceresourceavoidance"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scheduleadmission"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/schedulinghint"
 
 	// Ensure metric package is initialized
@@ -52,6 +53,7 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	defaultprebind.Name:          defaultprebind.New,
 	noderesourcesfitplus.Name:    noderesourcesfitplus.New,
 	scarceresourceavoidance.Name: scarceresourceavoidance.New,
+	scheduleadmission.Name:      scheduleadmission.New,
 	schedulinghint.Name:          schedulinghint.New,
 }
 
