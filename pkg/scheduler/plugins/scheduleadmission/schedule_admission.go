@@ -19,7 +19,6 @@ package scheduleadmission
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -81,15 +80,12 @@ func (pl *Plugin) isScheduleAdmissionLabelRemoved(logger klog.Logger, pod *corev
 		return fwktype.QueueSkip, nil
 	}
 
-	// Check if any schedule-admission label was removed.
-	for key := range oldPod.Labels {
-		if strings.HasPrefix(key, extension.LabelScheduleAdmissionPrefix) {
-			if _, exists := newPod.Labels[key]; !exists {
-				logger.V(5).Info("Schedule-admission label removed, re-enqueuing pod",
-					"pod", klog.KObj(pod), "removedLabel", key)
-				return fwktype.Queue, nil
-			}
-		}
+	// Only re-enqueue when ALL schedule-admission labels have been removed.
+	// If any remain, PreEnqueue will reject the pod again, so skip.
+	if extension.HasScheduleAdmissionLabels(oldPod) && !extension.HasScheduleAdmissionLabels(newPod) {
+		logger.V(5).Info("All schedule-admission labels removed, re-enqueuing pod",
+			"pod", klog.KObj(pod))
+		return fwktype.Queue, nil
 	}
 	return fwktype.QueueSkip, nil
 }
