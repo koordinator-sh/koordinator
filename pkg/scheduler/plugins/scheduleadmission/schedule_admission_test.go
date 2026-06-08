@@ -225,7 +225,7 @@ func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
 			wantHint: fwktype.QueueSkip,
 		},
 		{
-			name: "one of multiple gates removed",
+			name: "one of multiple gates removed, still gated",
 			oldObj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "gated-pod",
@@ -243,6 +243,27 @@ func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
 					Labels: map[string]string{
 						extension.LabelScheduleAdmissionPrefix + "resource-ready": "true",
 					},
+				},
+			},
+			wantHint: fwktype.QueueSkip,
+		},
+		{
+			name: "all gates removed",
+			oldObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "gated-pod",
+					UID:  podUID,
+					Labels: map[string]string{
+						extension.LabelScheduleAdmissionPrefix + "quota-check":    "true",
+						extension.LabelScheduleAdmissionPrefix + "resource-ready": "true",
+					},
+				},
+			},
+			newObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "gated-pod",
+					UID:    podUID,
+					Labels: map[string]string{},
 				},
 			},
 			wantHint: fwktype.Queue,
