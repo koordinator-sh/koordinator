@@ -74,13 +74,21 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 		klog.Warningf("Skip to validate pod %s/%s deletion for no old object, maybe because of Kubernetes version < 1.16", req.Namespace, req.Name)
 		return
 	}
-	pod := &corev1.Pod{}
-	if err = h.Decoder.DecodeRaw(req.Object, pod); err != nil {
+	// Decode once and pass to all sub-handlers to avoid redundant DecodeRaw per request.
+	newPod := &corev1.Pod{}
+	if err = h.Decoder.DecodeRaw(req.Object, newPod); err != nil {
 		return false, "", err
+	}
+	var oldPod *corev1.Pod
+	if req.Operation == admissionv1.Update {
+		oldPod = &corev1.Pod{}
+		if err = h.Decoder.DecodeRaw(req.OldObject, oldPod); err != nil {
+			return false, "", err
+		}
 	}
 
 	start := time.Now()
-	_, reason, err = h.clusterReservationValidatingPod(ctx, req)
+	_, reason, err = h.clusterReservationValidatingPod(ctx, req, newPod, oldPod)
 	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
 		metrics.Pod, string(req.Operation), err, ClusterReservation, time.Since(start).Seconds())
 	if err != nil {
@@ -88,7 +96,7 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 	}
 
 	start = time.Now()
-	_, reason, err = h.clusterColocationProfileValidatingPod(ctx, req)
+	_, reason, err = h.clusterColocationProfileValidatingPod(ctx, req, newPod, oldPod)
 	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
 		metrics.Pod, string(req.Operation), err, ClusterColocationProfile, time.Since(start).Seconds())
 	if err != nil {
@@ -97,7 +105,7 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 
 	start = time.Now()
 	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
-	if err = plugin.ValidatePod(ctx, req); err != nil {
+	if err = plugin.ValidatePod(ctx, req, newPod, oldPod); err != nil {
 		metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
 			metrics.Pod, string(req.Operation), err, plugin.Name(), time.Since(start).Seconds())
 		return false, "", err
@@ -106,7 +114,7 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 		metrics.Pod, string(req.Operation), nil, plugin.Name(), time.Since(start).Seconds())
 
 	start = time.Now()
-	_, reason, err = h.evaluateQuota(ctx, req)
+	_, reason, err = h.evaluateQuota(ctx, req, newPod)
 	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
 		metrics.Pod, string(req.Operation), err, EvaluateQuota, time.Since(start).Seconds())
 
@@ -115,7 +123,7 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 	}
 
 	start = time.Now()
-	allowed, reason, err = h.deviceResourceValidatingPod(ctx, req)
+	allowed, reason, err = h.deviceResourceValidatingPod(ctx, req, newPod, oldPod)
 	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
 		metrics.Pod, string(req.Operation), err, DeviceResource, time.Since(start).Seconds())
 	if err != nil {
@@ -123,7 +131,7 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 	}
 
 	start = time.Now()
-	reason, err = h.podEnhancedValidate(ctx, req)
+	reason, err = h.podEnhancedValidate(ctx, req, newPod)
 	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
 		metrics.Pod, string(req.Operation), err, EnhancedValidation, time.Since(start).Seconds())
 	if err != nil {
