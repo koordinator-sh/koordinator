@@ -109,10 +109,40 @@ func (pm *PreemptionMgr) PostFilter(ctx context.Context, state fwktype.CycleStat
 	klog.V(4).InfoS("Attempt to do reservation preemption in the PostFilter", "pod", klog.KObj(pod))
 
 	result, status := pe.Preempt(ctx, state, pod, m)
+	if status.IsSuccess() && result != nil && result.NominatingInfo != nil {
+		// Synchronously clear ReservationNominator entries for lower-priority reserve pods
+		// on the preempted node. The k8s preemption calls clearNominatedNodeName for them,
+		// but informer propagation is async. With the NominatedNodeNameForExpectation feature
+		// (k8s 1.35+ Beta), NNN is also set during the binding cycle, so more pods may have
+		// stale nominations that need immediate clearing to avoid scheduling conflicts.
+		pm.clearLowerPriorityReservePodNominations(pod, result.NominatingInfo.NominatedNodeName)
+	}
 	if status.Message() != "" {
 		return result, fwktype.NewStatus(status.Code(), "preemption: "+status.Message())
 	}
 	return result, status
+}
+
+// clearLowerPriorityReservePodNominations removes stale ReservationNominator entries for
+// lower-priority reserve pods on the given node immediately after preemption. This prevents
+// race conditions where a subsequent scheduling cycle uses the stale nomination state before
+// the async informer events from clearNominatedNodeName propagate.
+func (pm *PreemptionMgr) clearLowerPriorityReservePodNominations(pod *corev1.Pod, nodeName string) {
+	if nodeName == "" {
+		return
+	}
+	reservationNominator := pm.fh.GetReservationNominator()
+	if reservationNominator == nil {
+		return
+	}
+	podPriority := corev1helpers.PodPriority(pod)
+	for _, pi := range reservationNominator.NominatedReservePodForNode(nodeName) {
+		if corev1helpers.PodPriority(pi.GetPod()) < podPriority {
+			klog.V(4).InfoS("Clearing stale reservation nomination for lower-priority reserve pod after preemption",
+				"preemptor", klog.KObj(pod), "reservePod", klog.KObj(pi.GetPod()), "node", nodeName)
+			reservationNominator.DeleteNominatedReservePodOrReservation(pi.GetPod())
+		}
+	}
 }
 
 // SelectVictimsOnNode finds minimum set of pods on the given node that should be preempted in order to make enough room

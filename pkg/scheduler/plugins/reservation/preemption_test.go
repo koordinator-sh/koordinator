@@ -741,6 +741,127 @@ func TestFilterPodsWithPDBViolation(t *testing.T) {
 	}
 }
 
+// TestClearLowerPriorityReservePodNominations verifies that after successful preemption,
+// lower-priority reserve pod nominations are synchronously cleared from the ReservationNominator.
+// This prevents stale nominations from causing scheduling conflicts in subsequent cycles,
+// especially with the NominatedNodeNameForExpectation feature (k8s 1.35+ Beta) where NNN
+// is also set during the binding cycle.
+func TestClearLowerPriorityReservePodNominations(t *testing.T) {
+	preemptionPolicyLowerPriority := corev1.PreemptLowerPriority
+	const targetNode = "test-node-0"
+
+	makeReservePod := func(name string, priority int32) *corev1.Pod {
+		r := &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: name,
+				UID:  uuid.NewUUID(),
+			},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template: &corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Priority:         &priority,
+						PreemptionPolicy: &preemptionPolicyLowerPriority,
+					},
+				},
+			},
+		}
+		return reservationutil.NewReservePod(r)
+	}
+
+	tests := []struct {
+		name          string
+		preemptorPod  *corev1.Pod
+		reservePods   []*corev1.Pod
+		callNodeName  string // the node name passed to clearLowerPriorityReservePodNominations
+		wantRemaining []string
+	}{
+		{
+			name: "lower-priority reserve pods are removed, higher-priority kept",
+			preemptorPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "high-priority-preemptor", Namespace: "default", UID: uuid.NewUUID()},
+				Spec:       corev1.PodSpec{Priority: ptr.To[int32](200), PreemptionPolicy: &preemptionPolicyLowerPriority},
+			},
+			reservePods: []*corev1.Pod{
+				makeReservePod("low-prio-reserve", 50),
+				makeReservePod("high-prio-reserve", 300),
+			},
+			callNodeName:  targetNode,
+			wantRemaining: []string{"high-prio-reserve"},
+		},
+		{
+			name: "all reserve pods are lower-priority, all removed",
+			preemptorPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "highest-priority-preemptor", Namespace: "default", UID: uuid.NewUUID()},
+				Spec:       corev1.PodSpec{Priority: ptr.To[int32](1000), PreemptionPolicy: &preemptionPolicyLowerPriority},
+			},
+			reservePods: []*corev1.Pod{
+				makeReservePod("reserve-a", 100),
+				makeReservePod("reserve-b", 200),
+			},
+			callNodeName:  targetNode,
+			wantRemaining: []string{},
+		},
+		{
+			name: "no nominations on target node, nothing to clear",
+			preemptorPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "preemptor", Namespace: "default", UID: uuid.NewUUID()},
+				Spec:       corev1.PodSpec{Priority: ptr.To[int32](200), PreemptionPolicy: &preemptionPolicyLowerPriority},
+			},
+			reservePods:   []*corev1.Pod{},
+			callNodeName:  targetNode,
+			wantRemaining: []string{},
+		},
+		{
+			name: "empty nodeName is a no-op",
+			preemptorPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "preemptor", Namespace: "default", UID: uuid.NewUUID()},
+				Spec:       corev1.PodSpec{Priority: ptr.To[int32](200), PreemptionPolicy: &preemptionPolicyLowerPriority},
+			},
+			reservePods: []*corev1.Pod{
+				makeReservePod("low-reserve", 50),
+			},
+			callNodeName:  "", // empty node name - should be a no-op
+			wantRemaining: []string{"low-reserve"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+				args.EnablePreemption = true
+			})
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl, ok := p.(*Plugin)
+			assert.True(t, ok)
+			assert.NotNil(t, pl.preemptionMgr)
+
+			// Directly populate the nominator's internal maps to bypass lister validation.
+			// This is intentional in unit tests: we are testing clearLowerPriorityReservePodNominations,
+			// not the nomination admission logic.
+			for _, rp := range tt.reservePods {
+				pi, _ := framework.NewPodInfo(rp)
+				pl.nominator.nominatedReservePodToNode[rp.UID] = targetNode
+				pl.nominator.nominatedReservePod[targetNode] = append(
+					pl.nominator.nominatedReservePod[targetNode], pi)
+			}
+
+			// Call the function under test
+			pl.preemptionMgr.clearLowerPriorityReservePodNominations(tt.preemptorPod, tt.callNodeName)
+
+			// Verify remaining nominations
+			remaining := pl.nominator.NominatedReservePodForNode(targetNode)
+			remainingNames := make([]string, 0, len(remaining))
+			for _, pi := range remaining {
+				remainingNames = append(remainingNames, reservationutil.GetReservationNameFromReservePod(pi.GetPod()))
+			}
+
+			assert.ElementsMatch(t, tt.wantRemaining, remainingNames,
+				"unexpected reserve pod nominations remaining after clearLowerPriorityReservePodNominations")
+		})
+	}
+}
+
 func TestOrderedScoreFuncs(t *testing.T) {
 	suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
 		args.EnablePreemption = true
