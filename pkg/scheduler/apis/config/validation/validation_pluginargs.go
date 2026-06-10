@@ -18,9 +18,11 @@ package validation
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
@@ -259,6 +261,26 @@ func ValidateReservationArgs(path *field.Path, args *config.ReservationArgs) err
 			args.ResyncIntervalSeconds,
 			"must be non-negative",
 		))
+	}
+
+	// Validate ignoredResources and ignoredResourceGroups the same way as k8s scheduler NodeResourcesFit plugin.
+	resPath := path.Child("ignoredResources")
+	for i, res := range args.IgnoredResources {
+		path := resPath.Index(i)
+		if errs := metav1validation.ValidateLabelName(res, path); len(errs) != 0 {
+			allErrs = append(allErrs, errs...)
+		}
+	}
+
+	groupPath := path.Child("ignoredResourceGroups")
+	for i, group := range args.IgnoredResourceGroups {
+		path := groupPath.Index(i)
+		if strings.Contains(group, "/") {
+			allErrs = append(allErrs, field.Invalid(path, group, "resource group name can't contain '/'"))
+		}
+		if errs := metav1validation.ValidateLabelName(group, path); len(errs) != 0 {
+			allErrs = append(allErrs, errs...)
+		}
 	}
 
 	if len(allErrs) == 0 {

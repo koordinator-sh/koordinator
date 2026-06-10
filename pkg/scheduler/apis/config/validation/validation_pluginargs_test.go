@@ -465,6 +465,43 @@ func TestValidateReservationArgs(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "valid ignoredResourceGroups",
+			args: &config.ReservationArgs{
+				IgnoredResources:      []string{"example.com/gpu"},
+				IgnoredResourceGroups: []string{"example.com"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "ignoredResourceGroups contains slash",
+			args: &config.ReservationArgs{
+				IgnoredResourceGroups: []string{"example.com/invalid"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "ignoredResources with invalid label name",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"-invalid/gpu"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "ignoredResourceGroups with invalid label name",
+			args: &config.ReservationArgs{
+				IgnoredResourceGroups: []string{"-invalid"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty ignoredResources and ignoredResourceGroups",
+			args: &config.ReservationArgs{
+				IgnoredResources:      []string{},
+				IgnoredResourceGroups: []string{},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

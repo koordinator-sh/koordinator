@@ -6640,3 +6640,293 @@ func getNodeRState(state *stateData, nodeName string) *nodeReservationState {
 	}
 	return &nodeReservationState{}
 }
+
+func TestIsResourceIgnored(t *testing.T) {
+	tests := []struct {
+		name                  string
+		resourceName          corev1.ResourceName
+		ignoredResources      sets.Set[string]
+		ignoredResourceGroups sets.Set[string]
+		want                  bool
+	}{
+		{
+			name:                  "standard resource cpu is never ignored",
+			resourceName:          corev1.ResourceCPU,
+			ignoredResources:      sets.New[string](string(corev1.ResourceCPU)),
+			ignoredResourceGroups: sets.New[string](),
+			want:                  false,
+		},
+		{
+			name:                  "standard resource memory is never ignored",
+			resourceName:          corev1.ResourceMemory,
+			ignoredResources:      sets.New[string](string(corev1.ResourceMemory)),
+			ignoredResourceGroups: sets.New[string](),
+			want:                  false,
+		},
+		{
+			name:                  "extended resource matched by name",
+			resourceName:          "example.com/gpu",
+			ignoredResources:      sets.New[string]("example.com/gpu"),
+			ignoredResourceGroups: sets.New[string](),
+			want:                  true,
+		},
+		{
+			name:                  "extended resource matched by group",
+			resourceName:          "example.com/gpu",
+			ignoredResources:      sets.New[string](),
+			ignoredResourceGroups: sets.New[string]("example.com"),
+			want:                  true,
+		},
+		{
+			name:                  "extended resource not matched",
+			resourceName:          "example.com/gpu",
+			ignoredResources:      sets.New[string]("other.io/fpga"),
+			ignoredResourceGroups: sets.New[string]("other.io"),
+			want:                  false,
+		},
+		{
+			name:                  "nil sets are safe",
+			resourceName:          "example.com/gpu",
+			ignoredResources:      nil,
+			ignoredResourceGroups: nil,
+			want:                  false,
+		},
+		{
+			name:                  "pods resource is never ignored",
+			resourceName:          corev1.ResourcePods,
+			ignoredResources:      sets.New[string](string(corev1.ResourcePods)),
+			ignoredResourceGroups: sets.New[string](),
+			want:                  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isResourceIgnored(tt.resourceName, tt.ignoredResources, tt.ignoredResourceGroups)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFitsNodeWithIgnoredResources(t *testing.T) {
+	tests := []struct {
+		name                  string
+		podRequest            corev1.ResourceList
+		nodeAllocatable       corev1.ResourceList
+		allPodsRequested      corev1.ResourceList
+		ignoredResources      sets.Set[string]
+		ignoredResourceGroups sets.Set[string]
+		wantInsufficient      []string
+	}{
+		{
+			name: "extended resource insufficient but ignored by name",
+			podRequest: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("1"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+			},
+			nodeAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("8"),
+				corev1.ResourceMemory:                  resource.MustParse("16Gi"),
+				corev1.ResourcePods:                    resource.MustParse("100"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("1"),
+			},
+			allPodsRequested: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+			ignoredResources:      sets.New[string]("example.com/gpu"),
+			ignoredResourceGroups: sets.New[string](),
+			wantInsufficient:      nil,
+		},
+		{
+			name: "extended resource insufficient but ignored by group",
+			podRequest: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("1"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+			},
+			nodeAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("8"),
+				corev1.ResourceMemory:                  resource.MustParse("16Gi"),
+				corev1.ResourcePods:                    resource.MustParse("100"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("1"),
+			},
+			allPodsRequested: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+			ignoredResources:      sets.New[string](),
+			ignoredResourceGroups: sets.New[string]("example.com"),
+			wantInsufficient:      nil,
+		},
+		{
+			name: "extended resource insufficient and not ignored",
+			podRequest: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("1"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+			},
+			nodeAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("8"),
+				corev1.ResourceMemory:                  resource.MustParse("16Gi"),
+				corev1.ResourcePods:                    resource.MustParse("100"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("1"),
+			},
+			allPodsRequested: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+			ignoredResources:      sets.New[string](),
+			ignoredResourceGroups: sets.New[string](),
+			wantInsufficient:      []string{"example.com/gpu"},
+		},
+		{
+			name: "only matching group is ignored, other extended resources still checked",
+			podRequest: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("1"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+				corev1.ResourceName("other.io/fpga"):   resource.MustParse("2"),
+			},
+			nodeAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("8"),
+				corev1.ResourceMemory:                  resource.MustParse("16Gi"),
+				corev1.ResourcePods:                    resource.MustParse("100"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("1"),
+				corev1.ResourceName("other.io/fpga"):   resource.MustParse("1"),
+			},
+			allPodsRequested: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+			ignoredResources:      sets.New[string](),
+			ignoredResourceGroups: sets.New[string]("example.com"),
+			wantInsufficient:      []string{"other.io/fpga"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			podRequestResource := framework.NewResource(tt.podRequest)
+			nodeAlloc := framework.NewResource(tt.nodeAllocatable)
+			allPodsReq := framework.NewResource(tt.allPodsRequested)
+			got := fitsNode(podRequestResource, nodeAlloc, allPodsReq, nil, nil, 0, 1, nil, tt.ignoredResources, tt.ignoredResourceGroups)
+			assert.Equal(t, tt.wantInsufficient, got)
+		})
+	}
+}
+
+func TestFitsReservationWithIgnoredResources(t *testing.T) {
+	tests := []struct {
+		name                  string
+		podRequest            corev1.ResourceList
+		rInfo                 *frameworkext.ReservationInfo
+		ignoredResources      sets.Set[string]
+		ignoredResourceGroups sets.Set[string]
+		wantInsufficient      bool
+	}{
+		{
+			name: "reservation resource insufficient but ignored by name",
+			podRequest: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("1"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("4"),
+			},
+			rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-r", UID: "uid-1"},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:                     resource.MustParse("4"),
+										corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+									},
+								},
+							}},
+						},
+					},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:                     resource.MustParse("4"),
+						corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+					},
+				},
+			}),
+			ignoredResources:      sets.New[string]("example.com/gpu"),
+			ignoredResourceGroups: sets.New[string](),
+			wantInsufficient:      false,
+		},
+		{
+			name: "reservation resource insufficient but ignored by group",
+			podRequest: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("1"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("4"),
+			},
+			rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-r", UID: "uid-2"},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:                     resource.MustParse("4"),
+										corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+									},
+								},
+							}},
+						},
+					},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:                     resource.MustParse("4"),
+						corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+					},
+				},
+			}),
+			ignoredResources:      sets.New[string](),
+			ignoredResourceGroups: sets.New[string]("example.com"),
+			wantInsufficient:      false,
+		},
+		{
+			name: "reservation resource insufficient and not ignored",
+			podRequest: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("1"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("4"),
+			},
+			rInfo: frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-r", UID: "uid-3"},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:                     resource.MustParse("4"),
+										corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+									},
+								},
+							}},
+						},
+					},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:                     resource.MustParse("4"),
+						corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+					},
+				},
+			}),
+			ignoredResources:      sets.New[string](),
+			ignoredResourceGroups: sets.New[string](),
+			wantInsufficient:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reasons := fitsReservation(tt.podRequest, tt.rInfo, nil, false, tt.ignoredResources, tt.ignoredResourceGroups)
+			if tt.wantInsufficient {
+				assert.NotEmpty(t, reasons)
+			} else {
+				assert.Empty(t, reasons)
+			}
+		})
+	}
+}

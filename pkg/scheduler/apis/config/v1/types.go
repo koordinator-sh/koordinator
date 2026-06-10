@@ -211,6 +211,15 @@ type ReservationArgs struct {
 	// PreAllocationConfig defines the configuration for pre-allocation feature.
 	// +optional
 	PreAllocationConfig *PreAllocationConfig `json:"preAllocationConfig,omitempty"`
+	// IgnoredResources is the list of resources that reservation fit filter should ignore.
+	// +optional
+	IgnoredResources []string `json:"ignoredResources,omitempty"`
+	// IgnoredResourceGroups defines the list of resource groups that reservation fit filter should ignore.
+	// e.g. if group is ["example.com"], it will ignore all resource names that begin
+	// with "example.com", such as "example.com/aaa" and "example.com/bbb".
+	// A resource group name can't contain '/'.
+	// +optional
+	IgnoredResourceGroups []string `json:"ignoredResourceGroups,omitempty"`
 }
 
 // PreAllocationConfig defines the configuration for pre-allocation feature.
