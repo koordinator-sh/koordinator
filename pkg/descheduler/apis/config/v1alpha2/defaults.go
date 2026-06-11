@@ -341,3 +341,24 @@ func SetDefaults_CustomPriorityArgs(obj *CustomPriorityArgs) {
 		obj.Mode = CustomPriorityEvictModeBestEffort
 	}
 }
+
+func SetDefaults_FragmentationAwareArgs(obj *FragmentationAwareArgs) {
+	if obj.Paused == nil {
+		obj.Paused = ptr.To[bool](false)
+	}
+	if obj.DryRun == nil {
+		obj.DryRun = ptr.To[bool](false)
+	}
+	if obj.NodeFit == nil {
+		obj.NodeFit = ptr.To[bool](true)
+	}
+	if len(obj.Resources) == 0 {
+		obj.Resources = []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory}
+	}
+	if obj.ImbalanceThreshold == nil {
+		obj.ImbalanceThreshold = ptr.To[float64](0.15)
+	}
+	if obj.MinImprovementThreshold == nil {
+		obj.MinImprovementThreshold = ptr.To[float64](0.02)
+	}
+}
