@@ -83,6 +83,7 @@ func main() {
 	opts.InitFlags(flag.CommandLine)
 	sloconfig.InitFlags(flag.CommandLine)
 	podvalidating.InitFlags(flag.CommandLine)
+	podvalidating.InitBindingAdmissionFlags(flag.CommandLine)
 	utilfeature.DefaultMutableFeatureGate.AddFlag(pflag.CommandLine)
 	klog.InitFlags(nil)
 	// Opt into the new klog behavior so that -stderrthreshold is honored even
@@ -95,6 +96,7 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	ctrl.SetLogger(klogr.New())
 	features.SetDefaultFeatureGates()
+	podvalidating.SetupBindingAdmission()
 
 	if enablePprof {
 		go func() {
