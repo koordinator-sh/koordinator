@@ -37,7 +37,6 @@ import (
 	resourceapi "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
-	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -895,15 +894,12 @@ func fitsNodeAndReservation(podRequestsResources, allPodsRequested, allRAllocate
 }
 
 func isResourceIgnored(name corev1.ResourceName, ignoredResources, ignoredResourceGroups sets.Set[string]) bool {
-	if !v1helper.IsExtendedResourceName(name) {
-		return false
-	}
-	if ignoredResources.Has(string(name)) {
+	s := string(name)
+	if ignoredResources.Has(s) {
 		return true
 	}
 	if ignoredResourceGroups.Len() > 0 {
-		rNamePrefix := strings.Split(string(name), "/")[0]
-		if ignoredResourceGroups.Has(rNamePrefix) {
+		if prefix, _, ok := strings.Cut(s, "/"); ok && prefix != "" && ignoredResourceGroups.Has(prefix) {
 			return true
 		}
 	}
