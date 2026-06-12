@@ -39,17 +39,13 @@ var podTransformersForQuotaEvaluation = []func(pod *corev1.Pod){
 	transformer.TransformReplaceResources,
 }
 
-func (h *PodValidatingHandler) evaluateQuota(ctx context.Context, req admission.Request) (bool, string, error) {
+func (h *PodValidatingHandler) evaluateQuota(ctx context.Context, req admission.Request, newPod *corev1.Pod) (bool, string, error) {
 	if !utilfeature.DefaultFeatureGate.Enabled(features.EnableQuotaAdmission) {
 		return true, "", nil
 	}
 
-	newPod := &corev1.Pod{}
 	switch req.Operation {
 	case admissionv1.Create:
-		if err := h.Decoder.DecodeRaw(req.Object, newPod); err != nil {
-			return false, "", err
-		}
 	default:
 		return true, "", nil
 	}

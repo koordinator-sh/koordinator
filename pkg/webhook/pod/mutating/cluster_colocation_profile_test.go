@@ -18,6 +18,7 @@ package mutating
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1852,11 +1853,148 @@ func TestClusterColocationProfileMutatingPod(t *testing.T) {
 			assert.NoError(err)
 
 			req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
-			err = handler.clusterColocationProfileMutatingPod(context.TODO(), req, tc.pod)
+			_, err = handler.clusterColocationProfileMutatingPod(context.TODO(), req, tc.pod)
 			assert.NoError(err)
 
 			assert.Equal(tc.expected, tc.pod)
 		})
 
+	}
+}
+
+// BenchmarkClusterColocationProfile_NoPatchNoNamespaceSelector benchmarks the common
+// hot path where profiles use Selector (no NamespaceSelector) and no StrategicMergePatch.
+// This simulates the production scenario of ~1000 pod QPS with multiple colocation profiles.
+func BenchmarkClusterColocationProfile_NoPatchNoNamespaceSelector(b *testing.B) {
+	preemptionPolicy := corev1.PreemptionPolicy("PreemptLowerPriority")
+
+	// Setup: 3 colocation profiles with different Selector matching patterns
+	profiles := []*configv1alpha1.ClusterColocationProfile{
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "profile-batch-default"},
+			Spec: configv1alpha1.ClusterColocationProfileSpec{
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"koordinator.sh/colocation": "batch"},
+				},
+				Labels: map[string]string{
+					extension.LabelPodQoS: string(extension.QoSBE),
+				},
+				Annotations: map[string]string{
+					"koordinator.sh/mutated-by": "profile-batch-default",
+				},
+				QoSClass:            string(extension.QoSBE),
+				PriorityClassName:   "koordinator-batch",
+				KoordinatorPriority: ptr.To[int32](1000),
+				SchedulerName:       "koordinator-scheduler",
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "profile-midtier"},
+			Spec: configv1alpha1.ClusterColocationProfileSpec{
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"koordinator.sh/colocation": "mid"},
+				},
+				Labels: map[string]string{
+					extension.LabelPodQoS: string(extension.QoSLS),
+				},
+				SchedulerName: "koordinator-scheduler",
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "profile-catchall"},
+			Spec: configv1alpha1.ClusterColocationProfileSpec{
+				// No selector → matches all pods
+				Labels: map[string]string{
+					"koordinator.sh/managed": "true",
+				},
+				Annotations: map[string]string{
+					"koordinator.sh/injected": "true",
+				},
+			},
+		},
+	}
+
+	client := fake.NewClientBuilder().Build()
+	ctx := context.Background()
+
+	// Create PriorityClass
+	if err := client.Create(ctx, &schedulingv1.PriorityClass{
+		ObjectMeta:       metav1.ObjectMeta{Name: "koordinator-batch"},
+		Value:            extension.PriorityBatchValueMax,
+		PreemptionPolicy: &preemptionPolicy,
+	}); err != nil {
+		b.Fatalf("failed to create PriorityClass: %v", err)
+	}
+
+	// Create profiles
+	for _, p := range profiles {
+		if err := client.Create(ctx, p); err != nil {
+			b.Fatalf("failed to create profile %s: %v", p.Name, err)
+		}
+	}
+
+	decoder := admission.NewDecoder(scheme.Scheme)
+	handler := &PodMutatingHandler{
+		Client:  client,
+		Decoder: decoder,
+	}
+	req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
+
+	// The pod template simulates a typical production pod with 2 containers
+	podTemplate := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "bench-pod",
+			Labels: map[string]string{
+				"koordinator.sh/colocation": "batch",
+				"app":                       "my-service",
+				"version":                   "v1",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "main",
+					Image: "my-service:latest",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("2"),
+							corev1.ResourceMemory: resource.MustParse("4Gi"),
+						},
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("4"),
+							corev1.ResourceMemory: resource.MustParse("8Gi"),
+						},
+					},
+				},
+				{
+					Name:  "sidecar",
+					Image: "envoy:latest",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("256Mi"),
+						},
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("512Mi"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		// Deep copy pod to avoid sharing state between iterations
+		pod := podTemplate.DeepCopy()
+		pod.Name = "bench-pod-" + strconv.Itoa(i)
+		b.StartTimer()
+
+		_, _ = handler.clusterColocationProfileMutatingPod(ctx, req, pod)
 	}
 }

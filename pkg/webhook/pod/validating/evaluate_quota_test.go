@@ -413,7 +413,7 @@ func TestEvaluateQuota(t *testing.T) {
 			}
 
 			req := newAdmissionRequest(tc.operation, objRawExt, oldObjRawExt, "pods")
-			gotAllowed, gotReason, err := h.evaluateQuota(context.TODO(), admission.Request{AdmissionRequest: req})
+			gotAllowed, gotReason, err := h.evaluateQuota(context.TODO(), admission.Request{AdmissionRequest: req}, tc.newPod)
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {

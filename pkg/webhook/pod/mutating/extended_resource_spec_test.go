@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	feature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func TestExtendedResourceSpecMutatingPod(t *testing.T) {
@@ -96,7 +98,7 @@ func TestExtendedResourceSpecMutatingPod(t *testing.T) {
 	assert.NoError(err)
 
 	req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
-	err = handler.extendedResourceSpecMutatingPod(context.TODO(), req, pod)
+	_, err = handler.extendedResourceSpecMutatingPod(context.TODO(), req, pod)
 	assert.NoError(err)
 
 	expectPod := &corev1.Pod{
@@ -136,4 +138,43 @@ func TestExtendedResourceSpecMutatingPod(t *testing.T) {
 		},
 	}
 	assert.Equal(expectPod, pod)
+}
+
+func TestExtendedResourceSpecMutatingPod_Disabled(t *testing.T) {
+	defer feature.SetFeatureGateDuringTest(t, feature.DefaultMutableFeatureGate, features.DisableExtendedResourceSpec, true)()
+
+	client := fake.NewClientBuilder().Build()
+	decoder := admission.NewDecoder(scheme.Scheme)
+	handler := &PodMutatingHandler{
+		Client:  client,
+		Decoder: decoder,
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod-disabled",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "c1",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							extension.BatchCPU: resource.MustParse("1000"),
+						},
+						Requests: corev1.ResourceList{
+							extension.BatchCPU: resource.MustParse("1000"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
+	mutated, err := handler.extendedResourceSpecMutatingPod(context.TODO(), req, pod)
+	assert.NoError(t, err)
+	assert.False(t, mutated)
+	// Annotation should not be set when feature gate is disabled
+	assert.Empty(t, pod.Annotations)
 }

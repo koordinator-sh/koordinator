@@ -371,7 +371,7 @@ func TestPodEnhancedValidate(t *testing.T) {
 			}
 
 			req := newAdmissionRequest(tc.operation, objRawExt, oldObjRawExt, "pods")
-			gotReason, err := h.podEnhancedValidate(context.TODO(), admission.Request{AdmissionRequest: req})
+			gotReason, err := h.podEnhancedValidate(context.TODO(), admission.Request{AdmissionRequest: req}, tc.newPod)
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {

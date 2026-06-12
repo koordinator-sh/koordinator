@@ -26,18 +26,24 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
-func (h *PodMutatingHandler) deviceResourceSpecMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
+func (h *PodMutatingHandler) deviceResourceSpecMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) (bool, error) {
+	if utilfeature.DefaultFeatureGate.Enabled(features.DisableDeviceResourceSpec) {
+		return false, nil
+	}
 	if req.Operation != admissionv1.Create && req.Operation != admissionv1.Update {
-		return nil
+		return false, nil
 	}
 
 	return h.mutateByDeviceResources(pod)
 }
 
-func (h *PodMutatingHandler) mutateByDeviceResources(pod *corev1.Pod) error {
-	// device resource request euqal limit, not overcommit
+func (h *PodMutatingHandler) mutateByDeviceResources(pod *corev1.Pod) (bool, error) {
+	mutated := false
+	// device resource request equal limit, not overcommit
 	for i := range pod.Spec.Containers {
 		container := &pod.Spec.Containers[i]
 		r := getContainerExtendedResourcesRequirement(container, []corev1.ResourceName{
@@ -55,16 +61,20 @@ func (h *PodMutatingHandler) mutateByDeviceResources(pod *corev1.Pod) error {
 		_, ok := r.Requests[extension.ResourceGPU]
 		if ok {
 			injectGPU(container)
+			mutated = true
 		}
 
 		_, ok = r.Requests[extension.ResourceGPUShared]
 		if !ok {
 			injectGPUShare(container)
+			mutated = true
 		}
 	}
 
-	klog.V(4).Infof("mutate Pod %s/%s by ExtendedResources", pod.Namespace, pod.Name)
-	return nil
+	if mutated {
+		klog.V(4).Infof("mutate Pod %s/%s by DeviceResources", pod.Namespace, pod.Name)
+	}
+	return mutated, nil
 }
 
 func injectResourceContainerSpec(c *corev1.Container, s *extension.ExtendedResourceContainerSpec) {
@@ -93,7 +103,7 @@ func injectGPUShare(c *corev1.Container) {
 		}
 	} else if gpuCoreExist {
 		if gpuCoreQuantity.Value() > 100 && gpuCoreQuantity.Value()%100 == 0 {
-			gpuShared = gpuMemoryRatioQuantity.Value() / 100
+			gpuShared = gpuCoreQuantity.Value() / 100
 		}
 	}
 

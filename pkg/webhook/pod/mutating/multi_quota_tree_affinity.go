@@ -34,13 +34,13 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
 
-func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
+func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Context, req admission.Request, pod *corev1.Pod) (bool, error) {
 	if req.Operation != admissionv1.Create {
-		return nil
+		return false, nil
 	}
 
 	if !utilfeature.DefaultFeatureGate.Enabled(features.MultiQuotaTree) {
-		return nil
+		return false, nil
 	}
 
 	plugin := elasticquota.NewPlugin(h.Decoder, h.Client)
@@ -51,10 +51,10 @@ func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Contex
 
 	info := plugin.GetQuotaInfo(quotaName, pod.Namespace)
 	if info == nil {
-		return nil
+		return false, nil
 	}
 	if info.TreeID == "" {
-		return nil
+		return false, nil
 	}
 
 	profileList := &quotav1alpha1.ElasticQuotaProfileList{}
@@ -62,16 +62,16 @@ func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Contex
 		LabelSelector: labels.SelectorFromSet(map[string]string{extension.LabelQuotaTreeID: info.TreeID}),
 	}, utilclient.DisableDeepCopy)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if len(profileList.Items) == 0 {
-		return nil
+		return false, nil
 	}
 
 	nodeSelector := profileList.Items[0].Spec.NodeSelector
 	if nodeSelector == nil {
-		return nil
+		return false, nil
 	}
 
 	requirements := convertNodeSelectorToNodeSelectorRequirements(nodeSelector)
@@ -107,7 +107,7 @@ func (h *PodMutatingHandler) addNodeAffinityForMultiQuotaTree(ctx context.Contex
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 func convertNodeSelectorToNodeSelectorRequirements(nodeSelector *metav1.LabelSelector) []corev1.NodeSelectorRequirement {

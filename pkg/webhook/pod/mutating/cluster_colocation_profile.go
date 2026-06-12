@@ -51,19 +51,19 @@ var (
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
 // +kubebuilder:rbac:groups=config.koordinator.sh,resources=clustercolocationprofiles,verbs=get;list;watch
 
-func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
+func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) (bool, error) {
 	if req.Operation != admissionv1.Create {
-		return nil
+		return false, nil
 	}
 
 	profileList := &configv1alpha1.ClusterColocationProfileList{}
 	err := h.Client.List(ctx, profileList, utilclient.DisableDeepCopy)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if len(profileList.Items) == 0 {
-		return nil
+		return false, nil
 	}
 
 	var matchedProfiles []*configv1alpha1.ClusterColocationProfile
@@ -84,7 +84,7 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 		matchedProfiles = append(matchedProfiles, profile)
 	}
 	if len(matchedProfiles) == 0 {
-		return nil
+		return false, nil
 	}
 
 	// sort the profile in lexicographic order
@@ -92,13 +92,14 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 		return matchedProfiles[i].Name < matchedProfiles[j].Name
 	})
 	skipUpdateResourceFromProfile := false
+	mutated := false
 	for _, profile := range matchedProfiles {
 		if extension.ShouldSkipUpdateResource(profile) {
 			skipUpdateResourceFromProfile = true
 		}
 		skip, err := shouldSkipProfile(profile)
 		if err != nil {
-			return err
+			return mutated, err
 		}
 		if skip {
 			klog.V(4).Infof("skip mutate Pod %s/%s by clusterColocationProfile %s", pod.Namespace, pod.Name, profile.Name)
@@ -106,14 +107,16 @@ func (h *PodMutatingHandler) clusterColocationProfileMutatingPod(ctx context.Con
 		}
 		err = h.doMutateByColocationProfile(ctx, pod, profile)
 		if err != nil {
-			return err
+			return mutated, err
 		}
+		mutated = true
 		klog.V(4).Infof("mutate Pod %s/%s by clusterColocationProfile %s", pod.Namespace, pod.Name, profile.Name)
 	}
 	if skipUpdateResourceFromProfile || utilfeature.DefaultFeatureGate.Enabled(features.ColocationProfileSkipMutatingResources) {
-		return nil
+		return mutated, nil
 	}
-	return h.mutatePodResourceSpec(pod)
+	m, err := h.mutatePodResourceSpec(pod)
+	return mutated || m, err
 }
 
 func (h *PodMutatingHandler) matchNamespaceSelector(ctx context.Context, namespaceName string, namespaceSelector *metav1.LabelSelector) (bool, error) {
@@ -253,37 +256,38 @@ func (h *PodMutatingHandler) doMutateByColocationProfile(ctx context.Context, po
 	return nil
 }
 
-func (h *PodMutatingHandler) mutatePodResourceSpec(pod *corev1.Pod) error {
+func (h *PodMutatingHandler) mutatePodResourceSpec(pod *corev1.Pod) (bool, error) {
 	priorityClass := extension.GetPodPriorityClassWithDefault(pod)
 	if priorityClass == extension.PriorityNone || priorityClass == extension.PriorityProd {
-		return nil
+		return false, nil
 	}
 
+	mutated := false
 	for _, containers := range [][]corev1.Container{pod.Spec.InitContainers, pod.Spec.Containers} {
 		for i := range containers {
 			container := &containers[i]
-			replaceAndEraseResource(priorityClass, container.Resources.Requests, corev1.ResourceCPU)
-			replaceAndEraseResource(priorityClass, container.Resources.Requests, corev1.ResourceMemory)
+			mutated = replaceAndEraseResource(priorityClass, container.Resources.Requests, corev1.ResourceCPU) || mutated
+			mutated = replaceAndEraseResource(priorityClass, container.Resources.Requests, corev1.ResourceMemory) || mutated
 
-			replaceAndEraseResource(priorityClass, container.Resources.Limits, corev1.ResourceCPU)
-			replaceAndEraseResource(priorityClass, container.Resources.Limits, corev1.ResourceMemory)
+			mutated = replaceAndEraseResource(priorityClass, container.Resources.Limits, corev1.ResourceCPU) || mutated
+			mutated = replaceAndEraseResource(priorityClass, container.Resources.Limits, corev1.ResourceMemory) || mutated
 
-			restrictResourceRequestAndLimit(priorityClass, &container.Resources, corev1.ResourceCPU)
-			restrictResourceRequestAndLimit(priorityClass, &container.Resources, corev1.ResourceMemory)
+			mutated = restrictResourceRequestAndLimit(priorityClass, &container.Resources, corev1.ResourceCPU) || mutated
+			mutated = restrictResourceRequestAndLimit(priorityClass, &container.Resources, corev1.ResourceMemory) || mutated
 		}
 	}
 
 	if pod.Spec.Overhead != nil {
-		replaceAndEraseResource(priorityClass, pod.Spec.Overhead, corev1.ResourceCPU)
-		replaceAndEraseResource(priorityClass, pod.Spec.Overhead, corev1.ResourceMemory)
+		mutated = replaceAndEraseResource(priorityClass, pod.Spec.Overhead, corev1.ResourceCPU) || mutated
+		mutated = replaceAndEraseResource(priorityClass, pod.Spec.Overhead, corev1.ResourceMemory) || mutated
 	}
-	return nil
+	return mutated, nil
 }
 
-func replaceAndEraseResource(priorityClass extension.PriorityClass, resourceList corev1.ResourceList, resourceName corev1.ResourceName) {
+func replaceAndEraseResource(priorityClass extension.PriorityClass, resourceList corev1.ResourceList, resourceName corev1.ResourceName) bool {
 	extendResourceName := extension.ResourceNameMap[priorityClass][resourceName]
 	if extendResourceName == "" {
-		return
+		return false
 	}
 	quantity, ok := resourceList[resourceName]
 	if ok {
@@ -292,14 +296,16 @@ func replaceAndEraseResource(priorityClass extension.PriorityClass, resourceList
 		}
 		resourceList[extendResourceName] = quantity
 		delete(resourceList, resourceName)
+		return true
 	}
+	return false
 }
 
 // TODO move the hook to pod mutating for all Pods
-func restrictResourceRequestAndLimit(priorityClass extension.PriorityClass, requirements *corev1.ResourceRequirements, resourceName corev1.ResourceName) {
+func restrictResourceRequestAndLimit(priorityClass extension.PriorityClass, requirements *corev1.ResourceRequirements, resourceName corev1.ResourceName) bool {
 	extendResourceName := extension.ResourceNameMap[priorityClass][resourceName]
 	if extendResourceName == "" {
-		return
+		return false
 	}
 	_, requestOK := requirements.Requests[extendResourceName]
 	limitQuantity, limitOK := requirements.Limits[extendResourceName]
@@ -308,5 +314,7 @@ func restrictResourceRequestAndLimit(priorityClass extension.PriorityClass, requ
 			requirements.Requests = corev1.ResourceList{}
 		}
 		requirements.Requests[extendResourceName] = limitQuantity
+		return true
 	}
+	return false
 }

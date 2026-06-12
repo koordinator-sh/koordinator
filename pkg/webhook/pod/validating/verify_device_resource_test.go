@@ -277,7 +277,7 @@ func TestDeviceResourceValidatingPod(t *testing.T) {
 			}
 
 			req := newAdmissionRequest(tt.operation, objRawExt, oldObjRawExt, "pods")
-			gotAllowed, gotReason, err := h.deviceResourceValidatingPod(context.TODO(), admission.Request{AdmissionRequest: req})
+			gotAllowed, gotReason, err := h.deviceResourceValidatingPod(context.TODO(), admission.Request{AdmissionRequest: req}, tt.newPod, tt.oldPod)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("clusterReservationValidatingPod() error = %v, wantErr %v", err, tt.wantErr)
 				return

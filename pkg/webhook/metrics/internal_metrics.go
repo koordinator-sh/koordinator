@@ -23,4 +23,5 @@ import (
 func init() {
 	kmmetrics.InternalMustRegister(WebhookDurationCollectors...)
 	kmmetrics.InternalMustRegister(ElasticQuotaCollector...)
+	kmmetrics.InternalMustRegister(BindingAdmissionCollectors...)
 }

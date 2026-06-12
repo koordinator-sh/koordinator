@@ -37,7 +37,7 @@ import (
 )
 
 type quotaTopology struct {
-	lock sync.Mutex
+	lock sync.RWMutex
 	// quotaInfoMap stores all quota information
 	quotaInfoMap map[string]*QuotaInfo
 	// namespaceMap key: annotationNamespace, val: quotaName
@@ -284,8 +284,8 @@ func NewQuotaTopologySummary() *QuotaTopologySummary {
 func (qt *quotaTopology) getQuotaTopologyInfo() *QuotaTopologySummary {
 	result := NewQuotaTopologySummary()
 
-	qt.lock.Lock()
-	defer qt.lock.Unlock()
+	qt.lock.RLock()
+	defer qt.lock.RUnlock()
 
 	for key, value := range qt.quotaInfoMap {
 		result.QuotaInfoMap[key] = value.GetQuotaSummary()
@@ -302,8 +302,8 @@ func (qt *quotaTopology) getQuotaTopologyInfo() *QuotaTopologySummary {
 }
 
 func (qt *quotaTopology) getQuotaInfo(name, namespace string) *QuotaInfo {
-	qt.lock.Lock()
-	defer qt.lock.Unlock()
+	qt.lock.RLock()
+	defer qt.lock.RUnlock()
 
 	info, ok := qt.quotaInfoMap[name]
 	if ok {

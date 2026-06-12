@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	feature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func TestDeviceResourceSpecMutatingPod(t *testing.T) {
@@ -166,9 +168,48 @@ func TestDeviceResourceSpecMutatingPod(t *testing.T) {
 	req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
 	for i := range testCases {
 		pod.Spec.Containers[0].Resources = testCases[i].resourceRequirements
-		err := handler.deviceResourceSpecMutatingPod(context.TODO(), req, pod)
+		_, err := handler.deviceResourceSpecMutatingPod(context.TODO(), req, pod)
 
 		assert.NoError(err)
 		assert.Equal(pod.Spec.Containers[0].Resources, testCases[i].expectedResourceRequirements)
 	}
+}
+
+func TestDeviceResourceSpecMutatingPod_Disabled(t *testing.T) {
+	defer feature.SetFeatureGateDuringTest(t, feature.DefaultMutableFeatureGate, features.DisableDeviceResourceSpec, true)()
+
+	client := fake.NewClientBuilder().Build()
+	decoder := admission.NewDecoder(scheme.Scheme)
+	handler := &PodMutatingHandler{
+		Client:  client,
+		Decoder: decoder,
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-pod-disabled",
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name: "c1",
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							extension.ResourceGPU: resource.MustParse("100"),
+						},
+						Requests: corev1.ResourceList{
+							extension.ResourceGPU: resource.MustParse("100"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	req := newAdmission(admissionv1.Create, runtime.RawExtension{}, runtime.RawExtension{}, "")
+	mutated, err := handler.deviceResourceSpecMutatingPod(context.TODO(), req, pod)
+	assert.NoError(t, err)
+	assert.False(t, mutated)
+	// GPU resources should not be split when feature gate is disabled
+	assert.Equal(t, resource.MustParse("100"), pod.Spec.Containers[0].Resources.Limits[extension.ResourceGPU])
 }
