@@ -103,6 +103,10 @@ func TestUpdateQuotaStatus(t *testing.T) {
 	_ = v1alpha1.AddToScheme(scheme)
 	_ = clientgoscheme.AddToScheme(scheme)
 
+	origFreshGet := QuotaUpdateConflictFreshGet
+	QuotaUpdateConflictFreshGet = true
+	t.Cleanup(func() { QuotaUpdateConflictFreshGet = origFreshGet })
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			quota := &v1alpha1.ElasticQuota{

@@ -81,6 +81,9 @@ func (q *quotaAccessor) UpdateQuotaStatus(newQuota *v1alpha1.ElasticQuota, jitte
 		if jitter > 0 {
 			time.Sleep(wait.Jitter(jitter/2, 1.0))
 		}
+		if !QuotaUpdateConflictFreshGet {
+			return err
+		}
 		freshQuota := &v1alpha1.ElasticQuota{}
 		if getErr := q.apiReader.Get(context.TODO(), types.NamespacedName{
 			Namespace: newQuota.Namespace,

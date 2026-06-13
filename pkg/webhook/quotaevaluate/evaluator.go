@@ -76,41 +76,53 @@ const (
 	// per batch, matching the original hardcoded value so small batches keep the
 	// previous behavior exactly.
 	quotaUpdateMinRetries = 3
-	// defaultQuotaUpdateMaxRetries caps the worst-case latency of a batch.
-	defaultQuotaUpdateMaxRetries = 10
-
-	// defaultQuotaUpdateRetryJitter is the per-retry decorrelation upper bound.
-	// Actual sleep is in [jitter/2, jitter). 50ms is large enough to decorrelate
-	// peer webhook pods given typical apiserver RTT (< 20ms) yet small enough
-	// to amortize across many retries within the total budget.
-	defaultQuotaUpdateRetryJitter = 50 * time.Millisecond
-	// defaultQuotaUpdateMaxTotalJitter bounds cumulative jitter per batch so
-	// Evaluate()'s 10s timeout never gets consumed by jitter alone.
-	defaultQuotaUpdateMaxTotalJitter = 1 * time.Second
 )
 
 // QuotaUpdateMaxRetries is the upper bound of UpdateQuotaStatus retries per batch.
-// Bound the worst-case latency of a heavily-contended batch.
-var QuotaUpdateMaxRetries = defaultQuotaUpdateMaxRetries
+// Default 3 matches pre-optimization behavior. Recommended 10 for high-contention
+// multi-replica deployments to allow dynamic retry scaling with batch size
+// (retries grow by 1 per doubling of batch size, capped at this value).
+var QuotaUpdateMaxRetries = quotaUpdateMinRetries
 
 // QuotaUpdateRetryJitter is the per-retry decorrelation sleep upper bound for
-// UpdateQuotaStatus. Set <= 0 to disable jitter entirely.
-var QuotaUpdateRetryJitter = defaultQuotaUpdateRetryJitter
+// UpdateQuotaStatus conflicts. Actual sleep per retry is drawn from [jitter/2, jitter).
+// Default 0 (disabled) matches pre-optimization behavior. Recommended 50ms for
+// multi-replica webhook deployments to reduce conflict storms between peers.
+var QuotaUpdateRetryJitter time.Duration
 
-// QuotaUpdateMaxTotalJitter is the per-batch cumulative jitter cap.
-// Set <= 0 to disable jitter entirely.
-var QuotaUpdateMaxTotalJitter = defaultQuotaUpdateMaxTotalJitter
+// QuotaUpdateMaxTotalJitter bounds cumulative jitter per batch so Evaluate()'s
+// 10s evaluation timeout never gets consumed by jitter alone.
+// Default 1s is a safe upper bound for most scenarios (10% of the 10s timeout).
+// Jitter is only effective when --quota-update-retry-jitter > 0.
+var QuotaUpdateMaxTotalJitter = 1 * time.Second
+
+// QuotaUpdateConflictFreshGet controls whether UpdateQuotaStatus uses a non-cached
+// (apiReader) read on conflict to refresh the local cache, so the next retry
+// sees the latest ResourceVersion and avoids repeated conflicts.
+// Default false matches pre-optimization behavior. Recommended true for
+// environments where the cached client frequently returns stale ResourceVersions.
+var QuotaUpdateConflictFreshGet bool
 
 func InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&QuotaUpdateMaxRetries, "quota-update-max-retries",
 		QuotaUpdateMaxRetries,
-		"Maximum number of UpdateQuotaStatus retries per batch. Caps worst-case latency.")
+		"Maximum number of UpdateQuotaStatus retries per batch (default 3). "+
+			"Recommended 10 for high-contention multi-replica deployments "+
+			"to allow dynamic retry scaling with batch size.")
 	fs.DurationVar(&QuotaUpdateRetryJitter, "quota-update-retry-jitter",
 		QuotaUpdateRetryJitter,
-		"Per-retry decorrelation sleep upper bound for UpdateQuotaStatus conflicts. Set <= 0 to disable jitter.")
+		"Per-retry decorrelation sleep upper bound for UpdateQuotaStatus conflicts (default 0, disabled). "+
+			"Recommended 50ms for multi-replica webhook deployments to reduce conflict storms. "+
+			"Actual sleep is in [jitter/2, jitter).")
 	fs.DurationVar(&QuotaUpdateMaxTotalJitter, "quota-update-max-total-jitter",
 		QuotaUpdateMaxTotalJitter,
-		"Per-batch cumulative jitter cap for UpdateQuotaStatus retries. Set <= 0 to disable jitter.")
+		"Per-batch cumulative jitter cap for UpdateQuotaStatus retries (default 1s). "+
+			"Bounds worst-case jitter overhead within Evaluate()'s 10s evaluation timeout. "+
+			"Only effective when --quota-update-retry-jitter > 0.")
+	fs.BoolVar(&QuotaUpdateConflictFreshGet, "quota-update-conflict-fresh-get",
+		QuotaUpdateConflictFreshGet,
+		"Use non-cached apiReader on update conflict to refresh local cache (default false). "+
+			"Recommended true to reduce repeat conflicts caused by stale cached ResourceVersions.")
 }
 
 // retriesForBatch returns the retry budget for a batch in which n pods have
@@ -138,11 +150,11 @@ func retriesForBatch(n int) int {
 
 // jitterForNextUpdate decides how much jitter to grant the upcoming
 // UpdateQuotaStatus call. Returns 0 when:
-//   - either jitter knob is non-positive (feature disabled), or
+//   - jitter is non-positive (feature disabled), or
 //   - no retry would happen after this update (remainingRetries <= 0), or
 //   - granting more would exceed QuotaUpdateMaxTotalJitter for this batch.
 func (e *quotaEvaluator) jitterForNextUpdate(ctx *quotaCheckContext, remainingRetries int) time.Duration {
-	if QuotaUpdateRetryJitter <= 0 || QuotaUpdateMaxTotalJitter <= 0 {
+	if QuotaUpdateRetryJitter <= 0 {
 		return 0
 	}
 	if remainingRetries <= 0 {

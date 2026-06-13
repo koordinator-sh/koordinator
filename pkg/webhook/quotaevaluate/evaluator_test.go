@@ -542,6 +542,10 @@ func TestEvaluateSequential(t *testing.T) {
 }
 
 func TestRetriesForBatch(t *testing.T) {
+	orig := QuotaUpdateMaxRetries
+	t.Cleanup(func() { QuotaUpdateMaxRetries = orig })
+	QuotaUpdateMaxRetries = 10
+
 	tests := []struct {
 		name string
 		n    int
@@ -577,8 +581,8 @@ func TestRetriesForBatch(t *testing.T) {
 
 func TestJitterForNextUpdate(t *testing.T) {
 	const (
-		defR = defaultQuotaUpdateRetryJitter
-		defT = defaultQuotaUpdateMaxTotalJitter
+		testJitter  = 50 * time.Millisecond
+		maxTotalCap = 1 * time.Second
 	)
 	tests := []struct {
 		name             string
@@ -588,13 +592,13 @@ func TestJitterForNextUpdate(t *testing.T) {
 		remainingRetries int
 		want             time.Duration
 	}{
-		{"happy path", defR, defT, 0, 1, defR},
-		{"last attempt", defR, defT, 0, 0, 0},
-		{"budget exhausted", defR, defT, defT - defR + 1, 5, 0},
-		{"retry knob zero disables", 0, defT, 0, 5, 0},
-		{"retry knob negative disables", -time.Millisecond, defT, 0, 5, 0},
-		{"total knob zero disables", defR, 0, 0, 5, 0},
-		{"total knob negative disables", defR, -time.Second, 0, 5, 0},
+		{"happy path", testJitter, maxTotalCap, 0, 1, testJitter},
+		{"last attempt", testJitter, maxTotalCap, 0, 0, 0},
+		{"budget exhausted", testJitter, maxTotalCap, maxTotalCap - testJitter + 1, 5, 0},
+		{"retry knob zero disables", 0, maxTotalCap, 0, 5, 0},
+		{"retry knob negative disables", -time.Millisecond, maxTotalCap, 0, 5, 0},
+		{"total knob zero disables", testJitter, 0, 0, 5, 0},
+		{"total knob negative disables", testJitter, -time.Second, 0, 5, 0},
 		{"custom fits", 50 * time.Millisecond, 75 * time.Millisecond, 0, 5, 50 * time.Millisecond},
 		{"custom overshoot", 50 * time.Millisecond, 75 * time.Millisecond, 50 * time.Millisecond, 5, 0},
 	}
