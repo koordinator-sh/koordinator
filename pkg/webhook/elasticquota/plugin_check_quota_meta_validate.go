@@ -94,25 +94,15 @@ func (c *QuotaMetaChecker) ValidateQuota(ctx context.Context, req admission.Requ
 	return nil
 }
 
-func (c *QuotaMetaChecker) ValidatePod(ctx context.Context, req admission.Request) error {
-	pod := &corev1.Pod{}
-	if err := c.Decoder.DecodeRaw(req.Object, pod); err != nil {
-		return err
-	}
+func (c *QuotaMetaChecker) ValidatePod(ctx context.Context, req admission.Request, newPod, oldPod *corev1.Pod) error {
 	switch req.AdmissionRequest.Operation {
 	case v1.Create:
-		return c.QuotaTopo.ValidateAddPod(pod)
+		return c.QuotaTopo.ValidateAddPod(newPod)
 	case v1.Update:
-		oldPod := &corev1.Pod{}
-		err := c.Decode(admission.Request{
-			AdmissionRequest: v1.AdmissionRequest{
-				Object: req.AdmissionRequest.OldObject,
-			},
-		}, oldPod)
-		if err != nil {
-			return fmt.Errorf("failed to decode pod from old object, err :%v", err)
+		if oldPod == nil {
+			return fmt.Errorf("oldPod is nil for update operation")
 		}
-		return c.QuotaTopo.ValidateUpdatePod(oldPod, pod)
+		return c.QuotaTopo.ValidateUpdatePod(oldPod, newPod)
 	}
 	return nil
 }

@@ -102,6 +102,16 @@ const (
 
 	// ValidatePodDeviceResource enables validate pod device resource
 	ValidatePodDeviceResource featuregate.Feature = "ValidatePodDeviceResource"
+
+	// DisableExtendedResourceSpec disables the extended resource spec mutating webhook
+	DisableExtendedResourceSpec featuregate.Feature = "DisableExtendedResourceSpec"
+
+	// DisableDeviceResourceSpec disables the device resource spec mutating webhook
+	DisableDeviceResourceSpec featuregate.Feature = "DisableDeviceResourceSpec"
+
+	// BindingAdmissionWebhook enables validating webhook for Pod Binding requests
+	// to restrict which schedulers are allowed to bind pods.
+	BindingAdmissionWebhook featuregate.Feature = "BindingAdmissionWebhook"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -128,6 +138,9 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ColocationProfileController:             {Default: false, PreRelease: featuregate.Alpha},
 	ValidatePodDeviceResource:               {Default: false, PreRelease: featuregate.Alpha},
 	EnablePodEnhancedValidator:              {Default: false, PreRelease: featuregate.Alpha},
+	DisableExtendedResourceSpec:             {Default: false, PreRelease: featuregate.Alpha},
+	DisableDeviceResourceSpec:               {Default: false, PreRelease: featuregate.Alpha},
+	BindingAdmissionWebhook:                 {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (
