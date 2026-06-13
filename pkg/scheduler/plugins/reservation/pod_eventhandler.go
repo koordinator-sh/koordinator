@@ -93,6 +93,13 @@ func (h *podEventHandler) updatePod(oldPod, newPod *corev1.Pod) {
 	}
 
 	if !assignedPod(newPod) {
+		if oldPod != nil && assignedPod(oldPod) {
+			if oldPod.UID != newPod.UID {
+				klog.V(4).InfoS("delete pod for reservation for lost state",
+					"pod", klog.KObj(oldPod), "old", oldPod.UID, "new", newPod.UID)
+			}
+			h.deletePod(oldPod)
+		}
 		return
 	}
 
