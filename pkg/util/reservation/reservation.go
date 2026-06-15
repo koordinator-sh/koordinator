@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	resource "k8s.io/component-helpers/resource"
 	corev1helper "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
@@ -38,6 +39,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -128,6 +130,9 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 		reservePod.Status.Phase = corev1.PodSucceeded
 	} else if IsReservationExpired(r) || IsReservationFailed(r) {
 		reservePod.Status.Phase = corev1.PodFailed
+	}
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ReservationNominatedNodeName) {
+		reservePod.Status.NominatedNodeName = r.Status.NominatedNodeName
 	}
 	if IsReservationAvailable(r) {
 		podRequests := resource.PodRequests(reservePod, resource.PodResourcesOptions{})
@@ -296,6 +301,10 @@ func SetReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) 
 
 func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
 	r.Status.Phase = schedulingv1alpha1.ReservationFailed
+	// Clear any stale nomination — the reservation will not be scheduled on the nominated node.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ReservationNominatedNodeName) {
+		r.Status.NominatedNodeName = ""
+	}
 	// not duplicate expired info
 	idx := -1
 	isReady := false
@@ -331,6 +340,10 @@ func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
 
 func SetReservationSucceeded(r *schedulingv1alpha1.Reservation) {
 	r.Status.Phase = schedulingv1alpha1.ReservationSucceeded
+	// Clear any stale nomination — the reservation has been fully allocated.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ReservationNominatedNodeName) {
+		r.Status.NominatedNodeName = ""
+	}
 	idx := -1
 	for i, condition := range r.Status.Conditions {
 		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
@@ -365,6 +378,10 @@ func SetReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string)
 	r.Status.Allocatable = requests
 	r.Status.NodeName = nodeName
 	r.Status.Phase = schedulingv1alpha1.ReservationAvailable
+	// Clear nomination once the reservation is successfully scheduled to a real node.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ReservationNominatedNodeName) {
+		r.Status.NominatedNodeName = ""
+	}
 
 	// initialize the conditions
 	r.Status.Conditions = []schedulingv1alpha1.ReservationCondition{

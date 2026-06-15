@@ -305,16 +305,32 @@ func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
 		//   from the informer cache.
 		addNominatedReservation(fwk, podInfo, nominatingInfo)
 
+		// Extract the nominated node name from the preemption result so it can be
+		// persisted to the Reservation status. This prevents state loss across scheduler
+		// restarts and avoids repeated preemption loops (KEP-5278 compatibility).
+		// ModeOverride: PostFilter explicitly nominated a new node.
+		// ModeNoop: the pod already has an existing nominatedNodeName in its status.
+		var nominatedNodeName string
+		if k8sfeature.DefaultFeatureGate.Enabled(features.ReservationNominatedNodeName) {
+			if nominatingInfo != nil {
+				if nominatingInfo.Mode() == fwktype.ModeOverride {
+					nominatedNodeName = nominatingInfo.NominatedNodeName
+				} else if nominatingInfo.Mode() == fwktype.ModeNoop {
+					nominatedNodeName = pod.Status.NominatedNodeName
+				}
+			}
+		}
+
 		errMsg := status.Message()
 		msg := truncateMessage(errMsg)
 		fwk.EventRecorder().Eventf(cachedR, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
 
 		// TODO: use apiDispatcher
-		updateReservationStatus(koordClientSet, reservationLister, rName, err)
+		updateReservationStatus(koordClientSet, reservationLister, rName, err, nominatedNodeName)
 	}
 }
 
-func updateReservationStatus(client koordclientset.Interface, reservationLister schedulingv1alpha1lister.ReservationLister, rName string, schedulingErr error) {
+func updateReservationStatus(client koordclientset.Interface, reservationLister schedulingv1alpha1lister.ReservationLister, rName string, schedulingErr error, nominatedNodeName string) {
 	err := util.RetryOnConflictOrTooManyRequests(func() error {
 		r, err := reservationLister.Get(rName)
 		if errors.IsNotFound(err) {
@@ -327,6 +343,15 @@ func updateReservationStatus(client koordclientset.Interface, reservationLister 
 
 		curR := r.DeepCopy()
 		reservationutil.SetReservationUnschedulable(curR, schedulingErr.Error())
+		// Persist the nominated node name when the feature gate is enabled.
+		// This allows the scheduler to survive restarts without losing preemption state.
+		if k8sfeature.DefaultFeatureGate.Enabled(features.ReservationNominatedNodeName) {
+			curR.Status.NominatedNodeName = nominatedNodeName
+			if nominatedNodeName != "" {
+				klog.V(4).InfoS("Persisting NominatedNodeName for Reservation",
+					"reservation", rName, "nominatedNodeName", nominatedNodeName)
+			}
+		}
 		_, err = client.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
 		if err != nil {
 			klog.V(4).ErrorS(err, "failed to UpdateStatus for unschedulable", "reservation", klog.KObj(curR))

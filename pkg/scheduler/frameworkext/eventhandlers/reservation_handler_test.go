@@ -43,9 +43,11 @@ import (
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/ptr"
 
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -1829,3 +1831,137 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 		})
 	}
 }
+
+func TestMakeReservationErrorHandler_NominatedNodeName_Persistence(t *testing.T) {
+	testR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-persistence-test",
+			UID:  "persistence-uid",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-1",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationPending,
+		},
+	}
+
+	tests := []struct {
+		name              string
+		enableFeatureGate bool
+		initialNomination string
+		nominatingMode    fwktype.NominatingMode
+		nominatedNodeName string
+		expectPersisted   string
+	}{
+		{
+			name:              "feature gate enabled, ModeOverride -> persists nominated node",
+			enableFeatureGate: true,
+			nominatingMode:    fwktype.ModeOverride,
+			nominatedNodeName: "target-node",
+			expectPersisted:   "target-node",
+		},
+		{
+			name:              "feature gate enabled, ModeOverride with empty -> persists empty",
+			enableFeatureGate: true,
+			nominatingMode:    fwktype.ModeOverride,
+			nominatedNodeName: "",
+			expectPersisted:   "",
+		},
+		{
+			name:              "feature gate disabled, ModeOverride -> does NOT persist nominated node",
+			enableFeatureGate: false,
+			nominatingMode:    fwktype.ModeOverride,
+			nominatedNodeName: "target-node",
+			expectPersisted:   "",
+		},
+		{
+			name:              "feature gate enabled, ModeNoop -> preserves existing nominated node",
+			enableFeatureGate: true,
+			initialNomination: "existing-node",
+			nominatingMode:    fwktype.ModeNoop,
+			expectPersisted:   "existing-node",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			featureGateStr := "false"
+			if tt.enableFeatureGate {
+				featureGateStr = "true"
+			}
+			err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=" + featureGateStr)
+			assert.NoError(t, err)
+			defer func() {
+				_ = k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=false")
+			}()
+
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+
+			fakeRecorder := record.NewFakeRecorder(1024)
+			eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
+
+			clientSet := kubefake.NewSimpleClientset()
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "default-scheduler",
+				frameworkruntime.WithEventRecorder(eventRecorder),
+				frameworkruntime.WithClientSet(clientSet),
+				frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(clientSet, 0)),
+			)
+			assert.Nil(t, err)
+
+			rCopy := testR.DeepCopy()
+			if tt.initialNomination != "" {
+				rCopy.Status.NominatedNodeName = tt.initialNomination
+			}
+			koordClientSet := koordfake.NewSimpleClientset(rCopy)
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			rNominator := frameworkext.NewFakeReservationNominator()
+			frameworkExtenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+				frameworkext.WithReservationNominator(rNominator),
+			)
+			extendedHandle := frameworkext.NewFrameworkExtender(frameworkExtenderFactory, fh)
+			sched := &scheduler.Scheduler{
+				Profiles: profile.Map{
+					"default-scheduler": extendedHandle,
+				},
+			}
+
+			internalHandler := frameworkext.NewFakeScheduler()
+			handler := MakeReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
+
+			koordSharedInformerFactory.Start(nil)
+			koordSharedInformerFactory.WaitForCacheSync(nil)
+
+			pod := reservationutil.NewReservePod(rCopy)
+			podInfo, _ := framework.NewPodInfo(pod)
+			queuedPodInfo := &framework.QueuedPodInfo{
+				PodInfo: podInfo,
+			}
+
+			nominatingInfo := &fwktype.NominatingInfo{
+				NominatingMode:    tt.nominatingMode,
+				NominatedNodeName: tt.nominatedNodeName,
+			}
+
+			handler(context.TODO(), extendedHandle, queuedPodInfo, fwktype.NewStatus(fwktype.Unschedulable, "test error"), nominatingInfo, time.Now())
+
+			updatedR, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), rCopy.Name, metav1.GetOptions{})
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectPersisted, updatedR.Status.NominatedNodeName)
+		})
+	}
+}
+

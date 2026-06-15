@@ -19,11 +19,14 @@ package reservation
 import (
 	"context"
 
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -53,6 +56,22 @@ func (h *reservationEventHandler) OnAdd(obj interface{}, isInInitialList bool) {
 		klog.V(4).InfoS("add reservation into reservationCache",
 			"reservation", klog.KObj(r), "uid", r.UID, "node", reservationutil.GetReservationNodeName(r))
 	}
+	// On scheduler startup or informer re-sync, restore the in-memory nominator from the
+	// persisted NominatedNodeName. This ensures that a Reservation that was previously
+	// nominated (during preemption) is still tracked in the nominator after a restart.
+	// Only applies to Reservations that are still pending (not yet fully scheduled).
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ReservationNominatedNodeName) &&
+		r.Status.NominatedNodeName != "" &&
+		!reservationutil.IsReservationActive(r) &&
+		!reservationutil.IsReservationFailed(r) &&
+		!reservationutil.IsReservationSucceeded(r) {
+		podInfo, err := framework.NewPodInfo(reservationutil.NewReservePod(r))
+		if err == nil {
+			h.rrNominator.AddNominatedReservePod(podInfo, r.Status.NominatedNodeName)
+			klog.V(4).InfoS("Restored NominatedNodeName into in-memory nominator from reservation status",
+				"reservation", klog.KObj(r), "nominatedNodeName", r.Status.NominatedNodeName)
+		}
+	}
 }
 
 func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
@@ -79,6 +98,22 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 		klog.V(4).InfoS("update reservation into terminated so only update cache if exists",
 			"reservation", klog.KObj(newR), "node", reservationutil.GetReservationNodeName(newR))
 		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(newR))
+	}
+	// On status updates, re-sync the in-memory nominator from the persisted NominatedNodeName.
+	// This handles the case where the failure handler has written the nomination to the API
+	// server and the informer update arrives (including after a scheduler restart).
+	// We only act on pending Reservations that are not yet fully scheduled or terminated.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.ReservationNominatedNodeName) &&
+		newR.Status.NominatedNodeName != "" &&
+		!reservationutil.IsReservationActive(newR) &&
+		!reservationutil.IsReservationFailed(newR) &&
+		!reservationutil.IsReservationSucceeded(newR) {
+		podInfo, err := framework.NewPodInfo(reservationutil.NewReservePod(newR))
+		if err == nil {
+			h.rrNominator.AddNominatedReservePod(podInfo, newR.Status.NominatedNodeName)
+			klog.V(4).InfoS("Re-synced NominatedNodeName into in-memory nominator on reservation update",
+				"reservation", klog.KObj(newR), "nominatedNodeName", newR.Status.NominatedNodeName)
+		}
 	}
 }
 

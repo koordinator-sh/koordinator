@@ -24,9 +24,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -258,3 +260,56 @@ func TestEventHandlerDelete(t *testing.T) {
 	assert.False(t, rInfo.IsAvailable())
 	assert.Equal(t, []*framework.PodInfo{}, eh.rrNominator.NominatedReservePodForNode("test-node"))
 }
+
+func TestEventHandler_NominatedNodeName_Restoration(t *testing.T) {
+	// Enable feature gate
+	err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=true")
+	assert.NoError(t, err)
+	defer func() {
+		_ = k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=false")
+	}()
+
+	pendingR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-pending-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:             schedulingv1alpha1.ReservationPending,
+			NominatedNodeName: "nominated-node-xyz",
+		},
+	}
+
+	// 1. Test OnAdd restoration
+	cache := newReservationCache(nil)
+	nominator := newNominator(nil, nil)
+	eh := &reservationEventHandler{cache: cache, rrNominator: nominator}
+
+	eh.OnAdd(pendingR, true)
+
+	// Verify nominated pod info in nominator
+	reservePod := reservation.NewReservePod(pendingR)
+	reservePodInfo, _ := framework.NewPodInfo(reservePod)
+	nominatedPods := nominator.NominatedReservePodForNode("nominated-node-xyz")
+	assert.Len(t, nominatedPods, 1)
+	assert.Equal(t, reservePodInfo.Pod.UID, nominatedPods[0].Pod.UID)
+
+	// 2. Test OnUpdate restoration
+	nominator2 := newNominator(nil, nil)
+	eh2 := &reservationEventHandler{cache: cache, rrNominator: nominator2}
+
+	oldR := pendingR.DeepCopy()
+	oldR.Status.NominatedNodeName = "" // no nomination on old
+
+	newR := pendingR.DeepCopy() // has nomination "nominated-node-xyz"
+
+	eh2.OnUpdate(oldR, newR)
+
+	nominatedPods2 := nominator2.NominatedReservePodForNode("nominated-node-xyz")
+	assert.Len(t, nominatedPods2, 1)
+	assert.Equal(t, reservePodInfo.Pod.UID, nominatedPods2[0].Pod.UID)
+}
+
