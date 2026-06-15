@@ -23,12 +23,13 @@ import (
 const (
 	DecisionKey = "decision"
 
-	DecisionAllowed     = "allowed"
-	DecisionDenied      = "denied"
-	DecisionDryRun      = "dry_run"
-	DecisionBypassLabel = "bypass_label"
-	DecisionExcluded    = "excluded_ns"
-	DecisionOutOfScope  = "out_of_scope"
+	DecisionAllowedByUserName = "allowed_username"
+	DecisionDenied            = "denied"
+	DecisionDryRun            = "dry_run"
+	DecisionBypassLabel       = "bypass_label"
+	DecisionBypassAnnotation  = "bypass_annotation"
+	DecisionExcluded          = "excluded_ns"
+	DecisionOutOfScope        = "out_of_scope"
 )
 
 var (
