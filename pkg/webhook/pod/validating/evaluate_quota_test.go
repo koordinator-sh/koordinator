@@ -397,7 +397,7 @@ func TestEvaluateQuota(t *testing.T) {
 				Client:  client,
 				Decoder: decoder,
 			}
-			quotaAccessor := quotaevaluate.NewQuotaAccessor(h.Client)
+			quotaAccessor := quotaevaluate.NewQuotaAccessor(h.Client, h.Client)
 			h.QuotaEvaluator = quotaevaluate.NewQuotaEvaluator(quotaAccessor, 16, make(chan struct{}))
 
 			var objRawExt, oldObjRawExt runtime.RawExtension

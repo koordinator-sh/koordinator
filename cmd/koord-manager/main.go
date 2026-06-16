@@ -49,6 +49,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 	"github.com/koordinator-sh/koordinator/pkg/webhook"
 	podvalidating "github.com/koordinator-sh/koordinator/pkg/webhook/pod/validating"
+	"github.com/koordinator-sh/koordinator/pkg/webhook/quotaevaluate"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -83,6 +84,7 @@ func main() {
 	opts.InitFlags(flag.CommandLine)
 	sloconfig.InitFlags(flag.CommandLine)
 	podvalidating.InitFlags(flag.CommandLine)
+	quotaevaluate.InitFlags(flag.CommandLine)
 	podvalidating.InitBindingAdmissionFlags(flag.CommandLine)
 	utilfeature.DefaultMutableFeatureGate.AddFlag(pflag.CommandLine)
 	klog.InitFlags(nil)
