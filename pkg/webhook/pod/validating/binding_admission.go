@@ -49,13 +49,26 @@ var (
 	// BindingAdmissionExcludeNamespaces is a comma-separated list of namespaces
 	// that are always allowed (e.g. kube-system to protect control-plane pods).
 	BindingAdmissionExcludeNamespaces = "kube-system"
+
+	// BindingAdmissionBypassLabels is a comma-separated list of pod label keys.
+	// If a pod has ANY of these labels (regardless of value), the binding request
+	// is allowed. Used to exempt pods produced by delegated schedulers (e.g. VK).
+	BindingAdmissionBypassLabels = "koordinator.sh/binding-admission-bypass"
+
+	// BindingAdmissionBypassAnnotations is a comma-separated list of pod
+	// annotation keys. If a pod has ANY of these annotations (regardless of
+	// value), the binding request is allowed. Used to exempt pods produced by
+	// delegated schedulers that mark pods via annotations.
+	BindingAdmissionBypassAnnotations = ""
 )
 
 var (
-	allowedUserNames []string
-	includedNS       map[string]struct{} // nil when disabled or allNamespaces=true
-	excludedNS       map[string]struct{}
-	allNamespaces    bool // true when BindingAdmissionNamespaces == "*"
+	allowedUserNames  []string
+	includedNS        map[string]struct{} // nil when disabled or allNamespaces=true
+	excludedNS        map[string]struct{}
+	bypassLabels      map[string]struct{}
+	bypassAnnotations map[string]struct{}
+	allNamespaces     bool // true when BindingAdmissionNamespaces == "*"
 )
 
 // InitBindingAdmissionFlags registers all binding-admission flags.
@@ -73,6 +86,16 @@ func InitBindingAdmissionFlags(fs *flag.FlagSet) {
 		BindingAdmissionExcludeNamespaces,
 		"Comma-separated list of namespaces always allowed (bypass binding admission). "+
 			"Use to protect control-plane pods. Default: 'kube-system'")
+	fs.StringVar(&BindingAdmissionBypassLabels, "binding-admission-bypass-labels",
+		BindingAdmissionBypassLabels,
+		"Comma-separated list of pod label keys. If a pod has any of these labels "+
+			"(regardless of value), its binding request is allowed. "+
+			"Default: 'koordinator.sh/binding-admission-bypass'")
+	fs.StringVar(&BindingAdmissionBypassAnnotations, "binding-admission-bypass-annotations",
+		BindingAdmissionBypassAnnotations,
+		"Comma-separated list of pod annotation keys. If a pod has any of these "+
+			"annotations (regardless of value), its binding request is allowed. "+
+			"Empty disables annotation bypass.")
 }
 
 // SetupBindingAdmission parses all flag values into pre-computed structures.
@@ -100,6 +123,16 @@ func SetupBindingAdmission() {
 		klog.Infof("binding admission: excluding namespaces = %v", mapKeys(excludedNS))
 	}
 
+	bypassLabels = parseSet(BindingAdmissionBypassLabels)
+	if len(bypassLabels) > 0 {
+		klog.Infof("binding admission: bypass labels = %v", mapKeys(bypassLabels))
+	}
+
+	bypassAnnotations = parseSet(BindingAdmissionBypassAnnotations)
+	if len(bypassAnnotations) > 0 {
+		klog.Infof("binding admission: bypass annotations = %v", mapKeys(bypassAnnotations))
+	}
+
 	if BindingAdmissionDryRun {
 		klog.Infof("binding admission: DRY-RUN mode enabled")
 	}
@@ -118,9 +151,10 @@ var _ admission.Handler = &BindingAdmissionHandler{}
 //  1. FeatureGate: --feature-gates=BindingAdmissionWebhook=false → full bypass
 //  2. Empty whitelist: --binding-admission-user-name="" → check disabled
 //  3. Namespace exclusion: --binding-admission-exclude-namespaces=kube-system
-//  4. Pod bypass label: koordinator.sh/binding-admission-bypass=true
-//  5. Dry-run mode: --binding-admission-dry-run=true → allow all, log denials
-//  6. failurePolicy=Ignore: webhook unreachable → bindings proceed normally
+//  4. Pod bypass label: --binding-admission-bypass-labels (configurable keys)
+//  5. Pod bypass annotation: --binding-admission-bypass-annotations (configurable keys)
+//  6. Dry-run mode: --binding-admission-dry-run=true → allow all, log denials
+//  7. failurePolicy=Ignore: webhook unreachable → bindings proceed normally
 type BindingAdmissionHandler struct {
 	// Client is a cached reader backed by SharedInformer (zero API server cost).
 	Client client.Reader
@@ -131,7 +165,7 @@ type BindingAdmissionHandler struct {
 // Hot-path design for high QPS:
 //   - Whitelist match: O(n) string contains on pre-parsed []string, n typically ≤ 3
 //   - Namespace checks: O(1) map lookups
-//   - Pod label (cache read): only when username mismatch, before deny
+//   - Pod label/annotation (cache read): only when username mismatch, before deny
 //   - Metrics: atomic counter increment
 func (h *BindingAdmissionHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
 	// Escape 1: FeatureGate kill switch.
@@ -153,24 +187,24 @@ func (h *BindingAdmissionHandler) Handle(ctx context.Context, req admission.Requ
 	podKey := types.NamespacedName{Namespace: podNS, Name: req.Name}
 	username := req.UserInfo.Username
 
-	// Check whitelist (hot path: pre-parsed, O(n) string contains).
+	// Check username whitelist (hot path: pre-parsed, O(n) string contains).
 	for _, name := range allowedUserNames {
 		if strings.Contains(username, name) {
-			webhookmetrics.RecordBindingAdmissionDecision(webhookmetrics.DecisionAllowed)
+			webhookmetrics.RecordBindingAdmissionDecision(webhookmetrics.DecisionAllowedByUserName)
 			return admission.Allowed("")
 		}
 	}
 
 	// --- Below: username not in whitelist, apply gray/scope checks before deny ---
 
-	// Namespace exclusion: always allow (protects kube-system, etc.).
+	// Escape 3: Namespace exclusion — always allow (protects kube-system, etc.).
 	if _, excluded := excludedNS[podNS]; excluded {
 		klog.V(5).Infof("binding admission: pod %s in excluded namespace, allowing", podKey)
 		webhookmetrics.RecordBindingAdmissionDecision(webhookmetrics.DecisionExcluded)
 		return admission.Allowed("")
 	}
 
-	// Namespace scope: only enforce if namespace is in scope.
+	// Escape 3 (cont.): Namespace scope — only enforce if namespace is in scope.
 	if !allNamespaces {
 		if len(includedNS) == 0 {
 			// No namespaces configured → no enforcement.
@@ -183,30 +217,44 @@ func (h *BindingAdmissionHandler) Handle(ctx context.Context, req admission.Requ
 		}
 	}
 
-	// Escape 4: Pod bypass label (cache read from SharedInformer, zero API server cost).
+	// Escape 4/5: Pod bypass label/annotation (cache read from SharedInformer, zero API server cost).
 	// Fail-open: if cache read fails, allow the binding to avoid blocking on transient errors.
 	if h.Client != nil {
 		pod := &corev1.Pod{}
 		if err := h.Client.Get(ctx, podKey, pod); err != nil {
 			klog.V(3).Infof("binding admission: failed to get pod %s from cache, fail-open: %v", podKey, err)
 			return admission.Allowed("")
-		} else if val, ok := pod.Labels["koordinator.sh/binding-admission-bypass"]; ok && val == "true" {
-			klog.V(4).Infof("binding admission: pod %s has bypass label, allowing", podKey)
-			webhookmetrics.RecordBindingAdmissionDecision(webhookmetrics.DecisionBypassLabel)
-			return admission.Allowed("")
+		}
+
+		// Check configurable bypass labels (presence-based: key exists → bypass).
+		for key := range bypassLabels {
+			if _, ok := pod.Labels[key]; ok {
+				klog.V(4).Infof("binding admission: pod %s has bypass label %q, allowing", podKey, key)
+				webhookmetrics.RecordBindingAdmissionDecision(webhookmetrics.DecisionBypassLabel)
+				return admission.Allowed("")
+			}
+		}
+
+		// Check configurable bypass annotations (presence-based: key exists → bypass).
+		for key := range bypassAnnotations {
+			if _, ok := pod.Annotations[key]; ok {
+				klog.V(4).Infof("binding admission: pod %s has bypass annotation %q, allowing", podKey, key)
+				webhookmetrics.RecordBindingAdmissionDecision(webhookmetrics.DecisionBypassAnnotation)
+				return admission.Allowed("")
+			}
 		}
 	}
 
-	// Would deny — check dry-run mode.
+	// Escape 6: Would deny — check dry-run mode.
 	if BindingAdmissionDryRun {
-		klog.V(3).Infof("binding admission [DRY-RUN]: would deny pod %s, username=%q not in allowlist %v",
+		klog.V(3).Infof("binding admission [DRY-RUN]: would deny pod %s, username=%q not in allowlist names=%v",
 			podKey, username, allowedUserNames)
 		webhookmetrics.RecordBindingAdmissionDecision(webhookmetrics.DecisionDryRun)
 		return admission.Allowed("")
 	}
 
 	// Deny.
-	klog.V(3).Infof("binding admission denied: pod %s, username=%q not in allowlist %v",
+	klog.V(3).Infof("binding admission denied: pod %s, username=%q not in allowlist names=%v",
 		podKey, username, allowedUserNames)
 	webhookmetrics.RecordBindingAdmissionDecision(webhookmetrics.DecisionDenied)
 	return admission.Denied("binding denied: username is not in the allowed list")
