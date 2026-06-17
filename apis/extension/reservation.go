@@ -53,6 +53,11 @@ const (
 
 	// AnnotationReservationRestrictedOptions represent the Reservation Restricted options
 	AnnotationReservationRestrictedOptions = SchedulingDomainPrefix + "/reservation-restricted-options"
+
+	// LabelReservationLevel indicates the reservation level.
+	// "node" means node-level reservation (reserve whole-node resources for a tenant).
+	LabelReservationLevel = SchedulingDomainPrefix + "/reservation-level"
+	ReservationLevelNode  = "node"
 )
 
 type ReservationAllocated struct {
@@ -106,6 +111,14 @@ type ReservationRestrictedOptions struct {
 	// If the Reservation's AllocatePolicy is Restricted, and no resources configured,
 	// by default the resources equal all reserved resources by the Reservation.
 	Resources []corev1.ResourceName `json:"resources,omitempty"`
+}
+
+// IsNodeLevelReservation checks if the reservation is a node-level reservation.
+func IsNodeLevelReservation(obj metav1.Object) bool {
+	if obj == nil {
+		return false
+	}
+	return obj.GetLabels()[LabelReservationLevel] == ReservationLevelNode
 }
 
 func IsReservationIgnored(pod *corev1.Pod) bool {
