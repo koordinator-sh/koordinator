@@ -24,11 +24,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -262,13 +260,6 @@ func TestEventHandlerDelete(t *testing.T) {
 }
 
 func TestEventHandler_NominatedNodeName_Restoration(t *testing.T) {
-	// Enable feature gate
-	err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=true")
-	assert.NoError(t, err)
-	defer func() {
-		_ = k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=false")
-	}()
-
 	pendingR := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:  uuid.NewUUID(),

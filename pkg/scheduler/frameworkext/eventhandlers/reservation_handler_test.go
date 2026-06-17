@@ -43,11 +43,9 @@ import (
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 	"k8s.io/utils/ptr"
 
-	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
-	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -1856,54 +1854,39 @@ func TestMakeReservationErrorHandler_NominatedNodeName_Persistence(t *testing.T)
 
 	tests := []struct {
 		name              string
-		enableFeatureGate bool
 		initialNomination string
-		nominatingMode    fwktype.NominatingMode
-		nominatedNodeName string
+		nominatingInfo    *fwktype.NominatingInfo
 		expectPersisted   string
 	}{
 		{
-			name:              "feature gate enabled, ModeOverride -> persists nominated node",
-			enableFeatureGate: true,
-			nominatingMode:    fwktype.ModeOverride,
-			nominatedNodeName: "target-node",
-			expectPersisted:   "target-node",
+			name:            "ModeOverride -> persists new nominated node",
+			nominatingInfo:  &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: "target-node"},
+			expectPersisted: "target-node",
 		},
 		{
-			name:              "feature gate enabled, ModeOverride with empty -> persists empty",
-			enableFeatureGate: true,
-			nominatingMode:    fwktype.ModeOverride,
-			nominatedNodeName: "",
-			expectPersisted:   "",
+			name:            "ModeOverride with empty node -> clears existing nomination",
+			initialNomination: "old-node",
+			nominatingInfo:  &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
+			expectPersisted: "",
 		},
 		{
-			name:              "feature gate disabled, ModeOverride -> does NOT persist nominated node",
-			enableFeatureGate: false,
-			nominatingMode:    fwktype.ModeOverride,
-			nominatedNodeName: "target-node",
-			expectPersisted:   "",
-		},
-		{
-			name:              "feature gate enabled, ModeNoop -> preserves existing nominated node",
-			enableFeatureGate: true,
+			name:              "ModeNoop -> preserves existing nominated node",
 			initialNomination: "existing-node",
-			nominatingMode:    fwktype.ModeNoop,
+			nominatingInfo:    &fwktype.NominatingInfo{NominatingMode: fwktype.ModeNoop},
 			expectPersisted:   "existing-node",
+		},
+		{
+			// nominatingInfo is nil on non-preemption failures (e.g. resource mismatch).
+			// The existing persisted nomination must NOT be cleared in this case.
+			name:              "nil nominatingInfo -> preserves existing nomination on non-preemption failure",
+			initialNomination: "stale-node",
+			nominatingInfo:    nil,
+			expectPersisted:   "stale-node",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			featureGateStr := "false"
-			if tt.enableFeatureGate {
-				featureGateStr = "true"
-			}
-			err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=" + featureGateStr)
-			assert.NoError(t, err)
-			defer func() {
-				_ = k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=false")
-			}()
-
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
@@ -1951,12 +1934,7 @@ func TestMakeReservationErrorHandler_NominatedNodeName_Persistence(t *testing.T)
 				PodInfo: podInfo,
 			}
 
-			nominatingInfo := &fwktype.NominatingInfo{
-				NominatingMode:    tt.nominatingMode,
-				NominatedNodeName: tt.nominatedNodeName,
-			}
-
-			handler(context.TODO(), extendedHandle, queuedPodInfo, fwktype.NewStatus(fwktype.Unschedulable, "test error"), nominatingInfo, time.Now())
+			handler(context.TODO(), extendedHandle, queuedPodInfo, fwktype.NewStatus(fwktype.Unschedulable, "test error"), tt.nominatingInfo, time.Now())
 
 			updatedR, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), rCopy.Name, metav1.GetOptions{})
 			assert.NoError(t, err)

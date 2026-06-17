@@ -109,15 +109,6 @@ const (
 	// allowing a pod nominated by one scheduler to be recognized by another scheduler.
 	CrossSchedulerNomination featuregate.Feature = "CrossSchedulerNomination"
 
-	// owner: @harshakumar25
-	// alpha: v1.9
-	//
-	// ReservationNominatedNodeName enables persisting the nominated node name for a
-	// Reservation that has triggered preemption but is waiting for evicted pods to terminate.
-	// Without this feature, the scheduler loses preemption state across restarts, leading to
-	// repeated preemption loops. Aligns with upstream KEP-5278 scheduler semantics.
-	ReservationNominatedNodeName featuregate.Feature = "ReservationNominatedNodeName"
-
 	// owner: @saintube
 	// alpha: v1.8
 	//
@@ -171,7 +162,6 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},
 	SyncBarrier:                               {Default: false, PreRelease: featuregate.Alpha},
 	CrossSchedulerNomination:                  {Default: false, PreRelease: featuregate.Alpha},
-	ReservationNominatedNodeName:              {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {

@@ -27,12 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/features"
 )
 
 func TestIsReservationActive(t *testing.T) {
@@ -1175,83 +1173,32 @@ func TestTolerateUnschedulable(t *testing.T) {
 }
 
 func TestSetReservationAvailableClearsNominatedNodeName(t *testing.T) {
-	// 1. With Feature Gate Disabled (default)
 	r := &schedulingv1alpha1.Reservation{
 		Status: schedulingv1alpha1.ReservationStatus{
 			NominatedNodeName: "node-1",
 		},
 	}
 	SetReservationAvailable(r, "node-2")
-	assert.Equal(t, "node-1", r.Status.NominatedNodeName) // Should not be cleared
-
-	// 2. With Feature Gate Enabled
-	err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=true")
-	assert.NoError(t, err)
-	defer func() {
-		err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=false")
-		assert.NoError(t, err)
-	}()
-
-	r2 := &schedulingv1alpha1.Reservation{
-		Status: schedulingv1alpha1.ReservationStatus{
-			NominatedNodeName: "node-1",
-		},
-	}
-	SetReservationAvailable(r2, "node-2")
-	assert.Equal(t, "", r2.Status.NominatedNodeName) // Should be cleared
+	assert.Equal(t, "", r.Status.NominatedNodeName) // Always cleared
 }
 
 func TestSetReservationExpiredClearsNominatedNodeName(t *testing.T) {
-	// 1. With Feature Gate Disabled (default)
 	r := &schedulingv1alpha1.Reservation{
 		Status: schedulingv1alpha1.ReservationStatus{
 			NominatedNodeName: "node-1",
 		},
 	}
 	SetReservationExpired(r)
-	assert.Equal(t, "node-1", r.Status.NominatedNodeName) // Should not be cleared
-
-	// 2. With Feature Gate Enabled
-	err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=true")
-	assert.NoError(t, err)
-	defer func() {
-		err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=false")
-		assert.NoError(t, err)
-	}()
-
-	r2 := &schedulingv1alpha1.Reservation{
-		Status: schedulingv1alpha1.ReservationStatus{
-			NominatedNodeName: "node-1",
-		},
-	}
-	SetReservationExpired(r2)
-	assert.Equal(t, "", r2.Status.NominatedNodeName) // Should be cleared
+	assert.Equal(t, "", r.Status.NominatedNodeName) // Always cleared
 }
 
 func TestSetReservationSucceededClearsNominatedNodeName(t *testing.T) {
-	// 1. With Feature Gate Disabled (default)
 	r := &schedulingv1alpha1.Reservation{
 		Status: schedulingv1alpha1.ReservationStatus{
 			NominatedNodeName: "node-1",
 		},
 	}
 	SetReservationSucceeded(r)
-	assert.Equal(t, "node-1", r.Status.NominatedNodeName) // Should not be cleared
-
-	// 2. With Feature Gate Enabled
-	err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=true")
-	assert.NoError(t, err)
-	defer func() {
-		err := k8sfeature.DefaultMutableFeatureGate.Set(string(features.ReservationNominatedNodeName) + "=false")
-		assert.NoError(t, err)
-	}()
-
-	r2 := &schedulingv1alpha1.Reservation{
-		Status: schedulingv1alpha1.ReservationStatus{
-			NominatedNodeName: "node-1",
-		},
-	}
-	SetReservationSucceeded(r2)
-	assert.Equal(t, "", r2.Status.NominatedNodeName) // Should be cleared
+	assert.Equal(t, "", r.Status.NominatedNodeName) // Always cleared
 }
 
