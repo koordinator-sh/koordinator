@@ -27,26 +27,15 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-func (h *PodValidatingHandler) clusterReservationValidatingPod(ctx context.Context, req admission.Request) (bool, string, error) {
-	newPod := &corev1.Pod{}
-	var allErrs field.ErrorList
+func (h *PodValidatingHandler) clusterReservationValidatingPod(ctx context.Context, req admission.Request, newPod, oldPod *corev1.Pod) (bool, string, error) {
 	switch req.Operation {
 	case admissionv1.Create:
-		if err := h.Decoder.DecodeRaw(req.Object, newPod); err != nil {
-			return false, "", err
-		}
 	case admissionv1.Update:
-		oldPod := &corev1.Pod{}
-		if err := h.Decoder.DecodeRaw(req.OldObject, oldPod); err != nil {
-			return false, "", err
-		}
-		if err := h.Decoder.DecodeRaw(req.Object, newPod); err != nil {
-			return false, "", err
-		}
-
+	default:
+		return true, "", nil
 	}
 
-	allErrs = append(allErrs, forbidSpecialAnnotations(newPod)...)
+	allErrs := append(field.ErrorList{}, forbidSpecialAnnotations(newPod)...)
 	err := allErrs.ToAggregate()
 	allowed := true
 	reason := ""
