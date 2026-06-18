@@ -596,3 +596,169 @@ func TestResetQuotasForHookPlugins(t *testing.T) {
 	assert.Equal(t, 0, len(preUpdateQuotas), "No PreQuotaUpdate quotas expected")
 	assert.Equal(t, 0, len(postUpdateQuotas), "No PostQuotaUpdate quotas expected")
 }
+
+// batchEventLog records the sequence of hook callbacks across one or more
+// plugins so tests can assert ordering of OnBatchResetBegin/End relative to
+// PreQuotaUpdate/PostQuotaUpdate.
+type batchEventLog struct {
+	sync.Mutex
+	events []string
+}
+
+func (l *batchEventLog) record(ev string) {
+	l.Lock()
+	defer l.Unlock()
+	l.events = append(l.events, ev)
+}
+
+func (l *batchEventLog) snapshot() []string {
+	l.Lock()
+	defer l.Unlock()
+	out := make([]string, len(l.events))
+	copy(out, l.events)
+	return out
+}
+
+// batchAwareMockHook is a MockHookPlugin that additionally implements
+// BatchResetAware. It records events into a shared log to verify ordering.
+type batchAwareMockHook struct {
+	*MockHookPlugin
+	log *batchEventLog
+}
+
+var _ BatchResetAware = &batchAwareMockHook{}
+
+func (b *batchAwareMockHook) OnBatchResetBegin() {
+	b.log.record(b.GetKey() + ":begin")
+}
+
+func (b *batchAwareMockHook) OnBatchResetEnd() {
+	b.log.record(b.GetKey() + ":end")
+}
+
+func (b *batchAwareMockHook) PreQuotaUpdate(oldQ, newQ *QuotaInfo, q *v1alpha1.ElasticQuota,
+	state *QuotaUpdateState) {
+	b.log.record(b.GetKey() + ":pre")
+	b.MockHookPlugin.PreQuotaUpdate(oldQ, newQ, q, state)
+}
+
+func (b *batchAwareMockHook) PostQuotaUpdate(oldQ, newQ *QuotaInfo, q *v1alpha1.ElasticQuota,
+	state *QuotaUpdateState) {
+	b.log.record(b.GetKey() + ":post")
+	b.MockHookPlugin.PostQuotaUpdate(oldQ, newQ, q, state)
+}
+
+// loggingMockHook is a MockHookPlugin that does NOT implement BatchResetAware,
+// used to verify collectBatchResetAware correctly skips non-aware plugins.
+type loggingMockHook struct {
+	*MockHookPlugin
+	log *batchEventLog
+}
+
+func (l *loggingMockHook) PreQuotaUpdate(oldQ, newQ *QuotaInfo, q *v1alpha1.ElasticQuota,
+	state *QuotaUpdateState) {
+	l.log.record(l.GetKey() + ":pre")
+	l.MockHookPlugin.PreQuotaUpdate(oldQ, newQ, q, state)
+}
+
+func (l *loggingMockHook) PostQuotaUpdate(oldQ, newQ *QuotaInfo, q *v1alpha1.ElasticQuota,
+	state *QuotaUpdateState) {
+	l.log.record(l.GetKey() + ":post")
+	l.MockHookPlugin.PostQuotaUpdate(oldQ, newQ, q, state)
+}
+
+// TestResetQuotasForHookPlugins_BatchResetAware asserts that
+// ResetQuotasForHookPlugins:
+//  1. Calls OnBatchResetBegin on every BatchResetAware plugin BEFORE the loop.
+//  2. Calls OnBatchResetEnd on every BatchResetAware plugin AFTER the loop.
+//  3. Does not invoke Begin/End on plugins that don't implement BatchResetAware.
+func TestResetQuotasForHookPlugins_BatchResetAware(t *testing.T) {
+	log := &batchEventLog{}
+	const (
+		awareKey   = "awareHook"
+		plainKey   = "plainHook"
+		awareFK    = "awareFactory"
+		plainFK    = "plainFactory"
+	)
+	RegisterHookPluginFactory(awareFK,
+		func(_ *QuotaInfoReader, key, _ string) (QuotaHookPlugin, error) {
+			return &batchAwareMockHook{MockHookPlugin: &MockHookPlugin{key: key}, log: log}, nil
+		})
+	RegisterHookPluginFactory(plainFK,
+		func(_ *QuotaInfoReader, key, _ string) (QuotaHookPlugin, error) {
+			return &loggingMockHook{MockHookPlugin: &MockHookPlugin{key: key}, log: log}, nil
+		})
+
+	gqm := NewGroupQuotaManager("", true, nil, nil)
+	err := gqm.InitHookPlugins(&config.ElasticQuotaArgs{
+		HookPlugins: []config.HookPluginConf{
+			{Key: awareKey, FactoryKey: awareFK},
+			{Key: plainKey, FactoryKey: plainFK},
+		},
+	})
+	assert.NoError(t, err)
+
+	// register two quotas so the loop body fires more than once
+	parent := CreateQuota("p", extension.RootQuotaName, 100, 100, 0, 0, false, false)
+	assert.NoError(t, gqm.UpdateQuota(parent))
+	c1 := CreateQuota("c1", parent.Name, 40, 40, 10, 10, false, false)
+	assert.NoError(t, gqm.UpdateQuota(c1))
+
+	// reset log to ignore events from the registration phase above
+	log.Lock()
+	log.events = nil
+	log.Unlock()
+
+	quotas := map[string]*v1alpha1.ElasticQuota{
+		parent.Name: parent,
+		c1.Name:     c1,
+	}
+	gqm.ResetQuotasForHookPlugins(quotas)
+
+	events := log.snapshot()
+
+	// extract events for the aware hook and verify ordering
+	var awareEvents []string
+	for _, ev := range events {
+		if len(ev) >= len(awareKey) && ev[:len(awareKey)] == awareKey {
+			awareEvents = append(awareEvents, ev[len(awareKey)+1:])
+		}
+	}
+	assert.GreaterOrEqual(t, len(awareEvents), 5, "aware hook should record begin + (pre+post)*N + end")
+	assert.Equal(t, "begin", awareEvents[0], "first aware event must be begin")
+	assert.Equal(t, "end", awareEvents[len(awareEvents)-1], "last aware event must be end")
+	for _, ev := range awareEvents[1 : len(awareEvents)-1] {
+		assert.Contains(t, []string{"pre", "post"}, ev,
+			"events between begin and end must be pre/post only")
+	}
+
+	// plain hook should NOT receive begin/end (it doesn't implement BatchResetAware)
+	for _, ev := range events {
+		if len(ev) >= len(plainKey) && ev[:len(plainKey)] == plainKey {
+			suffix := ev[len(plainKey)+1:]
+			assert.NotEqual(t, "begin", suffix, "plain hook must not receive begin")
+			assert.NotEqual(t, "end", suffix, "plain hook must not receive end")
+		}
+	}
+}
+
+// TestCollectBatchResetAware_UnwrapsMetricsWrapper verifies that
+// collectBatchResetAware correctly unwraps MetricsWrapper before checking
+// for the BatchResetAware capability.
+func TestCollectBatchResetAware_UnwrapsMetricsWrapper(t *testing.T) {
+	log := &batchEventLog{}
+	aware := &batchAwareMockHook{MockHookPlugin: &MockHookPlugin{key: "aware"}, log: log}
+	plain := &MockHookPlugin{key: "plain"}
+	wrapped := []QuotaHookPlugin{
+		NewMetricsWrapper(aware),
+		NewMetricsWrapper(plain),
+	}
+
+	got := collectBatchResetAware(wrapped)
+	assert.Equal(t, 1, len(got), "only the aware plugin should be collected")
+
+	// invoke to confirm the right plugin was collected
+	got[0].OnBatchResetBegin()
+	got[0].OnBatchResetEnd()
+	assert.Equal(t, []string{"aware:begin", "aware:end"}, log.snapshot())
+}
