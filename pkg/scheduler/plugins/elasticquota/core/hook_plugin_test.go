@@ -675,10 +675,10 @@ func (l *loggingMockHook) PostQuotaUpdate(oldQ, newQ *QuotaInfo, q *v1alpha1.Ela
 func TestResetQuotasForHookPlugins_BatchResetAware(t *testing.T) {
 	log := &batchEventLog{}
 	const (
-		awareKey   = "awareHook"
-		plainKey   = "plainHook"
-		awareFK    = "awareFactory"
-		plainFK    = "plainFactory"
+		awareKey = "awareHook"
+		plainKey = "plainHook"
+		awareFK  = "awareFactory"
+		plainFK  = "plainFactory"
 	)
 	RegisterHookPluginFactory(awareFK,
 		func(_ *QuotaInfoReader, key, _ string) (QuotaHookPlugin, error) {
