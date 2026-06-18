@@ -64,17 +64,13 @@ var (
 	}
 )
 
-func (h *PodValidatingHandler) podEnhancedValidate(ctx context.Context, req admission.Request) (string, error) {
+func (h *PodValidatingHandler) podEnhancedValidate(ctx context.Context, req admission.Request, newPod *corev1.Pod) (string, error) {
 	if !utilfeature.DefaultFeatureGate.Enabled(features.EnablePodEnhancedValidator) {
 		return "", nil
 	}
 
-	newPod := &corev1.Pod{}
 	switch req.Operation {
 	case admissionv1.Create, admissionv1.Update:
-		if err := h.Decoder.DecodeRaw(req.Object, newPod); err != nil {
-			return "", err
-		}
 	default:
 		return "", nil
 	}

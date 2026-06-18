@@ -397,7 +397,7 @@ func TestEvaluateQuota(t *testing.T) {
 				Client:  client,
 				Decoder: decoder,
 			}
-			quotaAccessor := quotaevaluate.NewQuotaAccessor(h.Client)
+			quotaAccessor := quotaevaluate.NewQuotaAccessor(h.Client, h.Client)
 			h.QuotaEvaluator = quotaevaluate.NewQuotaEvaluator(quotaAccessor, 16, make(chan struct{}))
 
 			var objRawExt, oldObjRawExt runtime.RawExtension
@@ -413,7 +413,7 @@ func TestEvaluateQuota(t *testing.T) {
 			}
 
 			req := newAdmissionRequest(tc.operation, objRawExt, oldObjRawExt, "pods")
-			gotAllowed, gotReason, err := h.evaluateQuota(context.TODO(), admission.Request{AdmissionRequest: req})
+			gotAllowed, gotReason, err := h.evaluateQuota(context.TODO(), admission.Request{AdmissionRequest: req}, tc.newPod)
 			if tc.wantErr {
 				assert.Error(t, err)
 			} else {
