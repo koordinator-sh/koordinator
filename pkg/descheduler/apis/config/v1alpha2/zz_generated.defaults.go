@@ -31,6 +31,7 @@ import (
 func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&CustomPriorityArgs{}, func(obj interface{}) { SetObjectDefaults_CustomPriorityArgs(obj.(*CustomPriorityArgs)) })
 	scheme.AddTypeDefaultingFunc(&DeschedulerConfiguration{}, func(obj interface{}) { SetObjectDefaults_DeschedulerConfiguration(obj.(*DeschedulerConfiguration)) })
+	scheme.AddTypeDefaultingFunc(&FragmentationAwareArgs{}, func(obj interface{}) { SetObjectDefaults_FragmentationAwareArgs(obj.(*FragmentationAwareArgs)) })
 	scheme.AddTypeDefaultingFunc(&LowNodeLoadArgs{}, func(obj interface{}) { SetObjectDefaults_LowNodeLoadArgs(obj.(*LowNodeLoadArgs)) })
 	scheme.AddTypeDefaultingFunc(&MigrationControllerArgs{}, func(obj interface{}) { SetObjectDefaults_MigrationControllerArgs(obj.(*MigrationControllerArgs)) })
 	return nil
@@ -42,6 +43,10 @@ func SetObjectDefaults_CustomPriorityArgs(in *CustomPriorityArgs) {
 
 func SetObjectDefaults_DeschedulerConfiguration(in *DeschedulerConfiguration) {
 	SetDefaults_DeschedulerConfiguration(in)
+}
+
+func SetObjectDefaults_FragmentationAwareArgs(in *FragmentationAwareArgs) {
+	SetDefaults_FragmentationAwareArgs(in)
 }
 
 func SetObjectDefaults_LowNodeLoadArgs(in *LowNodeLoadArgs) {

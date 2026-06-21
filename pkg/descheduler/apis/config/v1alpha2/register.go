@@ -57,6 +57,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&MigrationControllerArgs{},
 		&LowNodeLoadArgs{},
 		&CustomPriorityArgs{},
+		&FragmentationAwareArgs{},
 	)
 
 	return nil
