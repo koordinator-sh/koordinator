@@ -20,29 +20,9 @@ import (
 	"math"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	resourcehelper "k8s.io/component-helpers/resource"
+
+	deschedulernode "github.com/koordinator-sh/koordinator/pkg/descheduler/node"
 )
-
-// nodeRequests returns the total requests of a group of pods.
-func nodeRequests(pods []*corev1.Pod, resources []corev1.ResourceName) corev1.ResourceList {
-	totalReq := make(corev1.ResourceList)
-	for _, r := range resources {
-		totalReq[r] = resource.Quantity{}
-	}
-
-	for _, pod := range pods {
-		reqs := resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{})
-		for _, r := range resources {
-			if q, ok := reqs[r]; ok {
-				qty := totalReq[r]
-				qty.Add(q)
-				totalReq[r] = qty
-			}
-		}
-	}
-	return totalReq
-}
 
 // allocationFractions calculates requested / allocatable fractions for resources.
 // It skips resources mapped to 0 allocatable to prevent divide-by-zero.
@@ -84,22 +64,28 @@ func scoreNodeImbalance(node *corev1.Node, pods []*corev1.Pod, resources []corev
 	if node == nil {
 		return 0
 	}
-	requests := nodeRequests(pods, resources)
+	utilization := deschedulernode.NodeUtilization(pods, resources)
+	requests := make(corev1.ResourceList, len(utilization))
+	for res, qty := range utilization {
+		if qty != nil {
+			requests[res] = *qty
+		}
+	}
 	fractions := allocationFractions(requests, node.Status.Allocatable, resources)
 	return stdDev(fractions)
 }
 
 // scorePodRemovalGain computes the gain (before - after) in standard deviation when a given pod is removed.
 // A higher, positive gain means removing the pod decreases the standard deviation significantly.
-func scorePodRemovalGain(node *corev1.Node, pods []*corev1.Pod, pod *corev1.Pod, resources []corev1.ResourceName) float64 {
-	if node == nil || pod == nil {
+func scorePodRemovalGain(node *corev1.Node, pods []*corev1.Pod, targetPod *corev1.Pod, resources []corev1.ResourceName) float64 {
+	if node == nil || targetPod == nil {
 		return 0
 	}
 	stdBefore := scoreNodeImbalance(node, pods, resources)
 
 	var podsAfter []*corev1.Pod
 	for _, p := range pods {
-		if p.UID != pod.UID {
+		if p.UID != targetPod.UID {
 			podsAfter = append(podsAfter, p)
 		}
 	}
