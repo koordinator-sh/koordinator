@@ -18,6 +18,7 @@ package plugins
 
 import (
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/custompriority"
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/fragmentationaware"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/kubernetes"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/plugins/loadaware"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework/runtime"
@@ -25,8 +26,9 @@ import (
 
 func NewInTreeRegistry() runtime.Registry {
 	registry := runtime.Registry{
-		loadaware.LowNodeLoadName:               loadaware.NewLowNodeLoad,
-		custompriority.PluginCustomPriorityName: custompriority.NewCustomPriority,
+		loadaware.LowNodeLoadName:                 loadaware.NewLowNodeLoad,
+		custompriority.PluginCustomPriorityName:   custompriority.NewCustomPriority,
+		fragmentationaware.FragmentationAwareName: fragmentationaware.NewFragmentationAware,
 	}
 	kubernetes.SetupK8sDeschedulerPlugins(registry)
 	return registry
