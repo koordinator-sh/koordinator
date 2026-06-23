@@ -80,6 +80,8 @@ type LoadAwareSchedulingArgs struct {
 	// and only set up in custom node annotations,
 	// we should pass these resource names in plugin args explicitly.
 	SupportedResources []corev1.ResourceName
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint bool
 }
 
 type LoadAwareSchedulingAggregatedArgs struct {
@@ -136,6 +138,8 @@ type NodeNUMAResourceArgs struct {
 	ScoringStrategy *ScoringStrategy
 	// NUMAScoringStrategy is used to configure the scoring strategy of the NUMANode-level
 	NUMAScoringStrategy *ScoringStrategy
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint bool
 }
 
 // CPUBindPolicy defines the CPU binding policy
@@ -216,6 +220,8 @@ type ReservationArgs struct {
 	// PreAllocationConfig defines the configuration for pre-allocation feature.
 	// +optional
 	PreAllocationConfig *PreAllocationConfig
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint bool
 }
 
 // PreAllocationConfig defines the configuration for pre-allocation feature.
@@ -340,6 +346,8 @@ type DeviceShareArgs struct {
 	// GPUShareUnsupportedModels lists GPU vendor-model pairs that do not support GPU sharing (e.g. vNPU).
 	// Pods requesting gpu.shared resources will be filtered out from nodes matching any of these models.
 	GPUShareUnsupportedModels []GPUShareUnsupportedModel
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint bool
 }
 
 // GPUShareUnsupportedModel identifies a GPU model that does not support GPU sharing.
