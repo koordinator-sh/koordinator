@@ -34,6 +34,7 @@ import (
 	noderesourcesfitplus "github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/noderesourcefitplus"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scarceresourceavoidance"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/jobnomination"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/schedulinghint"
 
 	// Ensure metric package is initialized
@@ -53,6 +54,7 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	noderesourcesfitplus.Name:    noderesourcesfitplus.New,
 	scarceresourceavoidance.Name: scarceresourceavoidance.New,
 	schedulinghint.Name:          schedulinghint.New,
+	jobnomination.Name:           jobnomination.New,
 }
 
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {
