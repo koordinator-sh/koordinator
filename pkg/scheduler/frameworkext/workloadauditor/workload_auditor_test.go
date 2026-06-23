@@ -304,38 +304,40 @@ func TestRecordPodGating_NotFound(t *testing.T) {
 
 func TestAddGangGroup(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
 	record := w.getRecord("gang-1")
 	assert.NotNil(t, record)
 	assert.Equal(t, 1, record.recordTypeCounts[RecordTypeCreate])
 	assert.False(t, record.labelsExtracted)
+	assert.Equal(t, 3, record.gangMinMember)
+	assert.Equal(t, "1-100", record.gangMinMemberBucket)
 }
 
 func TestAddGangGroup_Disabled(t *testing.T) {
 	w := newTestAuditor()
 	w.Config.Enabled = false
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
 	assert.Nil(t, w.getRecord("gang-1"))
 }
 
 func TestAddGangGroup_Duplicate(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-1")
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
+	w.AddGangGroup("gang-1", 3)
 	record := w.getRecord("gang-1")
 	assert.Equal(t, 1, record.recordTypeCounts[RecordTypeCreate])
 }
 
 func TestDeleteGangGroup(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
 	w.DeleteGangGroup("gang-1")
 	assert.Nil(t, w.getRecord("gang-1"))
 }
 
 func TestDeleteGangGroup_Disabled(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
 	w.Config.Enabled = false
 	w.DeleteGangGroup("gang-1")
 	assert.NotNil(t, w.getRecord("gang-1"))
@@ -348,7 +350,7 @@ func TestDeleteGangGroup_NotFound(t *testing.T) {
 
 func TestRecordGangGroup(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
 	pod := newPod("ns", "p1", "u1")
 	w.RecordGangGroup("gang-1", pod, RecordTypeGangMinMemberSatisfied, "test")
 	record := w.getRecord("gang-1")
@@ -369,7 +371,7 @@ func TestRecordGangGroup_NotFound(t *testing.T) {
 
 func TestRecordGangGating(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
 	pod := newPod("ns", "p1", "u1")
 
 	w.RecordGangGating("gang-1", pod, true)
@@ -385,7 +387,7 @@ func TestRecordGangGating(t *testing.T) {
 
 func TestRecordGangGating_NoChange(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
 	w.RecordGangGating("gang-1", newPod("ns", "p1", "u1"), false)
 	record := w.getRecord("gang-1")
 	assert.Equal(t, 0, record.recordTypeCounts[RecordTypeAdmissionPassed])
@@ -404,7 +406,7 @@ func TestRecordGangGating_NotFound(t *testing.T) {
 
 func TestRecordGangScheduleResult_Scheduled(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
 	w.RecordGangScheduleResult("gang-1", RecordTypeScheduleFailure, "no fit")
 	w.RecordGangScheduleResult("gang-1", RecordTypeScheduled, "")
 	// Record is deleted on scheduled.
@@ -413,7 +415,7 @@ func TestRecordGangScheduleResult_Scheduled(t *testing.T) {
 
 func TestRecordGangScheduleResult_Failure(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-1")
+	w.AddGangGroup("gang-1", 3)
 	w.RecordGangScheduleResult("gang-1", RecordTypeScheduleFailure, "")
 	record := w.getRecord("gang-1")
 	assert.NotNil(t, record)
@@ -446,7 +448,7 @@ func TestRecordDiagnosis_NonGang(t *testing.T) {
 
 func TestRecordDiagnosis_Gang(t *testing.T) {
 	w := newTestAuditor()
-	w.AddGangGroup("gang-key")
+	w.AddGangGroup("gang-key", 5)
 	pod := newGangPod("ns", "p1", "u1")
 	w.RecordDiagnosis(pod, "gang-key", RecordTypeScheduleFailure, "")
 	record := w.getRecord("gang-key")

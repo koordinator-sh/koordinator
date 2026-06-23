@@ -456,7 +456,7 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 	defer func() {
 		for _, transformer := range ext.postFilterTransformersEnabled {
 			startTime := time.Now()
-			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap)
+			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap, status)
 			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
 		}
 		diagnosis := GetDiagnosis(state)

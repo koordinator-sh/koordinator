@@ -52,6 +52,10 @@ type WorkloadRecord struct {
 	// has already been recorded, used to deduplicate ScheduleFailure records.
 	lastRecordedAttempt int
 
+	// Gang group sizing info (set via AddGangGroup)
+	gangMinMember       int
+	gangMinMemberBucket string
+
 	// Preemption state tracking (for anomaly detection)
 	lastPreemptNominatedInvalidated    bool
 	lastPreemptNominatedTime           *time.Time

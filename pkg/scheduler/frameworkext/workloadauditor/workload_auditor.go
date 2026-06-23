@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulermetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
 // PodIsGated determines whether a pod is considered gated.
@@ -43,7 +44,7 @@ type WorkloadAuditor interface {
 	RecordAttemptPod(pod *corev1.Pod)
 	RecordPodScheduleResult(pod *corev1.Pod, recordType RecordType, message string)
 
-	AddGangGroup(gangGroupID string)
+	AddGangGroup(gangGroupID string, minMember int)
 	DeleteGangGroup(gangGroupID string)
 	RecordGangGroup(gangGroupID string, pod *corev1.Pod, recordType RecordType, message string)
 	RecordGangGating(gangGroupID string, pod *corev1.Pod, gated bool)
@@ -74,7 +75,7 @@ func (w *workloadAuditorImpl) getRecord(key string) *WorkloadRecord {
 	return val.(*WorkloadRecord)
 }
 
-func (w *workloadAuditorImpl) AddGangGroup(gangGroupID string) {
+func (w *workloadAuditorImpl) AddGangGroup(gangGroupID string, minMember int) {
 	if !w.Config.Enabled {
 		return
 	}
@@ -83,10 +84,12 @@ func (w *workloadAuditorImpl) AddGangGroup(gangGroupID string) {
 		RecordMethodDurationSeconds.WithLabelValues("AddGangGroup").Observe(time.Since(start).Seconds())
 	}()
 	record := &WorkloadRecord{
-		WorkloadKey:      gangGroupID,
-		recordTypeCounts: map[RecordType]int{RecordTypeCreate: 1},
-		labelValues:      make([]string, len(w.Config.MetricLabelNames)),
-		labelDetail:      formatLabelDetail(w.Config.MetricLabelNames, make([]string, len(w.Config.MetricLabelNames))),
+		WorkloadKey:         gangGroupID,
+		gangMinMember:       minMember,
+		gangMinMemberBucket: schedulermetrics.GangJobSizeBucket(minMember),
+		recordTypeCounts:    map[RecordType]int{RecordTypeCreate: 1},
+		labelValues:         make([]string, len(w.Config.MetricLabelNames)),
+		labelDetail:         formatLabelDetail(w.Config.MetricLabelNames, make([]string, len(w.Config.MetricLabelNames))),
 	}
 	w.records.LoadOrStore(gangGroupID, record)
 }
@@ -106,8 +109,8 @@ func (w *workloadAuditorImpl) DeleteGangGroup(gangGroupID string) {
 	record := val.(*WorkloadRecord)
 	record.mu.Lock()
 	defer record.mu.Unlock()
-	klog.V(4).Infof("WorkloadAuditor delete(gangDeleted): workloadKey=%s %s, attempts=%d",
-		record.WorkloadKey, record.labelDetail, record.Attempts)
+	klog.V(4).Infof("WorkloadAuditor delete(gangDeleted): workloadKey=%s %s, gangMinMember=%d(%s), attempts=%d",
+		record.WorkloadKey, record.labelDetail, record.gangMinMember, record.gangMinMemberBucket, record.Attempts)
 	finalizeWorkloadRecord(record, outcomeGangDeleted)
 }
 
@@ -357,8 +360,8 @@ func (w *workloadAuditorImpl) RecordGangScheduleResult(gangKey string, recordTyp
 	w.appendRecord(record, recordType, message)
 	// On successful gang schedule, remove the gang record.
 	if recordType == RecordTypeScheduled {
-		klog.V(4).Infof("WorkloadAuditor delete(gangScheduled): workloadKey=%s %s, attempts=%d",
-			record.WorkloadKey, record.labelDetail, record.Attempts)
+		klog.V(4).Infof("WorkloadAuditor delete(gangScheduled): workloadKey=%s %s, gangMinMember=%d(%s), attempts=%d",
+			record.WorkloadKey, record.labelDetail, record.gangMinMember, record.gangMinMemberBucket, record.Attempts)
 		finalizeWorkloadRecord(record, outcomeGangScheduled)
 		record.mu.Unlock()
 		w.records.Delete(gangKey)
@@ -370,8 +373,13 @@ func (w *workloadAuditorImpl) RecordGangScheduleResult(gangKey string, recordTyp
 // appendRecord increments the record-type count, logs the event, and runs anomaly detection.
 func (w *workloadAuditorImpl) appendRecord(wr *WorkloadRecord, recordType RecordType, message string) {
 	wr.recordTypeCounts[recordType]++
-	klog.V(4).Infof("WorkloadAuditor record: workloadKey=%s %s, type=%s, message=%q, attempts=%d",
-		wr.WorkloadKey, wr.labelDetail, recordType, message, wr.Attempts)
+	if wr.gangMinMember > 0 {
+		klog.V(4).Infof("WorkloadAuditor record: workloadKey=%s %s, gangMinMember=%d(%s), type=%s, message=%q, attempts=%d",
+			wr.WorkloadKey, wr.labelDetail, wr.gangMinMember, wr.gangMinMemberBucket, recordType, message, wr.Attempts)
+	} else {
+		klog.V(4).Infof("WorkloadAuditor record: workloadKey=%s %s, type=%s, message=%q, attempts=%d",
+			wr.WorkloadKey, wr.labelDetail, recordType, message, wr.Attempts)
+	}
 	checkRecordAnomaly(&w.Config, wr, recordType, message)
 }
 

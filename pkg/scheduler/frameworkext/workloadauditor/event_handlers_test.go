@@ -87,7 +87,7 @@ func (m *mockWorkloadAuditor) RecordPod(_ *corev1.Pod, _ RecordType, _ string)  
 func (m *mockWorkloadAuditor) RecordPodGating(_ *corev1.Pod, _ bool)                           {}
 func (m *mockWorkloadAuditor) RecordAttemptPod(_ *corev1.Pod)                                  {}
 func (m *mockWorkloadAuditor) RecordPodScheduleResult(_ *corev1.Pod, _ RecordType, _ string)   {}
-func (m *mockWorkloadAuditor) AddGangGroup(_ string)                                           {}
+func (m *mockWorkloadAuditor) AddGangGroup(_ string, _ int)                                    {}
 func (m *mockWorkloadAuditor) DeleteGangGroup(_ string)                                        {}
 func (m *mockWorkloadAuditor) RecordGangGroup(_ string, _ *corev1.Pod, _ RecordType, _ string) {}
 func (m *mockWorkloadAuditor) RecordGangGating(_ string, _ *corev1.Pod, _ bool)                {}

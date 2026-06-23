@@ -134,6 +134,12 @@ const (
 	// resource overcommitment caused by scheduling pods based on a stale cache from the
 	// previous leader's final moments.
 	SyncBarrier featuregate.Feature = "SyncBarrier"
+
+	// GangPendingPodsConditionPatch enables patching PodScheduled=False conditions on
+	// unattempted pending pods in a gang group when a non-root-cause pod fails PostFilter.
+	// This provides earlier scheduling failure visibility for pods that haven't been
+	// individually attempted by the scheduler yet.
+	GangPendingPodsConditionPatch featuregate.Feature = "GangPendingPodsConditionPatch"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -162,6 +168,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	PodDisruptionBudget:                       {Default: true, PreRelease: featuregate.GA},
 	SyncBarrier:                               {Default: false, PreRelease: featuregate.Alpha},
 	CrossSchedulerNomination:                  {Default: false, PreRelease: featuregate.Alpha},
+	GangPendingPodsConditionPatch:             {Default: true, PreRelease: featuregate.Beta},
 }
 
 func init() {
