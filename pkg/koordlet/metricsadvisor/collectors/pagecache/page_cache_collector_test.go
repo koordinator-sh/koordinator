@@ -34,7 +34,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
-func Test_collectPageCache(t *testing.T) {
+func Test_collectUsageWithCache(t *testing.T) {
 	testNow := time.Now()
 	testContainerID := "containerd://123abc"
 	testPodMetaDir := "kubepods.slice/kubepods-podxxxxxxxx.slice"
@@ -249,15 +249,15 @@ DirectMap1G:           0 kB`
 			statesInformer.EXPECT().GetAllPods().Return(tt.fields.getPodMetas).AnyTimes()
 			collector := New(&framework.Options{
 				Config: &framework.Config{
-					EnablePageCacheCollector: true,
+					EnableUsageWithCacheCollector: true,
 				},
 				StatesInformer: statesInformer,
 				MetricCache:    metricCache,
 				CgroupReader:   resourceexecutor.NewCgroupReader(),
 			})
-			c := collector.(*pageCacheCollector)
+			c := collector.(*usageWithCacheCollector)
 			assert.NotPanics(t, func() {
-				c.collectPageCache()
+				c.collectUsageWithCache()
 			})
 			assert.NotPanics(t, func() {
 				c.Setup(&framework.Context{})
