@@ -422,7 +422,8 @@ func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state fwktype
 }
 
 // patchGangPendingPodsCondition patches a PodScheduled=False condition on unattempted pending pods
-// (plus the current pod) in the gang group in parallel, without modifying NominatedNodeName.
+// (excluding the current pod, which is patched by the scheduler) in the gang group in parallel,
+// without modifying NominatedNodeName.
 func (pgMgr *PodGroupManager) patchGangPendingPodsCondition(ctx context.Context, handle fwktype.Handle, currentPod *corev1.Pod, gang *Gang, gangSchedulingContext *GangSchedulingContext, filteredNodeStatusMap fwktype.NodeToStatusReader, postFilterStatus *fwktype.Status) {
 	if postFilterStatus == nil {
 		return
@@ -430,9 +431,7 @@ func (pgMgr *PodGroupManager) patchGangPendingPodsCondition(ctx context.Context,
 	startTime := time.Now()
 
 	// Get the set of already attempted pods to exclude
-	gangSchedulingContext.RLock()
 	attemptedPods := gangSchedulingContext.alreadyAttemptedPods
-	gangSchedulingContext.RUnlock()
 
 	// Collect all pending pods from the gang group, excluding already attempted ones
 	// and the current pod (which already gets its condition patched by the scheduler).
