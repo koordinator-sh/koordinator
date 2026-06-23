@@ -286,7 +286,7 @@ func (h *TestTransformer) ScoreExtensions() fwktype.ScoreExtensions {
 	return nil
 }
 
-func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) {
+func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader, postFilterStatus *fwktype.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}

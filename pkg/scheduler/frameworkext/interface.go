@@ -149,7 +149,7 @@ type ScoreTransformer interface {
 // PostFilterTransformer is executed before PostFilter.
 type PostFilterTransformer interface {
 	SchedulingTransformer
-	AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader)
+	AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader, postFilterStatus *fwktype.Status)
 }
 
 // PluginToReservationRestoreStates declares a map from plugin name to its ReservationRestoreState.
