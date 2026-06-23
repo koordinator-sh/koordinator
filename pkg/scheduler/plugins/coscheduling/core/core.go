@@ -26,18 +26,22 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	listerv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
+	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedulerutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	pgclientset "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/clientset/versioned"
 	pgformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	pglister "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/listers/scheduling/v1alpha1"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
@@ -74,7 +78,7 @@ type Manager interface {
 	Permit(context.Context, *corev1.Pod) (time.Duration, Status)
 	PostBind(context.Context, *corev1.Pod, string)
 	PostFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, m fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status)
-	AfterPostFilter(context.Context, fwktype.CycleState, *corev1.Pod, fwktype.Handle, string, fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status)
+	AfterPostFilter(context.Context, fwktype.CycleState, *corev1.Pod, fwktype.Handle, string, fwktype.NodeToStatusReader, *fwktype.Status) (*fwktype.PostFilterResult, *fwktype.Status)
 	GetAllPodsFromGang(string) []*corev1.Pod
 	AllowGangGroup(*corev1.Pod, fwktype.Handle, string)
 	Unreserve(context.Context, fwktype.CycleState, *corev1.Pod, string, fwktype.Handle, string)
@@ -372,7 +376,7 @@ func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state fwktype.Cycl
 // AfterPostFilter
 // i. If strict-mode, we will set scheduleCycleValid to false and release all assumed pods.
 // ii. If non-strict mode, we will do nothing.
-func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, handle fwktype.Handle, pluginName string, filteredNodeStatusMap fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status) {
+func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, handle fwktype.Handle, pluginName string, filteredNodeStatusMap fwktype.NodeToStatusReader, postFilterStatus *fwktype.Status) (*fwktype.PostFilterResult, *fwktype.Status) {
 	if !util.IsPodNeedGang(pod) {
 		return &fwktype.PostFilterResult{}, fwktype.NewStatus(fwktype.Unschedulable)
 	}
@@ -396,6 +400,17 @@ func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state fwktype
 			}
 		}
 	}
+
+	// Patch scheduling failure condition for unattempted pending pods in the gang group.
+	// Only execute for non-root-cause pods and only once per GangSchedulingContext.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.GangPendingPodsConditionPatch) && diagnosis != nil && !diagnosis.IsRootCausePod {
+		gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
+		if gangSchedulingContext != nil && !gangSchedulingContext.pendingPodsConditionPatched {
+			gangSchedulingContext.pendingPodsConditionPatched = true
+			pgMgr.patchGangPendingPodsCondition(ctx, handle, pod, gang, gangSchedulingContext, filteredNodeStatusMap, postFilterStatus)
+		}
+	}
+
 	if gang.getGangMode() == extension.GangModeStrict {
 		gang.clearWaitingGang()
 		pgMgr.rejectGangGroupById(handle, pluginName, gang.Name, message)
@@ -404,6 +419,76 @@ func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state fwktype
 	}
 
 	return &fwktype.PostFilterResult{}, fwktype.NewStatus(fwktype.Unschedulable)
+}
+
+// patchGangPendingPodsCondition patches a PodScheduled=False condition on unattempted pending pods
+// (plus the current pod) in the gang group in parallel, without modifying NominatedNodeName.
+func (pgMgr *PodGroupManager) patchGangPendingPodsCondition(ctx context.Context, handle fwktype.Handle, currentPod *corev1.Pod, gang *Gang, gangSchedulingContext *GangSchedulingContext, filteredNodeStatusMap fwktype.NodeToStatusReader, postFilterStatus *fwktype.Status) {
+	if postFilterStatus == nil {
+		return
+	}
+	startTime := time.Now()
+
+	// Get the set of already attempted pods to exclude
+	gangSchedulingContext.RLock()
+	attemptedPods := gangSchedulingContext.alreadyAttemptedPods
+	gangSchedulingContext.RUnlock()
+
+	// Collect all pending pods from the gang group, excluding already attempted ones
+	// and the current pod (which already gets its condition patched by the scheduler).
+	currentPodKey := util.GetId(currentPod.Namespace, currentPod.Name)
+	var pendingPods []*corev1.Pod
+	gangGroup := gang.getGangGroup()
+	for _, groupGangId := range gangGroup {
+		groupGang := pgMgr.cache.getGangFromCacheByGangId(groupGangId, false)
+		if groupGang == nil {
+			continue
+		}
+		pods := groupGang.getPendingChildrenFromGang()
+		for _, pod := range pods {
+			podKey := util.GetId(pod.Namespace, pod.Name)
+			if podKey != currentPodKey && !attemptedPods.Has(podKey) {
+				pendingPods = append(pendingPods, pod)
+			}
+		}
+	}
+
+	if len(pendingPods) == 0 {
+		klog.Infof("patchGangPendingPodsCondition skipped (no pending pods): currentPod=%s/%s, gangGroupID=%s, gangMinMember=%d, alreadyAttempted=%d, duration=%v",
+			currentPod.Namespace, currentPod.Name, gangSchedulingContext.gangGroupID, gang.MinRequiredNumber, attemptedPods.Len(), time.Since(startTime))
+		return
+	}
+
+	nodeInfos, _ := handle.SnapshotSharedLister().NodeInfos().List()
+	fitErr := &framework.FitError{
+		Pod:         currentPod,
+		NumAllNodes: len(nodeInfos),
+		Diagnosis: framework.Diagnosis{
+			PreFilterMsg:  gangSchedulingContext.failedMessage,
+			PostFilterMsg: postFilterStatus.Message(),
+		},
+	}
+	errMsg := fitErr.Error()
+
+	cs := handle.ClientSet()
+	handle.Parallelizer().Until(ctx, len(pendingPods), func(i int) {
+		pod := pendingPods[i]
+		condition := &corev1.PodCondition{
+			Type:    corev1.PodScheduled,
+			Status:  corev1.ConditionFalse,
+			Reason:  corev1.PodReasonUnschedulable,
+			Message: errMsg,
+		}
+		podStatusCopy := pod.Status.DeepCopy()
+		if !podutil.UpdatePodCondition(podStatusCopy, condition) {
+			return
+		}
+		if err := schedulerutil.PatchPodStatus(ctx, cs, pod.Name, pod.Namespace, &pod.Status, podStatusCopy); err != nil {
+			klog.Warningf("Failed to patch scheduling failure condition for pod %s/%s: %v", pod.Namespace, pod.Name, err)
+		}
+	}, "PatchGangPendingPodsCondition")
+	klog.Infof("patchGangPendingPodsCondition completed: currentPod=%s/%s, gangGroupID=%s, gangMinMember=%d, alreadyAttempted=%d, pendingPodsPatched=%d, duration=%v",
+		currentPod.Namespace, currentPod.Name, gangSchedulingContext.gangGroupID, gang.MinRequiredNumber, attemptedPods.Len(), len(pendingPods), time.Since(startTime))
 }
 
 func (pgMgr *PodGroupManager) summaryAndRecordFailedMessage(state fwktype.CycleState, triggerPod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) string {
