@@ -360,6 +360,13 @@ func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, cycleState fw
 // PostFilter invoked at the postFilter extension point.
 func (pgMgr *PodGroupManager) PostFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, m fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status) {
 	if !*pgMgr.args.EnablePreemption {
+		diagnosis := frameworkext.GetDiagnosis(state)
+		if diagnosis != nil && !diagnosis.IsRootCausePod {
+			gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
+			if gangSchedulingContext != nil && gangSchedulingContext.preemptionMessage != "" {
+				return &fwktype.PostFilterResult{}, fwktype.NewStatus(fwktype.Unschedulable, gangSchedulingContext.preemptionMessage)
+			}
+		}
 		return &fwktype.PostFilterResult{}, fwktype.NewStatus(fwktype.Unschedulable)
 	}
 
@@ -397,6 +404,14 @@ func (pgMgr *PodGroupManager) AfterPostFilter(ctx context.Context, state fwktype
 			gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
 			if gangSchedulingContext != nil {
 				gangSchedulingContext.suggestion = suggestion
+			}
+		}
+		if diagnosis.IsRootCausePod {
+			gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
+			if gangSchedulingContext != nil && gangSchedulingContext.preemptionMessage == "" {
+				if diagnosis.PreemptionDiagnosis != nil && diagnosis.PreemptionDiagnosis.FailedMessage != "" {
+					gangSchedulingContext.preemptionMessage = diagnosis.PreemptionDiagnosis.FailedMessage
+				}
 			}
 		}
 	}
