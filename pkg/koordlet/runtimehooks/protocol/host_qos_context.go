@@ -97,6 +97,20 @@ func (c *HostAppContext) injectForOrigin() {
 				c.Request.Name, *c.Response.Resources.CPUSet, c.Request.CgroupParent)
 		}
 	}
+	// If CPUSetMems is not nil and is not an empty string, set cpuset.mems
+	if c.Response.Resources.CPUSetMems != nil && *c.Response.Resources.CPUSetMems != "" {
+		eventHelper := audit.V(3).Group(c.Request.Name).Reason("runtime-hooks").Message(
+			"set host application cpuset.mems to %v", *c.Response.Resources.CPUSetMems)
+		updater, err := injectCPUSetMems(c.Request.CgroupParent, *c.Response.Resources.CPUSetMems, eventHelper, c.executor)
+		if err != nil {
+			klog.Infof("set host application %v cpuset.mems %v on cgroup parent %v failed, error %v",
+				c.Request.Name, *c.Response.Resources.CPUSetMems, c.Request.CgroupParent, err)
+		} else {
+			c.updaters = append(c.updaters, updater)
+			klog.V(5).Infof("set host application %v cpuset.mems %v on cgroup parent %v",
+				c.Request.Name, *c.Response.Resources.CPUSetMems, c.Request.CgroupParent)
+		}
+	}
 }
 
 func (c *HostAppContext) injectForExt() {
