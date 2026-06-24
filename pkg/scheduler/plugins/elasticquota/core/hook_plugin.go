@@ -88,8 +88,8 @@ type QuotaHookPlugin interface {
 // BatchResetAware is an optional capability for hook plugins that want to
 // distinguish a batched reset from per-quota updates. ResetQuotasForHookPlugins
 // brackets its loop with OnBatchResetBegin / OnBatchResetEnd while holding
-// hierarchyUpdateLock. Plugins that don't implement this interface keep the
-// original per-call behavior.
+// hierarchyUpdateLock in write mode. Plugins that don't implement this interface
+// keep the original per-call behavior.
 type BatchResetAware interface {
 	OnBatchResetBegin()
 	OnBatchResetEnd()
@@ -332,14 +332,16 @@ func (gqm *GroupQuotaManager) ResetQuotasForHookPlugins(quotas map[string]*v1alp
 	defer gqm.hierarchyUpdateLock.Unlock()
 
 	batchAwarePlugins := collectBatchResetAware(gqm.hookPlugins)
-	for _, p := range batchAwarePlugins {
-		p.OnBatchResetBegin()
-	}
+	begun := 0
 	defer func() {
-		for _, p := range batchAwarePlugins {
-			p.OnBatchResetEnd()
+		for i := 0; i < begun; i++ {
+			batchAwarePlugins[i].OnBatchResetEnd()
 		}
 	}()
+	for _, p := range batchAwarePlugins {
+		begun++
+		p.OnBatchResetBegin()
+	}
 
 	for quotaName, quotaInfo := range gqm.quotaInfoMap {
 		quota := quotas[quotaInfo.Name]
