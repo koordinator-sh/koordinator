@@ -96,19 +96,27 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 			"reservation", klog.KObj(newR), "node", reservationutil.GetReservationNodeName(newR))
 		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(newR))
 	}
-	// On status updates, re-sync the in-memory nominator from the persisted NominatedNodeName.
-	// This handles the case where the failure handler has written the nomination to the API
-	// server and the informer update arrives (including after a scheduler restart).
-	// We only act on pending Reservations that are not yet fully scheduled or terminated.
-	if newR.Status.NominatedNodeName != "" &&
+	// Align with upstream UpdateNominatedPod: atomically update the in-memory nomination.
+	// Always delete the old nominated node first (if changed), then add the new one.
+	// This mirrors the upstream k8s pattern where deleteNominatedPodInQueue is called before
+	// addNominatedPodUnlocked, ensuring no stale entry remains when NominatedNodeName changes.
+	oldNom := oldR.Status.NominatedNodeName
+	newNom := newR.Status.NominatedNodeName
+	if oldNom != newNom && oldNom != "" {
+		// Delete stale nomination unconditionally when the nominated node has changed.
+		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(oldR))
+	}
+	// Re-sync the in-memory nominator from the persisted NominatedNodeName.
+	// Only applies to Reservations that are still pending (not fully scheduled or terminated).
+	if newNom != "" &&
 		!reservationutil.IsReservationActive(newR) &&
 		!reservationutil.IsReservationFailed(newR) &&
 		!reservationutil.IsReservationSucceeded(newR) {
 		podInfo, err := framework.NewPodInfo(reservationutil.NewReservePod(newR))
 		if err == nil {
-			h.rrNominator.AddNominatedReservePod(podInfo, newR.Status.NominatedNodeName)
+			h.rrNominator.AddNominatedReservePod(podInfo, newNom)
 			klog.V(4).InfoS("Re-synced NominatedNodeName into in-memory nominator on reservation update",
-				"reservation", klog.KObj(newR), "nominatedNodeName", newR.Status.NominatedNodeName)
+				"reservation", klog.KObj(newR), "nominatedNodeName", newNom)
 		}
 	}
 }
