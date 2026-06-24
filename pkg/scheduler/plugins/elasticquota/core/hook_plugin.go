@@ -339,8 +339,8 @@ func (gqm *GroupQuotaManager) ResetQuotasForHookPlugins(quotas map[string]*v1alp
 		}
 	}()
 	for _, p := range batchAwarePlugins {
-		begun++
 		p.OnBatchResetBegin()
+		begun++
 	}
 
 	for quotaName, quotaInfo := range gqm.quotaInfoMap {
