@@ -6,7 +6,7 @@ reviewers:
   - "@saintube"
   - "@ZiMengSheng"
 creation-date: 2026-06-23
-last-updated: 2026-06-23
+last-updated: 2026-06-24
 status: provisional
 ---
 
@@ -25,7 +25,9 @@ status: provisional
         - [Design Details](#design-details)
             - [SharedPluginCache interface](#sharedplugincache-interface)
             - [Registration and lifecycle](#registration-and-lifecycle)
+            - [Initialization order](#initialization-order)
             - [Event dispatch](#event-dispatch)
+            - [Reserve and Unreserve](#reserve-and-unreserve)
             - [Plugin migration plan](#plugin-migration-plan)
             - [Snapshot (Phase 3, bonus)](#snapshot-phase-3-bonus)
     - [Alternatives](#alternatives)
@@ -170,7 +172,12 @@ plugin-supplied string. A plugin registers its cache from within `New()`:
 // In FrameworkExtenderFactory — registration point available to all plugins via ExtendedHandle.
 // If a cache for the given key already exists (registered by an earlier profile), the existing
 // instance is returned and create() is not called. This guarantees exactly-once initialization.
-func (f *FrameworkExtenderFactory) GetOrRegisterSharedCache(key string, create func() SharedPluginCache) SharedPluginCache
+// The handle and informerFactory are passed explicitly to create() so that the cache's
+// dependencies are visible at the call site rather than captured implicitly through closures.
+func (f *FrameworkExtenderFactory) GetOrRegisterSharedCache(
+    key string,
+    create func(handle ExtendedHandle, factory informers.SharedInformerFactory) SharedPluginCache,
+) SharedPluginCache
 ```
 
 After all profiles have been initialized (all `New()` calls complete), the factory calls `Start()`
@@ -186,14 +193,40 @@ Plugin usage in `New()`:
 
 ```go
 // DeviceShare New()
-cache := extHandle.GetOrRegisterSharedCache("deviceshare", func() frameworkext.SharedPluginCache {
-    return newNodeDeviceCache()  // registers Device CRD handlers inside Start()
-})
+cache := extHandle.GetOrRegisterSharedCache("deviceshare",
+    func(handle frameworkext.ExtendedHandle, factory informers.SharedInformerFactory) frameworkext.SharedPluginCache {
+        return newNodeDeviceCache(handle, factory) // Device CRD handlers registered inside Start()
+    })
 p.nodeDeviceCache = cache.(*nodeDeviceCache)
 ```
 
 No per-plugin wiring in `server.go`. No plugin-specific types in `frameworkext`. Plugins that do
 not call `GetOrRegisterSharedCache` are completely unaffected.
+
+#### Initialization order
+
+The lifecycle proceeds in four phases to ensure all handlers are registered before any events
+arrive:
+
+1. **Profile construction.** `FrameworkExtenderFactory.NewFrameworkExtender` is called once per
+   profile. Each profile's plugins call `New()`, which calls `GetOrRegisterSharedCache`. The first
+   call for a given key invokes `create(handle, factory)` and stores the result; subsequent profiles
+   return the stored instance. No goroutines are started and no informer handlers are registered yet.
+
+2. **Cache start.** After all profiles are built, `StartSharedCaches(ctx)` is called. This invokes
+   `Start(ctx)` on each registered cache exactly once. Inside `Start`, each cache registers its
+   plugin-specific CRD informer handlers (e.g., DeviceShare registers its `Device` object handlers)
+   and starts background goroutines (GC, periodic sync).
+
+3. **Informer factory start.** The shared informer factory is started by the scheduler framework
+   after `StartSharedCaches` returns. From this point, informers begin emitting add/update/delete
+   events to all registered handlers, including those registered in phase 2.
+
+4. **Scheduling begins.** The first scheduling cycle runs. The unified dispatcher's pod/node
+   handlers (registered once by `FrameworkExtenderFactory` at construction) are already active.
+
+This ordering guarantees that all plugin-specific CRD handlers are registered before the informer
+factory starts, eliminating initial-event races where an event arrives before a handler is wired.
 
 #### Event dispatch
 
@@ -213,6 +246,28 @@ This replaces the independent per-plugin informer handler registrations that exi
 all Koordinator plugin caches see pod/node events in a defined order. Coordination with the in-tree
 scheduler cache leverages existing extension points (scheduler cache, scheduling queue, informers)
 without modifying any upstream kube-scheduler code.
+
+#### Reserve and Unreserve
+
+Reserve and Unreserve are scheduling-cycle operations, not informer events. Each plugin's
+`Reserve` and `Unreserve` extension point methods call directly into their shared cache instance
+to apply or roll back assumed allocations. The `SharedPluginCache` interface does not include
+these methods, and the framework does not dispatch them centrally, for two reasons:
+
+- Reserve and Unreserve require plugin-specific state from `framework.CycleState` that differs
+  across plugins and cannot be generalized into a shared interface.
+- Concurrent Reserve calls from different scheduling cycles are already serialized by the
+  per-node lock present in each cache (e.g., `nodeDevice.lock` in DeviceShare). No additional
+  synchronization layer is needed at the interface level.
+
+A correctness benefit of the shared model: because Reserve writes to the single shared cache
+instance, assumed allocations are immediately visible across all profiles. The prior per-profile
+model allowed a burst of pods from different profiles to oversubscribe a node during the window
+between a `Reserve` call and the informer event that follows binding; the shared cache closes
+this gap entirely.
+
+`AddPod` and `RemovePod` (called during preemption via `RunFilterPluginsWithNominatedPods`)
+similarly operate directly on the shared cache and follow the same per-node locking model.
 
 #### Plugin migration plan
 
@@ -243,8 +298,17 @@ type Snapshottable interface {
 
 The framework extender takes a snapshot of each `Snapshottable` cache at the start of each
 scheduling cycle, making it available to plugins via the cycle-scoped handle. This eliminates
-per-cycle read-lock contention on the live cache. A DeviceShare prototype will be the first
-implementation, described in a separate design document.
+per-cycle read-lock contention on the live cache.
+
+The primary design challenge is not defining `Snapshot()` itself but designing the snapshot
+data structure. A useful snapshot must reflect not only steady-state informer events but also
+assumed allocations written by `Reserve` and the AddPod/RemovePod mutations applied during
+preemption. This requires a layered state model — a base snapshot taken at cycle start,
+extended with assumed allocations for the current cycle — analogous to how kube-scheduler's
+`schedulerCache` layers assumed pod state on top of its node snapshots. Designing this
+structure, and ensuring it correctly replaces the live cache for all read paths (Filter, Score,
+AddPod, RemovePod), is the core work of Phase 3. The full data structure design is deferred to
+a separate design document. A DeviceShare prototype will be the first implementation.
 
 ## Alternatives
 
@@ -268,3 +332,6 @@ members of `ExtendedHandle`.
 ## Implementation History
 
 - 2026-06-23: Initial proposal draft.
+- 2026-06-24: Address review feedback — add Reserve/Unreserve discussion, initialization order
+  section, explicit handle/factory parameters for GetOrRegisterSharedCache, and snapshot data
+  structure design challenge acknowledgment.
