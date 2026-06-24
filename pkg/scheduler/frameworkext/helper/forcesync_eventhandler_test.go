@@ -72,7 +72,16 @@ func TestSyncedEventHandler(t *testing.T) {
 	defer close(stopCh)
 	sharedInformerFactory.Start(stopCh)
 
-	wg.Wait()
+	wgDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(wgDone)
+	}()
+	select {
+	case <-wgDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for informer to deliver initial list events")
+	}
 
 	mu.Lock()
 	for _, v := range addTimes {
@@ -92,12 +101,14 @@ func TestSyncedEventHandler(t *testing.T) {
 	node.ResourceVersion = "100"
 	_, err = fakeClientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 	assert.NoError(t, err)
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer pollCancel()
 	err = wait.PollUntil(1*time.Second, func() (done bool, err error) {
 		node, err := nodeInformer.Lister().Get("node-0")
 		assert.NoError(t, err)
 		assert.NotNil(t, node)
 		return node.ResourceVersion == "100", nil
-	}, wait.NeverStop)
+	}, pollCtx.Done())
 	assert.NoError(t, err)
 }
 
@@ -258,7 +269,16 @@ func TestSyncedEventHandlerWithReplace(t *testing.T) {
 	defer close(stopCh)
 	sharedInformerFactory.Start(stopCh)
 
-	wg.Wait()
+	wgDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(wgDone)
+	}()
+	select {
+	case <-wgDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for informer to deliver initial list events")
+	}
 
 	mu.Lock()
 	for _, v := range addTimes {
@@ -305,11 +325,13 @@ func TestSyncedEventHandlerWithReplace(t *testing.T) {
 	node.ResourceVersion = "100"
 	_, err = fakeClientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 	assert.NoError(t, err)
+	pollCtx, pollCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer pollCancel()
 	err = wait.PollUntil(1*time.Second, func() (done bool, err error) {
 		node, err := nodeInformer.Lister().Get("node-0")
 		assert.NoError(t, err)
 		assert.NotNil(t, node)
 		return node.ResourceVersion == "100", nil
-	}, wait.NeverStop)
+	}, pollCtx.Done())
 	assert.NoError(t, err)
 }
