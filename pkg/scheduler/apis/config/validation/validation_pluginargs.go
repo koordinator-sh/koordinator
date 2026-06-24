@@ -22,7 +22,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -284,12 +283,9 @@ func ValidateReservationArgs(path *field.Path, args *config.ReservationArgs) err
 			allErrs = append(allErrs, field.Invalid(path, group, "resource group name can't contain '/'"))
 			continue
 		}
-		if errs := metav1validation.ValidateLabelName(group, path); len(errs) != 0 {
-			allErrs = append(allErrs, errs...)
-			continue
-		}
-		// Reject groups that cannot serve as an extended-resource prefix (e.g. "kubernetes.io"),
-		// applying the same scope guarantee as IgnoredResources above.
+		// A group must be usable as an extended-resource prefix: IsExtendedResourceName(group+"/x")
+		// applies IsQualifiedName (DNS-subdomain rules, up to 253 chars) and rejects the reserved
+		// "kubernetes.io" namespace, giving the same scope guarantee as IgnoredResources above.
 		if !v1helper.IsExtendedResourceName(corev1.ResourceName(group + "/x")) {
 			allErrs = append(allErrs, field.Invalid(path, group,
 				"must be usable as an extended resource prefix (a valid DNS subdomain and not the reserved \"kubernetes.io\" namespace)"))
