@@ -502,6 +502,55 @@ func TestValidateReservationArgs(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "native resource cpu rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"cpu"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "native resource memory rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"memory"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "native resource pods rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"pods"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "native resource ephemeral-storage rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"ephemeral-storage"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "hugepages-2Mi rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"hugepages-2Mi"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "kubernetes.io-prefixed name rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"kubernetes.io/gpu"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "kubernetes.io rejected as ignoredResourceGroup",
+			args: &config.ReservationArgs{
+				IgnoredResourceGroups: []string{"kubernetes.io"},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

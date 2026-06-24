@@ -907,6 +907,10 @@ func isResourceIgnored(name corev1.ResourceName, ignoredResources, ignoredResour
 }
 
 // fitsNode checks if node have enough resources to host the pod.
+// Note: ignoredResources / ignoredResourceGroups only suppress *scalar* resource checks.
+// Native dimensions (CPU/Memory/EphemeralStorage/Pods) are intentionally enforced
+// unconditionally; ValidateReservationArgs ensures only extended resource names
+// can be configured as ignored, so the two layers are consistent by construction.
 func fitsNode(podRequest, nodeAllocatable, allPodsRequested, allRAllocated, rRemained fwktype.Resource, matchedOrIgnored, allocatedPods int, preemptible fwktype.Resource, ignoredResources, ignoredResourceGroups sets.Set[string]) []string {
 	var insufficientResources []string
 
@@ -959,6 +963,12 @@ func fitsNode(podRequest, nodeAllocatable, allPodsRequested, allRAllocated, rRem
 	return insufficientResources
 }
 
+// fitsReservation checks if the reservation has enough resources to host the pod.
+// The per-resource loop applies isResourceIgnored to every resource name including
+// native ones, which differs from fitsNode (where natives are checked unconditionally
+// outside the loop). ValidateReservationArgs rejects native names from being ignored,
+// so both functions behave identically in practice. The ResourcePods check above is
+// likewise unconditional for the same reason.
 func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.ReservationInfo, preemptibleInRR corev1.ResourceList, isDetailed bool, ignoredResources, ignoredResourceGroups sets.Set[string]) []string {
 	allocated := rInfo.Allocated
 	allocatable := rInfo.Allocatable

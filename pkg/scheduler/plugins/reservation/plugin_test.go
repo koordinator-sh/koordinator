@@ -6699,7 +6699,11 @@ func TestIsResourceIgnored(t *testing.T) {
 			want:                  false,
 		},
 		{
-			name:                  "native resource is ignored when explicitly configured (operator-controlled trust)",
+			// The helper itself is name-agnostic: it has no IsExtendedResourceName guard.
+			// Native names like "cpu" are blocked at the API layer by ValidateReservationArgs,
+			// so this branch is unreachable in production. The case is kept to pin the helper's
+			// pure-function contract (Has-lookup only, no name filtering).
+			name:                  "helper is name-agnostic (native names are blocked at validation, not here)",
 			resourceName:          corev1.ResourceCPU,
 			ignoredResources:      sets.New[string](string(corev1.ResourceCPU)),
 			ignoredResourceGroups: nil,
@@ -6816,6 +6820,25 @@ func TestFitsNodeWithIgnoredResources(t *testing.T) {
 			ignoredResources:      sets.New[string](),
 			ignoredResourceGroups: sets.New[string]("example.com"),
 			wantInsufficient:      []string{"other.io/fpga"},
+		},
+		{
+			name: "native cpu unconditionally reported even when extended is ignored",
+			podRequest: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("8"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("2"),
+			},
+			nodeAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:                     resource.MustParse("4"), // insufficient
+				corev1.ResourceMemory:                  resource.MustParse("16Gi"),
+				corev1.ResourcePods:                    resource.MustParse("100"),
+				corev1.ResourceName("example.com/gpu"): resource.MustParse("1"), // insufficient but ignored
+			},
+			allPodsRequested: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("0"),
+			},
+			ignoredResources:      sets.New[string]("example.com/gpu"),
+			ignoredResourceGroups: sets.New[string](),
+			wantInsufficient:      []string{string(corev1.ResourceCPU)},
 		},
 	}
 
