@@ -508,6 +508,11 @@ func (in *ReservationArgs) DeepCopyInto(out *ReservationArgs) {
 		*out = new(PreAllocationConfig)
 		**out = **in
 	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

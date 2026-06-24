@@ -38,6 +38,7 @@ import (
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -176,10 +177,113 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("reservations.%v.%v", schedulingv1alpha1.GroupVersion.Version, schedulingv1alpha1.GroupVersion.Group)
-	return []fwktype.ClusterEventWithHint{
+	events := []fwktype.ClusterEventWithHint{
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
-	}, nil
+	}
+
+	if pl.args != nil && pl.args.EnableQueueHint {
+		events[0].QueueingHintFn = pl.isSchedulableAfterPodDeletion
+		events[1].QueueingHintFn = pl.isSchedulableAfterReservationChange
+	}
+	return events, nil
+}
+
+// podUsesReservation is a cheap predicate that identifies pods which
+// explicitly opt in to reservation matching: reserve pods that own a
+// Reservation, and pods that carry the reservation-affinity annotation.
+// Pods that can be matched only via Reservation.Spec.Owners (without
+// explicit affinity) are not covered here; the QueueingHintFns fall
+// back to ReservationInfo.MatchOwners against the affected reservation
+// for those, see isSchedulableAfterReservationChange.
+//
+// The earlier implementation called GetRequiredReservationAffinity here,
+// which parses the affinity JSON and builds selectors on every call.
+// QueueingHintFns run once per waiting pod per event, so the JSON parse
+// cost dominated the hint's hot path. A simple annotation-presence check
+// is enough: malformed JSON only widens the wake-up (PreFilter then
+// rejects the pod), which is the conservative behavior the hint
+// framework expects.
+func podUsesReservation(pod *corev1.Pod) bool {
+	if reservationutil.IsReservePod(pod) {
+		return true
+	}
+	if pod.Annotations == nil {
+		return false
+	}
+	_, hasAffinity := pod.Annotations[apiext.AnnotationReservationAffinity]
+	return hasAffinity
+}
+
+// reservationOwnerMatches reports whether the given reservation could
+// claim the pod via its Spec.Owners selectors. nil reservation returns
+// false. Used by the QueueingHintFns to wake pods that match a
+// reservation via owner selectors even when they do not carry an
+// explicit reservation-affinity annotation.
+func reservationOwnerMatches(pod *corev1.Pod, r *schedulingv1alpha1.Reservation) bool {
+	if r == nil {
+		return false
+	}
+	return frameworkext.NewReservationInfo(r).MatchOwners(pod)
+}
+
+func (pl *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
+	deletedPod, _, err := schedutil.As[*corev1.Pod](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert oldObj to Pod in isSchedulableAfterPodDeletion", "oldObj", oldObj, "newObj", newObj)
+		return fwktype.Queue, nil
+	}
+	if deletedPod == nil {
+		return fwktype.Queue, nil
+	}
+	if !podUsesReservation(pod) {
+		return fwktype.QueueSkip, nil
+	}
+	if reservationutil.IsReservePod(deletedPod) {
+		return fwktype.Queue, nil
+	}
+	if pl.reservationCache != nil && deletedPod.Spec.NodeName != "" {
+		if pl.reservationCache.GetReservationInfoByPod(deletedPod, deletedPod.Spec.NodeName) != nil {
+			return fwktype.Queue, nil
+		}
+	}
+	return fwktype.QueueSkip, nil
+}
+
+func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
+	oldR, newR, err := schedutil.As[*schedulingv1alpha1.Reservation](oldObj, newObj)
+	if err != nil {
+		logger.Error(err, "Failed to convert obj to Reservation in isSchedulableAfterReservationChange", "oldObj", oldObj, "newObj", newObj)
+		return fwktype.Queue, nil
+	}
+	// A waiter is affected by this event when it either explicitly opts in
+	// (reserve pod or reservation-affinity annotation) or matches the
+	// changed reservation's owner selectors. Owner matching is the path
+	// koordinator uses for pods that consume a reservation indirectly via
+	// Reservation.Spec.Owners without declaring affinity themselves.
+	if !podUsesReservation(pod) &&
+		!reservationOwnerMatches(pod, oldR) &&
+		!reservationOwnerMatches(pod, newR) {
+		return fwktype.QueueSkip, nil
+	}
+	// Delete: give a matching waiter one more scheduling chance.
+	if newR == nil {
+		return fwktype.Queue, nil
+	}
+	// A reservation is only matchable for allocation (ReservationInfo.IsMatchable)
+	// once it reaches the Available phase, so the hint keys off availability,
+	// not the broader "active" (Available or Waiting) status.
+	if oldR == nil {
+		if reservationutil.IsReservationAvailable(newR) {
+			return fwktype.Queue, nil
+		}
+		return fwktype.QueueSkip, nil
+	}
+	// Update: the wake-up signal is the transition into the Available phase.
+	if !reservationutil.IsReservationAvailable(oldR) && reservationutil.IsReservationAvailable(newR) {
+		return fwktype.Queue, nil
+	}
+	return fwktype.QueueSkip, nil
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.

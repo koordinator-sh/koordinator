@@ -216,6 +216,8 @@ type ReservationArgs struct {
 	// PreAllocationConfig defines the configuration for pre-allocation feature.
 	// +optional
 	PreAllocationConfig *PreAllocationConfig
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint bool
 }
 
 // PreAllocationConfig defines the configuration for pre-allocation feature.
