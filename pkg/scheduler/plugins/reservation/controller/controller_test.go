@@ -248,8 +248,8 @@ func TestSyncStatus(t *testing.T) {
 	metrics.Register()
 	metrics.ReservationStatusPhase.Reset()
 	metricsResourceRegistry := basemetrics.NewKubeRegistry()
-	metrics.ReservationResource.GetGaugeVec().Reset()
-	metricsResourceRegistry.Registerer().MustRegister(metrics.ReservationResource.GetGaugeVec())
+	metrics.ReservationResource.Reset()
+	metricsResourceRegistry.Registerer().MustRegister(metrics.ReservationResource)
 
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
@@ -356,7 +356,7 @@ func TestSyncStatus(t *testing.T) {
 	// no phase metric assertion here because the legacyregistry is shared across tests.
 
 	expectedUtilizationMetrics := fmt.Sprintf(`
-# HELP scheduler_reservation_resource Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.
+# HELP scheduler_reservation_resource [ALPHA] Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.
 # TYPE scheduler_reservation_resource gauge
 scheduler_reservation_resource{name="%s",resource="cpu",type="allocatable",unit="core"} 10
 scheduler_reservation_resource{name="%s",resource="cpu",type="allocated",unit="core"} 8
@@ -896,12 +896,21 @@ func TestResyncReservations(t *testing.T) {
 	// Register metrics into the global legacyregistry and reset to ensure isolation.
 	metrics.Register()
 	metrics.ReservationStatusPhase.Reset()
+	metrics.ReservationResource.Reset()
 
 	reservations := []*schedulingv1alpha1.Reservation{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "r-available"},
 			Status: schedulingv1alpha1.ReservationStatus{
 				Phase: schedulingv1alpha1.ReservationAvailable,
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10000m"),
+					corev1.ResourceMemory: resource.MustParse("10Gi"),
+				},
+				Allocated: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("5000m"),
+					corev1.ResourceMemory: resource.MustParse("5Gi"),
+				},
 			},
 		},
 		{
@@ -942,6 +951,21 @@ scheduler_reservation_status_phase{name="r-pending",phase="Succeeded"} 0
 		t.Errorf("after first resync: %v", err)
 	}
 
+	// Verify resource metrics are recorded during resync.
+	expectedResourceMetrics := `
+# HELP scheduler_reservation_resource [ALPHA] Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.
+# TYPE scheduler_reservation_resource gauge
+scheduler_reservation_resource{name="r-available",resource="cpu",type="allocatable",unit="core"} 10
+scheduler_reservation_resource{name="r-available",resource="cpu",type="allocated",unit="core"} 5
+scheduler_reservation_resource{name="r-available",resource="cpu",type="utilization",unit="ratio"} 0.5
+scheduler_reservation_resource{name="r-available",resource="memory",type="allocatable",unit="Gi"} 10
+scheduler_reservation_resource{name="r-available",resource="memory",type="allocated",unit="Gi"} 5
+scheduler_reservation_resource{name="r-available",resource="memory",type="utilization",unit="ratio"} 0.5
+`
+	if err := testutil.GatherAndCompare(legacyregistry.DefaultGatherer, strings.NewReader(expectedResourceMetrics), "scheduler_reservation_resource"); err != nil {
+		t.Errorf("resource metrics after first resync: %v", err)
+	}
+
 	// Delete r-available so that the second resync should clean up its metrics via Reset.
 	err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Delete(context.TODO(), "r-available", metav1.DeleteOptions{})
 	assert.NoError(t, err)
@@ -974,6 +998,16 @@ scheduler_reservation_status_phase{name="r-pending",phase="Succeeded"} 0
 `
 	if err := testutil.GatherAndCompare(legacyregistry.DefaultGatherer, strings.NewReader(expectedAfterSecondResync), "scheduler_reservation_status_phase"); err != nil {
 		t.Errorf("after second resync (deleted r-available): %v", err)
+	}
+
+	// Second resync also clears resource metrics: r-available is deleted and
+	// r-pending has no Allocatable, so no reservation_resource metrics remain.
+	expectedResourceMetricsAfterSecondResync := `
+# HELP scheduler_reservation_resource [ALPHA] Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.
+# TYPE scheduler_reservation_resource gauge
+`
+	if err := testutil.GatherAndCompare(legacyregistry.DefaultGatherer, strings.NewReader(expectedResourceMetricsAfterSecondResync), "scheduler_reservation_resource"); err != nil {
+		t.Errorf("resource metrics after second resync: %v", err)
 	}
 }
 

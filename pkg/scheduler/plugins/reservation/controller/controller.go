@@ -431,9 +431,11 @@ func (c *Controller) resyncReservations() {
 		return
 	}
 	metrics.ResetReservationPhase()
+	metrics.ResetReservationResource()
 	for _, reservation := range reservations {
 		// record metrics
 		RecordReservationPhases(reservation)
+		RecordReservationResource(reservation)
 	}
 	klog.V(4).InfoS("resynced reservation metrics", "count", len(reservations))
 }
