@@ -508,7 +508,11 @@ func MatchLabels(podLabels map[string]string, selector labels.Selector) bool {
 }
 
 type RequiredReservationAffinity struct {
-	labelSelector         labels.Selector
+	labelSelector labels.Selector
+	// rawSelector preserves the original ReservationSelector map so that callers
+	// (e.g. the reservation cache white-list index) can perform key-based lookup
+	// without re-parsing the pod annotation.
+	rawSelector           map[string]string
 	nodeSelector          *nodeaffinity.NodeSelector
 	tolerations           []corev1.Toleration
 	tolerateUnschedulable bool
@@ -525,8 +529,10 @@ func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffini
 		return nil, nil
 	}
 	var selector labels.Selector
+	var rawSelector map[string]string
 	if len(reservationAffinity.ReservationSelector) > 0 {
 		selector = labels.SelectorFromSet(reservationAffinity.ReservationSelector)
+		rawSelector = reservationAffinity.ReservationSelector
 	}
 	var affinity *nodeaffinity.NodeSelector
 	if reservationAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
@@ -547,11 +553,28 @@ func GetRequiredReservationAffinity(pod *corev1.Pod) (*RequiredReservationAffini
 	}
 	return &RequiredReservationAffinity{
 		labelSelector:         selector,
+		rawSelector:           rawSelector,
 		nodeSelector:          affinity,
 		tolerations:           reservationAffinity.Tolerations,
 		tolerateUnschedulable: podToleratesUnschedulable,
 		name:                  reservationAffinity.Name,
 	}, nil
+}
+
+// GetReservationSelector returns a defensive copy of the original
+// reservationSelector map (RequiredDuringSchedulingIgnoredDuringExecution
+// .ReservationSelector). A copy is returned -- rather than the internal map --
+// so that callers cannot mutate the affinity object's internal state and
+// introduce data races. Returns nil when no selector was specified.
+func (s *RequiredReservationAffinity) GetReservationSelector() map[string]string {
+	if s == nil || len(s.rawSelector) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(s.rawSelector))
+	for k, v := range s.rawSelector {
+		out[k] = v
+	}
+	return out
 }
 
 // GetName returns the reservation name if it is specified in the reservation affinity.
