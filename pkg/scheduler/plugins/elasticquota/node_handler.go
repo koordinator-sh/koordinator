@@ -36,8 +36,14 @@ func (g *Plugin) OnNodeAdd(obj interface{}) {
 }
 
 func (g *Plugin) OnNodeUpdate(oldObj, newObj interface{}) {
-	newNode := newObj.(*corev1.Node)
-	oldNode := oldObj.(*corev1.Node)
+	newNode, ok := newObj.(*corev1.Node)
+	if !ok {
+		return
+	}
+	oldNode, ok := oldObj.(*corev1.Node)
+	if !ok {
+		return
+	}
 
 	if newNode.ResourceVersion == oldNode.ResourceVersion {
 		klog.Warningf("update node warning, update version for the same, nodeName:%v", newNode.Name)

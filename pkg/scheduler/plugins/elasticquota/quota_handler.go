@@ -65,7 +65,11 @@ func (g *Plugin) OnQuotaAdd(obj interface{}) {
 }
 
 func (g *Plugin) OnQuotaUpdate(oldObj, newObj interface{}) {
-	newQuota := newObj.(*schedulerv1alpha1.ElasticQuota)
+	newQuota, ok := newObj.(*schedulerv1alpha1.ElasticQuota)
+	if !ok {
+		klog.Errorf("quota is nil")
+		return
+	}
 
 	if newQuota.DeletionTimestamp != nil {
 		klog.Warningf("update quota warning, update is deleting: %v", newQuota.Name)
@@ -137,7 +141,10 @@ func (g *Plugin) OnQuotaDelete(obj interface{}) {
 func (g *Plugin) ReplaceQuotas(objs []interface{}) error {
 	quotas := make(map[string]*schedulerv1alpha1.ElasticQuota, len(objs))
 	for _, obj := range objs {
-		quota := obj.(*schedulerv1alpha1.ElasticQuota)
+		quota, ok := obj.(*schedulerv1alpha1.ElasticQuota)
+		if !ok {
+			continue
+		}
 		quotas[quota.Name] = quota
 	}
 
