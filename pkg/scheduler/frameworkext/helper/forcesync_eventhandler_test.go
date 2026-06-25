@@ -92,12 +92,17 @@ func TestSyncedEventHandler(t *testing.T) {
 	node.ResourceVersion = "100"
 	_, err = fakeClientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 	assert.NoError(t, err)
-	err = wait.PollUntil(1*time.Second, func() (done bool, err error) {
-		node, err := nodeInformer.Lister().Get("node-0")
-		assert.NoError(t, err)
-		assert.NotNil(t, node)
-		return node.ResourceVersion == "100", nil
-	}, wait.NeverStop)
+
+	// Use a timeout context to prevent indefinite waiting in case the update event is not received
+	pollCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err = wait.PollUntilContextCancel(pollCtx, 1*time.Second, true, func(ctx context.Context) (done bool, err error) {
+		updatedNode, err := nodeInformer.Lister().Get("node-0")
+		if err != nil || updatedNode == nil {
+			return false, nil
+		}
+		return updatedNode.ResourceVersion == "100", nil
+	})
 	assert.NoError(t, err)
 }
 
@@ -305,11 +310,16 @@ func TestSyncedEventHandlerWithReplace(t *testing.T) {
 	node.ResourceVersion = "100"
 	_, err = fakeClientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 	assert.NoError(t, err)
-	err = wait.PollUntil(1*time.Second, func() (done bool, err error) {
-		node, err := nodeInformer.Lister().Get("node-0")
-		assert.NoError(t, err)
-		assert.NotNil(t, node)
-		return node.ResourceVersion == "100", nil
-	}, wait.NeverStop)
+
+	// Use a timeout context to prevent indefinite waiting in case the update event is not received
+	pollCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err = wait.PollUntilContextCancel(pollCtx, 1*time.Second, true, func(ctx context.Context) (done bool, err error) {
+		updatedNode, err := nodeInformer.Lister().Get("node-0")
+		if err != nil || updatedNode == nil {
+			return false, nil
+		}
+		return updatedNode.ResourceVersion == "100", nil
+	})
 	assert.NoError(t, err)
 }
