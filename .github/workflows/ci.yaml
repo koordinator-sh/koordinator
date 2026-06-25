@@ -102,7 +102,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build the image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           platforms: linux/amd64
           push: false
@@ -134,7 +134,7 @@ jobs:
           password: ${{ secrets.ALIYUN_PWD }}
       - if: github.ref == 'refs/heads/main'
         name: Build and push the multi-arch images
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           platforms: linux/amd64,linux/arm64
           push: true
