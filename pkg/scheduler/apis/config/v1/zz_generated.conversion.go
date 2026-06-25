@@ -215,6 +215,9 @@ func autoConvert_v1_CoschedulingArgs_To_config_CoschedulingArgs(in *Coscheduling
 		return err
 	}
 	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableAsyncPreemption, &out.EnableAsyncPreemption, s); err != nil {
+		return err
+	}
 	out.AwareNetworkTopology = (*bool)(unsafe.Pointer(in.AwareNetworkTopology))
 	if err := metav1.Convert_Pointer_string_To_string(&in.DefaultMatchPolicy, &out.DefaultMatchPolicy, s); err != nil {
 		return err
@@ -238,6 +241,9 @@ func autoConvert_config_CoschedulingArgs_To_v1_CoschedulingArgs(in *config.Cosch
 		return err
 	}
 	out.EnablePreemption = (*bool)(unsafe.Pointer(in.EnablePreemption))
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableAsyncPreemption, &out.EnableAsyncPreemption, s); err != nil {
+		return err
+	}
 	out.AwareNetworkTopology = (*bool)(unsafe.Pointer(in.AwareNetworkTopology))
 	if err := metav1.Convert_string_To_Pointer_string(&in.DefaultMatchPolicy, &out.DefaultMatchPolicy, s); err != nil {
 		return err
@@ -598,6 +604,9 @@ func autoConvert_v1_ReservationArgs_To_config_ReservationArgs(in *ReservationArg
 	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnablePreemption, &out.EnablePreemption, s); err != nil {
 		return err
 	}
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableAsyncPreemption, &out.EnableAsyncPreemption, s); err != nil {
+		return err
+	}
 	if err := metav1.Convert_Pointer_int32_To_int32(&in.MinCandidateNodesPercentage, &out.MinCandidateNodesPercentage, s); err != nil {
 		return err
 	}
@@ -622,6 +631,9 @@ func Convert_v1_ReservationArgs_To_config_ReservationArgs(in *ReservationArgs, o
 
 func autoConvert_config_ReservationArgs_To_v1_ReservationArgs(in *config.ReservationArgs, out *ReservationArgs, s conversion.Scope) error {
 	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnablePreemption, &out.EnablePreemption, s); err != nil {
+		return err
+	}
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableAsyncPreemption, &out.EnableAsyncPreemption, s); err != nil {
 		return err
 	}
 	if err := metav1.Convert_int32_To_Pointer_int32(&in.MinCandidateNodesPercentage, &out.MinCandidateNodesPercentage, s); err != nil {
