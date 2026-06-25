@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -46,8 +47,10 @@ type Engine struct {
 }
 
 // NewEngine creates an Engine connected to the cluster at kubeconfig.
-// Pass "" to use ~/.kube/config.
-func NewEngine(kubeconfig string, provider nodeprovider.NodeProvider) (*Engine, error) {
+// qps and burst come from ScenarioConfig.ClientQPS / ClientBurst so the
+// scenario YAML controls client-side rate limits rather than hard-coding them.
+// Pass "" for kubeconfig to use ~/.kube/config.
+func NewEngine(kubeconfig string, qps float32, burst int, provider nodeprovider.NodeProvider) (*Engine, error) {
 	var cfg *rest.Config
 	var err error
 
@@ -60,8 +63,8 @@ func NewEngine(kubeconfig string, provider nodeprovider.NodeProvider) (*Engine, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to build kubeconfig: %w", err)
 	}
-	cfg.QPS = 200
-	cfg.Burst = 400
+	cfg.QPS = qps
+	cfg.Burst = burst
 
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
@@ -86,7 +89,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 			cfg.Name, scenarios.List())
 	}
 
-	runID := fmt.Sprintf("bench-%d", time.Now().UnixNano())
+	runID := uuid.New().String()
 	fmt.Printf("Starting benchmark: scenario=%s runID=%s\n", cfg.Name, runID)
 
 	if _, err := e.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 1}); err != nil {

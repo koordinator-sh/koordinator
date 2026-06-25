@@ -61,7 +61,7 @@ func main() {
 	// receives it in Week 2 when CreateNodes is wired into engine.Run.
 	provider := kwokprovider.New(nil)
 
-	engine, err := framework.NewEngine(*kubeconfig, provider)
+	engine, err := framework.NewEngine(*kubeconfig, cfg.ClientQPS, cfg.ClientBurst, provider)
 	if err != nil {
 		log.Fatalf("Failed to create engine: %v", err)
 	}
