@@ -29,6 +29,6 @@ echo "==> Waiting for koord-scheduler to be ready"
 kubectl wait --for=condition=ready pod \
   -l app=koord-scheduler \
   -n koordinator-system \
-  --timeout=120s || true
+  --timeout=120s
 
 echo "==> Done. Run: make -C test/perf benchmark"
