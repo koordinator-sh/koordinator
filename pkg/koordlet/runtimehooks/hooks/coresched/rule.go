@@ -101,6 +101,19 @@ func (r *Rule) IsKubeQOSCPUIdle(KubeQOS corev1.PodQOSClass) bool {
 	return false
 }
 
+// IsPodQOSCPUIdle returns whether cpu.idle should be set for a pod based on its
+// koordinator QoS class. This is used to set cpu.idle at the pod cgroup level
+// rather than the QoS-class root level, avoiding kubelet restart failures.
+// See: https://github.com/koordinator-sh/koordinator/issues/2732
+func (r *Rule) IsPodQOSCPUIdle(podQOS extension.QoSClass) bool {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	if val, exist := r.podQOSParams[podQOS]; exist {
+		return val.IsCPUIdle
+	}
+	return false
+}
+
 func (r *Rule) Update(ruleNew *Rule) bool {
 	r.lock.Lock()
 	defer r.lock.Unlock()
@@ -213,19 +226,6 @@ func (p *Plugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error {
 }
 
 func (p *Plugin) refreshForAllPods(podMetas []*statesinformer.PodMeta) error {
-	for _, kubeQOS := range []corev1.PodQOSClass{
-		corev1.PodQOSGuaranteed, corev1.PodQOSBurstable, corev1.PodQOSBestEffort} {
-		kubeQOSCtx := &protocol.KubeQOSContext{}
-		kubeQOSCtx.FromReconciler(kubeQOS)
-
-		if err := p.SetKubeQOSCPUIdle(kubeQOSCtx); err != nil {
-			klog.V(4).Infof("callback %s set cpu idle for kube qos %s failed, err: %v", name, kubeQOS, err)
-		} else {
-			kubeQOSCtx.ReconcilerDone(p.executor)
-			klog.V(5).Infof("callback %s set cpu idle for kube qos %s finished", name, kubeQOS)
-		}
-	}
-
 	sort.Slice(podMetas, func(i, j int) bool {
 		if podMetas[i].Pod == nil || podMetas[j].Pod == nil {
 			return podMetas[j].Pod == nil
@@ -241,6 +241,17 @@ func (p *Plugin) refreshForAllPods(podMetas []*statesinformer.PodMeta) error {
 		if qos := extension.QoSClass(filter.Filter(podMeta)); qos == extension.QoSSystem {
 			klog.V(6).Infof("skip refresh core sched cookie for pod %s whose QoS is SYSTEM", podMeta.Key())
 			continue
+		}
+
+		// pod-level cpu.idle: set at individual pod cgroup to avoid conflicting with
+		// kubelet's cpu.shares writes at the QoS-class root cgroup directory.
+		podCtx := &protocol.PodContext{}
+		podCtx.FromReconciler(podMeta)
+		if err := p.SetPodQOSCPUIdle(podCtx); err != nil {
+			klog.Warningf("callback %s set cpu idle for pod %s failed, err: %v", name, podMeta.Key(), err)
+		} else {
+			podCtx.ReconcilerDone(p.executor)
+			klog.V(5).Infof("callback %s set cpu idle for pod %s finished", name, podMeta.Key())
 		}
 
 		// sandbox-container-level
