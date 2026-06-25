@@ -48,17 +48,13 @@ var (
 			Name:      "reservation_status_phase",
 			Help:      `The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)`,
 		}, []string{"name", "phase"})
-	ReservationResource = utilmetrics.NewGCGaugeVec(
-		"reservation_resource",
-		prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Subsystem: schedulermetrics.SchedulerSubsystem,
-				Name:      "reservation_resource",
-				Help:      "Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.",
-			},
-			[]string{"type", "name", "resource", "unit"},
-		),
-	)
+	ReservationResource = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "reservation_resource",
+			Help:      "Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.",
+		},
+		[]string{"type", "name", "resource", "unit"})
 
 	PodSchedulingEvaluatedNodes = metrics.NewHistogram(
 		&metrics.HistogramOpts{
@@ -144,6 +140,7 @@ var (
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ReservationStatusPhase,
+		ReservationResource,
 		PodSchedulingEvaluatedNodes,
 		PodSchedulingFeasibleNodes,
 		ElasticQuotaProcessLatency,
@@ -155,7 +152,6 @@ var (
 	}
 
 	gcMetricsList = []prometheus.Collector{
-		ReservationResource.GetGaugeVec(),
 		JobPreemptionDuration.GetHistogramVec(),
 	}
 )
@@ -221,6 +217,10 @@ func ResetReservationPhase() {
 	ReservationStatusPhase.Reset()
 }
 
+func ResetReservationResource() {
+	ReservationResource.Reset()
+}
+
 // RecordReservationResourceByTypeWithUnit records the resource record of a reservation as a metric.
 func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, value float64) {
 	labels := prometheus.Labels{
@@ -229,7 +229,7 @@ func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, v
 		reservationResourceKey:     resource,
 		reservationResourceUnitKey: unit,
 	}
-	ReservationResource.WithSet(labels, value)
+	ReservationResource.With(labels).Set(value)
 }
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
