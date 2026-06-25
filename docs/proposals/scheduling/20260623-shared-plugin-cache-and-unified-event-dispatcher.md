@@ -6,7 +6,7 @@ reviewers:
   - "@saintube"
   - "@ZiMengSheng"
 creation-date: 2026-06-23
-last-updated: 2026-06-24
+last-updated: 2026-06-25
 status: provisional
 ---
 
@@ -172,11 +172,13 @@ plugin-supplied string. A plugin registers its cache from within `New()`:
 // In FrameworkExtenderFactory — registration point available to all plugins via ExtendedHandle.
 // If a cache for the given key already exists (registered by an earlier profile), the existing
 // instance is returned and create() is not called. This guarantees exactly-once initialization.
-// The handle and informerFactory are passed explicitly to create() so that the cache's
-// dependencies are visible at the call site rather than captured implicitly through closures.
+// ExtendedHandle is passed to create() so dependencies are explicit at the call site.
+// Plugins access informer factories through handle (e.g., handle.KoordinatorSharedInformerFactory(),
+// handle.SharedInformerFactory()) rather than receiving them as separate parameters, since
+// ExtendedHandle already exposes the full set of shared factories.
 func (f *FrameworkExtenderFactory) GetOrRegisterSharedCache(
     key string,
-    create func(handle ExtendedHandle, factory informers.SharedInformerFactory) SharedPluginCache,
+    create func(handle ExtendedHandle) SharedPluginCache,
 ) SharedPluginCache
 ```
 
@@ -194,8 +196,10 @@ Plugin usage in `New()`:
 ```go
 // DeviceShare New()
 cache := extHandle.GetOrRegisterSharedCache("deviceshare",
-    func(handle frameworkext.ExtendedHandle, factory informers.SharedInformerFactory) frameworkext.SharedPluginCache {
-        return newNodeDeviceCache(handle, factory) // Device CRD handlers registered inside Start()
+    func(handle frameworkext.ExtendedHandle) frameworkext.SharedPluginCache {
+        // handle.KoordinatorSharedInformerFactory() provides Device CRD informers;
+        // Device CRD handlers are registered inside Start().
+        return newNodeDeviceCache(handle)
     })
 p.nodeDeviceCache = cache.(*nodeDeviceCache)
 ```
@@ -210,8 +214,8 @@ arrive:
 
 1. **Profile construction.** `FrameworkExtenderFactory.NewFrameworkExtender` is called once per
    profile. Each profile's plugins call `New()`, which calls `GetOrRegisterSharedCache`. The first
-   call for a given key invokes `create(handle, factory)` and stores the result; subsequent profiles
-   return the stored instance. No goroutines are started and no informer handlers are registered yet.
+   call for a given key invokes `create(handle)` and stores the result; subsequent profiles return
+   the stored instance. No goroutines are started and no informer handlers are registered yet.
 
 2. **Cache start.** After all profiles are built, `StartSharedCaches(ctx)` is called. This invokes
    `Start(ctx)` on each registered cache exactly once. Inside `Start`, each cache registers its
@@ -249,25 +253,59 @@ without modifying any upstream kube-scheduler code.
 
 #### Reserve and Unreserve
 
-Reserve and Unreserve are scheduling-cycle operations, not informer events. Each plugin's
-`Reserve` and `Unreserve` extension point methods call directly into their shared cache instance
-to apply or roll back assumed allocations. The `SharedPluginCache` interface does not include
-these methods, and the framework does not dispatch them centrally, for two reasons:
+Reserve and Unreserve are scheduling-cycle operations, not informer events, and are not
+dispatched centrally through `SharedPluginCache`. However, plugins that write assumed
+allocations during Reserve introduce a consistency risk with the shared cache model: an
+informer event arriving after pod binding also writes allocation state from pod annotations,
+creating a double-count risk if the assumed state is not tracked and cleared. Without an
+explicit contract, a Reserve that writes to the cache and an informer event for the same pod
+can both apply their allocations, oversubscribing the node.
 
-- Reserve and Unreserve require plugin-specific state from `framework.CycleState` that differs
-  across plugins and cannot be generalized into a shared interface.
-- Concurrent Reserve calls from different scheduling cycles are already serialized by the
-  per-node lock present in each cache (e.g., `nodeDevice.lock` in DeviceShare). No additional
-  synchronization layer is needed at the interface level.
+To address this, we introduce an optional `CacheReserver` interface for caches that modify
+state during Reserve. Implementing it is required for any shared cache that touches allocation
+state in its plugin's Reserve extension point:
 
-A correctness benefit of the shared model: because Reserve writes to the single shared cache
-instance, assumed allocations are immediately visible across all profiles. The prior per-profile
-model allowed a burst of pods from different profiles to oversubscribe a node during the window
-between a `Reserve` call and the informer event that follows binding; the shared cache closes
-this gap entirely.
+```go
+// CacheReserver is an optional interface for SharedPluginCache implementations that
+// write assumed allocations during the Reserve scheduling phase. Any shared cache
+// modified during Reserve must implement this interface to uphold the assume/forget
+// contract and prevent double-counting with informer events.
+type CacheReserver interface {
+    SharedPluginCache
+    // AssumePod marks pod as having an assumed allocation on nodeName. Called after
+    // the plugin's Reserve writes allocation state to the cache. The cache must track
+    // this pod in an internal assumed set until ForgetPod removes it or an authoritative
+    // informer event supersedes it.
+    AssumePod(pod *corev1.Pod, nodeName string) error
+    // ForgetPod removes the assumed entry for pod. Called on Unreserve to roll back
+    // assumed allocation state. Must be idempotent — safe to call even if AssumePod
+    // was never called for this pod.
+    ForgetPod(pod *corev1.Pod) error
+}
+```
 
-`AddPod` and `RemovePod` (called during preemption via `RunFilterPluginsWithNominatedPods`)
-similarly operate directly on the shared cache and follow the same per-node locking model.
+**Invariants that `CacheReserver` implementations must uphold:**
+
+1. **No double-counting.** `OnPodAdd` (informer event) must check the assumed set before
+   applying event-driven state. If the pod is already assumed, the handler merges or replaces
+   the assumed state with authoritative event data and calls `ForgetPod` — it does not add a
+   second allocation entry.
+2. **Complete rollback.** `ForgetPod` must fully revert all state written by `AssumePod` and
+   the preceding Reserve, regardless of how far the Reserve phase progressed.
+3. **Lock consistency.** The per-node lock that serializes informer event writes must also
+   cover `AssumePod` and `ForgetPod`. This prevents a Reserve and an `OnPodAdd` for the same
+   node from interleaving.
+
+Of the three initial migration targets, DeviceShare and Reservation write assumed state during
+Reserve and must implement `CacheReserver`. NodeNUMAResource requires analysis during migration
+to determine whether its `resourceManager` writes assumed state during Reserve.
+
+A key correctness benefit: since Reserve writes to the single shared cache, assumed allocations
+are immediately visible across all profiles, eliminating the assume-window gap from Story 1.
+
+`AddPod` and `RemovePod` (used during preemption via `RunFilterPluginsWithNominatedPods`) are
+not assumed allocations and do not require the assume/forget contract; they operate directly on
+the shared cache under per-node locks.
 
 #### Plugin migration plan
 
@@ -335,3 +373,6 @@ members of `ExtendedHandle`.
 - 2026-06-24: Address review feedback — add Reserve/Unreserve discussion, initialization order
   section, explicit handle/factory parameters for GetOrRegisterSharedCache, and snapshot data
   structure design challenge acknowledgment.
+- 2026-06-25: Address review feedback — simplify GetOrRegisterSharedCache to pass ExtendedHandle
+  only (factory accessible via handle.KoordinatorSharedInformerFactory()); replace Reserve/Unreserve
+  direct-call model with explicit CacheReserver optional interface and assume/forget contract.
