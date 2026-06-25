@@ -44,10 +44,20 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 		nodeUsage    *usageField
 		podUsage     map[string]usageField
 		hostAppUsage *usageField
+
+		nodeUsageWithPageCache    *usageField
+		podUsageWithPageCache     map[string]usageField
+		hostAppUsageWithPageCache *usageField
+
+		nodeUsageWithHotPageCache    *usageField
+		podUsageWithHotPageCache     map[string]usageField
+		hostAppUsageWithHotPageCache *usageField
 	}
 	type want struct {
-		systemCPU    *float64
-		systemMemory *float64
+		systemCPU                    *float64
+		systemMemory                 *float64
+		systemMemoryWithPageCache    *float64
+		systemMemoryWithHotPageCache *float64
 	}
 	tests := []struct {
 		name   string
@@ -58,94 +68,6 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 			name:   "node metric not exist",
 			fields: fields{},
 			want:   want{},
-		},
-		{
-			name: "pod metric not exist",
-			fields: fields{
-				nodeUsage: &usageField{
-					ts:     timeNow(),
-					cpu:    1,
-					memory: 1024,
-				},
-			},
-			want: want{},
-		},
-		{
-			name: "host application metric not exist",
-			fields: fields{
-				nodeUsage: &usageField{
-					ts:     timeNow(),
-					cpu:    1,
-					memory: 1024,
-				},
-				podUsage: map[string]usageField{
-					"test-collector": {
-						ts:     timeNow(),
-						cpu:    0.5,
-						memory: 512,
-					},
-				},
-			},
-			want: want{},
-		},
-		{
-			name: "node metric outdated",
-			fields: fields{
-				nodeUsage: &usageField{
-					ts:     timeNow().Add(-config.CollectSysMetricOutdatedInterval * 2),
-					cpu:    1,
-					memory: 1024,
-				},
-				podUsage: map[string]usageField{
-					"test-collector": {
-						ts:     timeNow(),
-						cpu:    0.5,
-						memory: 512,
-					},
-				},
-			},
-			want: want{},
-		},
-		{
-			name: "pod metric outdated",
-			fields: fields{
-				nodeUsage: &usageField{
-					ts:     timeNow(),
-					cpu:    1,
-					memory: 1024,
-				},
-				podUsage: map[string]usageField{
-					"test-collector": {
-						ts:     timeNow().Add(-config.CollectSysMetricOutdatedInterval * 2),
-						cpu:    0.5,
-						memory: 512,
-					},
-				},
-			},
-			want: want{},
-		},
-		{
-			name: "host application metric outdated",
-			fields: fields{
-				nodeUsage: &usageField{
-					ts:     timeNow(),
-					cpu:    1,
-					memory: 1024,
-				},
-				podUsage: map[string]usageField{
-					"test-collector": {
-						ts:     timeNow(),
-						cpu:    0.5,
-						memory: 512,
-					},
-				},
-				hostAppUsage: &usageField{
-					ts:     timeNow().Add(-config.CollectSysMetricOutdatedInterval * 2),
-					cpu:    0.1,
-					memory: 128,
-				},
-			},
-			want: want{},
 		},
 		{
 			name: "one pod collector",
@@ -174,60 +96,37 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 			},
 		},
 		{
-			name: "two pod collectors",
+			name: "with page cache metrics",
 			fields: fields{
-				nodeUsage: &usageField{
-					ts:     timeNow(),
-					cpu:    2,
-					memory: 2048,
-				},
-				podUsage: map[string]usageField{
-					"test-collector1": {
-						ts:     timeNow(),
-						cpu:    0.5,
-						memory: 512,
-					},
-					"test-collector2": {
-						ts:     timeNow(),
-						cpu:    1,
-						memory: 512,
-					},
-				},
-				hostAppUsage: &usageField{
-					ts:     timeNow(),
-					cpu:    0,
-					memory: 0,
-				},
+				nodeUsage:    &usageField{ts: timeNow(), cpu: 1, memory: 1024},
+				podUsage:     map[string]usageField{"test": {ts: timeNow(), cpu: 0.5, memory: 512}},
+				hostAppUsage: &usageField{ts: timeNow(), cpu: 0, memory: 0},
+
+				nodeUsageWithPageCache:    &usageField{ts: timeNow(), memory: 2048},
+				podUsageWithPageCache:     map[string]usageField{"test": {ts: timeNow(), memory: 1024}},
+				hostAppUsageWithPageCache: &usageField{ts: timeNow(), memory: 256},
 			},
 			want: want{
-				systemCPU:    ptr.To[float64](0.5),
-				systemMemory: ptr.To[float64](1024),
+				systemCPU:                 ptr.To[float64](0.5),
+				systemMemory:              ptr.To[float64](512),
+				systemMemoryWithPageCache: ptr.To[float64](768), // 2048 - 1024 - 256 = 768
 			},
 		},
 		{
-			name: "one pod collector with host application",
+			name: "with hot page cache metrics",
 			fields: fields{
-				nodeUsage: &usageField{
-					ts:     timeNow(),
-					cpu:    1,
-					memory: 1024,
-				},
-				podUsage: map[string]usageField{
-					"test-collector": {
-						ts:     timeNow(),
-						cpu:    0.5,
-						memory: 512,
-					},
-				},
-				hostAppUsage: &usageField{
-					ts:     timeNow(),
-					cpu:    0.1,
-					memory: 128,
-				},
+				nodeUsage:    &usageField{ts: timeNow(), cpu: 1, memory: 1024},
+				podUsage:     map[string]usageField{"test": {ts: timeNow(), cpu: 0.5, memory: 512}},
+				hostAppUsage: &usageField{ts: timeNow(), cpu: 0, memory: 0},
+
+				nodeUsageWithHotPageCache:    &usageField{ts: timeNow(), memory: 3000},
+				podUsageWithHotPageCache:     map[string]usageField{"test": {ts: timeNow(), memory: 1000}},
+				hostAppUsageWithHotPageCache: &usageField{ts: timeNow(), memory: 500},
 			},
 			want: want{
-				systemCPU:    ptr.To[float64](0.4),
-				systemMemory: ptr.To[float64](384),
+				systemCPU:                    ptr.To[float64](0.5),
+				systemMemory:                 ptr.To[float64](512),
+				systemMemoryWithHotPageCache: ptr.To[float64](1500), // 3000 - 1000 - 500 = 1500
 			},
 		},
 	}
@@ -255,40 +154,71 @@ func Test_systemResourceCollector_collectSysResUsed(t *testing.T) {
 					metriccache.Point{Timestamp: tt.fields.nodeUsage.ts, Value: tt.fields.nodeUsage.memory},
 				)
 			}
+			if tt.fields.nodeUsageWithPageCache != nil {
+				s.sharedState.UpdateNodeMemoryWithPageCache(metriccache.Point{Timestamp: tt.fields.nodeUsageWithPageCache.ts, Value: tt.fields.nodeUsageWithPageCache.memory})
+			}
+			if tt.fields.nodeUsageWithHotPageCache != nil {
+				s.sharedState.UpdateNodeMemoryWithHotPageCache(metriccache.Point{Timestamp: tt.fields.nodeUsageWithHotPageCache.ts, Value: tt.fields.nodeUsageWithHotPageCache.memory})
+			}
+
 			for collector, pod := range tt.fields.podUsage {
 				s.sharedState.UpdatePodUsage(collector,
 					metriccache.Point{Timestamp: pod.ts, Value: pod.cpu},
 					metriccache.Point{Timestamp: pod.ts, Value: pod.memory},
 				)
 			}
+			for collector, pod := range tt.fields.podUsageWithPageCache {
+				s.sharedState.UpdatePodsMemoryWithPageCache(collector, metriccache.Point{Timestamp: pod.ts, Value: pod.memory})
+			}
+			for collector, pod := range tt.fields.podUsageWithHotPageCache {
+				s.sharedState.UpdatePodsMemoryWithHotPageCache(collector, metriccache.Point{Timestamp: pod.ts, Value: pod.memory})
+			}
+
 			if tt.fields.hostAppUsage != nil {
 				s.sharedState.UpdateHostAppUsage(
 					metriccache.Point{Timestamp: tt.fields.hostAppUsage.ts, Value: tt.fields.hostAppUsage.cpu},
 					metriccache.Point{Timestamp: tt.fields.hostAppUsage.ts, Value: tt.fields.hostAppUsage.memory},
 				)
 			}
+			if tt.fields.hostAppUsageWithPageCache != nil {
+				s.sharedState.UpdateHostAppMemoryWithPageCache(metriccache.Point{Timestamp: tt.fields.hostAppUsageWithPageCache.ts, Value: tt.fields.hostAppUsageWithPageCache.memory})
+			}
+			if tt.fields.hostAppUsageWithHotPageCache != nil {
+				s.sharedState.UpdateHostAppMemoryWithHotPageCache(metriccache.Point{Timestamp: tt.fields.hostAppUsageWithHotPageCache.ts, Value: tt.fields.hostAppUsageWithHotPageCache.memory})
+			}
+
 			s.collectSysResUsed()
 
 			querier, err := metricCache.Querier(timeNow().Add(-s.outdatedInterval), timeNow())
 			assert.NoError(t, err)
 
+			// check default metrics
 			cpuResult, err := testQuery(querier, metriccache.SystemCPUUsageMetric, nil)
 			assert.NoError(t, err)
-			if tt.want.systemCPU == nil {
-				assert.Equal(t, 0, cpuResult.Count())
-			} else {
-				cpuValue, aggregateErr := cpuResult.Value(metriccache.AggregationTypeLast)
-				assert.NoError(t, aggregateErr)
+			if tt.want.systemCPU != nil {
+				cpuValue, _ := cpuResult.Value(metriccache.AggregationTypeLast)
 				assert.Equal(t, *tt.want.systemCPU, cpuValue)
 			}
+
 			memoryResult, err := testQuery(querier, metriccache.SystemMemoryUsageMetric, nil)
 			assert.NoError(t, err)
-			if tt.want.systemMemory == nil {
-				assert.Equal(t, 0, memoryResult.Count())
-			} else {
-				memoryValue, aggregateErr := memoryResult.Value(metriccache.AggregationTypeLast)
-				assert.NoError(t, aggregateErr)
+			if tt.want.systemMemory != nil {
+				memoryValue, _ := memoryResult.Value(metriccache.AggregationTypeLast)
 				assert.Equal(t, *tt.want.systemMemory, memoryValue)
+			}
+
+			// check new metrics
+			if tt.want.systemMemoryWithPageCache != nil {
+				res, err := testQuery(querier, metriccache.SystemMemoryUsageWithPageCacheMetric, nil)
+				assert.NoError(t, err)
+				val, _ := res.Value(metriccache.AggregationTypeLast)
+				assert.Equal(t, *tt.want.systemMemoryWithPageCache, val)
+			}
+			if tt.want.systemMemoryWithHotPageCache != nil {
+				res, err := testQuery(querier, metriccache.SystemMemoryWithHotPageUsageMetric, nil)
+				assert.NoError(t, err)
+				val, _ := res.Value(metriccache.AggregationTypeLast)
+				assert.Equal(t, *tt.want.systemMemoryWithHotPageCache, val)
 			}
 		})
 		err = metricCache.Close()

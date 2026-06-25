@@ -624,7 +624,22 @@ func (r *nodeMetricInformer) collectSystemMetric(queryparam metriccache.QueryPar
 		return rl, 0, err
 	}
 
-	memAggregateResult, err := doQuery(querier, metriccache.SystemMemoryUsageMetric, nil)
+	var memAggregateResult metriccache.AggregateResult
+	nodeMemoryCollectPolicy := defaultMemoryCollectPolicy
+	nodeMetricSpec := r.getNodeMetricSpec()
+	if nodeMetricSpec != nil && nodeMetricSpec.CollectPolicy != nil && nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy != nil {
+		nodeMemoryCollectPolicy = *nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy
+	}
+	if nodeMemoryCollectPolicy == slov1alpha1.UsageWithoutPageCache {
+		memAggregateResult, err = doQuery(querier, metriccache.SystemMemoryUsageMetric, nil)
+	} else if nodeMemoryCollectPolicy == slov1alpha1.UsageWithHotPageCache && system.GetIsStartColdMemory() {
+		memAggregateResult, err = doQuery(querier, metriccache.SystemMemoryWithHotPageUsageMetric, nil)
+	} else if nodeMemoryCollectPolicy == slov1alpha1.UsageWithPageCache {
+		memAggregateResult, err = doQuery(querier, metriccache.SystemMemoryUsageWithPageCacheMetric, nil)
+	} else {
+		memAggregateResult, err = doQuery(querier, metriccache.SystemMemoryUsageMetric, nil)
+	}
+
 	if err != nil {
 		return rl, 0, err
 	}

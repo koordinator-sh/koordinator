@@ -352,10 +352,13 @@ DirectMap1G:           0 kB`
 					helper.WriteFileContents(system.KidledUseHierarchy.Path(""), `1`)
 					helper.SetResourcesSupported(true, system.MemoryIdlePageStats)
 					helper.WriteProcSubFileContents(system.ProcMemInfoName, meminfo)
+					helper.WriteCgroupFileContents("", system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testPodParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryStat, testMemStat)
 					helper.WriteCgroupFileContents(testContainerParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
+					helper.WriteCgroupFileContents(testHostAppParentDir, system.MemoryStat, testMemStat)
+					helper.WriteCgroupFileContents(testHostAppParentDir, system.MemoryIdlePageStats, testMemoryIdlePageStatsContent)
 				},
 			},
 			wantstrated: false,
@@ -394,6 +397,7 @@ DirectMap1G:           0 kB`
 				appendableDB:    metricCache,
 				metricDB:        metricCache,
 				started:         atomic.NewBool(false),
+				sharedState:     framework.NewSharedState(),
 			}
 			if tt.name == "states informer nil" {
 				c.statesInformer = nil
@@ -514,6 +518,7 @@ DirectMap1G:           0 kB`
 		metricDB:        metricCache,
 		started:         atomic.NewBool(false),
 		coldBoundary:    kidledConfig.KidledColdBoundary,
+		sharedState:     framework.NewSharedState(),
 	}
 	testNow := time.Now()
 	metrics, err := c.collectNodeColdPageInfo()
@@ -747,6 +752,7 @@ total_unevictable 0
 				appendableDB:    metricCache,
 				metricDB:        metricCache,
 				started:         atomic.NewBool(false),
+				sharedState:     framework.NewSharedState(),
 			}
 			assert.NotPanics(t, func() {
 				c.collectPodsColdPageInfo()
@@ -922,6 +928,7 @@ total_unevictable 0
 				statesInformer:  statesInformer,
 				appendableDB:    metricCache,
 				metricDB:        metricCache,
+				sharedState:     framework.NewSharedState(),
 			}
 			got, err := k.collectHostAppsColdPageInfo()
 			assert.Equal(t, tt.wantErr, err != nil)
