@@ -211,6 +211,16 @@ type ReservationArgs struct {
 	// PreAllocationConfig defines the configuration for pre-allocation feature.
 	// +optional
 	PreAllocationConfig *PreAllocationConfig `json:"preAllocationConfig,omitempty"`
+	// IgnoredResources is the list of *extended* resources that the reservation fit filter should ignore
+	// during scalar resource checks (e.g. "example.com/gpu"). Native resources (cpu/memory/pods/
+	// ephemeral-storage/hugepages-*) are rejected by config validation.
+	// +optional
+	IgnoredResources []string `json:"ignoredResources,omitempty"`
+	// IgnoredResourceGroups is the list of extended-resource vendor prefixes (DNS subdomains) that
+	// the reservation fit filter should ignore (e.g. ["example.com"] ignores "example.com/*").
+	// A group name can't contain '/', and the reserved "kubernetes.io" namespace is rejected.
+	// +optional
+	IgnoredResourceGroups []string `json:"ignoredResourceGroups,omitempty"`
 }
 
 // PreAllocationConfig defines the configuration for pre-allocation feature.
