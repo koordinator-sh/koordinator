@@ -17,6 +17,8 @@ limitations under the License.
 package kwok
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,7 +31,7 @@ const RunIDLabel = "benchmark.koordinator.sh/run-id"
 // buildKwokNode constructs a fake Node object that the kwok controller simulates as Ready.
 // Uses stable kubernetes.io/os and kubernetes.io/arch labels instead of the
 // deprecated beta.kubernetes.io/* equivalents.
-func buildKwokNode(name, runID string, spec types.NodeSpec) *corev1.Node {
+func buildKwokNode(name, runID string, spec types.NodeSpec) (*corev1.Node, error) {
 	cpu := spec.CPU
 	if cpu == "" {
 		cpu = "32"
@@ -54,9 +56,18 @@ func buildKwokNode(name, runID string, spec types.NodeSpec) *corev1.Node {
 		labels[k] = v
 	}
 
+	cpuQty, err := resource.ParseQuantity(cpu)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CPU quantity %q: %w", cpu, err)
+	}
+	memQty, err := resource.ParseQuantity(memory)
+	if err != nil {
+		return nil, fmt.Errorf("invalid memory quantity %q: %w", memory, err)
+	}
+
 	rl := corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse(cpu),
-		corev1.ResourceMemory: resource.MustParse(memory),
+		corev1.ResourceCPU:    cpuQty,
+		corev1.ResourceMemory: memQty,
 		corev1.ResourcePods:   *resource.NewQuantity(int64(maxPods), resource.DecimalSI),
 	}
 
@@ -90,5 +101,5 @@ func buildKwokNode(name, runID string, spec types.NodeSpec) *corev1.Node {
 				Message:            "kwok node is ready",
 			}},
 		},
-	}
+	}, nil
 }

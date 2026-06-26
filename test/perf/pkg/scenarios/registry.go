@@ -35,11 +35,18 @@ func Get(name string) (Scenario, bool) {
 	return s, ok
 }
 
-// List returns all registered scenario names.
 func List() []string {
 	names := make([]string, 0, len(registry))
 	for name := range registry {
 		names = append(names, name)
+	}
+	// Deterministic ordering for stable error messages and reports.
+	for i := 0; i < len(names); i++ {
+		for j := i + 1; j < len(names); j++ {
+			if names[j] < names[i] {
+				names[i], names[j] = names[j], names[i]
+			}
+		}
 	}
 	return names
 }

@@ -51,11 +51,11 @@ func (s *BasicScenario) Name() string { return "basic" }
 // Only creates the namespace on NotFound; other errors are returned
 // immediately so they are not masked by a misleading create error.
 func (s *BasicScenario) Setup(
-	ctx       context.Context,
-	client    kubernetes.Interface,
-	_         dynamic.Interface,
-	cfg       types.ScenarioConfig,
-	_         string,
+	ctx context.Context,
+	client kubernetes.Interface,
+	_ dynamic.Interface,
+	cfg types.ScenarioConfig,
+	_ string,
 ) error {
 	ns := cfg.Namespace
 	if ns == "" {
@@ -117,11 +117,15 @@ func (s *BasicScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.
 		labels["koordinator.sh/qosClass"] = cfg.QoSClass
 	}
 
+	runIDPrefix := runID
+	if len(runIDPrefix) > 8 {
+		runIDPrefix = runIDPrefix[:8]
+	}
 	pods := make([]*corev1.Pod, 0, cfg.PodCount)
 	for i := 0; i < cfg.PodCount; i++ {
 		pods = append(pods, &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:        fmt.Sprintf("bench-pod-%s-%04d", runID[:8], i),
+				Name:        fmt.Sprintf("bench-pod-%s-%04d", runIDPrefix, i),
 				Namespace:   ns,
 				Labels:      labels,
 				Annotations: cfg.Annotations,
@@ -150,10 +154,10 @@ func (s *BasicScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.
 // Uses s.namespace set during Setup so pods are deleted from the correct
 // namespace even when cfg.Namespace is overridden in the scenario YAML.
 func (s *BasicScenario) Teardown(
-	ctx    context.Context,
+	ctx context.Context,
 	client kubernetes.Interface,
-	_      dynamic.Interface,
-	runID  string,
+	_ dynamic.Interface,
+	runID string,
 ) error {
 	ns := s.namespace
 	if ns == "" {
