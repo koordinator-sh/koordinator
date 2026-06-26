@@ -44,9 +44,16 @@ func (p *Provider) CreateNodes(ctx context.Context, runID string, spec types.Nod
 		fmt.Printf("[kwok stub] Would create %d nodes for runID=%s\n", count, runID)
 		return nil
 	}
+	runIDPrefix := runID
+	if len(runIDPrefix) > 8 {
+		runIDPrefix = runIDPrefix[:8]
+	}
 	for i := 0; i < count; i++ {
-		name := fmt.Sprintf("kwok-bench-node-%s-%04d", runID[:8], i)
-		node := buildKwokNode(name, runID, spec)
+		name := fmt.Sprintf("kwok-bench-node-%s-%04d", runIDPrefix, i)
+		node, err := buildKwokNode(name, runID, spec)
+		if err != nil {
+			return err
+		}
 		if _, err := p.client.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{}); err != nil {
 			return fmt.Errorf("failed to create node %q: %w", name, err)
 		}
