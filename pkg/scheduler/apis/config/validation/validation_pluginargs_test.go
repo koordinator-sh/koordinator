@@ -465,6 +465,92 @@ func TestValidateReservationArgs(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "valid ignoredResourceGroups",
+			args: &config.ReservationArgs{
+				IgnoredResources:      []string{"example.com/gpu"},
+				IgnoredResourceGroups: []string{"example.com"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "ignoredResourceGroups contains slash",
+			args: &config.ReservationArgs{
+				IgnoredResourceGroups: []string{"example.com/invalid"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "ignoredResources with invalid label name",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"-invalid/gpu"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "ignoredResourceGroups with invalid label name",
+			args: &config.ReservationArgs{
+				IgnoredResourceGroups: []string{"-invalid"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty ignoredResources and ignoredResourceGroups",
+			args: &config.ReservationArgs{
+				IgnoredResources:      []string{},
+				IgnoredResourceGroups: []string{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "native resource cpu rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"cpu"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "native resource memory rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"memory"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "native resource pods rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"pods"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "native resource ephemeral-storage rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"ephemeral-storage"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "hugepages-2Mi rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"hugepages-2Mi"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "kubernetes.io-prefixed name rejected from ignoredResources",
+			args: &config.ReservationArgs{
+				IgnoredResources: []string{"kubernetes.io/gpu"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "kubernetes.io rejected as ignoredResourceGroup",
+			args: &config.ReservationArgs{
+				IgnoredResourceGroups: []string{"kubernetes.io"},
+			},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -408,6 +408,16 @@ func (in *ReservationArgs) DeepCopyInto(out *ReservationArgs) {
 		*out = new(PreAllocationConfig)
 		**out = **in
 	}
+	if in.IgnoredResources != nil {
+		in, out := &in.IgnoredResources, &out.IgnoredResources
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.IgnoredResourceGroups != nil {
+		in, out := &in.IgnoredResourceGroups, &out.IgnoredResourceGroups
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	return
 }
 
