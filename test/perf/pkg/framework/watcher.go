@@ -77,6 +77,9 @@ func (w *Watcher) Start(ctx context.Context) error {
 			if !ok {
 				return fmt.Errorf("watch channel closed unexpectedly")
 			}
+			if event.Type == watch.Error {
+				return fmt.Errorf("pod watch error: %v", event.Object)
+			}
 			if event.Type != watch.Modified && event.Type != watch.Added {
 				continue
 			}
