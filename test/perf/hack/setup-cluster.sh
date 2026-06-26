@@ -18,7 +18,7 @@ kubectl apply -f "${KWOK_BASE}/stage-fast.yaml"
 echo "==> Installing Koordinator ${KOORDINATOR_VERSION}"
 export MANAGER_IMG="ghcr.io/koordinator-sh/koord-manager:${KOORDINATOR_VERSION}"
 export SCHEDULER_IMG="ghcr.io/koordinator-sh/koord-scheduler:${KOORDINATOR_VERSION}"
-SCRIPT="$(dirname "$0")/../../hack/deploy_kind.sh"
+SCRIPT="$(dirname "$0")/../../../hack/deploy_kind.sh"
 if [ -f "$SCRIPT" ]; then
   bash "$SCRIPT"
 else
