@@ -28,13 +28,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	apiresource "k8s.io/component-helpers/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -713,6 +716,213 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 	for _, v := range nominatedReservationCount {
 		assert.Equal(t, 1, v)
 	}
+}
+
+func TestNominateReservationFirstFit(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ReservationFirstFitNomination, true)()
+
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-1",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:    resource.MustParse("96"),
+				corev1.ResourceMemory: resource.MustParse("1886495404Ki"),
+			},
+		},
+	}
+
+	resourceList := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("16"),
+		corev1.ResourceMemory: resource.MustParse("32Gi"),
+	}
+	labels := map[string]string{
+		"foo": "bar",
+	}
+	suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
+	var reservations []*schedulingv1alpha1.Reservation
+	for i := 0; i < 3; i++ {
+		r := newTestReservation(t, fmt.Sprintf("test-r-%d", i), labels, labels, node.Name, resourceList)
+		reservations = append(reservations, r)
+		_, err := suit.extenderFactory.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), r, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	for _, v := range reservations {
+		nodeInfo.(*framework.NodeInfo).AddPod(reservationutil.NewReservePod(v))
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-1",
+			Namespace: "default",
+			Labels:    labels,
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: resourceList,
+					},
+				},
+			},
+		},
+	}
+	affinity := &apiext.ReservationAffinity{
+		ReservationSelector: labels,
+	}
+	assert.NoError(t, apiext.SetReservationAffinity(pod, affinity))
+	_, err = suit.fw.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	suit.start(t)
+	pl := p.(*Plugin)
+	assert.True(t, pl.enableReservationFirstFit)
+
+	cycleState := framework.NewCycleState()
+	pl.BeforePreFilter(context.TODO(), cycleState, pod)
+	pl.PreFilter(context.TODO(), cycleState, pod, nil)
+	pl.Filter(context.TODO(), cycleState, pod, nodeInfo)
+
+	state := getStateData(cycleState)
+	matched := state.nodeReservationStates[node.Name].matchedOrIgnored
+	assert.Len(t, matched, len(reservations))
+
+	nm := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
+	for i := 0; i < 3; i++ {
+		rInfo, status := nm.NominateReservation(context.TODO(), cycleState, pod, node.Name)
+		assert.True(t, status.IsSuccess())
+		assert.NotNil(t, rInfo)
+		assert.Equal(t, matched[0].UID(), rInfo.UID())
+	}
+}
+
+func TestNominateReservationFirstFitSkipsInfeasible(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ReservationFirstFitNomination, true)()
+
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-1",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:    resource.MustParse("96"),
+				corev1.ResourceMemory: resource.MustParse("1886495404Ki"),
+			},
+		},
+	}
+
+	labels := map[string]string{
+		"foo": "bar",
+	}
+	bigResources := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("16"),
+		corev1.ResourceMemory: resource.MustParse("32Gi"),
+	}
+	smallResources := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("1"),
+		corev1.ResourceMemory: resource.MustParse("1Gi"),
+	}
+
+	suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
+	// Only one matched reservation is large enough for the pod; the other matched reservations are too small
+	// and must be skipped by the first-fit loop
+	feasible := newTestReservation(t, "test-r-feasible", labels, labels, node.Name, bigResources)
+	reservations := []*schedulingv1alpha1.Reservation{
+		newTestReservation(t, "test-r-small-0", labels, labels, node.Name, smallResources),
+		newTestReservation(t, "test-r-small-1", labels, labels, node.Name, smallResources),
+		feasible,
+	}
+	for _, r := range reservations {
+		_, err := suit.extenderFactory.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), r, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	for _, r := range reservations {
+		nodeInfo.(*framework.NodeInfo).AddPod(reservationutil.NewReservePod(r))
+	}
+
+	affinity := &apiext.ReservationAffinity{
+		ReservationSelector: labels,
+	}
+
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	suit.start(t)
+	pl := p.(*Plugin)
+	assert.True(t, pl.enableReservationFirstFit)
+	nm := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-1",
+			Namespace: "default",
+			Labels:    labels,
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: bigResources,
+					},
+				},
+			},
+		},
+	}
+	assert.NoError(t, apiext.SetReservationAffinity(pod, affinity))
+	_, err = suit.fw.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	cycleState := framework.NewCycleState()
+	pl.BeforePreFilter(context.TODO(), cycleState, pod)
+	pl.PreFilter(context.TODO(), cycleState, pod, nil)
+	pl.Filter(context.TODO(), cycleState, pod, nodeInfo)
+	assert.Len(t, getStateData(cycleState).nodeReservationStates[node.Name].matchedOrIgnored, len(reservations))
+
+	rInfo, status := nm.NominateReservation(context.TODO(), cycleState, pod, node.Name)
+	assert.True(t, status.IsSuccess())
+	if assert.NotNil(t, rInfo) {
+		assert.Equal(t, feasible.UID, rInfo.UID())
+	}
+
+	bigPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-2",
+			Namespace: "default",
+			Labels:    labels,
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("64"),
+							corev1.ResourceMemory: resource.MustParse("128Gi"),
+						},
+					},
+				},
+			},
+		},
+	}
+	assert.NoError(t, apiext.SetReservationAffinity(bigPod, affinity))
+	_, err = suit.fw.ClientSet().CoreV1().Pods(bigPod.Namespace).Create(context.TODO(), bigPod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	bigCycleState := framework.NewCycleState()
+	pl.BeforePreFilter(context.TODO(), bigCycleState, bigPod)
+	pl.PreFilter(context.TODO(), bigCycleState, bigPod, nil)
+	pl.Filter(context.TODO(), bigCycleState, bigPod, nodeInfo)
+	rInfo, status = nm.NominateReservation(context.TODO(), bigCycleState, bigPod, node.Name)
+	assert.True(t, status.IsSuccess())
+	assert.Nil(t, rInfo)
 }
 
 func TestReservationsNominator(t *testing.T) {
