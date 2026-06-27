@@ -180,9 +180,8 @@ func (p *podReclaimablePredictor) AddPod(pod *v1.Pod) error {
 			util.GetPodKey(pod), err)
 		return err
 	}
-	// TODO: customize the percentile
-	p95Resources := result.Data["p95"]
-	p98Resources := result.Data["p98"]
+	cpuResources := result.Data["configured"]
+	memoryResources := result.Data["configured"]
 
 	podRequests := util.GetPodRequest(pod, v1.ResourceCPU, v1.ResourceMemory)
 	podCPURequest := podRequests[v1.ResourceCPU]
@@ -195,13 +194,13 @@ func (p *podReclaimablePredictor) AddPod(pod *v1.Pod) error {
 	unReclaimableCPUMilli := int64(0)
 	unReclaimableMemoryBytes := int64(0)
 	ratioAfterSafetyMargin := float64(100+p.safetyMarginPercent) / 100
-	if p95CPU, ok := p95Resources[v1.ResourceCPU]; ok {
-		peakCPU := util.MultiplyMilliQuant(p95CPU, ratioAfterSafetyMargin)
+	if cpuRes, ok := cpuResources[v1.ResourceCPU]; ok {
+		peakCPU := util.MultiplyMilliQuant(cpuRes, ratioAfterSafetyMargin)
 		unReclaimableCPUMilli = peakCPU.MilliValue()
 		reclaimableCPUMilli = podCPURequest.MilliValue() - peakCPU.MilliValue()
 	}
-	if p98Memory, ok := p98Resources[v1.ResourceMemory]; ok {
-		peakMemory := util.MultiplyQuant(p98Memory, ratioAfterSafetyMargin)
+	if memRes, ok := memoryResources[v1.ResourceMemory]; ok {
+		peakMemory := util.MultiplyQuant(memRes, ratioAfterSafetyMargin)
 		unReclaimableMemoryBytes = peakMemory.Value()
 		reclaimableMemoryBytes = podMemoryRequest.Value() - peakMemory.Value()
 	}
@@ -306,8 +305,8 @@ func (p *priorityReclaimablePredictor) GetResult() (v1.ResourceList, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get prediction of sys, err: %w", err)
 	}
-	sysResultForCPU := sysResult.Data["p95"]
-	sysResultForMemory := sysResult.Data["p98"]
+	sysResultForCPU := sysResult.Data["configured"]
+	sysResultForMemory := sysResult.Data["configured"]
 	unReclaimable := v1.ResourceList{
 		v1.ResourceCPU:    *sysResultForCPU.Cpu(),
 		v1.ResourceMemory: *sysResultForMemory.Memory(),
@@ -324,8 +323,8 @@ func (p *priorityReclaimablePredictor) GetResult() (v1.ResourceList, error) {
 			return nil, fmt.Errorf("failed to get prediction of priority %s, err: %s", priorityClass, err)
 		}
 
-		resultForCPU := result.Data["p95"]
-		resultForMemory := result.Data["p98"]
+		resultForCPU := result.Data["configured"]
+		resultForMemory := result.Data["configured"]
 		predictResource := v1.ResourceList{
 			v1.ResourceCPU:    *resultForCPU.Cpu(),
 			v1.ResourceMemory: *resultForMemory.Memory(),
