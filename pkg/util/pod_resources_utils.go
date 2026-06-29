@@ -31,6 +31,17 @@ func IsSidecarContainer(c corev1.Container) bool {
 }
 
 func GetPodMilliCPULimit(pod *corev1.Pod) int64 {
+	// PodLevelResources: if pod-level CPU limit is set, it overrides container-level limits.
+	if pod.Spec.Resources != nil {
+		if cpuLimit, ok := pod.Spec.Resources.Limits[corev1.ResourceCPU]; ok {
+			if v := cpuLimit.MilliValue(); v > 0 {
+				return v
+			}
+			// Zero pod-level CPU limit means no limit, consistent with container-level semantics.
+			return -1
+		}
+	}
+
 	podCPUMilliLimit := int64(0)
 	for _, container := range pod.Spec.Containers {
 		containerCPUMilliLimit := GetContainerMilliCPULimit(&container)
