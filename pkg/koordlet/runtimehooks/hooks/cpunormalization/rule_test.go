@@ -27,9 +27,11 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func TestRule(t *testing.T) {
@@ -133,6 +135,7 @@ func TestPlugin_parseRule(t *testing.T) {
 }
 
 func TestPlugin_ruleUpdateCb(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.CPUBurst, false)()
 	type fields struct {
 		rule    *Rule
 		prepare func(t *testing.T, helper *system.FileTestUtil)
