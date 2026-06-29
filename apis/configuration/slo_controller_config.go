@@ -45,6 +45,13 @@ type NodeCfgProfile struct {
 }
 
 // +k8s:deepcopy-gen=true
+type PodCfgProfile struct {
+	Name        string                `json:"name,omitempty"`
+	PodSelector *metav1.LabelSelector `json:"podSelector,omitempty"`
+	Namespaces  string                `json:"namespaces,omitempty"` // namespaces is used to filter pods in the podSelector
+}
+
+// +k8s:deepcopy-gen=true
 type ColocationCfg struct {
 	ColocationStrategy `json:",inline"`
 	NodeConfigs        []NodeColocationCfg `json:"nodeConfigs,omitempty" validate:"dive"`
@@ -76,8 +83,9 @@ type NodeCPUBurstCfg struct {
 
 // +k8s:deepcopy-gen=true
 type CPUBurstCfg struct {
-	ClusterStrategy *slov1alpha1.CPUBurstStrategy `json:"clusterStrategy,omitempty"`
-	NodeStrategies  []NodeCPUBurstCfg             `json:"nodeStrategies,omitempty" validate:"dive"`
+	ClusterStrategy *slov1alpha1.CPUBurstStrategy     `json:"clusterStrategy,omitempty"`
+	NodeStrategies  []NodeCPUBurstCfg                 `json:"nodeStrategies,omitempty" validate:"dive"`
+	PodStrategies   []slov1alpha1.PodCPUBurstStrategy `json:"podStrategies,omitempty" validate:"dive"`
 }
 
 // +k8s:deepcopy-gen=true

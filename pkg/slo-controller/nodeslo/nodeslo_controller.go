@@ -90,7 +90,7 @@ func (r *NodeSLOReconciler) getNodeSLOSpec(node *corev1.Node, oldSpec *slov1alph
 		metrics.RecordNodeSLOSpecParseCount(true, "getResourceQOSSpec")
 	}
 
-	nodeSLOSpec.CPUBurstStrategy, err = getCPUBurstConfigSpec(node, &sloCfg.CPUBurstCfgMerged)
+	nodeSLOSpec.CPUBurstStrategy, nodeSLOSpec.PodCPUBurstStrategies, err = getCPUBurstConfigSpec(node, &sloCfg.CPUBurstCfgMerged)
 	if err != nil {
 		metrics.RecordNodeSLOSpecParseCount(false, "getCPUBurstConfigSpec")
 		klog.Warningf("getNodeSLOSpec(): failed to get cpuBurstConfig spec for node %s,error: %v", node.Name, err)
