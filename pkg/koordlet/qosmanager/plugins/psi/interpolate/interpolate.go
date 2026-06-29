@@ -42,6 +42,7 @@ func (l *Primary) Add(p Point) {
 			return
 		}
 	}
+	*l = append(*l, p)
 }
 
 func (l Primary) Interpolate(x float64) float64 {

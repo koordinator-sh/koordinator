@@ -29,6 +29,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/psi/operator"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
+	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
 )
 
 func TestExtractOperatorsKeepsDefaultPSIThresholdsWhenThresholdIsNil(t *testing.T) {
@@ -45,6 +46,38 @@ func TestExtractOperatorsKeepsDefaultPSIThresholdsWhenThresholdIsNil(t *testing.
 		assert.Equal(t, operator.DefaultPSIExporter.(*operator.PSIExport).CPU, exporter.CPU)
 		assert.Equal(t, operator.DefaultPSIExporter.(*operator.PSIExport).Memory, exporter.Memory)
 		assert.Equal(t, operator.DefaultPSIExporter.(*operator.PSIExport).IO, exporter.IO)
+	}
+}
+
+func TestExtractOperatorsNormalizesBudgetBalanceBasePrice(t *testing.T) {
+	ops, err := extractOperators(&slov1alpha1.PSIStrategy{
+		BudgetBalance: &slov1alpha1.BudgetBalanceConfig{
+			Enable:    ptr.To(true),
+			BasePrice: ptr.To[int64](50),
+		},
+	})
+
+	assert.NoError(t, err)
+	if assert.Len(t, ops, 1) {
+		budgetBalance, ok := ops[0].(*operator.BudgetBalance)
+		assert.True(t, ok)
+		assert.Equal(t, 0.5, budgetBalance.BasePrice)
+	}
+}
+
+func TestExtractOperatorsUsesDefaultBudgetBalanceBasePrice(t *testing.T) {
+	ops, err := extractOperators(sloconfig.DefaultPSIStrategy())
+
+	assert.NoError(t, err)
+	var budgetBalance *operator.BudgetBalance
+	for _, op := range ops {
+		if v, ok := op.(*operator.BudgetBalance); ok {
+			budgetBalance = v
+			break
+		}
+	}
+	if assert.NotNil(t, budgetBalance) {
+		assert.Equal(t, 0.5, budgetBalance.BasePrice)
 	}
 }
 

@@ -469,7 +469,7 @@ func DefaultPSIStrategy() *slov1alpha1.PSIStrategy {
 		},
 		BudgetBalance: &slov1alpha1.BudgetBalanceConfig{
 			Enable:     ptr.To(true),
-			BasePrice:  ptr.To(int64(5000)),
+			BasePrice:  ptr.To(int64(50)),
 			LowerBound: ptr.To(int64(5000)),
 		},
 	}

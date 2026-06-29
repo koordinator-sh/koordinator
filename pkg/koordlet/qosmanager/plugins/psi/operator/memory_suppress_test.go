@@ -29,7 +29,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/psi/podcgroup"
 )
 
-func makeCPUPodCgroup(path string, annotations map[string]string) *podcgroup.PodCgroup {
+func makeMemoryPodCgroup(path string, annotations map[string]string) *podcgroup.PodCgroup {
 	return &podcgroup.PodCgroup{
 		Pod: &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -43,8 +43,8 @@ func makeCPUPodCgroup(path string, annotations map[string]string) *podcgroup.Pod
 					{
 						Name: "container",
 						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
-							Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+							Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+							Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")},
 						},
 					},
 				},
@@ -54,43 +54,13 @@ func makeCPUPodCgroup(path string, annotations map[string]string) *podcgroup.Pod
 	}
 }
 
-func TestGroupShareReturnsSetPromiseError(t *testing.T) {
-	pc := makeCPUPodCgroup("/not-exist", map[string]string{AnnotationGroupHash: "group"})
-	op := &GroupShare{
-		GroupingAnnotationKey: AnnotationGroupHash,
-		ResourceGetter:        podcgroup.Cpu,
-		LowerBound:            0.5,
-	}
-
-	err := op.Exec(map[types.UID]*podcgroup.PodCgroup{pc.Pod.UID: pc}, &corev1.Node{})
-
-	if err == nil {
-		t.Fatalf("expected SetPromise error")
-	}
-}
-
-func TestBudgetBalanceReturnsSetPromiseError(t *testing.T) {
-	pc := makeCPUPodCgroup("/not-exist", map[string]string{AnnotationBudgetBalance: "true"})
-	op := &BudgetBalance{
-		ResourceGetter: podcgroup.Cpu,
-		BasePrice:      0.5,
-		LowerBound:     0.5,
-		budget:         map[types.UID]int64{pc.Pod.UID: 1},
-	}
-
-	err := op.Exec(map[types.UID]*podcgroup.PodCgroup{pc.Pod.UID: pc}, &corev1.Node{})
-
-	if err == nil {
-		t.Fatalf("expected SetPromise error")
-	}
-}
-
-func TestBudgetBalanceInitializesBudgetForAnnotatedPodOnExec(t *testing.T) {
-	pc := makeCPUPodCgroup("/not-exist", map[string]string{AnnotationBudgetBalance: "true"})
-	op := &BudgetBalance{
-		ResourceGetter: podcgroup.Cpu,
-		BasePrice:      0.5,
-		LowerBound:     0.5,
+func TestMemorySuppressInitializesCounterForAnnotatedPodOnExec(t *testing.T) {
+	pc := makeMemoryPodCgroup("/not-exist", map[string]string{AnnotationMemorySuppress: "true"})
+	op := &MemorySuppress{
+		MinSpot:     0.5,
+		MaxSpot:     0.9,
+		GrowPeriods: 10,
+		KillPeriods: 60,
 	}
 
 	assert.NotPanics(t, func() {

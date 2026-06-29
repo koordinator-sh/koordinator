@@ -152,7 +152,7 @@ func (p *SLOCfgHandlerForConfigMapEvent) syncConfig(configMap *corev1.ConfigMap)
 	newSLOCfg.PSICfgMerged, err = calculatePSIConfigMerged(oldSLOCfgCopy.PSICfgMerged, configMap)
 	if err != nil {
 		klog.V(5).Infof("failed to get PSICfg, err: %s", err)
-		p.recorder.Eventf(configMap, "Warning", config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal PSICfg, err: %s", err)
+		p.recorder.Eventf(configMap, corev1.EventTypeWarning, config.ReasonSLOConfigUnmarshalFailed, "failed to unmarshal PSICfg, err: %s", err)
 	}
 	newSLOCfg.HostAppCfgMerged, err = calculateHostAppConfigMerged(oldSLOCfgCopy.HostAppCfgMerged, configMap)
 	if err != nil {

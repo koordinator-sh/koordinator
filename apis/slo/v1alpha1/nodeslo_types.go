@@ -523,7 +523,7 @@ type MemorySuppressConfig struct {
 type GroupShareConfig struct {
 	// Enable indicates whether the group share is enabled.
 	Enable *bool `json:"enable,omitempty"`
-	// GroupingAnnotationKey indicates the annotation key used to group pods, default is "koordinator.sh/grouping-hash"
+	// GroupingAnnotationKey indicates the annotation key used to group pods, default is "koordinator.sh/group-hash"
 	GroupingAnnotationKey *string `json:"groupingAnnotationKey,omitempty"`
 	// LowerBound indicates the lower bound of weight a pod will keep from group share, range [0,10000] indicating [0%,100%], default is 5000 (0.5)
 	LowerBound *int64 `json:"lowerBound,omitempty" validate:"min=0,max=10000"`

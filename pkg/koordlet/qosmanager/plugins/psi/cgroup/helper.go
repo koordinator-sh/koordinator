@@ -28,20 +28,19 @@ import (
 )
 
 const (
-	Max                   int64   = math.MaxInt64
-	Maxf                  float64 = math.MaxFloat64
-	milliCPUToCPU         int64   = 1000
-	Cgroup2CpuStat        string  = "cpu.stat"
-	Cgroup2CpuMax         string  = "cpu.max"
-	Cgroup2CpuWeight      string  = "cpu.weight"
-	Cgroup2CpuPressure    string  = "cpu.pressure"
-	Cgroup2MemoryCurrent  string  = "memory.current"
-	Cgroup2MemoryHigh     string  = "memory.high"
-	Cgroup2MemoryMin      string  = "memory.min"
-	Cgroup2MemoryPressure string  = "memory.pressure"
-	Cgroup2IOStat         string  = "io.stat"
-	Cgroup2IOMax          string  = "io.max"
-	Cgroup2IOPressure     string  = "io.pressure"
+	Max                   int64  = math.MaxInt64
+	milliCPUToCPU         int64  = 1000
+	Cgroup2CpuStat        string = "cpu.stat"
+	Cgroup2CpuMax         string = "cpu.max"
+	Cgroup2CpuWeight      string = "cpu.weight"
+	Cgroup2CpuPressure    string = "cpu.pressure"
+	Cgroup2MemoryCurrent  string = "memory.current"
+	Cgroup2MemoryHigh     string = "memory.high"
+	Cgroup2MemoryMin      string = "memory.min"
+	Cgroup2MemoryPressure string = "memory.pressure"
+	Cgroup2IOStat         string = "io.stat"
+	Cgroup2IOMax          string = "io.max"
+	Cgroup2IOPressure     string = "io.pressure"
 )
 
 var cgroupReaderFactory = resourceexecutor.NewCgroupReader
@@ -280,10 +279,10 @@ func ReadIOStat(cgroupPath string) (map[string]IOStat, error) {
 	for dev, stat := range stat {
 		res[dev] = IOStat{
 			Dev:    dev,
-			Rbytes: toInt64(stat["rbytes"]),
-			Wbytes: toInt64(stat["wbytes"]),
-			Rios:   toInt64(stat["rios"]),
-			Wios:   toInt64(stat["wios"]),
+			Rbytes: stat["rbytes"],
+			Wbytes: stat["wbytes"],
+			Rios:   stat["rios"],
+			Wios:   stat["wios"],
 		}
 	}
 	return res, nil
@@ -298,10 +297,10 @@ func ReadIOMax(cgroupPath string) (map[string]IOMax, error) {
 	for dev, max := range max {
 		res[dev] = IOMax{
 			Dev:   dev,
-			Rbps:  toInt64(max["rbps"]),
-			Wbps:  toInt64(max["wbps"]),
-			Riops: toInt64(max["riops"]),
-			Wiops: toInt64(max["wiops"]),
+			Rbps:  toCgroupMax(max["rbps"]),
+			Wbps:  toCgroupMax(max["wbps"]),
+			Riops: toCgroupMax(max["riops"]),
+			Wiops: toCgroupMax(max["wiops"]),
 		}
 	}
 	return res, nil
@@ -328,7 +327,7 @@ func readPSI(cgroupPath string) (*sysutil.PSIByResource, error) {
 	return cgroupReaderFactory().ReadPSI(cgroupPath)
 }
 
-func readCgroupV2NestedKeyedResource(cgroupPath string, resourceType sysutil.ResourceType) (map[string]map[string]float64, error) {
+func readCgroupV2NestedKeyedResource(cgroupPath string, resourceType sysutil.ResourceType) (map[string]map[string]int64, error) {
 	txt, err := readKnownCgroupResource(cgroupPath, resourceType)
 	if err != nil {
 		return nil, err
@@ -344,11 +343,11 @@ func parseInt64(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
-func toInt64(x float64) int64 {
-	if x == Maxf {
+func toCgroupMax(x int64) int64 {
+	if x == math.MaxInt64 {
 		return Max
 	}
-	return int64(x)
+	return x
 }
 
 func GetCpuWeight(milliCPU int64) uint64 {

@@ -72,6 +72,7 @@ func (bb *BudgetBalance) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1.
 		if pc.Pod.Annotations[AnnotationBudgetBalance] != "true" {
 			continue
 		}
+		bb.ensureBudget(pc.Pod.UID)
 		r := bb.ResourceGetter.Get(pc)
 		if r.Request == 0 || r.Limit == 0 {
 			continue
@@ -117,14 +118,20 @@ func (bb *BudgetBalance) AddPod(pc *podcgroup.PodCgroup) error {
 	if pc.Pod.Annotations[AnnotationBudgetBalance] != "true" {
 		return nil
 	}
-	if bb.budget == nil {
-		bb.budget = make(map[types.UID]int64)
-	}
-	bb.budget[pc.Pod.UID] = 0
+	bb.ensureBudget(pc.Pod.UID)
 	return nil
 }
 
 func (bb *BudgetBalance) DeletePod(pc *podcgroup.PodCgroup) error {
 	delete(bb.budget, pc.Pod.UID)
 	return nil
+}
+
+func (bb *BudgetBalance) ensureBudget(uid types.UID) {
+	if bb.budget == nil {
+		bb.budget = make(map[types.UID]int64)
+	}
+	if _, ok := bb.budget[uid]; !ok {
+		bb.budget[uid] = 0
+	}
 }

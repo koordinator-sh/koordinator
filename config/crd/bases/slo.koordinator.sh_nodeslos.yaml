@@ -135,7 +135,7 @@ spec:
                         type: boolean
                       groupingAnnotationKey:
                         description: GroupingAnnotationKey indicates the annotation
-                          key used to group pods, default is "koordinator.sh/grouping-hash"
+                          key used to group pods, default is "koordinator.sh/group-hash"
                         type: string
                       lowerBound:
                         description: LowerBound indicates the lower bound of weight

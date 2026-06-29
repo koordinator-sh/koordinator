@@ -184,8 +184,8 @@ func ParseCPUStatRawV2(content string) (*CPUStatRaw, error) {
 }
 
 // ParseCgroupV2NestedKeyedFile parses cgroup v2 nested keyed files such as io.stat and io.max.
-func ParseCgroupV2NestedKeyedFile(content string) (map[string]map[string]float64, error) {
-	nestedValues := make(map[string]map[string]float64)
+func ParseCgroupV2NestedKeyedFile(content string) (map[string]map[string]int64, error) {
+	nestedValues := make(map[string]map[string]int64)
 
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
@@ -198,7 +198,7 @@ func ParseCgroupV2NestedKeyedFile(content string) (map[string]map[string]float64
 			return nil, fmt.Errorf("invalid line format: %s", line)
 		}
 
-		values := make(map[string]float64)
+		values := make(map[string]int64)
 		for _, part := range parts[1:] {
 			kv := strings.SplitN(part, "=", 2)
 			if len(kv) != 2 {
@@ -216,12 +216,12 @@ func ParseCgroupV2NestedKeyedFile(content string) (map[string]map[string]float64
 	return nestedValues, nil
 }
 
-func ParseCgroupV2NestedKeyedValue(value string) (float64, error) {
+func ParseCgroupV2NestedKeyedValue(value string) (int64, error) {
 	value = strings.TrimSpace(strings.Trim(value, "\n"))
 	if value == CgroupMaxSymbolStr {
-		return math.MaxFloat64, nil
+		return math.MaxInt64, nil
 	}
-	return strconv.ParseFloat(value, 64)
+	return strconv.ParseInt(value, 10, 64)
 }
 
 func ParseMemoryStatRawV2(content string) (*MemoryStatRaw, error) {

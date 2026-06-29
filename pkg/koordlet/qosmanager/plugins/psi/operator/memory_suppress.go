@@ -72,6 +72,7 @@ func (ms *MemorySuppress) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1
 		if pc.Pod.Annotations[AnnotationMemorySuppress] != "true" {
 			continue
 		}
+		ms.ensureCounter(pc.Pod.UID)
 		mem := podcgroup.Memory.Get(pc)
 		target := ms.targetThrottle(mem)
 		if target == mem.Throttle().Int64() {
@@ -93,16 +94,22 @@ func (ms *MemorySuppress) AddPod(pc *podcgroup.PodCgroup) error {
 	if pc.Pod.Annotations[AnnotationMemorySuppress] != "true" {
 		return nil
 	}
-	if ms.maxSpotCounter == nil {
-		ms.maxSpotCounter = make(map[types.UID]float64)
-	}
-	ms.maxSpotCounter[pc.Pod.UID] = 0
+	ms.ensureCounter(pc.Pod.UID)
 	return nil
 }
 
 func (ms *MemorySuppress) DeletePod(pc *podcgroup.PodCgroup) error {
 	delete(ms.maxSpotCounter, pc.Pod.UID)
 	return nil
+}
+
+func (ms *MemorySuppress) ensureCounter(uid types.UID) {
+	if ms.maxSpotCounter == nil {
+		ms.maxSpotCounter = make(map[types.UID]float64)
+	}
+	if _, ok := ms.maxSpotCounter[uid]; !ok {
+		ms.maxSpotCounter[uid] = 0
+	}
 }
 
 func (ms *MemorySuppress) targetThrottle(r *podcgroup.PodResource) int64 {

@@ -124,13 +124,13 @@ func TestParseCgroupV2NestedKeyedFile(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
-		want    map[string]map[string]float64
+		want    map[string]map[string]int64
 		wantErr bool
 	}{
 		{
 			name:    "parse io stat",
 			content: "8:0 rbytes=1024 wbytes=2048 rios=3 wios=4\n8:16 rbytes=4096 wbytes=8192 rios=5 wios=6\n",
-			want: map[string]map[string]float64{
+			want: map[string]map[string]int64{
 				"8:0": {
 					"rbytes": 1024,
 					"wbytes": 2048,
@@ -148,12 +148,21 @@ func TestParseCgroupV2NestedKeyedFile(t *testing.T) {
 		{
 			name:    "parse max token",
 			content: "8:0 rbps=max wbps=1024 riops=max wiops=2\n",
-			want: map[string]map[string]float64{
+			want: map[string]map[string]int64{
 				"8:0": {
-					"rbps":  math.MaxFloat64,
+					"rbps":  math.MaxInt64,
 					"wbps":  1024,
-					"riops": math.MaxFloat64,
+					"riops": math.MaxInt64,
 					"wiops": 2,
+				},
+			},
+		},
+		{
+			name:    "preserve large int64 counter",
+			content: "8:0 rbytes=9007199254740993\n",
+			want: map[string]map[string]int64{
+				"8:0": {
+					"rbytes": 9007199254740993,
 				},
 			},
 		},
@@ -192,7 +201,7 @@ func TestParseCgroupV2NestedKeyedFile(t *testing.T) {
 			for device, wantValues := range tt.want {
 				gotValues := got[device]
 				for key, wantValue := range wantValues {
-					if gotValues[key] != wantValue {
+					if int64(gotValues[key]) != wantValue {
 						t.Fatalf("got %v, want %v", got, tt.want)
 					}
 				}

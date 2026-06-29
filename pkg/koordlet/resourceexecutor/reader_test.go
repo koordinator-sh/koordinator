@@ -1638,7 +1638,7 @@ func TestCgroupReader_ReadCPUBurst(t *testing.T) {
 				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUBurst, tt.fields.CPUBurstValue)
 			}
 			if tt.fields.CPUMaxBurstValue != "" {
-				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUBurst, tt.fields.CPUMaxBurstValue)
+				helper.WriteCgroupFileContents(tt.args.parentDir, sysutil.CPUBurstV2, tt.fields.CPUMaxBurstValue)
 			}
 			got, gotErr := NewCgroupReader().ReadCPUBurst(tt.args.parentDir)
 			assert.Equal(t, tt.wantErr, gotErr != nil, "error mismatch")
