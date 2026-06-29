@@ -162,6 +162,13 @@ func (s *nodeSLOInformer) mergeNodeSLOSpec(nodeSLO *slov1alpha1.NodeSLO) {
 		s.nodeSLO.Spec.SystemStrategy = mergedSystemStrategySpec
 	}
 
+	// merge PSIStrategy
+	mergedPSIStrategySpec := mergeSLOSpecPSIStrategy(sloconfig.DefaultNodeSLOSpecConfig().PSIStrategy,
+		nodeSLO.Spec.PSIStrategy)
+	if mergedPSIStrategySpec != nil {
+		s.nodeSLO.Spec.PSIStrategy = mergedPSIStrategySpec
+	}
+
 	// merge Extensions
 	mergedExtensions := mergeSLOSpecExtensions(sloconfig.DefaultNodeSLOSpecConfig().Extensions,
 		nodeSLO.Spec.Extensions)
@@ -237,6 +244,20 @@ func mergeSLOSpecCPUBurstStrategy(defaultSpec,
 func mergeSLOSpecSystemStrategy(defaultSpec,
 	newSpec *slov1alpha1.SystemStrategy) *slov1alpha1.SystemStrategy {
 	spec := &slov1alpha1.SystemStrategy{}
+	if newSpec != nil {
+		spec = newSpec
+	}
+	// ignore err for serializing/deserializing the same struct type
+	data, _ := json.Marshal(spec)
+	// NOTE: use deepcopy to avoid a overwrite to the global default
+	out := defaultSpec.DeepCopy()
+	_ = json.Unmarshal(data, &out)
+	return out
+}
+
+func mergeSLOSpecPSIStrategy(defaultSpec,
+	newSpec *slov1alpha1.PSIStrategy) *slov1alpha1.PSIStrategy {
+	spec := &slov1alpha1.PSIStrategy{}
 	if newSpec != nil {
 		spec = newSpec
 	}
