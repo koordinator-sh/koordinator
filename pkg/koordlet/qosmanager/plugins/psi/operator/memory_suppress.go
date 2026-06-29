@@ -30,7 +30,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/psi/podcgroup"
 )
 
-const AnnotaionMemorySuppress = "koordinator.sh/memory-suppress"
+const AnnotationMemorySuppress = "koordinator.sh/memory-suppress"
 
 var DefaultMemorySuppress Operator = &MemorySuppress{
 	MinSpot:     0.5,
@@ -69,7 +69,7 @@ func (ms *MemorySuppress) Update(g Operator) error {
 func (ms *MemorySuppress) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1.Node) (retErr error) {
 	var show []string
 	for _, pc := range pods {
-		if pc.Pod.Annotations[AnnotaionMemorySuppress] != "true" {
+		if pc.Pod.Annotations[AnnotationMemorySuppress] != "true" {
 			continue
 		}
 		mem := podcgroup.Memory.Get(pc)
@@ -90,7 +90,7 @@ func (ms *MemorySuppress) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1
 }
 
 func (ms *MemorySuppress) AddPod(pc *podcgroup.PodCgroup) error {
-	if pc.Pod.Annotations[AnnotaionMemorySuppress] != "true" {
+	if pc.Pod.Annotations[AnnotationMemorySuppress] != "true" {
 		return nil
 	}
 	if ms.maxSpotCounter == nil {

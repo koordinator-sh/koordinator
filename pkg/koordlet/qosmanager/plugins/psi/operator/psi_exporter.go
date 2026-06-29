@@ -36,7 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/psi/podcgroup"
 )
 
-const AnnotaionPSIExport = "koordinator.sh/psi-export"
+const AnnotationPSIExport = "koordinator.sh/psi-export"
 
 var DefaultPSIExporter Operator = &PSIExport{
 	CPU: &StallThreshold{
@@ -101,7 +101,7 @@ func (pe *PSIExport) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1.Node
 	var errs []error
 	nowTime := metav1.Now()
 	for _, pc := range pods {
-		if pc.Pod.Annotations[AnnotaionPSIExport] != "true" {
+		if pc.Pod.Annotations[AnnotationPSIExport] != "true" {
 			continue
 		}
 		psi := GetPSIStatus(pc.Cgroup)

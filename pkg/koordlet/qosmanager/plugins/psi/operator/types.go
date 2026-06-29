@@ -17,8 +17,6 @@ limitations under the License.
 package operator
 
 import (
-	"fmt"
-
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -33,26 +31,3 @@ type Operator interface {
 	AddPod(*podcgroup.PodCgroup) error
 	DeletePod(*podcgroup.PodCgroup) error
 }
-
-var _ Operator = &FuncOperator{}
-
-type FuncOperator struct {
-	fn func(map[types.UID]*podcgroup.PodCgroup, *v1.Node) error
-}
-
-func (f *FuncOperator) Init() error { return nil }
-func (f *FuncOperator) Name() string {
-	return "FuncOperator"
-}
-func (f *FuncOperator) Update(g Operator) error {
-	if v, ok := g.(*FuncOperator); ok {
-		f.fn = v.fn
-		return nil
-	}
-	return fmt.Errorf("not a FuncOperator")
-}
-func (f *FuncOperator) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1.Node) error {
-	return f.fn(pods, node)
-}
-func (f *FuncOperator) AddPod(*podcgroup.PodCgroup) error    { return nil }
-func (f *FuncOperator) DeletePod(*podcgroup.PodCgroup) error { return nil }
