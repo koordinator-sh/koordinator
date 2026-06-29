@@ -103,6 +103,13 @@ func (bps *Bps) Update(pressure *Pressure, rbytes, wbytes, rbpsMax, wbpsMax int6
 	bps.Timestamp = now
 }
 
+func (bps *Bps) UpdatePressure(pressure *Pressure) {
+	now := time.Now()
+	bps.Base.Pressure = slope(bps.pressure.Some.Total, pressure.Some.Total, now.Sub(bps.Timestamp))
+	bps.pressure = *pressure
+	bps.Timestamp = now
+}
+
 func (bps *Bps) SetThrottle(newBps int64) error {
 	if err := WriteIOMax(bps.path, &IOMax{Dev: bps.dev, Rbps: newBps, Wbps: newBps}); err != nil {
 		return err
@@ -189,6 +196,13 @@ func (iops *Iops) Update(pressure *Pressure, rios, wios, riops, wiops int64) {
 	iops.wiopsMax = wiops
 	iops.rios = rios
 	iops.wios = wios
+	iops.Timestamp = now
+}
+
+func (iops *Iops) UpdatePressure(pressure *Pressure) {
+	now := time.Now()
+	iops.Base.Pressure = slope(iops.pressure.Some.Total, pressure.Some.Total, now.Sub(iops.Timestamp))
+	iops.pressure = *pressure
 	iops.Timestamp = now
 }
 

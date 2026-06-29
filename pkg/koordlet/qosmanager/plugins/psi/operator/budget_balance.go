@@ -17,6 +17,7 @@ limitations under the License.
 package operator
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
@@ -63,8 +64,9 @@ func (bb *BudgetBalance) Update(g Operator) error {
 
 func (bb *BudgetBalance) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1.Node) error {
 	var (
-		price = bb.BasePrice
-		bank  = make(zeroBank)
+		retErr error
+		price  = bb.BasePrice
+		bank   = make(zeroBank)
 	)
 	for _, pc := range pods {
 		if pc.Pod.Annotations[AnnotationBudgetBalance] != "true" {
@@ -87,7 +89,10 @@ func (bb *BudgetBalance) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1.
 	for r, b := range bank {
 		bb.budget[r.Pod.UID] = int64SafeAdd(bb.budget[r.Pod.UID], bb.getBudget(r, price))
 		if r.Promise().Int64() != r.Request+b {
-			r.SetPromise(r.Request + b)
+			if err := r.SetPromise(r.Request + b); err != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("failed to set promise for pod %s: %w", klog.KObj(r.Pod), err))
+				continue
+			}
 		}
 		show = append(show, fmt.Sprintf("%s: %+.2f%%", klog.KObj(r.Pod), float64(b)/float64(r.Request)*100))
 	}
@@ -95,7 +100,7 @@ func (bb *BudgetBalance) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1.
 		sort.Strings(show)
 		klog.InfoS(bb.Name(), "info", show)
 	}
-	return nil
+	return retErr
 }
 
 func (bb *BudgetBalance) getBudget(r *podcgroup.PodResource, price float64) int64 {

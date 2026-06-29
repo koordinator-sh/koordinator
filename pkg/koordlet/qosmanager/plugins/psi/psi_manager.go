@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
@@ -57,6 +58,33 @@ func NewManager(mask cgroup.ResourceMask, ops ...operator.Operator) *PsiManager 
 func (pm *PsiManager) AddOperators(ops ...operator.Operator) (retErr error) {
 	pm.podsLock.Lock()
 	defer pm.podsLock.Unlock()
+	return pm.addOperatorsLocked(ops...)
+}
+
+func (pm *PsiManager) SyncOperators(ops ...operator.Operator) (retErr error) {
+	pm.podsLock.Lock()
+	defer pm.podsLock.Unlock()
+
+	expected := make(map[string]struct{}, len(ops))
+	for _, op := range ops {
+		expected[op.Name()] = struct{}{}
+	}
+	for name, op := range pm.operators {
+		if _, ok := expected[name]; ok {
+			continue
+		}
+		for _, pc := range pm.pods {
+			if err := op.DeletePod(pc); err != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("failed to delete pod %s from %s: %w", klog.KObj(pc.Pod), op.Name(), err))
+			}
+		}
+		delete(pm.operators, name)
+		klog.InfoS("Removed operator", "operator", name)
+	}
+	return errors.Join(retErr, pm.addOperatorsLocked(ops...))
+}
+
+func (pm *PsiManager) addOperatorsLocked(ops ...operator.Operator) (retErr error) {
 	for _, op := range ops {
 		if old, ok := pm.operators[op.Name()]; ok {
 			oldSnapshot := jsonfy(old)
@@ -92,8 +120,7 @@ func (pm *PsiManager) Batch(pods []*statesinformer.PodMeta) (retErr error) {
 	}
 	for _, meta := range pods {
 		delete(expired, meta.Pod.UID)
-		// TODO: provide device number to support io reconcile
-		if err := pm.AddPod(meta.Pod, meta.CgroupDir, [2]int64{0, 0}); err != nil {
+		if err := pm.AddPod(meta.Pod, meta.CgroupDir, cgroup.InvalidDevice); err != nil {
 			retErr = errors.Join(retErr, fmt.Errorf("failed to add pod %s: %w", klog.KObj(meta.Pod), err))
 		}
 	}
@@ -166,18 +193,16 @@ func (pm *PsiManager) Reconcile(node *v1.Node) (err error) {
 		}
 	}
 
-	errCh := make(chan error)
-	for _, op := range pm.operators {
-		go func(op operator.Operator) {
-			if err := op.Exec(pm.pods, node); err != nil {
-				errCh <- fmt.Errorf("failed to perform %s: %w", op.Name(), err)
-			} else {
-				errCh <- nil
-			}
-		}(op)
+	operatorNames := make([]string, 0, len(pm.operators))
+	for name := range pm.operators {
+		operatorNames = append(operatorNames, name)
 	}
-	for range pm.operators {
-		err = errors.Join(<-errCh)
+	sort.Strings(operatorNames)
+	for _, name := range operatorNames {
+		op := pm.operators[name]
+		if execErr := op.Exec(pm.pods, node); execErr != nil {
+			err = errors.Join(err, fmt.Errorf("failed to perform %s: %w", op.Name(), execErr))
+		}
 	}
 	return err
 }

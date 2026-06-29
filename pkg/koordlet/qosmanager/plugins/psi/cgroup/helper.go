@@ -44,9 +44,15 @@ const (
 	Cgroup2IOPressure     string  = "io.pressure"
 )
 
-var (
-	cgroupReader = resourceexecutor.NewCgroupReader()
-)
+var cgroupReaderFactory = resourceexecutor.NewCgroupReader
+
+func setCgroupReaderFactoryForTest(factory func() resourceexecutor.CgroupReader) func() {
+	old := cgroupReaderFactory
+	cgroupReaderFactory = factory
+	return func() {
+		cgroupReaderFactory = old
+	}
+}
 
 func getCgroupResource(resourceType sysutil.ResourceType) (sysutil.Resource, error) {
 	resource, err := sysutil.GetCgroupResource(resourceType)
@@ -212,7 +218,7 @@ func WriteCpuWeight(cgroupPath string, weight uint64) error {
 }
 
 func ReadCpuPressure(cgroupPath string) (*Pressure, error) {
-	psi, err := cgroupReader.ReadPSI(cgroupPath)
+	psi, err := readPSI(cgroupPath)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +264,7 @@ func WriteMemoryMin(cgroupPath string, min int64) error {
 }
 
 func ReadMemoryPressure(cgroupPath string) (*Pressure, error) {
-	psi, err := cgroupReader.ReadPSI(cgroupPath)
+	psi, err := readPSI(cgroupPath)
 	if err != nil {
 		return nil, err
 	}
@@ -311,33 +317,15 @@ func WriteIOMax(cgroupPath string, max ...*IOMax) error {
 }
 
 func ReadIOPressure(cgroupPath string) (*Pressure, error) {
-	return parsePressure(cgroupPath, Cgroup2IOPressure)
+	psi, err := readPSI(cgroupPath)
+	if err != nil {
+		return nil, err
+	}
+	return psiToPressure(psi.IO), nil
 }
 
-func parsePressure(dir string, file string) (*Pressure, error) {
-	txt, err := readKnownCgroupResource(dir, sysutil.CPUAcctIOPressureName)
-	if err != nil {
-		return nil, err
-	}
-	p, err := sysutil.ParseCgroupV2NestedKeyedFile(txt)
-	if err != nil {
-		return nil, err
-	}
-	some, full := p["some"], p["full"]
-	return &Pressure{
-		Some: PressureItem{
-			Avg10:  some["avg10"],
-			Avg60:  some["avg60"],
-			Avg300: some["avg300"],
-			Total:  toInt64(some["total"]),
-		},
-		Full: PressureItem{
-			Avg10:  full["avg10"],
-			Avg60:  full["avg60"],
-			Avg300: full["avg300"],
-			Total:  toInt64(full["total"]),
-		},
-	}, nil
+func readPSI(cgroupPath string) (*sysutil.PSIByResource, error) {
+	return cgroupReaderFactory().ReadPSI(cgroupPath)
 }
 
 func readCgroupV2NestedKeyedResource(cgroupPath string, resourceType sysutil.ResourceType) (map[string]map[string]float64, error) {

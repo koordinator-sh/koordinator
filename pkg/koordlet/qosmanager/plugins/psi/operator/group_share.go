@@ -17,6 +17,7 @@ limitations under the License.
 package operator
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
@@ -56,6 +57,7 @@ func (gs *GroupShare) Update(g Operator) error {
 }
 
 func (gs *GroupShare) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1.Node) error {
+	var retErr error
 	groups := make(map[string][]*podcgroup.PodResource)
 	for _, pc := range pods {
 		group := pc.Pod.Annotations[gs.GroupingAnnotationKey]
@@ -77,14 +79,17 @@ func (gs *GroupShare) Exec(pods map[types.UID]*podcgroup.PodCgroup, node *v1.Nod
 		var show []string
 		for r, b := range bank {
 			if r.Promise().Int64() != r.Request+b {
-				r.SetPromise(r.Request + b)
+				if err := r.SetPromise(r.Request + b); err != nil {
+					retErr = errors.Join(retErr, fmt.Errorf("failed to set promise for pod %s: %w", klog.KObj(r.Pod), err))
+					continue
+				}
 			}
 			show = append(show, fmt.Sprintf("%s: %+.2f%%", klog.KObj(r.Pod), float64(b)/float64(r.Request)*100))
 		}
 		sort.Strings(show)
 		klog.InfoS(gs.Name(), "group", name, "info", show)
 	}
-	return nil
+	return retErr
 }
 
 func (gs *GroupShare) AddPod(pc *podcgroup.PodCgroup) error { return nil }

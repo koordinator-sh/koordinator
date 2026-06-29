@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"time"
 
-	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/apimachinery/pkg/util/wait"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
@@ -110,8 +110,8 @@ func (p *psiReconcile) reconcile() {
 		return
 	}
 	p.injectOperatorDependencies(ops...)
-	if err := p.manager.AddOperators(ops...); err != nil {
-		klog.ErrorS(fmt.Errorf("failed to add operators: %v", err), "Failed to reconcile PSI")
+	if err := p.manager.SyncOperators(ops...); err != nil {
+		klog.ErrorS(fmt.Errorf("failed to sync operators: %v", err), "Failed to reconcile PSI")
 		return
 	}
 	if err := p.manager.Reconcile(node); err != nil {
