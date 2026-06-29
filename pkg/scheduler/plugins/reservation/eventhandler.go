@@ -67,6 +67,10 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 
 	if reservationutil.IsReservationActive(newR) {
 		h.cache.updateReservation(newR)
+		// Unlock if this reservation was locked for resize. For non-resize updates
+		// (not in lockedForResize), this is a no-op. For resize completions (shrink
+		// done, or enlarge Bind/PostFilter done), this restores matchableOnNode.
+		h.cache.unlockReservationAfterResize(newR.UID, newR.Status.NodeName)
 		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(newR))
 		klog.V(4).InfoS("update reservation into reservationCache",
 			"reservation", klog.KObj(newR), "uid", newR.UID, "node", reservationutil.GetReservationNodeName(newR))
@@ -98,6 +102,11 @@ func (h *reservationEventHandler) OnDelete(obj interface{}) {
 		return
 	}
 	h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(r))
+
+	// Clean up any resize lock held for this reservation. If the reservation is
+	// deleted while a resize is in progress, the lockedForResize entry would
+	// otherwise remain orphaned until scheduler restart.
+	h.cache.unlockReservationAfterResize(r.UID, r.Status.NodeName)
 
 	// Here it is only marked that ReservationInfo is unavailable,
 	// and the real deletion operation is executed in deleteReservationFromCache(pkg/scheduler/frameworkext/eventhandlers/reservation_handler.go).

@@ -908,6 +908,350 @@ func TestReservationCache_PreAllocatableOperations(t *testing.T) {
 	})
 }
 
+// ==================== Resize Cache Consistency Tests ====================
+
+// TestCacheLockReservationForResize verifies that LockReservationForResize:
+// 1. Removes the reservation from matchableOnNode
+// 2. Sets the lockedForResize flag
+// 3. Does NOT remove from reservationsOnNode (node accounting still needed)
+func TestCacheLockReservationForResize(t *testing.T) {
+	cache := newReservationCache(nil)
+	nodeName := "test-node-1"
+	rUID := types.UID("resize-lock-uid")
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{UID: rUID, Name: "lock-r"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("4"),
+								corev1.ResourceMemory: resource.MustParse("4Gi"),
+							},
+						},
+					}},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: nodeName,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
+	}
+
+	cache.updateReservation(reservation)
+
+	// Pre-condition: reservation is matchable
+	assert.Contains(t, cache.matchableOnNode[nodeName], rUID, "should be in matchableOnNode before lock")
+	assert.Contains(t, cache.reservationsOnNode[nodeName], rUID, "should be in reservationsOnNode")
+
+	// Lock
+	cache.LockReservationForResize(rUID, nodeName)
+
+	// matchableOnNode: removed
+	if m := cache.matchableOnNode[nodeName]; m != nil {
+		assert.NotContains(t, m, rUID, "should be removed from matchableOnNode after lock")
+	}
+	// lockedForResize: set
+	entry := cache.lockedForResize[rUID]
+	assert.NotNil(t, entry, "lockedForResize should be set")
+	assert.Equal(t, nodeName, entry.nodeName, "lockedForResize should record nodeName")
+	// reservationsOnNode: still present
+	assert.Contains(t, cache.reservationsOnNode[nodeName], rUID, "should still be in reservationsOnNode")
+	// reservationInfos: still present
+	assert.NotNil(t, cache.reservationInfos[rUID], "rInfo should still exist")
+}
+
+// TestCacheUpdateReservation_LockedSkipsMatchable verifies that when a reservation is
+// locked for resize, updateReservation updates the rInfo but does NOT re-add to matchableOnNode.
+func TestCacheUpdateReservation_LockedSkipsMatchable(t *testing.T) {
+	cache := newReservationCache(nil)
+	nodeName := "test-node-1"
+	rUID := types.UID("locked-update-uid")
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{UID: rUID, Name: "locked-r"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("4"),
+							},
+						},
+					}},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: nodeName,
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+		},
+	}
+
+	cache.updateReservation(reservation)
+	assert.Contains(t, cache.matchableOnNode[nodeName], rUID)
+
+	// Lock for resize
+	cache.LockReservationForResize(rUID, nodeName)
+
+	// Simulate the event handler calling updateReservation after controller's UpdateStatus
+	// (e.g., shrink changed allocatable from 4 → 3)
+	updatedR := reservation.DeepCopy()
+	updatedR.Status.Allocatable = corev1.ResourceList{
+		corev1.ResourceCPU: resource.MustParse("3"),
+	}
+	cache.updateReservation(updatedR)
+
+	// rInfo should be updated
+	rInfo := cache.reservationInfos[rUID]
+	assert.NotNil(t, rInfo)
+	wantCPU := resource.MustParse("3")
+	assert.True(t, rInfo.Allocatable[corev1.ResourceCPU].Equal(wantCPU),
+		"rInfo allocatable should be updated to 3")
+
+	// But matchableOnNode should still NOT contain this reservation (locked)
+	if m := cache.matchableOnNode[nodeName]; m != nil {
+		assert.NotContains(t, m, rUID,
+			"locked reservation should NOT be re-added to matchableOnNode by updateReservation")
+	}
+}
+
+// TestCacheUnlockReservationAfterResize verifies that unlockReservationAfterResize:
+// 1. Clears the lockedForResize flag
+// 2. Restores matchableOnNode if the reservation is matchable
+// 3. Restores allocatedOnNode if the reservation has assigned pods
+// 4. Is a no-op if not locked
+func TestCacheUnlockReservationAfterResize(t *testing.T) {
+	t.Run("unlock restores matchable and allocated", func(t *testing.T) {
+		cache := newReservationCache(nil)
+		nodeName := "test-node-1"
+		rUID := types.UID("unlock-uid")
+
+		reservation := &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{UID: rUID, Name: "unlock-r"},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				AllocateOnce: ptr.To[bool](false),
+				Template: &corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						}},
+					},
+				},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{
+				NodeName: nodeName,
+				Phase:    schedulingv1alpha1.ReservationAvailable,
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+			},
+		}
+
+		cache.updateReservation(reservation)
+
+		// Add an owner pod so allocatedOnNode is populated
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{UID: "pod-1", Namespace: "default", Name: "pod-1"},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+					},
+				}},
+			},
+		}
+		cache.addPod(rUID, pod)
+		assert.Contains(t, cache.matchableOnNode[nodeName], rUID)
+		assert.Contains(t, cache.allocatedOnNode[nodeName], rUID)
+
+		// Lock → removes from matchableOnNode
+		cache.LockReservationForResize(rUID, nodeName)
+		if m := cache.matchableOnNode[nodeName]; m != nil {
+			assert.NotContains(t, m, rUID)
+		}
+
+		// Simulate shrink: updateReservation with new allocatable (locked, won't restore matchable)
+		shrunkR := reservation.DeepCopy()
+		shrunkR.Status.Allocatable = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")}
+		cache.updateReservation(shrunkR)
+
+		// Unlock
+		cache.unlockReservationAfterResize(rUID, nodeName)
+
+		// lockedForResize cleared
+		assert.NotContains(t, cache.lockedForResize, rUID, "lock should be cleared")
+		// matchableOnNode restored
+		assert.Contains(t, cache.matchableOnNode[nodeName], rUID, "should be back in matchableOnNode")
+		// allocatedOnNode restored (has assigned pod)
+		assert.Contains(t, cache.allocatedOnNode[nodeName], rUID, "should be back in allocatedOnNode")
+	})
+
+	t.Run("unlock noop when not locked", func(t *testing.T) {
+		cache := newReservationCache(nil)
+		nodeName := "test-node-1"
+		rUID := types.UID("noop-uid")
+
+		reservation := &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{UID: rUID, Name: "noop-r"},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template: &corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+							},
+						}},
+					},
+				},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{
+				NodeName: nodeName, Phase: schedulingv1alpha1.ReservationAvailable,
+				Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+			},
+		}
+		cache.updateReservation(reservation)
+
+		// Call unlock without locking first — should be no-op
+		cache.unlockReservationAfterResize(rUID, nodeName)
+
+		// matchableOnNode should be untouched (still present)
+		assert.Contains(t, cache.matchableOnNode[nodeName], rUID)
+	})
+
+	t.Run("unlock non-matchable reservation does not restore matchable", func(t *testing.T) {
+		cache := newReservationCache(nil)
+		nodeName := "test-node-1"
+		rUID := types.UID("non-matchable-uid")
+
+		// Reservation that becomes non-matchable after resize (e.g., Pending phase after enlarge)
+		reservation := &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{UID: rUID, Name: "pending-r"},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template: &corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+							},
+						}},
+					},
+				},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{
+				NodeName: nodeName, Phase: schedulingv1alpha1.ReservationAvailable,
+				Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+			},
+		}
+		cache.updateReservation(reservation)
+		cache.LockReservationForResize(rUID, nodeName)
+
+		// Update rInfo to Pending (non-matchable) — simulating enlarge path
+		pendingR := reservation.DeepCopy()
+		pendingR.Status.Phase = schedulingv1alpha1.ReservationPending
+		pendingR.Status.NodeName = ""
+		cache.reservationInfos[rUID].UpdateReservation(pendingR)
+
+		// Unlock
+		cache.unlockReservationAfterResize(rUID, nodeName)
+
+		// lockedForResize cleared
+		assert.NotContains(t, cache.lockedForResize, rUID)
+		// NOT restored to matchableOnNode (it's Pending, not Available)
+		if m := cache.matchableOnNode[nodeName]; m != nil {
+			assert.NotContains(t, m, rUID, "non-matchable reservation should not be in matchableOnNode")
+		}
+	})
+}
+
+// TestCacheMarkResizingReservation verifies that markResizingReservation:
+// 1. Updates the rInfo with new reservation state
+// 2. Removes from matchableOnNode
+// 3. Keeps reservationsOnNode (owner pods are still on the node)
+// 4. Preserves assigned pods in rInfo
+// TestCacheMarkResizingReservation removed: markResizingReservation was replaced by
+// the lock-based resize pattern. See TestCacheResizeFullFlow_ShrinkEndToEnd.
+
+// TestCacheResizeFullFlow_ShrinkEndToEnd tests the complete shrink cache flow:
+// Lock → updateReservation (skips matchable) → unlock (restores matchable).
+func TestCacheResizeFullFlow_ShrinkEndToEnd(t *testing.T) {
+	cache := newReservationCache(nil)
+	nodeName := "test-node-1"
+	rUID := types.UID("e2e-shrink-uid")
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{UID: rUID, Name: "e2e-shrink-r"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			AllocateOnce: ptr.To[bool](false),
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+						},
+					}},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			NodeName: nodeName, Phase: schedulingv1alpha1.ReservationAvailable,
+			Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+		},
+	}
+	cache.updateReservation(reservation)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{UID: "pod-a", Namespace: "default", Name: "pod-a"},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")},
+				},
+			}},
+		},
+	}
+	cache.addPod(rUID, pod)
+
+	// Step 1: Controller locks
+	cache.LockReservationForResize(rUID, nodeName)
+	if m := cache.matchableOnNode[nodeName]; m != nil {
+		assert.NotContains(t, m, rUID, "step1: removed from matchable")
+	}
+
+	// Step 2: Controller calls UpdateStatus → event handler calls updateReservation
+	shrunkR := reservation.DeepCopy()
+	shrunkR.Status.Allocatable = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("8")}
+	cache.updateReservation(shrunkR)
+	// Still locked, NOT in matchable
+	if m := cache.matchableOnNode[nodeName]; m != nil {
+		assert.NotContains(t, m, rUID, "step2: still locked, not matchable")
+	}
+
+	// Step 3: Event handler calls unlockReservationAfterResize
+	cache.unlockReservationAfterResize(rUID, nodeName)
+	assert.Contains(t, cache.matchableOnNode[nodeName], rUID, "step3: restored to matchable")
+	assert.Contains(t, cache.allocatedOnNode[nodeName], rUID, "step3: restored to allocated (has pod)")
+
+	// rInfo has updated allocatable
+	rInfo := cache.reservationInfos[rUID]
+	wantCPU := resource.MustParse("8")
+	assert.True(t, rInfo.Allocatable[corev1.ResourceCPU].Equal(wantCPU))
+}
+
 // BenchmarkPreAllocatablePodCache benchmarks the preAllocatablePodCache btree operations
 // with multi-node scenarios to simulate real cluster environments.
 func BenchmarkPreAllocatablePodCache(b *testing.B) {

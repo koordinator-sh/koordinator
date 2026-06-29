@@ -54,7 +54,7 @@ func newNodeEventHandlerController(t *testing.T, reservations ...*schedulingv1al
 	err := indexer.AddIndexers(koordSharedInformerFactory)
 	assert.NoError(t, err)
 
-	c := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+	c := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{}, &noopResizeLock{}, nil)
 
 	stopCh := make(chan struct{})
 	t.Cleanup(func() { close(stopCh) })
@@ -154,7 +154,7 @@ func TestOnNodeDelete_IndexerNotRegistered(t *testing.T) {
 	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
 
 	// intentionally skip indexer.AddIndexers so ByIndex returns an error
-	c := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+	c := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{}, &noopResizeLock{}, nil)
 
 	stopCh := make(chan struct{})
 	t.Cleanup(func() { close(stopCh) })

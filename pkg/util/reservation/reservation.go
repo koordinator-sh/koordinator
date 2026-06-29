@@ -50,6 +50,14 @@ const (
 	AnnotationReservationNode = extension.SchedulingDomainPrefix + "/reservation-node"
 	// AnnotationReservationResizeAllocatable indicates the desired allocatable are to be updated.
 	AnnotationReservationResizeAllocatable = extension.SchedulingDomainPrefix + "/reservation-resize-allocatable"
+	// AnnotationReservationResizePod marks a pod as a fake resize pod used for scheduler validation.
+	// The fake resize pod has a new UID and the new resource requirements, and is scheduled
+	// through the standard cycle to validate that the node can fit the enlarged reservation.
+	// This is an internal protocol annotation, not exposed to users.
+	AnnotationReservationResizePod = extension.InternalSchedulingDomainPrefix + "/reservation-resize-pod"
+	// AnnotationResizeTargetReservationUID stores the UID of the reservation being resized.
+	// This is an internal protocol annotation, not exposed to users.
+	AnnotationResizeTargetReservationUID = extension.InternalSchedulingDomainPrefix + "/resize-target-reservation-uid"
 	// AnnotationIsPreAllocation indicates whether the pod is a reserve pod and enables the pre-allocation.
 	AnnotationIsPreAllocation = extension.SchedulingDomainPrefix + "/is-pre-allocation"
 )
@@ -247,6 +255,21 @@ func IsReservationFailed(r *schedulingv1alpha1.Reservation) bool {
 	return r != nil && r.Status.Phase == schedulingv1alpha1.ReservationFailed
 }
 
+// IsResizePod checks if the pod is a fake resize pod used for scheduler validation
+// during reservation enlarge. The fake resize pod has a new UID and the new resource
+// requirements, similar to the inplace-update pattern for pod resizing.
+func IsResizePod(pod *corev1.Pod) bool {
+	return pod != nil && pod.Annotations != nil && pod.Annotations[AnnotationReservationResizePod] == "true"
+}
+
+// GetResizeTargetReservationUID returns the UID of the target reservation from a resize pod.
+func GetResizeTargetReservationUID(pod *corev1.Pod) types.UID {
+	if pod == nil || pod.Annotations == nil {
+		return ""
+	}
+	return types.UID(pod.Annotations[AnnotationResizeTargetReservationUID])
+}
+
 func IsReservationExpired(r *schedulingv1alpha1.Reservation) bool {
 	if r == nil || r.Status.Phase != schedulingv1alpha1.ReservationFailed {
 		return false
@@ -401,6 +424,34 @@ func ReservationRequests(r *schedulingv1alpha1.Reservation) corev1.ResourceList 
 		return requests
 	}
 	return nil
+}
+
+// IsReservationSpecResourcesChanged checks if the spec template resources of an Available reservation
+// have changed compared to its current status.allocatable. This is used to detect if a user has modified
+// the reservation's spec resources and a re-scheduling is needed.
+func IsReservationSpecResourcesChanged(r *schedulingv1alpha1.Reservation) bool {
+	if !IsReservationAvailable(r) {
+		return false
+	}
+	var newSpecRequests corev1.ResourceList
+	if r.Spec.Template != nil {
+		newSpecRequests = resource.PodRequests(&corev1.Pod{
+			Spec: r.Spec.Template.Spec,
+		}, resource.PodResourcesOptions{})
+	}
+	// Compare using the union of resource names from both spec and allocatable.
+	// This detects three kinds of changes:
+	//   1. Quantity change for an existing resource (e.g. cpu: 4 -> 8)
+	//   2. New resource added in spec but absent from allocatable (e.g. add gpu)
+	//   3. Resource removed from spec but still in allocatable (including nil template)
+	allNames := quotav1.ResourceNames(newSpecRequests)
+	for name := range r.Status.Allocatable {
+		allNames = append(allNames, name)
+	}
+	return !quotav1.Equals(
+		quotav1.Mask(newSpecRequests, allNames),
+		quotav1.Mask(r.Status.Allocatable, allNames),
+	)
 }
 
 func ReservePorts(r *schedulingv1alpha1.Reservation) framework.HostPortInfo {
