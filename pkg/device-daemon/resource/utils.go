@@ -295,7 +295,7 @@ func GetXPUMemory(deviceType string) (string, error) {
 
 		results = strings.ReplaceAll(results, "MiB", "Mi")
 
-		return fmt.Sprintf("%s", results), nil
+		return results, nil
 	case NPU:
 		klog.Info("GetNPUMemory, start to get npu memory")
 
@@ -334,16 +334,16 @@ func GetXPUMemory(deviceType string) (string, error) {
 		cmd := exec.Command(ChangeRootCmd, HostRootDir, IXSmiCmd, QueryGPUMemArgs, QuerGPUFormatArgs, QueryGPUIdArgs)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return "0Mi", fmt.Errorf("get gpu memory err: %w, output %v", err, string(output))
+			return "0Mi", fmt.Errorf("get ix memory err: %w, output %v", err, string(output))
 		}
 
 		results := strings.TrimSpace(string(output))
 		results = strings.ReplaceAll(results, " ", "")
-		klog.Infof("GetGPUMemory, end to get ix memory: %s", results)
+		klog.Infof("GetIXMemory, end to get ix memory: %s", results)
 
 		results = strings.ReplaceAll(results, "MiB", "Mi")
 
-		return fmt.Sprintf("%s", results), nil
+		return results, nil
 	case XPU:
 		klog.Info("GetXPUMemory, start to get xpu memory")
 		cmd := exec.Command(ChangeRootCmd, HostRootDir, XPUSmiCmd, QueryXPUMachineReadbleArgs)
@@ -364,7 +364,7 @@ func GetXPUMemory(deviceType string) (string, error) {
 			ChangeRootCmd, HostRootDir, MLUCmd, QueryMLUInfoArgs))
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return "0Mi", fmt.Errorf("get gpu memory err: %w, output %v", err, string(output))
+			return "0Mi", fmt.Errorf("get mlu memory err: %w, output %v", err, string(output))
 		}
 
 		results := strings.Split(string(output), "\n")
@@ -377,11 +377,11 @@ func GetXPUMemory(deviceType string) (string, error) {
 				break
 			}
 		}
-		klog.Infof("GetGPUMemory, end to get ix memory: %s", realResults)
+		klog.Infof("GetMLUMemory, end to get mlu memory: %s", realResults)
 
 		realResults = fmt.Sprintf("%sMi", realResults)
 
-		return fmt.Sprintf("%s", realResults), nil
+		return realResults, nil
 	case MX:
 		klog.Info("GetMXMemory, start to get mx memory")
 		// mx-smi --show-hwinfo | grep -i "Memory Capacity" | awk '{print $4}' | head -1
@@ -633,7 +633,7 @@ func GetDeviceInfo(deviceType, index string) (koordletuti.DeviceTopology, koordl
 				if faultCount > 0 {
 					status.Healthy = false
 					status.ErrMessage = fmt.Sprintf("NPU index %s has %d chip faults", index, faultCount)
-					status.ErrCode = fmt.Sprintf("chip error")
+					status.ErrCode = "chip error"
 				}
 			}
 		}
@@ -763,7 +763,7 @@ func GetDeviceInfo(deviceType, index string) (koordletuti.DeviceTopology, koordl
 		if errCount > 0 {
 			deviceStatus.Healthy = false
 			deviceStatus.ErrMessage = fmt.Sprintf("MX index %s has %d SRAM/DRAM Uncorrectable or Double Bit  ECC errors", index, errCount)
-			deviceStatus.ErrCode = fmt.Sprintf("ECC error")
+			deviceStatus.ErrCode = "ECC error"
 		}
 		return topo, deviceStatus, uuid, nil
 	default:

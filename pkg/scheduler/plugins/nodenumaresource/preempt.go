@@ -127,7 +127,6 @@ func (p *Plugin) AddPod(_ context.Context, cycleState fwktype.CycleState, preemp
 		return nil
 	}
 
-	state.schedulingStateData.lock.Lock()
 	if state.preemptibleState == nil {
 		state.preemptibleState = map[string]*preemptibleNodeState{}
 	}
@@ -139,7 +138,6 @@ func (p *Plugin) AddPod(_ context.Context, cycleState fwktype.CycleState, preemp
 		}
 		state.preemptibleState[nodeName] = nodeState
 	}
-	state.schedulingStateData.lock.Unlock()
 
 	rInfo := p.getPodNominatedReservationInfo(pod, nodeName)
 	if rInfo == nil || p.notNUMAAwareReservation(rInfo) { // preempt node unallocated resources
@@ -183,7 +181,6 @@ func (p *Plugin) RemovePod(_ context.Context, cycleState fwktype.CycleState, pre
 		return nil
 	}
 
-	state.schedulingStateData.lock.Lock()
 	if state.preemptibleState == nil {
 		state.preemptibleState = map[string]*preemptibleNodeState{}
 	}
@@ -195,7 +192,6 @@ func (p *Plugin) RemovePod(_ context.Context, cycleState fwktype.CycleState, pre
 		}
 		state.preemptibleState[nodeName] = nodeState
 	}
-	state.schedulingStateData.lock.Unlock()
 
 	rInfo := p.getPodNominatedReservationInfo(pod, nodeName)
 	if rInfo == nil || p.notNUMAAwareReservation(rInfo) { // preempt node unallocated resources

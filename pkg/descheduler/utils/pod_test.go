@@ -106,6 +106,38 @@ func TestGetResourceRequestQuantity(t *testing.T) {
 			resourceName: corev1.ResourceMemory,
 			want:         resource.MustParse("65Gi"),
 		},
+		{
+			name: "pod with sidecar init container",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									corev1.ResourceMemory: resource.MustParse("32Gi"),
+								},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name:          "sidecar",
+							RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+			resourceName: corev1.ResourceMemory,
+			want:         resource.MustParse("37Gi"), // 32Gi + 4Gi + 1Gi overhead
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

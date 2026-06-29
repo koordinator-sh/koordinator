@@ -19,7 +19,6 @@ package nodenumaresource
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
@@ -183,8 +182,9 @@ func (p *Plugin) GetTopologyOptionsManager() TopologyOptionsManager {
 
 // schedulingStateData is the data only kept in the scheduling cycle. It could be cleaned up
 // before entering the binding cycle to reduce memory cost.
+// It is safe to write preemptibleState without a lock because it is deep-copied in
+// preFilterState.Clone(), so each scheduling goroutine operates on its own independent copy.
 type schedulingStateData struct {
-	lock             sync.RWMutex
 	preemptibleState map[string]*preemptibleNodeState
 }
 
@@ -227,8 +227,6 @@ func (s *preFilterState) Clone() fwktype.StateData {
 		hasReservationAffinity:      s.hasReservationAffinity,
 		isPreAllocationRequired:     s.isPreAllocationRequired,
 	}
-	s.schedulingStateData.lock.RLock()
-	defer s.schedulingStateData.lock.RUnlock()
 	if s.preemptibleState != nil {
 		preemptibleState := make(map[string]*preemptibleNodeState, len(s.preemptibleState))
 		for nodeName, nodeState := range s.preemptibleState {
@@ -775,11 +773,9 @@ func (p *Plugin) getResourceOptions(state *preFilterState, node *corev1.Node, re
 	}
 
 	var nodePreemptionState *preemptibleNodeState
-	state.schedulingStateData.lock.RLock()
 	if state.preemptibleState != nil && state.preemptibleState[node.Name] != nil {
 		nodePreemptionState = state.preemptibleState[node.Name].Clone()
 	}
-	state.schedulingStateData.lock.RUnlock()
 
 	options := &ResourceOptions{
 		requests:                requests,

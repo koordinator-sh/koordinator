@@ -408,3 +408,49 @@ func TestSetDefaults_NodePoolsUseDefaultArgsFromLowNodeLoadArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestSetDefaults_FragmentationAwareArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     *FragmentationAwareArgs
+		expected *FragmentationAwareArgs
+	}{
+		{
+			name: "default values",
+			args: &FragmentationAwareArgs{},
+			expected: &FragmentationAwareArgs{
+				Paused:                  ptr.To[bool](false),
+				DryRun:                  ptr.To[bool](false),
+				NodeFit:                 ptr.To[bool](true),
+				Resources:               []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				ImbalanceThreshold:      ptr.To[float64](0.15),
+				MinImprovementThreshold: ptr.To[float64](0.02),
+			},
+		},
+		{
+			name: "override defaults",
+			args: &FragmentationAwareArgs{
+				Paused:                  ptr.To[bool](true),
+				DryRun:                  ptr.To[bool](true),
+				NodeFit:                 ptr.To[bool](false),
+				Resources:               []corev1.ResourceName{corev1.ResourceMemory},
+				ImbalanceThreshold:      ptr.To[float64](0.20),
+				MinImprovementThreshold: ptr.To[float64](0.05),
+			},
+			expected: &FragmentationAwareArgs{
+				Paused:                  ptr.To[bool](true),
+				DryRun:                  ptr.To[bool](true),
+				NodeFit:                 ptr.To[bool](false),
+				Resources:               []corev1.ResourceName{corev1.ResourceMemory},
+				ImbalanceThreshold:      ptr.To[float64](0.20),
+				MinImprovementThreshold: ptr.To[float64](0.05),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetDefaults_FragmentationAwareArgs(tt.args)
+			assert.Equal(t, tt.expected, tt.args)
+		})
+	}
+}

@@ -30,7 +30,8 @@ import (
 var (
 	// HandlerMap contains admission webhook handlers
 	HandlerBuilderMap = map[string]framework.HandlerBuilder{
-		"validate-pod": &podValidateBuilder{},
+		"validate-pod":         &podValidateBuilder{},
+		"validate-pod-binding": &podBindingValidateBuilder{},
 	}
 )
 
@@ -50,9 +51,26 @@ func (b *podValidateBuilder) Build() admission.Handler {
 		Client:  b.mgr.GetClient(),
 		Decoder: admission.NewDecoder(b.mgr.GetScheme()),
 	}
-	quotaAccessor := quotaevaluate.NewQuotaAccessor(h.Client)
+	quotaAccessor := quotaevaluate.NewQuotaAccessor(h.Client, b.mgr.GetAPIReader())
 	h.QuotaEvaluator = quotaevaluate.NewQuotaEvaluator(quotaAccessor, 16, make(chan struct{}))
 	h.PodEnhancedValidator = NewPodEnhancedValidator(b.mgr.GetClient())
 
 	return h
+}
+
+var _ framework.HandlerBuilder = &podBindingValidateBuilder{}
+
+type podBindingValidateBuilder struct {
+	mgr manager.Manager
+}
+
+func (b *podBindingValidateBuilder) WithControllerManager(mgr ctrl.Manager) framework.HandlerBuilder {
+	b.mgr = mgr
+	return b
+}
+
+func (b *podBindingValidateBuilder) Build() admission.Handler {
+	return &BindingAdmissionHandler{
+		Client: b.mgr.GetClient(),
+	}
 }

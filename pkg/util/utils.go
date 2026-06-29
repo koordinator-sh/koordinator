@@ -240,10 +240,10 @@ func PatchReservation(ctx context.Context, clientset koordinatorclientset.Interf
 	patched, err := clientset.SchedulingV1alpha1().Reservations().
 		Patch(ctx, oldReservation.Name, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
 	if err != nil {
-		klog.V(5).InfoS("failed to patch pod", "pod", klog.KObj(oldReservation), "patch", string(patchBytes), "err", err)
+		klog.V(5).InfoS("failed to patch reservation", "reservation", klog.KObj(oldReservation), "patch", string(patchBytes), "err", err)
 		return nil, err
 	}
-	klog.V(6).InfoS("successfully patch pod", "pod", klog.KObj(oldReservation), "patch", string(patchBytes))
+	klog.V(6).InfoS("successfully patch reservation", "reservation", klog.KObj(oldReservation), "patch", string(patchBytes))
 	return patched, nil
 }
 
@@ -265,10 +265,10 @@ func PatchReservationSafe(ctx context.Context, clientset koordinatorclientset.In
 	patched, err := clientset.SchedulingV1alpha1().Reservations().
 		Patch(ctx, oldReservation.Name, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
 	if err != nil {
-		klog.V(5).InfoS("failed to patch pod", "pod", klog.KObj(oldReservation), "patch", string(patchBytes), "err", err)
+		klog.V(5).InfoS("failed to patch reservation", "reservation", klog.KObj(oldReservation), "patch", string(patchBytes), "err", err)
 		return nil, err
 	}
-	klog.V(6).InfoS("successfully patch pod", "pod", klog.KObj(oldReservation), "patch", string(patchBytes))
+	klog.V(6).InfoS("successfully patch reservation", "reservation", klog.KObj(oldReservation), "patch", string(patchBytes))
 	return patched, nil
 }
 

@@ -682,9 +682,7 @@ func (gqm *GroupQuotaManager) GetQuotaSnapshot() *QuotaSnapshot {
 
 	for name, quotaInfo := range gqm.quotaInfoMap {
 		// Deep copy QuotaInfo for snapshot
-		quotaInfo.lock.RLock()
 		snapshot.quotaInfoMap[name] = quotaInfo.DeepCopy()
-		quotaInfo.lock.RUnlock()
 	}
 	return snapshot
 }

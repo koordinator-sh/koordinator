@@ -177,6 +177,15 @@ func (c *cpuEvictor) calculateMilliReleaseByBESatisfaction(thresholdConfig *slov
 				milliRequestSum = milliRequestSum + containerCPUReq
 			}
 		}
+		// Sidecar containers run alongside regular containers and should be summed.
+		for _, container := range podInfo.Pod.Spec.InitContainers {
+			if util.IsSidecarContainer(container) {
+				containerCPUReq := util.GetContainerBatchMilliCPURequest(&container)
+				if containerCPUReq > 0 {
+					milliRequestSum = milliRequestSum + containerCPUReq
+				}
+			}
+		}
 		return corev1.ResourceList{
 			apiext.BatchCPU: *resource.NewQuantity(milliRequestSum, resource.DecimalSI),
 		}
@@ -575,6 +584,15 @@ func (c *cpuEvictor) getBEPodEvictInfoAndSort(evictionPolicy string, thresholdCo
 			containerCPUReq := util.GetContainerBatchMilliCPURequest(&container)
 			if containerCPUReq > 0 {
 				milliRequestSum = milliRequestSum + containerCPUReq
+			}
+		}
+		// Sidecar containers run alongside regular containers and should be summed.
+		for _, container := range pod.Spec.InitContainers {
+			if util.IsSidecarContainer(container) {
+				containerCPUReq := util.GetContainerBatchMilliCPURequest(&container)
+				if containerCPUReq > 0 {
+					milliRequestSum = milliRequestSum + containerCPUReq
+				}
 			}
 		}
 
