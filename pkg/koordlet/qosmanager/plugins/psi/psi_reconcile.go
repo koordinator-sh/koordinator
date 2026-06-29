@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/psi/operator"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 const (
@@ -41,11 +43,12 @@ var _ framework.QOSStrategy = &psiReconcile{}
 type psiReconcile struct {
 	reconcileInterval time.Duration
 	statesInformer    statesinformer.StatesInformer
+	kubeClient        clientset.Interface
 	manager           *PsiManager
 }
 
 func (p *psiReconcile) Enabled() bool {
-	return features.DefaultKoordletFeatureGate.Enabled(features.BlkIOReconcile) && p.reconcileInterval > 0
+	return features.DefaultKoordletFeatureGate.Enabled(features.PSIReconcile) && p.reconcileInterval > 0
 }
 
 func (p *psiReconcile) Setup(context *framework.Context) {
@@ -65,6 +68,7 @@ func New(opt *framework.Options) framework.QOSStrategy {
 	p := &psiReconcile{
 		reconcileInterval: time.Duration(opt.Config.ReconcileIntervalSeconds) * time.Second,
 		statesInformer:    opt.StatesInformer,
+		kubeClient:        opt.KubeClient,
 		manager:           NewManager(cgroup.ResourceMaskAll),
 	}
 	opt.StatesInformer.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "psi-reconcile",
@@ -101,6 +105,11 @@ func (p *psiReconcile) reconcile() {
 		klog.ErrorS(fmt.Errorf("failed to extract operators: %v", err), "Failed to reconcile PSI")
 		return
 	}
+	if supported, msg := p.isSupported(nodeSLO.Spec.PSIStrategy); !supported {
+		klog.V(4).InfoS("Skip PSI reconcile on unsupported environment", "reason", msg)
+		return
+	}
+	p.injectOperatorDependencies(ops...)
 	if err := p.manager.AddOperators(ops...); err != nil {
 		klog.ErrorS(fmt.Errorf("failed to add operators: %v", err), "Failed to reconcile PSI")
 		return
@@ -187,4 +196,43 @@ func extractOperators(strategy *slov1alpha1.PSIStrategy) (res []operator.Operato
 		res = append(res, op)
 	}
 	return res, nil
+}
+
+func (p *psiReconcile) injectOperatorDependencies(ops ...operator.Operator) {
+	for _, op := range ops {
+		if exporter, ok := op.(*operator.PSIExport); ok {
+			exporter.SetClientset(p.kubeClient)
+		}
+	}
+}
+
+func (p *psiReconcile) isSupported(strategy *slov1alpha1.PSIStrategy) (bool, string) {
+	if system.GetCurrentCgroupVersion() != system.CgroupVersionV2 {
+		return false, "psi qos requires cgroup v2"
+	}
+
+	required := []system.ResourceType{
+		system.CPUAcctCPUPressureName,
+		system.CPUAcctMemoryPressureName,
+		system.CPUAcctIOPressureName,
+	}
+	if strategy.MemorySuppress != nil && strategy.MemorySuppress.Enable != nil && *strategy.MemorySuppress.Enable {
+		required = append(required, system.MemoryHighName, system.MemoryMinName)
+	}
+	if (strategy.GroupShare != nil && strategy.GroupShare.Enable != nil && *strategy.GroupShare.Enable) ||
+		(strategy.BudgetBalance != nil && strategy.BudgetBalance.Enable != nil && *strategy.BudgetBalance.Enable) {
+		required = append(required, system.CPUCFSQuotaName, system.CPUSharesName)
+	}
+
+	for _, resourceType := range required {
+		resource, err := system.GetCgroupResource(resourceType)
+		if err != nil {
+			return false, fmt.Sprintf("resource %s is not registered: %v", resourceType, err)
+		}
+		if supported, msg := resource.IsSupported(""); !supported {
+			return false, fmt.Sprintf("resource %s is unsupported: %s", resourceType, msg)
+		}
+	}
+
+	return true, ""
 }

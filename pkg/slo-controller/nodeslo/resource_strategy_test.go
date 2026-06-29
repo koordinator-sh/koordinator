@@ -1128,7 +1128,7 @@ func Test_getPSIConfigSpec(t *testing.T) {
 	testPSI := &configuration.PSICfg{
 		ClusterStrategy: &slov1alpha1.PSIStrategy{
 			MemorySuppress: &slov1alpha1.MemorySuppressConfig{
-				MinSpot: pointer.Int64(4000),
+				MinSpot: ptr.To[int64](4000),
 			},
 		},
 		NodeStrategies: []configuration.NodePSIStrategy{
@@ -1142,7 +1142,7 @@ func Test_getPSIConfigSpec(t *testing.T) {
 				},
 				PSIStrategy: &slov1alpha1.PSIStrategy{
 					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
-						MinSpot: pointer.Int64(1000),
+						MinSpot: ptr.To[int64](1000),
 					},
 				},
 			},
@@ -1151,7 +1151,7 @@ func Test_getPSIConfigSpec(t *testing.T) {
 	testPSIMultiNodes := &configuration.PSICfg{
 		ClusterStrategy: &slov1alpha1.PSIStrategy{
 			MemorySuppress: &slov1alpha1.MemorySuppressConfig{
-				MinSpot: pointer.Int64(4000),
+				MinSpot: ptr.To[int64](4000),
 			},
 		},
 		NodeStrategies: []configuration.NodePSIStrategy{
@@ -1165,7 +1165,7 @@ func Test_getPSIConfigSpec(t *testing.T) {
 				},
 				PSIStrategy: &slov1alpha1.PSIStrategy{
 					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
-						MinSpot: pointer.Int64(1000),
+						MinSpot: ptr.To[int64](1000),
 					},
 				},
 			},
@@ -1179,7 +1179,7 @@ func Test_getPSIConfigSpec(t *testing.T) {
 				},
 				PSIStrategy: &slov1alpha1.PSIStrategy{
 					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
-						MinSpot: pointer.Int64(2000),
+						MinSpot: ptr.To[int64](2000),
 					},
 				},
 			},
@@ -1249,12 +1249,12 @@ func Test_calculatePSIConfigMerged(t *testing.T) {
 	defaultSLOCfg := DefaultSLOCfg()
 
 	oldSLOConfig := DefaultSLOCfg()
-	oldSLOConfig.PSICfgMerged.ClusterStrategy.MemorySuppress.MinSpot = pointer.Int64(3000)
+	oldSLOConfig.PSICfgMerged.ClusterStrategy.MemorySuppress.MinSpot = ptr.To[int64](3000)
 
 	testingCfgClusterOnly := &configuration.PSICfg{
 		ClusterStrategy: &slov1alpha1.PSIStrategy{
 			MemorySuppress: &slov1alpha1.MemorySuppressConfig{
-				MaxSpot: pointer.Int64(8000),
+				MaxSpot: ptr.To[int64](8000),
 			},
 		},
 	}
@@ -1276,7 +1276,7 @@ func Test_calculatePSIConfigMerged(t *testing.T) {
 				},
 				PSIStrategy: &slov1alpha1.PSIStrategy{
 					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
-						GrowPeriods: pointer.Int64(1),
+						GrowPeriods: ptr.To[int64](1),
 					},
 				},
 			},
@@ -1290,7 +1290,7 @@ func Test_calculatePSIConfigMerged(t *testing.T) {
 				},
 				PSIStrategy: &slov1alpha1.PSIStrategy{
 					MemorySuppress: &slov1alpha1.MemorySuppressConfig{
-						GrowPeriods: pointer.Int64(2),
+						GrowPeriods: ptr.To[int64](2),
 					},
 				},
 			},

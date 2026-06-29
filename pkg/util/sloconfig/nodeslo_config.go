@@ -46,6 +46,7 @@ func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
 		ResourceQOSStrategy:         DefaultResourceQOSStrategy(),
 		CPUBurstStrategy:            DefaultCPUBurstStrategy(),
 		SystemStrategy:              DefaultSystemStrategy(),
+		PSIStrategy:                 DefaultPSIStrategy(),
 		Extensions:                  DefaultExtensions(),
 	}
 }
@@ -436,7 +437,7 @@ func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
 func DefaultPSIStrategy() *slov1alpha1.PSIStrategy {
 	return &slov1alpha1.PSIStrategy{
 		PSIExport: &slov1alpha1.PSIExportConfig{
-			Enable: pointer.Bool(true),
+			Enable: ptr.To(true),
 			Threshold: &slov1alpha1.PSIExporterThresholdConfig{
 				CPU: &slov1alpha1.PSIThreshold{
 					Avg10:  2000,
@@ -456,20 +457,20 @@ func DefaultPSIStrategy() *slov1alpha1.PSIStrategy {
 			},
 		},
 		MemorySuppress: &slov1alpha1.MemorySuppressConfig{
-			Enable:      pointer.Bool(true),
-			MinSpot:     pointer.Int64(5000),
-			MaxSpot:     pointer.Int64(9000),
-			GrowPeriods: pointer.Int64(10),
-			KillPeriods: pointer.Int64(60),
+			Enable:      ptr.To(true),
+			MinSpot:     ptr.To(int64(5000)),
+			MaxSpot:     ptr.To(int64(9000)),
+			GrowPeriods: ptr.To(int64(10)),
+			KillPeriods: ptr.To(int64(60)),
 		},
 		GroupShare: &slov1alpha1.GroupShareConfig{
-			Enable:     pointer.Bool(true),
-			LowerBound: pointer.Int64(5000),
+			Enable:     ptr.To(true),
+			LowerBound: ptr.To(int64(5000)),
 		},
 		BudgetBalance: &slov1alpha1.BudgetBalanceConfig{
-			Enable:     pointer.Bool(true),
-			BasePrice:  pointer.Int64(5000),
-			LowerBound: pointer.Int64(5000),
+			Enable:     ptr.To(true),
+			BasePrice:  ptr.To(int64(5000)),
+			LowerBound: ptr.To(int64(5000)),
 		},
 	}
 }

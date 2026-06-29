@@ -87,12 +87,7 @@ func (cpu *Cpu) Update(pressure *Pressure, usageUsec, quotaInSecond int64, weigh
 	cpu.Timestamp = now
 }
 
-func (cpu *Cpu) SetThrottle(quotaInSecond int64) error {
-	if err := WriteCpuMax(cpu.path, &CpuQuota{Quota: quotaInSecond / 10, Period: 100000}); err != nil {
-		return err
-	}
-	cpu.quota = quotaInSecond
-	cpu.Base.Throttle = quotaInSecond
+func (cpu *Cpu) SetThrottle(int64) error {
 	return nil
 }
 

@@ -69,6 +69,9 @@ func (pe *PSIExport) Name() string {
 }
 
 func (pe *PSIExport) Init() error {
+	if pe.clientset != nil {
+		return nil
+	}
 	config, err := config.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get config: %w", err)
@@ -78,6 +81,10 @@ func (pe *PSIExport) Init() error {
 		return fmt.Errorf("failed to new clientset: %w", err)
 	}
 	return nil
+}
+
+func (pe *PSIExport) SetClientset(client kubernetes.Interface) {
+	pe.clientset = client
 }
 
 func (pe *PSIExport) Update(g Operator) error {
