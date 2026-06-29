@@ -17,11 +17,13 @@ limitations under the License.
 package operator
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 )
 
@@ -55,4 +57,35 @@ func TestPressureConditionTransitions(t *testing.T) {
 		assert.Equal(t, "PodCpuNotInPressure", condition.Reason)
 		assert.Empty(t, condition.Message)
 	}
+}
+
+func TestPatchPodStatusWithInjectedClient(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{{
+				Type:   PodCpuInPressure,
+				Status: corev1.ConditionFalse,
+			}},
+		},
+	}
+	client := clientsetfake.NewSimpleClientset(pod.DeepCopy())
+	exporter := &PSIExport{}
+	exporter.SetClientset(client)
+
+	modified := pod.DeepCopy()
+	modified.Status.Conditions[0].Status = corev1.ConditionTrue
+	modified.Status.Conditions[0].Reason = string(PodCpuInPressure)
+
+	patched, err := exporter.patchPodStatus(pod, modified)
+	assert.NoError(t, err)
+	assert.Equal(t, corev1.ConditionTrue, patched.Status.Conditions[0].Status)
+
+	stored, err := client.CoreV1().Pods(pod.Namespace).Get(context.TODO(), pod.Name, metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Equal(t, types.UID(""), stored.UID)
+	assert.Equal(t, corev1.ConditionTrue, stored.Status.Conditions[0].Status)
 }

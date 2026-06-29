@@ -27,13 +27,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/psi/cgroup"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/psi/podcgroup"
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const AnnotationPSIExport = "koordinator.sh/psi-export"
@@ -181,25 +181,7 @@ func (pe *PSIExport) pressureCondition(pod *v1.Pod, nowTime metav1.Time, conditi
 }
 
 func (pe *PSIExport) patchPodStatus(pod *v1.Pod, newPod *v1.Pod) (*v1.Pod, error) {
-	newPod.Spec = pod.Spec
-	oldData, err := json.Marshal(pod)
-	if err != nil {
-		return nil, err
-	}
-	newData, err := json.Marshal(newPod)
-	if err != nil {
-		return nil, err
-	}
-	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1.Pod{})
-	if err != nil {
-		return nil, err
-	}
-	pod, err = pe.clientset.CoreV1().Pods(pod.Namespace).Patch(context.TODO(), pod.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, "status")
-	if err != nil {
-		return nil, err
-	}
-	klog.InfoS("Patch pod %s success", "pod", klog.KObj(pod), "patch", string(patchBytes))
-	return pod, nil
+	return util.PatchPod(context.TODO(), pe.clientset, pod, newPod, "status")
 }
 
 const (

@@ -31,6 +31,23 @@ import (
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
+func TestExtractOperatorsKeepsDefaultPSIThresholdsWhenThresholdIsNil(t *testing.T) {
+	ops, err := extractOperators(&slov1alpha1.PSIStrategy{
+		PSIExport: &slov1alpha1.PSIExportConfig{
+			Enable: ptr.To(true),
+		},
+	})
+
+	assert.NoError(t, err)
+	if assert.Len(t, ops, 1) {
+		exporter, ok := ops[0].(*operator.PSIExport)
+		assert.True(t, ok)
+		assert.Equal(t, operator.DefaultPSIExporter.(*operator.PSIExport).CPU, exporter.CPU)
+		assert.Equal(t, operator.DefaultPSIExporter.(*operator.PSIExport).Memory, exporter.Memory)
+		assert.Equal(t, operator.DefaultPSIExporter.(*operator.PSIExport).IO, exporter.IO)
+	}
+}
+
 func TestPSIReconcileEnabled(t *testing.T) {
 	reconcile := &psiReconcile{reconcileInterval: 10 * time.Second}
 

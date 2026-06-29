@@ -125,25 +125,27 @@ func extractOperators(strategy *slov1alpha1.PSIStrategy) (res []operator.Operato
 		if err := op.Update(operator.DefaultPSIExporter); err != nil {
 			return nil, err
 		}
-		if strategy.PSIExport.Threshold.CPU != nil {
-			op.CPU = &operator.StallThreshold{
-				Avg10:  float64(strategy.PSIExport.Threshold.CPU.Avg10) / 100,
-				Avg60:  float64(strategy.PSIExport.Threshold.CPU.Avg60) / 100,
-				Avg300: float64(strategy.PSIExport.Threshold.CPU.Avg300) / 100,
+		if strategy.PSIExport.Threshold != nil {
+			if strategy.PSIExport.Threshold.CPU != nil {
+				op.CPU = &operator.StallThreshold{
+					Avg10:  float64(strategy.PSIExport.Threshold.CPU.Avg10) / 100,
+					Avg60:  float64(strategy.PSIExport.Threshold.CPU.Avg60) / 100,
+					Avg300: float64(strategy.PSIExport.Threshold.CPU.Avg300) / 100,
+				}
 			}
-		}
-		if strategy.PSIExport.Threshold.Memory != nil {
-			op.Memory = &operator.StallThreshold{
-				Avg10:  float64(strategy.PSIExport.Threshold.Memory.Avg10) / 100,
-				Avg60:  float64(strategy.PSIExport.Threshold.Memory.Avg60) / 100,
-				Avg300: float64(strategy.PSIExport.Threshold.Memory.Avg300) / 100,
+			if strategy.PSIExport.Threshold.Memory != nil {
+				op.Memory = &operator.StallThreshold{
+					Avg10:  float64(strategy.PSIExport.Threshold.Memory.Avg10) / 100,
+					Avg60:  float64(strategy.PSIExport.Threshold.Memory.Avg60) / 100,
+					Avg300: float64(strategy.PSIExport.Threshold.Memory.Avg300) / 100,
+				}
 			}
-		}
-		if strategy.PSIExport.Threshold.IO != nil {
-			op.IO = &operator.StallThreshold{
-				Avg10:  float64(strategy.PSIExport.Threshold.IO.Avg10) / 100,
-				Avg60:  float64(strategy.PSIExport.Threshold.IO.Avg60) / 100,
-				Avg300: float64(strategy.PSIExport.Threshold.IO.Avg300) / 100,
+			if strategy.PSIExport.Threshold.IO != nil {
+				op.IO = &operator.StallThreshold{
+					Avg10:  float64(strategy.PSIExport.Threshold.IO.Avg10) / 100,
+					Avg60:  float64(strategy.PSIExport.Threshold.IO.Avg60) / 100,
+					Avg300: float64(strategy.PSIExport.Threshold.IO.Avg300) / 100,
+				}
 			}
 		}
 		res = append(res, op)
