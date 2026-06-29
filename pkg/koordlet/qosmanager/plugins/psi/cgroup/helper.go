@@ -19,20 +19,18 @@ package cgroup
 import (
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
-	"k8s.io/kubernetes/pkg/kubelet/cm"
 )
 
 const (
 	Max                   int64   = math.MaxInt64
 	Maxf                  float64 = math.MaxFloat64
+	milliCPUToCPU         int64   = 1000
 	Cgroup2CpuStat        string  = "cpu.stat"
 	Cgroup2CpuMax         string  = "cpu.max"
 	Cgroup2CpuWeight      string  = "cpu.weight"
@@ -50,18 +48,36 @@ var (
 	cgroupReader = resourceexecutor.NewCgroupReader()
 )
 
-func readCgroupFile(cgroupPath, fileName string) (string, error) {
-	filePath := filepath.Join(cgroupPath, fileName)
-	data, err := os.ReadFile(filePath)
+func getCgroupResource(resourceType sysutil.ResourceType) (sysutil.Resource, error) {
+	resource, err := sysutil.GetCgroupResource(resourceType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cgroup resource %s: %w", resourceType, err)
+	}
+	return resource, nil
+}
+
+func readKnownCgroupResource(cgroupPath string, resourceType sysutil.ResourceType) (string, error) {
+	resource, err := getCgroupResource(resourceType)
 	if err != nil {
 		return "", err
 	}
-	return strings.Trim(string(data), "\n"), nil
+	return resourceexecutor.ReadCgroupResource(cgroupPath, resource)
 }
 
-func writeCgroupFile(cgroupPath, fileName, content string) error {
-	filePath := filepath.Join(cgroupPath, fileName)
-	return os.WriteFile(filePath, []byte(content), 0644)
+func readKnownCgroupResourceInt(cgroupPath string, resourceType sysutil.ResourceType) (int64, error) {
+	resource, err := getCgroupResource(resourceType)
+	if err != nil {
+		return 0, err
+	}
+	return resourceexecutor.ReadCgroupResourceInt(cgroupPath, resource)
+}
+
+func writeKnownCgroupResource(cgroupPath string, resourceType sysutil.ResourceType, content string) error {
+	resource, err := getCgroupResource(resourceType)
+	if err != nil {
+		return err
+	}
+	return resourceexecutor.WriteCgroupResource(cgroupPath, resource, content)
 }
 
 type CpuStat struct {
@@ -87,14 +103,13 @@ func (c *CpuQuota) QuotaInSecond() int64 {
 }
 
 func (c *CpuQuota) ToWeight() uint64 {
-	milliCPU := c.Quota * cm.MilliCPUToCPU / c.Period
+	milliCPU := c.Quota * milliCPUToCPU / c.Period
 	return GetCpuWeight(milliCPU)
 }
 
 func QuotaFromWeight(weight uint64) *CpuQuota {
 	milliCPU := GetMilliCPU(weight)
-	quotaPeriod := int64(cm.QuotaPeriod)
-	milliCPUToCPU := int64(cm.MilliCPUToCPU)
+	quotaPeriod := sysutil.CFSBasePeriodValue
 	if quotaPeriod <= 0 || milliCPUToCPU <= 0 {
 		return &CpuQuota{Quota: 0, Period: 100000}
 	}
@@ -133,46 +148,46 @@ type Pressure struct {
 }
 
 func ReadCpuStat(cgroupPath string) (*CpuStat, error) {
-	stat, err := parseCgroupFlatKeyedFile(cgroupPath, Cgroup2CpuStat)
+	statTxt, err := readKnownCgroupResource(cgroupPath, sysutil.CPUStatName)
+	if err != nil {
+		return nil, err
+	}
+	stat, err := sysutil.ParseCPUAcctStatRawV2(statTxt)
 	if err != nil {
 		return nil, err
 	}
 	return &CpuStat{
-		UsageUsec:  stat["usage_usec"],
-		UserUsec:   stat["user_usec"],
-		SystemUsec: stat["system_usec"],
+		UsageUsec:  stat.UsageUsec,
+		UserUsec:   stat.UserUsec,
+		SystemUsec: stat.SystemUSec,
 	}, nil
 }
 
 func ReadCpuMax(cgroupPath string) (*CpuQuota, error) {
-	txt, err := readCgroupFile(cgroupPath, Cgroup2CpuMax)
+	txt, err := readKnownCgroupResource(cgroupPath, sysutil.CPUCFSQuotaName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", Cgroup2CpuMax, err)
 	}
-	parts := strings.Fields(txt)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid format: %s", txt)
-	}
-	quota, err := parseInt64(parts[0])
+	quota, err := sysutil.ParseCPUCFSQuotaV2(txt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", parts[0], err)
+		return nil, err
 	}
-	period, err := parseInt64(parts[1])
+	period, err := sysutil.ParseCPUCFSPeriodV2(txt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", parts[1], err)
+		return nil, err
 	}
 	return &CpuQuota{Quota: quota, Period: period}, nil
 }
 
 func WriteCpuMax(cgroupPath string, max *CpuQuota) error {
-	if err := writeCgroupFile(cgroupPath, Cgroup2CpuMax, max.String()); err != nil {
+	if err := writeKnownCgroupResource(cgroupPath, sysutil.CPUCFSQuotaName, max.String()); err != nil {
 		return fmt.Errorf("failed to write %q to %s: %w", max.String(), Cgroup2CpuMax, err)
 	}
 	return nil
 }
 
 func ReadCpuWeight(cgroupPath string) (uint64, error) {
-	weight, err := readCgroupFile(cgroupPath, Cgroup2CpuWeight)
+	weight, err := readKnownCgroupResource(cgroupPath, sysutil.CPUSharesName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read %s: %w", Cgroup2CpuWeight, err)
 	}
@@ -190,7 +205,7 @@ func WriteCpuWeight(cgroupPath string, weight uint64) error {
 	if weight > 10000 {
 		weight = 10000
 	}
-	if err := writeCgroupFile(cgroupPath, Cgroup2CpuWeight, fmt.Sprintf("%d", weight)); err != nil {
+	if err := writeKnownCgroupResource(cgroupPath, sysutil.CPUSharesName, fmt.Sprintf("%d", weight)); err != nil {
 		return fmt.Errorf("failed to write %d to %s: %w", weight, Cgroup2CpuWeight, err)
 	}
 	return nil
@@ -205,50 +220,38 @@ func ReadCpuPressure(cgroupPath string) (*Pressure, error) {
 }
 
 func ReadMemoryCurrent(cgroupPath string) (int64, error) {
-	current, err := readCgroupFile(cgroupPath, Cgroup2MemoryCurrent)
+	current, err := readKnownCgroupResourceInt(cgroupPath, sysutil.MemoryUsageName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read %s: %w", Cgroup2MemoryCurrent, err)
 	}
-	val, err := parseInt64(current)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse %s: %w", current, err)
-	}
-	return val, nil
+	return current, nil
 }
 
 func ReadMemoryHigh(cgroupPath string) (int64, error) {
-	high, err := readCgroupFile(cgroupPath, Cgroup2MemoryHigh)
+	high, err := readKnownCgroupResourceInt(cgroupPath, sysutil.MemoryHighName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read %s: %w", Cgroup2MemoryHigh, err)
 	}
-	val, err := parseInt64(high)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse %s: %w", high, err)
-	}
-	return val, nil
+	return high, nil
 }
 
 func WriteMemoryHigh(cgroupPath string, high int64) error {
-	if err := writeCgroupFile(cgroupPath, Cgroup2MemoryHigh, Int64(high).String()); err != nil {
+	if err := writeKnownCgroupResource(cgroupPath, sysutil.MemoryHighName, Int64(high).String()); err != nil {
 		return fmt.Errorf("failed to write %q to %s: %w", Int64(high).String(), Cgroup2MemoryHigh, err)
 	}
 	return nil
 }
 
 func ReadMemoryMin(cgroupPath string) (int64, error) {
-	min, err := readCgroupFile(cgroupPath, Cgroup2MemoryMin)
+	min, err := readKnownCgroupResourceInt(cgroupPath, sysutil.MemoryMinName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read %s: %w", Cgroup2MemoryMin, err)
 	}
-	val, err := parseInt64(min)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse %s: %w", min, err)
-	}
-	return val, nil
+	return min, nil
 }
 
 func WriteMemoryMin(cgroupPath string, min int64) error {
-	if err := writeCgroupFile(cgroupPath, Cgroup2MemoryMin, Int64(min).String()); err != nil {
+	if err := writeKnownCgroupResource(cgroupPath, sysutil.MemoryMinName, Int64(min).String()); err != nil {
 		return fmt.Errorf("failed to write %q to %s: %w", Int64(min).String(), Cgroup2MemoryMin, err)
 	}
 	return nil
@@ -263,7 +266,7 @@ func ReadMemoryPressure(cgroupPath string) (*Pressure, error) {
 }
 
 func ReadIOStat(cgroupPath string) (map[string]IOStat, error) {
-	stat, err := parseCgroupNestedKeyedFile(cgroupPath, Cgroup2IOStat)
+	stat, err := readCgroupV2NestedKeyedResource(cgroupPath, sysutil.IOStatName)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +284,7 @@ func ReadIOStat(cgroupPath string) (map[string]IOStat, error) {
 }
 
 func ReadIOMax(cgroupPath string) (map[string]IOMax, error) {
-	max, err := parseCgroupNestedKeyedFile(cgroupPath, Cgroup2IOMax)
+	max, err := readCgroupV2NestedKeyedResource(cgroupPath, sysutil.IOMaxName)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +303,7 @@ func ReadIOMax(cgroupPath string) (map[string]IOMax, error) {
 
 func WriteIOMax(cgroupPath string, max ...*IOMax) error {
 	for _, m := range max {
-		if err := writeCgroupFile(cgroupPath, Cgroup2IOMax, m.String()); err != nil {
+		if err := writeKnownCgroupResource(cgroupPath, sysutil.IOMaxName, m.String()); err != nil {
 			return fmt.Errorf("failed to write %q to %s: %w", m.String(), Cgroup2IOMax, err)
 		}
 	}
@@ -312,7 +315,11 @@ func ReadIOPressure(cgroupPath string) (*Pressure, error) {
 }
 
 func parsePressure(dir string, file string) (*Pressure, error) {
-	p, err := parseCgroupNestedKeyedFile(dir, file)
+	txt, err := readKnownCgroupResource(dir, sysutil.CPUAcctIOPressureName)
+	if err != nil {
+		return nil, err
+	}
+	p, err := sysutil.ParseCgroupV2NestedKeyedFile(txt)
 	if err != nil {
 		return nil, err
 	}
@@ -333,81 +340,12 @@ func parsePressure(dir string, file string) (*Pressure, error) {
 	}, nil
 }
 
-// parseCgroupNestedKeyedFile parses the content of a cgroup v2 nested keyed file.
-// The form of a nested keyed file is as follows:
-//
-//	0:0 <key1=value1> <key2=value2> ...
-//	0:1 <key1=value1> <key2=value2> ...
-//	...
-func parseCgroupNestedKeyedFile(dir string, file string) (map[string]map[string]float64, error) {
-	txt, err := readCgroupFile(dir, file)
+func readCgroupV2NestedKeyedResource(cgroupPath string, resourceType sysutil.ResourceType) (map[string]map[string]float64, error) {
+	txt, err := readKnownCgroupResource(cgroupPath, resourceType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", file, err)
+		return nil, err
 	}
-
-	// Initialize the nested key value map
-	nestedValues := make(map[string]map[string]float64)
-
-	lines := strings.Split(txt, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue // skip empty lines
-		}
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			return nil, fmt.Errorf("invalid line format: %s", line)
-		}
-		nested := make(map[string]float64)
-		for _, part := range parts[1:] {
-			kv := strings.SplitN(part, "=", 2)
-			if len(kv) != 2 {
-				return nil, fmt.Errorf("invalid key=value pair: %s", part)
-			}
-			val, err := parseFloat64(kv[1])
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse %s: %w", kv[1], err)
-			}
-			nested[kv[0]] = val
-		}
-		nestedValues[parts[0]] = nested // the first part is the key like "0:0"
-	}
-	return nestedValues, nil
-}
-
-// parseCgroupFlatKeyedFile parses the content of a cgroup v2 flat keyed file.
-// The form of a flat keyed file is as follows:
-//
-//	default 100 (optional)
-//	key1 value1
-//	key2 value2
-//	...
-func parseCgroupFlatKeyedFile(dir string, file string) (map[string]int64, error) {
-	txt, err := readCgroupFile(dir, file)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read %q: %v", file, err)
-	}
-
-	// Initialize the flat key value map
-	flatValues := make(map[string]int64)
-
-	lines := strings.Split(txt, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue // skip empty lines
-		}
-		parts := strings.Fields(line)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid line format: %s", line)
-		}
-		val, err := parseInt64(parts[1])
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse %s: %w", parts[1], err)
-		}
-		flatValues[parts[0]] = val
-	}
-	return flatValues, nil
+	return sysutil.ParseCgroupV2NestedKeyedFile(txt)
 }
 
 func parseInt64(s string) (int64, error) {
@@ -418,14 +356,6 @@ func parseInt64(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
-func parseFloat64(s string) (float64, error) {
-	s = strings.TrimSpace(strings.Trim(s, "\n"))
-	if s == "max" {
-		return Maxf, nil
-	}
-	return strconv.ParseFloat(s, 64)
-}
-
 func toInt64(x float64) int64 {
 	if x == Maxf {
 		return Max
@@ -434,7 +364,7 @@ func toInt64(x float64) int64 {
 }
 
 func GetCpuWeight(milliCPU int64) uint64 {
-	cpuShares := uint64(cm.MilliCPUToShares(milliCPU))
+	cpuShares := uint64(sysutil.MilliCPUToShares(milliCPU))
 	return cpuWeightFromShares(cpuShares)
 }
 
@@ -446,13 +376,18 @@ func cpuWeightFromShares(cpuShares uint64) uint64 {
 }
 
 func GetMilliCPU(weight uint64) int64 {
-	cpuShares := (weight-1)*262142/9999 + 2
-	milliCPUToCPU := int64(cm.MilliCPUToCPU)
-	sharesPerCPU := int64(cm.SharesPerCPU)
-	if milliCPUToCPU <= 0 || sharesPerCPU <= 0 {
+	cpuShares, err := sysutil.ConvertCPUWeightToShares(int64(weight))
+	if err != nil {
 		return 0
 	}
-	return int64(cpuShares) * milliCPUToCPU / sharesPerCPU
+	return sharesToMilliCPU(cpuShares)
+}
+
+func sharesToMilliCPU(shares int64) int64 {
+	if shares < sysutil.CPUSharesMinValue {
+		return 0
+	}
+	return int64(math.Ceil(float64(shares*milliCPUToCPU) / float64(sysutil.CPUShareUnitValue)))
 }
 
 func psiToPressure(stats sysutil.PSIStats) *Pressure {

@@ -17,6 +17,7 @@ limitations under the License.
 package system
 
 import (
+	"math"
 	"testing"
 )
 
@@ -117,6 +118,87 @@ func compareCPUStatV2Raw(a, b *CPUStatV2Raw) bool {
 		a.NrPeriods == b.NrPeriods &&
 		a.NrThrottled == b.NrThrottled &&
 		a.ThrottledUSec == b.ThrottledUSec
+}
+
+func TestParseCgroupV2NestedKeyedFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		want    map[string]map[string]float64
+		wantErr bool
+	}{
+		{
+			name:    "parse io stat",
+			content: "8:0 rbytes=1024 wbytes=2048 rios=3 wios=4\n8:16 rbytes=4096 wbytes=8192 rios=5 wios=6\n",
+			want: map[string]map[string]float64{
+				"8:0": {
+					"rbytes": 1024,
+					"wbytes": 2048,
+					"rios":   3,
+					"wios":   4,
+				},
+				"8:16": {
+					"rbytes": 4096,
+					"wbytes": 8192,
+					"rios":   5,
+					"wios":   6,
+				},
+			},
+		},
+		{
+			name:    "parse max token",
+			content: "8:0 rbps=max wbps=1024 riops=max wiops=2\n",
+			want: map[string]map[string]float64{
+				"8:0": {
+					"rbps":  math.MaxFloat64,
+					"wbps":  1024,
+					"riops": math.MaxFloat64,
+					"wiops": 2,
+				},
+			},
+		},
+		{
+			name:    "invalid line",
+			content: "8:0\n",
+			wantErr: true,
+		},
+		{
+			name:    "invalid keyed value",
+			content: "8:0 rbps\n",
+			wantErr: true,
+		},
+		{
+			name:    "invalid numeric value",
+			content: "8:0 rbps=not-a-number\n",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseCgroupV2NestedKeyedFile(tt.content)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for device, wantValues := range tt.want {
+				gotValues := got[device]
+				for key, wantValue := range wantValues {
+					if gotValues[key] != wantValue {
+						t.Fatalf("got %v, want %v", got, tt.want)
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestParseCPUAcctUsageV2(t *testing.T) {

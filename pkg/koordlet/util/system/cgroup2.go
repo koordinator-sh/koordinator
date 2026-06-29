@@ -19,6 +19,7 @@ package system
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -180,6 +181,47 @@ func ParseCPUStatRawV2(content string) (*CPUStatRaw, error) {
 		NrThrottled:          cpuStatRawV2.NrThrottled,
 		ThrottledNanoSeconds: cpuStatRawV2.ThrottledUSec * 1000, // assert no overflow
 	}, nil
+}
+
+// ParseCgroupV2NestedKeyedFile parses cgroup v2 nested keyed files such as io.stat and io.max.
+func ParseCgroupV2NestedKeyedFile(content string) (map[string]map[string]float64, error) {
+	nestedValues := make(map[string]map[string]float64)
+
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			return nil, fmt.Errorf("invalid line format: %s", line)
+		}
+
+		values := make(map[string]float64)
+		for _, part := range parts[1:] {
+			kv := strings.SplitN(part, "=", 2)
+			if len(kv) != 2 {
+				return nil, fmt.Errorf("invalid key=value pair: %s", part)
+			}
+			val, err := ParseCgroupV2NestedKeyedValue(kv[1])
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse %s: %w", kv[1], err)
+			}
+			values[kv[0]] = val
+		}
+		nestedValues[parts[0]] = values
+	}
+
+	return nestedValues, nil
+}
+
+func ParseCgroupV2NestedKeyedValue(value string) (float64, error) {
+	value = strings.TrimSpace(strings.Trim(value, "\n"))
+	if value == CgroupMaxSymbolStr {
+		return math.MaxFloat64, nil
+	}
+	return strconv.ParseFloat(value, 64)
 }
 
 func ParseMemoryStatRawV2(content string) (*MemoryStatRaw, error) {
