@@ -34,7 +34,7 @@ import (
 const runIDLabel = "benchmark.koordinator.sh/run-id"
 
 func init() {
-	scenarios.Register(&BasicScenario{})
+	scenarios.Register(func() scenarios.Scenario { return &BasicScenario{} })
 }
 
 // BasicScenario is plain pod creation with no plugin-specific setup.
