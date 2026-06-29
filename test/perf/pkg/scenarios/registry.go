@@ -16,37 +16,39 @@ limitations under the License.
 
 package scenarios
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
-var registry = map[string]Scenario{}
+var registry = map[string]func() Scenario{}
 
-// Register adds a scenario to the registry.
-// Call from each scenario package's init() to enable automatic discovery.
-func Register(s Scenario) {
-	if _, exists := registry[s.Name()]; exists {
-		panic(fmt.Sprintf("scenario %q already registered", s.Name()))
+// Register adds a scenario factory to the registry.
+// Each call to Get returns a fresh Scenario instance, preventing shared
+// mutable state across runs. Call from each scenario package's init().
+func Register(factory func() Scenario) {
+	name := factory().Name()
+	if _, exists := registry[name]; exists {
+		panic(fmt.Sprintf("scenario %q already registered", name))
 	}
-	registry[s.Name()] = s
+	registry[name] = factory
 }
 
-// Get returns the scenario registered under name.
+// Get returns a new Scenario instance for name, or false if not registered.
 func Get(name string) (Scenario, bool) {
-	s, ok := registry[name]
-	return s, ok
+	factory, ok := registry[name]
+	if !ok {
+		return nil, false
+	}
+	return factory(), true
 }
 
+// List returns registered scenario names in deterministic alphabetical order.
 func List() []string {
 	names := make([]string, 0, len(registry))
 	for name := range registry {
 		names = append(names, name)
 	}
-	// Deterministic ordering for stable error messages and reports.
-	for i := 0; i < len(names); i++ {
-		for j := i + 1; j < len(names); j++ {
-			if names[j] < names[i] {
-				names[i], names[j] = names[j], names[i]
-			}
-		}
-	}
+	sort.Strings(names)
 	return names
 }

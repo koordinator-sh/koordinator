@@ -21,8 +21,8 @@ package framework
 
 import "github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 
-// Re-export types from pkg/types so existing code that imports framework
-// continues to work without changing import paths.
+// Type aliases expose pkg/types under the framework package so callers
+// can use either import path without duplication.
 type ScenarioConfig = types.ScenarioConfig
 type Thresholds = types.Thresholds
 type NodeSpec = types.NodeSpec
