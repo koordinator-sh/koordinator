@@ -83,7 +83,10 @@ func (p *Provider) WaitReady(ctx context.Context, runID string, timeout time.Dur
 	deadline := time.Now().Add(timeout)
 	labelSel := fmt.Sprintf("%s=%s", RunIDLabel, runID)
 
-	for time.Now().Before(deadline) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
 		nodes, err := p.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: labelSel})
 		if err != nil {
 			return fmt.Errorf("failed to list nodes: %w", err)
@@ -103,16 +106,17 @@ func (p *Provider) WaitReady(ctx context.Context, runID string, timeout time.Dur
 				break
 			}
 		}
-
 		if allReady {
 			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out waiting for nodes to be ready (runID=%s)", runID)
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-ticker.C:
 		}
 	}
-	return fmt.Errorf("timed out waiting for nodes to be ready (runID=%s)", runID)
 }

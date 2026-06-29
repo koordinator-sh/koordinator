@@ -28,7 +28,9 @@ import (
 
 const RunIDLabel = "benchmark.koordinator.sh/run-id"
 
-// buildKwokNode constructs a fake Node object that the kwok controller simulates as Ready.
+// buildKwokNode constructs a fake Node object for the kwok controller to simulate as Ready.
+// Direct Node creation via the API is the documented pattern for programmatic kwok usage;
+// the kwok Stage configuration (stage-fast.yaml) handles the simulation side automatically.
 // Uses stable kubernetes.io/os and kubernetes.io/arch labels instead of the
 // deprecated beta.kubernetes.io/* equivalents.
 func buildKwokNode(name, runID string, spec types.NodeSpec) (*corev1.Node, error) {
