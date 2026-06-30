@@ -61,12 +61,32 @@ func getCgroupResource(resourceType sysutil.ResourceType) (sysutil.Resource, err
 	return resource, nil
 }
 
+func mustGetCgroupResource(resourceType sysutil.ResourceType) sysutil.Resource {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, resourceType)
+	if !ok {
+		panic(fmt.Errorf("failed to get cgroup v2 resource %s", resourceType))
+	}
+	return resource
+}
+
+func readCgroupResource(cgroupPath string, resource sysutil.Resource) (string, error) {
+	return resourceexecutor.ReadCgroupResource(cgroupPath, resource)
+}
+
+func readCgroupResourceInt(cgroupPath string, resource sysutil.Resource) (int64, error) {
+	return resourceexecutor.ReadCgroupResourceInt(cgroupPath, resource)
+}
+
+func writeCgroupResource(cgroupPath string, resource sysutil.Resource, content string) error {
+	return resourceexecutor.WriteCgroupResource(cgroupPath, resource, content)
+}
+
 func readKnownCgroupResource(cgroupPath string, resourceType sysutil.ResourceType) (string, error) {
 	resource, err := getCgroupResource(resourceType)
 	if err != nil {
 		return "", err
 	}
-	return resourceexecutor.ReadCgroupResource(cgroupPath, resource)
+	return readCgroupResource(cgroupPath, resource)
 }
 
 func readKnownCgroupResourceInt(cgroupPath string, resourceType sysutil.ResourceType) (int64, error) {
@@ -74,7 +94,7 @@ func readKnownCgroupResourceInt(cgroupPath string, resourceType sysutil.Resource
 	if err != nil {
 		return 0, err
 	}
-	return resourceexecutor.ReadCgroupResourceInt(cgroupPath, resource)
+	return readCgroupResourceInt(cgroupPath, resource)
 }
 
 func writeKnownCgroupResource(cgroupPath string, resourceType sysutil.ResourceType, content string) error {
@@ -82,7 +102,7 @@ func writeKnownCgroupResource(cgroupPath string, resourceType sysutil.ResourceTy
 	if err != nil {
 		return err
 	}
-	return resourceexecutor.WriteCgroupResource(cgroupPath, resource, content)
+	return writeCgroupResource(cgroupPath, resource, content)
 }
 
 type CpuStat struct {

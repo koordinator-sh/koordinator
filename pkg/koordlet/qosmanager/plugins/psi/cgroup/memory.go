@@ -18,6 +18,8 @@ package cgroup
 
 import (
 	"time"
+
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 var (
@@ -29,10 +31,21 @@ type Memory struct {
 	Base
 	// path is the path of cgroup
 	path string
+	// promiseResource and throttleResource are bound from the common cgroup registry.
+	promiseResource  sysutil.Resource
+	throttleResource sysutil.Resource
 	// pressure [μs] is `memory.pressure`
 	pressure Pressure `json:"-"`
 	// current [bytes] is `memory.current`
 	current int64 `json:"-"`
+}
+
+func newMemory(path string) *Memory {
+	return &Memory{
+		path:             path,
+		promiseResource:  mustGetCgroupResource(sysutil.MemoryMinName),
+		throttleResource: mustGetCgroupResource(sysutil.MemoryHighName),
+	}
 }
 
 func (memory *Memory) Name() string {
@@ -84,7 +97,7 @@ func (memory *Memory) Update(pressure *Pressure, current, high, min int64) {
 }
 
 func (memory *Memory) SetThrottle(high int64) error {
-	if err := WriteMemoryHigh(memory.path, high); err != nil {
+	if err := writeCgroupResource(memory.path, memory.throttleResource, Int64(high).String()); err != nil {
 		return err
 	}
 	memory.Base.Throttle = high
@@ -92,7 +105,7 @@ func (memory *Memory) SetThrottle(high int64) error {
 }
 
 func (memory *Memory) SetPromise(min int64) error {
-	if err := WriteMemoryMin(memory.path, min); err != nil {
+	if err := writeCgroupResource(memory.path, memory.promiseResource, Int64(min).String()); err != nil {
 		return err
 	}
 	memory.Base.Promise = min

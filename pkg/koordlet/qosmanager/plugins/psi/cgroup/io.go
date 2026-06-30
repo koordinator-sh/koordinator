@@ -19,6 +19,8 @@ package cgroup
 import (
 	"fmt"
 	"time"
+
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 var (
@@ -34,6 +36,8 @@ type Bps struct {
 	dev string
 	// path is the path of cgroup
 	path string
+	// maxResource is the io throttle file bound from the common cgroup registry.
+	maxResource sysutil.Resource
 	// pressure [μs] is `io.pressure`
 	pressure Pressure `json:"-"`
 	// rbytes [bytes] is rbytes of `io.stat`
@@ -48,6 +52,14 @@ type Bps struct {
 	rbps int64 `json:"-"`
 	// wbps [bytes] is calculated from Wbytes
 	wbps int64 `json:"-"`
+}
+
+func newBPS(path string, dev string) *Bps {
+	return &Bps{
+		dev:         dev,
+		path:        path,
+		maxResource: mustGetCgroupResource(sysutil.IOMaxName),
+	}
 }
 
 func (bps *Bps) Name() string {
@@ -111,7 +123,8 @@ func (bps *Bps) UpdatePressure(pressure *Pressure) {
 }
 
 func (bps *Bps) SetThrottle(newBps int64) error {
-	if err := WriteIOMax(bps.path, &IOMax{Dev: bps.dev, Rbps: newBps, Wbps: newBps}); err != nil {
+	value := (&IOMax{Dev: bps.dev, Rbps: newBps, Wbps: newBps}).String()
+	if err := writeCgroupResource(bps.path, bps.maxResource, value); err != nil {
 		return err
 	}
 	bps.rbpsMax = newBps
@@ -130,6 +143,8 @@ type Iops struct {
 	dev string
 	// path is the path of cgroup
 	path string
+	// maxResource is the io throttle file bound from the common cgroup registry.
+	maxResource sysutil.Resource
 	// pressure [μs] is `io.pressure`
 	pressure Pressure `json:"-"`
 	// rios [1] is rios of `io.stat`
@@ -144,6 +159,14 @@ type Iops struct {
 	riops int64 `json:"-"`
 	// wiops [1] is calculated from Wios
 	wiops int64 `json:"-"`
+}
+
+func newIOPS(path string, dev string) *Iops {
+	return &Iops{
+		dev:         dev,
+		path:        path,
+		maxResource: mustGetCgroupResource(sysutil.IOMaxName),
+	}
 }
 
 func (iops *Iops) Name() string {
@@ -207,7 +230,8 @@ func (iops *Iops) UpdatePressure(pressure *Pressure) {
 }
 
 func (iops *Iops) SetThrottle(newIops int64) error {
-	if err := WriteIOMax(iops.path, &IOMax{Dev: iops.dev, Riops: newIops, Wiops: newIops}); err != nil {
+	value := (&IOMax{Dev: iops.dev, Riops: newIops, Wiops: newIops}).String()
+	if err := writeCgroupResource(iops.path, iops.maxResource, value); err != nil {
 		return err
 	}
 	iops.riopsMax = newIops

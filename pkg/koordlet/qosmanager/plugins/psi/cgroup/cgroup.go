@@ -30,10 +30,10 @@ var InvalidDevice = [2]int64{-1, -1}
 type Cgroup struct {
 	Path   string   `json:"path"`
 	Dev    [2]int64 `json:"dev"`
-	Cpu    Resource `json:"cpu"`
-	Memory Resource `json:"memory"`
-	Bps    Resource `json:"bps"`
-	Iops   Resource `json:"iops"`
+	Cpu    *Cpu     `json:"cpu"`
+	Memory *Memory  `json:"memory"`
+	Bps    *Bps     `json:"bps"`
+	Iops   *Iops    `json:"iops"`
 }
 
 type ResourceMask int
@@ -46,13 +46,14 @@ const (
 )
 
 func NewCgroup(path string, dev [2]int64) *Cgroup {
+	ioDev := fmt.Sprintf("%d:%d", dev[0], dev[1])
 	return &Cgroup{
 		Path:   path,
 		Dev:    dev,
-		Cpu:    &Cpu{path: path},
-		Memory: &Memory{path: path},
-		Bps:    &Bps{path: path, dev: fmt.Sprintf("%d:%d", dev[0], dev[1])},
-		Iops:   &Iops{path: path, dev: fmt.Sprintf("%d:%d", dev[0], dev[1])},
+		Cpu:    newCPU(path),
+		Memory: newMemory(path),
+		Bps:    newBPS(path, ioDev),
+		Iops:   newIOPS(path, ioDev),
 	}
 }
 
@@ -104,12 +105,7 @@ func (c *Cgroup) loadCpu(pressure *Pressure) error {
 	if err != nil {
 		return err
 	}
-	switch r := c.Cpu.(type) {
-	case *Cpu:
-		r.Update(pressure, stat.UsageUsec, max.QuotaInSecond(), weight)
-	default:
-		return fmt.Errorf("resource %T is not Cpu", r)
-	}
+	c.Cpu.Update(pressure, stat.UsageUsec, max.QuotaInSecond(), weight)
 	return nil
 }
 
@@ -134,12 +130,7 @@ func (c *Cgroup) loadMemory(pressure *Pressure) error {
 	if err != nil {
 		return err
 	}
-	switch r := c.Memory.(type) {
-	case *Memory:
-		r.Update(pressure, current, high, min)
-	default:
-		return fmt.Errorf("resource %T is not Memory", r)
-	}
+	c.Memory.Update(pressure, current, high, min)
 	return nil
 }
 
@@ -167,18 +158,8 @@ func (c *Cgroup) loadIO(pressure *Pressure) error {
 	}
 	stat := statDevice[dev]
 	max := maxDevice[dev]
-	switch r := c.Bps.(type) {
-	case *Bps:
-		r.Update(pressure, stat.Rbytes, stat.Wbytes, max.Rbps, max.Wbps)
-	default:
-		return fmt.Errorf("resource %T is not Bps", r)
-	}
-	switch r := c.Iops.(type) {
-	case *Iops:
-		r.Update(pressure, stat.Rios, stat.Wios, max.Riops, max.Wiops)
-	default:
-		return fmt.Errorf("resource %T is not Iops", r)
-	}
+	c.Bps.Update(pressure, stat.Rbytes, stat.Wbytes, max.Rbps, max.Wbps)
+	c.Iops.Update(pressure, stat.Rios, stat.Wios, max.Riops, max.Wiops)
 	return nil
 }
 
@@ -200,12 +181,8 @@ func (c *Cgroup) selectIODevice(statDevice map[string]IOStat) (string, bool) {
 }
 
 func (c *Cgroup) setIODevice(dev string) {
-	if bps, ok := c.Bps.(*Bps); ok {
-		bps.dev = dev
-	}
-	if iops, ok := c.Iops.(*Iops); ok {
-		iops.dev = dev
-	}
+	c.Bps.dev = dev
+	c.Iops.dev = dev
 }
 
 func parseDevice(dev string) ([2]int64, bool) {
@@ -225,17 +202,7 @@ func parseDevice(dev string) ([2]int64, bool) {
 }
 
 func (c *Cgroup) updateIOPressure(pressure *Pressure) error {
-	switch r := c.Bps.(type) {
-	case *Bps:
-		r.UpdatePressure(pressure)
-	default:
-		return fmt.Errorf("resource %T is not Bps", r)
-	}
-	switch r := c.Iops.(type) {
-	case *Iops:
-		r.UpdatePressure(pressure)
-	default:
-		return fmt.Errorf("resource %T is not Iops", r)
-	}
+	c.Bps.UpdatePressure(pressure)
+	c.Iops.UpdatePressure(pressure)
 	return nil
 }

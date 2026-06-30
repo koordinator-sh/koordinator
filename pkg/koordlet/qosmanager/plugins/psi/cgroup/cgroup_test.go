@@ -20,10 +20,25 @@ import (
 	"testing"
 
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
+
+func TestNewCgroupReusesRegisteredCgroupResources(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	helper.SetCgroupsV2(true)
+
+	cg := NewCgroup("/test-pod", InvalidDevice)
+
+	assert.Equal(t, sysutil.CPUSharesV2, cg.Cpu.weightResource)
+	assert.Equal(t, sysutil.MemoryHighV2, cg.Memory.throttleResource)
+	assert.Equal(t, sysutil.MemoryMinV2, cg.Memory.promiseResource)
+	assert.Equal(t, sysutil.IOMaxV2, cg.Bps.maxResource)
+	assert.Equal(t, sysutil.IOMaxV2, cg.Iops.maxResource)
+}
 
 func TestLoadIOSkipsDeviceStatsWhenMultipleDevicesAreUnknown(t *testing.T) {
 	helper := sysutil.NewFileTestUtil(t)

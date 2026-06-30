@@ -18,6 +18,8 @@ package cgroup
 
 import (
 	"time"
+
+	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 var (
@@ -30,12 +32,21 @@ type Cpu struct {
 	Base
 	// path is the path of cgroup
 	path string
+	// weightResource is the cpu promise file bound from the common cgroup registry.
+	weightResource sysutil.Resource
 	// pressure [μs] is `cpu.pressure`
 	pressure Pressure `json:"-"`
 	// usageUsec [μs] is usage_usec of `cpu.stat`
 	usageUsec int64 `json:"-"`
 	// quota [μs] is quota of `cpu.max` in 1 second
 	quota int64 `json:"-"`
+}
+
+func newCPU(path string) *Cpu {
+	return &Cpu{
+		path:           path,
+		weightResource: mustGetCgroupResource(sysutil.CPUSharesName),
+	}
 }
 
 func (cpu *Cpu) Name() string {
@@ -93,5 +104,5 @@ func (cpu *Cpu) SetThrottle(int64) error {
 
 func (cpu *Cpu) SetPromise(quotaInSecond int64) error {
 	m := CpuQuota{Quota: quotaInSecond, Period: time.Second.Microseconds()}
-	return WriteCpuWeight(cpu.path, m.ToWeight())
+	return writeCgroupResource(cpu.path, cpu.weightResource, Int64(m.ToWeight()).String())
 }
