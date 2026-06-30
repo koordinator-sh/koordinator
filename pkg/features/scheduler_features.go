@@ -173,6 +173,5 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 
 func init() {
 	runtime.Must(k8sfeature.DefaultMutableFeatureGate.Add(defaultSchedulerFeatureGates))
-	// TODO: use a unified feature-gate
 	runtime.Must(k8sfeature.DefaultMutableFeatureGate.Add(transformerFeatureGates))
 }
