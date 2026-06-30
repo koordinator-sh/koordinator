@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#334155"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="960" height="430" fill="#ffffff"/>
+  <style>
+    .box  { stroke:#334155; stroke-width:1.5; rx:8; }
+    .lbl  { fill:#0f172a; font-size:11px; }
+    .lblb { fill:#0f172a; font-size:13px; font-weight:bold; }
+    .edge { fill:#475569; font-size:11px; font-style:italic; }
+    .ln   { stroke:#334155; stroke-width:1.5; fill:none; }
+    .ttl  { fill:#0f172a; font-size:15px; font-weight:bold; }
+    .warn { fill:#b45309; font-size:11px; font-style:italic; }
+  </style>
+
+  <text x="480" y="24" text-anchor="middle" class="ttl" font-size="16">One seam absorbs the alpha API churn: workloadGangInfo</text>
+
+  <!-- COLUMN 1: upstream churn -->
+  <text x="160" y="52" text-anchor="middle" class="lblb">Upstream Workload API (alpha, moving)</text>
+
+  <rect class="box" x="30" y="62" width="260" height="58" fill="#eff6ff"/>
+  <text x="42" y="80" class="lblb" font-size="12">1.35 (vendored now)</text>
+  <text x="42" y="96" class="lbl">WorkloadSpec.PodGroups[] inline</text>
+  <text x="42" y="111" class="lbl">Policy: PodGroupPolicy; pod.Spec.WorkloadRef</text>
+
+  <rect class="box" x="30" y="128" width="260" height="116" fill="#fef3c7"/>
+  <text x="42" y="146" class="lblb" font-size="12">1.36 (reworked)</text>
+  <text x="42" y="162" class="lbl">PodGroups &#8594; PodGroupTemplates[]</text>
+  <text x="42" y="177" class="lbl">Policy &#8594; SchedulingPolicy; group &#8594; v1beta1</text>
+  <text x="42" y="192" class="lbl">+ runtime PodGroup object (new alpha)</text>
+  <text x="42" y="207" class="lbl">+ WorkloadReference.PodGroupKind</text>
+  <text x="42" y="222" class="lbl">PodGroupReplicaKey deprecated</text>
+  <text x="42" y="237" class="warn">ref-vs-inline policy: OPEN upstream</text>
+
+  <rect class="box" x="30" y="252" width="260" height="50" fill="#f1f5f9" stroke-dasharray="5 4"/>
+  <text x="42" y="270" class="lblb" font-size="12">Beta / GA</text>
+  <text x="42" y="287" class="lbl">shape TBD; the adoption gate</text>
+
+  <!-- arrows into seam -->
+  <path class="ln" d="M290,92 L328,150" marker-end="url(#arrow)"/>
+  <path class="ln" d="M290,186 L328,176" marker-end="url(#arrow)"/>
+  <path class="ln" d="M290,276 L328,200" marker-end="url(#arrow)"/>
+
+  <!-- COLUMN 2: the seam -->
+  <rect class="box" x="330" y="120" width="260" height="110" fill="#dcfce7"/>
+  <text x="460" y="142" text-anchor="middle" class="lblb">workloadGangInfo</text>
+  <text x="460" y="162" text-anchor="middle" class="edge">the ONLY file importing</text>
+  <text x="460" y="176" text-anchor="middle" class="edge">scheduling.k8s.io Workload types</text>
+  <text x="460" y="198" text-anchor="middle" class="edge">compiled behind feature gate</text>
+  <text x="460" y="212" text-anchor="middle" class="edge">NativeGangCompatibility (off)</text>
+
+  <path class="ln" d="M460,230 L460,262" marker-end="url(#arrow)"/>
+
+  <!-- stable interface -->
+  <rect class="box" x="330" y="264" width="260" height="92" fill="#f8fafc"/>
+  <text x="460" y="284" text-anchor="middle" class="lblb">GangInfo (stable contract)</text>
+  <text x="460" y="304" text-anchor="middle" class="lbl">Identity()  -  gang id</text>
+  <text x="460" y="320" text-anchor="middle" class="lbl">Members()  -  member pods</text>
+  <text x="460" y="336" text-anchor="middle" class="lbl">MinQuorum()  -  min-available</text>
+  <text x="460" y="350" text-anchor="middle" class="edge">also: annotationGangInfo, podGroupGangInfo</text>
+
+  <path class="ln" d="M590,310 L618,310" marker-end="url(#arrow)"/>
+
+  <!-- COLUMN 3: koord core unchanged -->
+  <rect class="box" x="620" y="120" width="300" height="236" fill="#dbeafe"/>
+  <text x="770" y="142" text-anchor="middle" class="lblb">Koord Coscheduling core</text>
+  <text x="770" y="160" text-anchor="middle" class="warn" font-size="12">UNCHANGED across upstream versions</text>
+  <text x="636" y="186" class="lbl">- GangCache + QueueSort</text>
+  <text x="636" y="208" class="lbl">- Permit quorum / GangGroup wait</text>
+  <text x="636" y="230" class="lbl">- PostFilter GangGroup preemption</text>
+  <text x="636" y="252" class="lbl">- network-topology (FindOneNode)</text>
+  <text x="636" y="274" class="lbl">- reservation (PreBindReservation)</text>
+  <text x="636" y="296" class="lbl">- ElasticQuota interaction</text>
+  <text x="636" y="326" class="edge">consumes GangInfo, never the raw API</text>
+  <text x="636" y="342" class="edge">Koord-only features have no native path</text>
+
+  <!-- caption -->
+  <text x="480" y="392" text-anchor="middle" class="warn" font-size="12">A breaking upstream change (e.g. the 1.36 rename) is contained to workloadGangInfo; the GangInfo contract and Koord core do not move.</text>
+  <text x="480" y="412" text-anchor="middle" class="warn" font-size="12">This is the zero-dependency alignment done now; the wire-level binding to the alpha API stays gated off until Beta.</text>
+</svg>
