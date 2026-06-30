@@ -335,3 +335,26 @@ func TestNewHostAppReconciler(t *testing.T) {
 	defer close(stop)
 	assert.NoError(t, r.Run(stop))
 }
+func TestHostReconcilerStopsOnStopCh(t *testing.T) {
+	r := &hostReconciler{
+		appUpdated:        make(chan struct{}, 1),
+		reconcileInterval: 10 * time.Millisecond,
+	}
+
+	stopCh := make(chan struct{})
+	done := make(chan struct{})
+
+	go func() {
+		r.reconcile(stopCh)
+		close(done)
+	}()
+
+	close(stopCh)
+
+	select {
+	case <-done:
+		// ok
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("hostReconciler.reconcile did not stop after stopCh closed")
+	}
+}
