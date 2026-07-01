@@ -6,7 +6,7 @@ reviewers:
   - "@saintube"
   - "@ZiMengSheng"
 creation-date: 2026-06-23
-last-updated: 2026-06-25
+last-updated: 2026-07-01
 status: provisional
 ---
 
@@ -28,6 +28,7 @@ status: provisional
             - [Initialization order](#initialization-order)
             - [Event dispatch](#event-dispatch)
             - [Reserve and Unreserve](#reserve-and-unreserve)
+            - [DeviceShare migration example](#deviceshare-migration-example)
             - [Plugin migration plan](#plugin-migration-plan)
             - [Snapshot (Phase 3, bonus)](#snapshot-phase-3-bonus)
     - [Alternatives](#alternatives)
@@ -307,6 +308,196 @@ are immediately visible across all profiles, eliminating the assume-window gap f
 not assumed allocations and do not require the assume/forget contract; they operate directly on
 the shared cache under per-node locks.
 
+#### DeviceShare migration example
+
+To validate that `SharedPluginCache` and `CacheReserver` are workable in practice, this
+section sketches DeviceShare's `nodeDeviceCache` refactored onto both interfaces. It shows
+the full method set, how `Start()` absorbs the informer-handler registration and GC
+goroutine, how Reserve and Unreserve integrate with the assume/forget contract, and how
+`OnPodAdd`/`OnPodUpdate` handle the assumed-pod case so the informer event does not
+double-count Reserve's write.
+
+**Today.** `nodeDeviceCache` is created fresh in each profile's `New()`. Pod and Device
+informer handlers are registered independently. A GC goroutine is started per profile.
+
+```go
+// pkg/scheduler/plugins/deviceshare/plugin.go — current code (excerpt from New)
+deviceCache := newNodeDeviceCache()
+registerDeviceEventHandler(deviceCache, extHandle.KoordinatorSharedInformerFactory())
+registerPodEventHandler(deviceCache, handle.SharedInformerFactory(),
+    extHandle.KoordinatorSharedInformerFactory())
+extHandle.RegisterForgetPodHandler(deviceCache.deletePod)
+go deviceCache.gcNodeDevice(ctx, handle.SharedInformerFactory(), defaultGCPeriod)
+```
+
+**After migration.** `nodeDeviceCache` implements both `SharedPluginCache` and
+`CacheReserver`. `New()` registers it via `GetOrRegisterSharedCache`; every profile
+after the first receives the same instance. Handler registration and the GC goroutine
+move into `Start()`. Reserve and Unreserve gain `AssumePod`/`ForgetPod` calls.
+
+**1) `nodeDeviceCache` implements `SharedPluginCache` + `CacheReserver`:**
+
+```go
+// pkg/scheduler/plugins/deviceshare/device_cache.go — after migration
+
+var (
+    _ frameworkext.SharedPluginCache = &nodeDeviceCache{}
+    _ frameworkext.CacheReserver     = &nodeDeviceCache{}
+)
+
+type nodeDeviceCache struct {
+    lock            sync.RWMutex
+    nodeDeviceInfos map[string]*nodeDevice
+    // assumedPods tracks pods whose allocations were written to nodeDeviceInfos during
+    // Reserve, but whose authoritative pod informer event has not yet arrived. Used by
+    // OnPodAdd/OnPodUpdate to skip re-applying an allocation Reserve already applied.
+    assumedPods map[types.UID]string // pod UID → nodeName
+    handle      frameworkext.ExtendedHandle
+}
+
+func newNodeDeviceCache(handle frameworkext.ExtendedHandle) *nodeDeviceCache {
+    return &nodeDeviceCache{
+        nodeDeviceInfos: make(map[string]*nodeDevice),
+        assumedPods:     make(map[types.UID]string),
+        handle:          handle,
+    }
+}
+
+// Start implements SharedPluginCache. Called exactly once per scheduler instance, after
+// all profiles are built and before the shared informer factory starts.
+func (n *nodeDeviceCache) Start(ctx context.Context) {
+    // Device CRD handlers stay here — they are plugin-specific and cannot be centralized.
+    registerDeviceEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
+    // GC goroutine runs once per scheduler instance, not once per profile.
+    go n.gcNodeDevice(ctx, n.handle.SharedInformerFactory(), defaultGCPeriod)
+}
+
+// OnPodAdd implements SharedPluginCache. Called by the framework's unified dispatcher.
+func (n *nodeDeviceCache) OnPodAdd(pod *corev1.Pod) {
+    if n.consumeAssumedIfMatch(pod) {
+        // Reserve already applied this pod's allocations to nodeDeviceInfos and marked
+        // it as assumed. The informer event is now authoritative for the same pod, so
+        // we clear the assumed marker and skip re-applying — updatePod would double-count.
+        return
+    }
+    n.updatePod(nil, pod)
+}
+
+// OnPodUpdate implements SharedPluginCache. Called by the framework's unified dispatcher.
+func (n *nodeDeviceCache) OnPodUpdate(oldPod, newPod *corev1.Pod) {
+    if n.consumeAssumedIfMatch(newPod) {
+        return
+    }
+    n.updatePod(oldPod, newPod)
+}
+
+// OnPodDelete implements SharedPluginCache. Called by the framework's unified dispatcher.
+func (n *nodeDeviceCache) OnPodDelete(pod *corev1.Pod) {
+    // If the pod was assumed but got deleted before binding, clear the marker.
+    n.lock.Lock()
+    delete(n.assumedPods, pod.UID)
+    n.lock.Unlock()
+    n.deletePod(pod)
+}
+
+// Node events are no-ops for DeviceShare: nodeDeviceInfos is keyed by node name and
+// populated lazily. Stale entries are removed by the GC goroutine's node lister.
+func (n *nodeDeviceCache) OnNodeAdd(*corev1.Node)         {}
+func (n *nodeDeviceCache) OnNodeUpdate(_, _ *corev1.Node) {}
+func (n *nodeDeviceCache) OnNodeDelete(*corev1.Node)      {}
+
+// AssumePod implements CacheReserver. Called by Plugin.Reserve after allocations have
+// been written to the per-node cache.
+func (n *nodeDeviceCache) AssumePod(pod *corev1.Pod, nodeName string) error {
+    n.lock.Lock()
+    defer n.lock.Unlock()
+    n.assumedPods[pod.UID] = nodeName
+    return nil
+}
+
+// ForgetPod implements CacheReserver. Called by Plugin.Unreserve. Idempotent — safe to
+// call even if AssumePod was never called for this pod.
+func (n *nodeDeviceCache) ForgetPod(pod *corev1.Pod) error {
+    n.lock.Lock()
+    defer n.lock.Unlock()
+    delete(n.assumedPods, pod.UID)
+    return nil
+}
+
+// consumeAssumedIfMatch atomically clears the assumed marker for pod and returns true
+// if the pod was in the assumed set. Callers use the result to skip re-applying an
+// allocation that Reserve has already applied to the cache.
+func (n *nodeDeviceCache) consumeAssumedIfMatch(pod *corev1.Pod) bool {
+    n.lock.Lock()
+    defer n.lock.Unlock()
+    if _, ok := n.assumedPods[pod.UID]; !ok {
+        return false
+    }
+    delete(n.assumedPods, pod.UID)
+    return true
+}
+```
+
+Existing methods (`getNodeDevice`, `updatePod`, `deletePod`, `gcNodeDevice`, and the
+per-node `nodeDevice.lock` / `updateCacheUsed` path) are unchanged.
+
+**2) `Plugin.New()` becomes profile-independent:**
+
+```go
+// pkg/scheduler/plugins/deviceshare/plugin.go — after migration (excerpt from New)
+cache := extHandle.GetOrRegisterSharedCache("deviceshare",
+    func(h frameworkext.ExtendedHandle) frameworkext.SharedPluginCache {
+        return newNodeDeviceCache(h)
+    })
+deviceCache := cache.(*nodeDeviceCache)
+// ...
+return &Plugin{nodeDeviceCache: deviceCache, ...}, nil
+```
+
+The four registration lines (`registerDeviceEventHandler`, `registerPodEventHandler`,
+`RegisterForgetPodHandler`, `go gcNodeDevice`) are gone from `New()` — they now live in
+`Start()` and run exactly once per scheduler instance.
+
+**3) `Reserve` and `Unreserve` participate in the assume/forget contract:**
+
+```go
+// pkg/scheduler/plugins/deviceshare/plugin.go — after migration
+func (p *Plugin) Reserve(ctx context.Context, cs fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
+    // ... existing allocation logic (updateCacheUsed(..., add=true) under nodeDevice.lock) ...
+    if err := p.nodeDeviceCache.AssumePod(pod, nodeName); err != nil {
+        return fwktype.AsStatus(err)
+    }
+    return nil
+}
+
+func (p *Plugin) Unreserve(ctx context.Context, cs fwktype.CycleState, pod *corev1.Pod, nodeName string) {
+    // ... existing rollback logic (updateCacheUsed(..., add=false) under nodeDevice.lock) ...
+    _ = p.nodeDeviceCache.ForgetPod(pod)
+}
+```
+
+**What this example validates:**
+
+- `SharedPluginCache`'s method set is sufficient for DeviceShare — pod events flow through
+  the dispatcher, Device CRD events stay in `Start()`, node events are no-ops.
+- `CacheReserver` closes the assume-window gap without adding methods to
+  `SharedPluginCache`. A hypothetical read-only cache simply does not implement it.
+- The assumed-pod check is small and localized: one map, one helper (`consumeAssumedIfMatch`),
+  and one line each in `OnPodAdd`/`OnPodUpdate`. The existing `updatePod`/`deletePod`
+  paths are untouched.
+- The interfaces fit the existing per-node lock model. No global write lock is introduced;
+  `nodeDevice.lock` continues to serialize allocation writes, and the top-level
+  `nodeDeviceCache.lock` protects only the node map and the assumed set.
+- The invariants from the previous subsection are visibly upheld: no double-count
+  (guaranteed by `consumeAssumedIfMatch`), complete rollback (`ForgetPod` clears the marker
+  and `Unreserve`'s existing rollback reverts the cache write), and lock consistency (both
+  paths acquire `nodeDeviceCache.lock` for the assumed set).
+
+Reservation follows the same pattern with its own per-reservation lock. NodeNUMAResource
+is analyzed during PR-2 to determine whether its `resourceManager` writes assumed state
+during Reserve; if so it implements `CacheReserver`, if not it only implements
+`SharedPluginCache`.
+
 #### Plugin migration plan
 
 Migration proceeds plugin by plugin. Each migration is independently mergeable:
@@ -376,3 +567,6 @@ members of `ExtendedHandle`.
 - 2026-06-25: Address review feedback — simplify GetOrRegisterSharedCache to pass ExtendedHandle
   only (factory accessible via handle.KoordinatorSharedInformerFactory()); replace Reserve/Unreserve
   direct-call model with explicit CacheReserver optional interface and assume/forget contract.
+- 2026-07-01: Address review feedback — add a full DeviceShare migration example demonstrating
+  SharedPluginCache + CacheReserver on nodeDeviceCache (Start, event handlers, AssumePod/ForgetPod,
+  and Plugin.Reserve/Unreserve integration) to validate the interface shape.
