@@ -263,7 +263,7 @@ func Test_transferToKoordContainerEnvs(t *testing.T) {
 			containerdEnvs: []*runtimeapi.KeyValue{
 				{
 					Key:   "key1",
-					Value: "value1",
+					Value: []byte("value1"),
 				},
 			},
 			expectKoordEnvs: map[string]string{
@@ -275,11 +275,11 @@ func Test_transferToKoordContainerEnvs(t *testing.T) {
 			containerdEnvs: []*runtimeapi.KeyValue{
 				{
 					Key:   "key1",
-					Value: "value1",
+					Value: []byte("value1"),
 				},
 				{
 					Key:   "key2",
-					Value: "value2",
+					Value: []byte("value2"),
 				},
 			},
 			expectKoordEnvs: map[string]string{
@@ -319,7 +319,7 @@ func Test_transferToCRIContainerEnvs(t *testing.T) {
 			expectedContainerdEnvs: []*runtimeapi.KeyValue{
 				{
 					Key:   "key1",
-					Value: "value1",
+					Value: []byte("value1"),
 				},
 			},
 		},
@@ -332,11 +332,11 @@ func Test_transferToCRIContainerEnvs(t *testing.T) {
 			expectedContainerdEnvs: []*runtimeapi.KeyValue{
 				{
 					Key:   "key1",
-					Value: "value1",
+					Value: []byte("value1"),
 				},
 				{
 					Key:   "key2",
-					Value: "value2",
+					Value: []byte("value2"),
 				},
 			},
 		},
