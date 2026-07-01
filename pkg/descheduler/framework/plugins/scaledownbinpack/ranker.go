@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-;
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,9 +17,12 @@ limitations under the License.
 package scaledownbinpack
 
 import (
+	"math"
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 type RankedPod struct {
@@ -75,21 +78,24 @@ func RankPods(nodes []*corev1.Node, eligibleTargetPods []*corev1.Pod, skippedTar
 
 		var num, den float64
 		for resName, weight := range resourceWeights {
-			cap := node.Status.Capacity[resName]
-			capMilli := cap.MilliValue()
+			capacity := node.Status.Capacity[resName]
+			capMilli := capacity.MilliValue()
 			if capMilli <= 0 {
 				continue
 			}
 
 			var tReq, ntReq int64
 			for _, p := range eligiblePods {
-				tReq += getPodResourceRequest(p, resName)
+				q := util.GetPodRequest(p, resName)[resName]
+				tReq += q.MilliValue()
 			}
 			for _, p := range ntPods {
-				ntReq += getPodResourceRequest(p, resName)
+				q := util.GetPodRequest(p, resName)[resName]
+				ntReq += q.MilliValue()
 			}
 			for _, p := range skippedPods {
-				ntReq += getPodResourceRequest(p, resName)
+				q := util.GetPodRequest(p, resName)[resName]
+				ntReq += q.MilliValue()
 			}
 
 			uNt := float64(ntReq) / float64(capMilli)
@@ -102,6 +108,11 @@ func RankPods(nodes []*corev1.Node, eligibleTargetPods []*corev1.Pod, skippedTar
 		score := 0.0
 		if den > 0 {
 			score = num / den
+		} else if num > 0 {
+			// If target requested resources are 0, but non-target workload exists,
+			// this node offers no scale-down value but carries non-target tax.
+			// It should be penalized heavily to sort last.
+			score = math.Inf(1)
 		}
 
 		nodeInfos = append(nodeInfos, &NodeRankInfo{
@@ -163,20 +174,11 @@ func RankPods(nodes []*corev1.Node, eligibleTargetPods []*corev1.Pod, skippedTar
 	return globalRanked
 }
 
-func getPodResourceRequest(pod *corev1.Pod, resourceName corev1.ResourceName) int64 {
-	var req int64
-	for _, c := range pod.Spec.Containers {
-		if val, ok := c.Resources.Requests[resourceName]; ok {
-			req += val.MilliValue()
-		}
-	}
-	return req
-}
-
 func getPodSize(pod *corev1.Pod, weights map[corev1.ResourceName]float64) float64 {
 	var size float64
 	for resName, weight := range weights {
-		size += weight * float64(getPodResourceRequest(pod, resName))
+		q := util.GetPodRequest(pod, resName)[resName]
+		size += weight * float64(q.MilliValue())
 	}
 	return size
 }

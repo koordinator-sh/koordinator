@@ -17,6 +17,7 @@ limitations under the License.
 package scaledownbinpack
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -180,4 +181,44 @@ func TestRankPods_EdgeCases(t *testing.T) {
 	assert.Equal(t, "p-eligible", rankedWithSkipped[1].Pod.Name)
 	assert.Equal(t, 0.0, rankedWithSkipped[0].EvacuationScore)
 	assert.Greater(t, rankedWithSkipped[1].EvacuationScore, 0.0)
+}
+
+func TestRankPods_ZeroRequestTargetPod(t *testing.T) {
+	now := time.Now()
+
+	nodePerfect := makeNode("node-perfect", "4", "8Gi")
+	nodeNormal := makeNode("node-normal", "4", "8Gi")
+	nodeZeroReqTax := makeNode("node-zero-req-tax", "4", "8Gi")
+
+	// 1. Perfect Node: target pod with requests, no non-target pods (Score = 0)
+	pPerfect := makePod("default", "p-perfect", "node-perfect", "1", "1Gi", now)
+
+	// 2. Normal Node: target pod with requests, non-target pod with requests (Score > 0, finite)
+	pNormal := makePod("default", "p-normal", "node-normal", "1", "1Gi", now)
+	ntNormal := makePod("default", "nt-normal", "node-normal", "1", "1Gi", now)
+
+	// 3. Zero-Req Tax Node: target pod with 0 requests (BestEffort), non-target pod with requests (Score = +Inf)
+	pZeroReq := makePod("default", "p-zero-req", "node-zero-req-tax", "0", "0", now) // 0 CPU, 0 Mem
+	ntZeroReq := makePod("default", "nt-zero-req", "node-zero-req-tax", "1", "1Gi", now)
+
+	nodes := []*corev1.Node{nodePerfect, nodeNormal, nodeZeroReqTax}
+	targetPods := []*corev1.Pod{pPerfect, pNormal, pZeroReq}
+	nonTargetPods := []*corev1.Pod{ntNormal, ntZeroReq}
+
+	ranked := RankPods(nodes, targetPods, nil, nonTargetPods, nil)
+
+	assert.Equal(t, 3, len(ranked))
+
+	// Ensure the correct eviction priority order
+	assert.Equal(t, "p-perfect", ranked[0].Pod.Name, "Perfect node should be prioritized first")
+	assert.Equal(t, "p-normal", ranked[1].Pod.Name, "Normal node should be prioritized second")
+	assert.Equal(t, "p-zero-req", ranked[2].Pod.Name, "Node with zero-request targets and non-target tax should be penalized last")
+
+	// Verify math boundaries
+	assert.Equal(t, 0.0, ranked[0].EvacuationScore)
+	assert.False(t, math.IsInf(ranked[1].EvacuationScore, 1), "Normal node score should be finite")
+	assert.Greater(t, ranked[1].EvacuationScore, 0.0)
+
+	// Validate the Infinity trap worked
+	assert.True(t, math.IsInf(ranked[2].EvacuationScore, 1), "Expected +Inf score for zero-request target on a taxed node")
 }
