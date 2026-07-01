@@ -31,7 +31,7 @@ require (
 	github.com/mwitkow/grpc-proxy v0.0.0-20230212185441-f345521cb9c9
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
-	github.com/opencontainers/runc v1.3.0
+	github.com/opencontainers/runc v1.3.3
 	github.com/openkruise/kruise-api v1.5.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prashantv/gostub v1.1.0
@@ -170,7 +170,7 @@ require (
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
-	github.com/opencontainers/cgroups v0.0.3 // indirect
+	github.com/opencontainers/cgroups v0.0.4 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runtime-spec v1.3.0 // indirect
