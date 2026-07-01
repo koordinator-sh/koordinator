@@ -137,7 +137,7 @@ func transferToKoordContainerEnvs(envs []*runtimeapi.KeyValue) map[string]string
 		return res
 	}
 	for _, item := range envs {
-		res[item.GetKey()] = item.GetValue()
+		res[item.GetKey()] = string(item.GetValue())
 	}
 	return res
 }
@@ -150,7 +150,7 @@ func transferToCRIContainerEnvs(envs map[string]string) []*runtimeapi.KeyValue {
 	for key, val := range envs {
 		res = append(res, &runtimeapi.KeyValue{
 			Key:   key,
-			Value: val,
+			Value: []byte(val),
 		})
 	}
 	return res

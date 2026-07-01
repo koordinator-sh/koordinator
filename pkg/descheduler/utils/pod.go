@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	resourcehelper "k8s.io/component-helpers/resource"
 )
 
 // GetResourceRequest finds and returns the request value for a specific resource.
@@ -42,6 +43,7 @@ func GetResourceRequest(pod *corev1.Pod, resource corev1.ResourceName) int64 {
 // It follows the KEP-753 sidecar container resource calculation:
 // sidecar containers (initContainers with restartPolicy=Always) are summed like regular containers,
 // while regular init containers use max-based comparison.
+// When PodLevelResources is set for the given resource, pod-level requests override container-level.
 func GetResourceRequestQuantity(pod *corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
 	requestQuantity := resource.Quantity{}
 	switch resourceName {
@@ -51,6 +53,21 @@ func GetResourceRequestQuantity(pod *corev1.Pod, resourceName corev1.ResourceNam
 		requestQuantity = resource.Quantity{Format: resource.BinarySI}
 	default:
 		requestQuantity = resource.Quantity{Format: resource.DecimalSI}
+	}
+
+	// PodLevelResources: if pod-level requests are set for this resource, they override
+	// container-level requests.
+	if resourcehelper.IsPodLevelRequestsSet(pod) {
+		if q, ok := pod.Spec.Resources.Requests[resourceName]; ok && resourcehelper.IsSupportedPodLevelResource(resourceName) {
+			requestQuantity = q.DeepCopy()
+			// Add pod overhead on top of pod-level requests.
+			if pod.Spec.Overhead != nil {
+				if podOverhead, ok := pod.Spec.Overhead[resourceName]; ok && !requestQuantity.IsZero() {
+					requestQuantity.Add(podOverhead)
+				}
+			}
+			return requestQuantity
+		}
 	}
 
 	for _, container := range pod.Spec.Containers {
