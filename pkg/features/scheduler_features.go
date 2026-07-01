@@ -84,6 +84,13 @@ const (
 	// SkipReservationFitsNode is used to skip reservation fits node when the logic is repeated by NodeResourceFits.
 	SkipReservationFitsNode featuregate.Feature = "SkipReservationFitsNode"
 
+	// owner: @saintube @ZiMengSheng @aclfe
+	// alpha: v1.9
+	//
+	// ReservationFirstFitNomination makes NominateReservation return the first feasible reservation instead of
+	// scoring all matched reservations to pick the best one.
+	ReservationFirstFitNomination featuregate.Feature = "ReservationFirstFitNomination"
+
 	// owner: @zqzten
 	// alpha: v1.7
 	//
@@ -159,6 +166,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	LazyReservationRestore:                    {Default: false, PreRelease: featuregate.Alpha},
 	OmitNodeLabelsForReservation:              {Default: false, PreRelease: featuregate.Alpha},
 	SkipReservationFitsNode:                   {Default: false, PreRelease: featuregate.Alpha},
+	ReservationFirstFitNomination:             {Default: false, PreRelease: featuregate.Alpha},
 	DevicePluginAdaption:                      {Default: false, PreRelease: featuregate.Alpha},
 	CleanExpiredReservationAllocated:          {Default: false, PreRelease: featuregate.Alpha},
 	SkipFilterWithNominatedPods:               {Default: false, PreRelease: featuregate.Alpha},

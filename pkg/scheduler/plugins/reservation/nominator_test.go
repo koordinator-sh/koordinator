@@ -28,13 +28,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	apiresource "k8s.io/component-helpers/resource"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -99,11 +102,45 @@ func TestNominateReservation(t *testing.T) {
 			},
 		},
 	}
+	reservation2C4GPreferred := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "reservation2C4GPreferred",
+			Labels: map[string]string{
+				apiext.LabelReservationOrder: "1",
+			},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+		},
+	}
 	tests := []struct {
 		name            string
 		pod             *corev1.Pod
 		reservations    []*schedulingv1alpha1.Reservation
 		allocated       map[types.UID]corev1.ResourceList
+		firstFit        bool
 		wantReservation *schedulingv1alpha1.Reservation
 		wantStatus      bool
 	}{
@@ -273,9 +310,89 @@ func TestNominateReservation(t *testing.T) {
 			wantStatus:      true,
 			wantReservation: reservation2C4G,
 		},
+		{
+			name: "first-fit returns the first feasible reservation",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservations: []*schedulingv1alpha1.Reservation{
+				reservation4C8G,
+				reservation2C4G,
+			},
+			firstFit:        true,
+			wantStatus:      true,
+			wantReservation: reservation4C8G,
+		},
+		{
+			name: "first-fit returns no reservation when none is feasible",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservations: []*schedulingv1alpha1.Reservation{
+				reservation2C4G,
+			},
+			allocated: map[types.UID]corev1.ResourceList{
+				reservation2C4G.UID: {
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+			firstFit:        true,
+			wantStatus:      true,
+			wantReservation: nil,
+		},
+		{
+			name: "first-fit ignores the reservation order preference",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("2"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			reservations: []*schedulingv1alpha1.Reservation{
+				reservation2C4G,
+				reservation2C4GPreferred,
+			},
+			firstFit:        true,
+			wantStatus:      true,
+			wantReservation: reservation2C4G,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.firstFit {
+				defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ReservationFirstFitNomination, true)()
+			}
 			node := &corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-node",
@@ -712,6 +829,90 @@ func TestMultiReservationsOnSameNode(t *testing.T) {
 	assert.Len(t, nominatedReservationCount, len(reservations))
 	for _, v := range nominatedReservationCount {
 		assert.Equal(t, 1, v)
+	}
+}
+
+func TestNominateReservationFirstFit(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.ReservationFirstFitNomination, true)()
+
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-1",
+		},
+		Status: corev1.NodeStatus{
+			Allocatable: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:    resource.MustParse("96"),
+				corev1.ResourceMemory: resource.MustParse("1886495404Ki"),
+			},
+		},
+	}
+
+	resourceList := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("16"),
+		corev1.ResourceMemory: resource.MustParse("32Gi"),
+	}
+	labels := map[string]string{
+		"foo": "bar",
+	}
+	suit := newPluginTestSuitWith(t, nil, []*corev1.Node{node})
+	var reservations []*schedulingv1alpha1.Reservation
+	for i := 0; i < 3; i++ {
+		r := newTestReservation(t, fmt.Sprintf("test-r-%d", i), labels, labels, node.Name, resourceList)
+		reservations = append(reservations, r)
+		_, err := suit.extenderFactory.KoordinatorClientSet().SchedulingV1alpha1().Reservations().Create(context.TODO(), r, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+	nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+	assert.NoError(t, err)
+	for _, v := range reservations {
+		nodeInfo.(*framework.NodeInfo).AddPod(reservationutil.NewReservePod(v))
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-1",
+			Namespace: "default",
+			Labels:    labels,
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: resourceList,
+					},
+				},
+			},
+		},
+	}
+	affinity := &apiext.ReservationAffinity{
+		ReservationSelector: labels,
+	}
+	assert.NoError(t, apiext.SetReservationAffinity(pod, affinity))
+	_, err = suit.fw.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	suit.start(t)
+	pl := p.(*Plugin)
+	assert.True(t, pl.enableReservationFirstFit)
+
+	cycleState := framework.NewCycleState()
+	pl.BeforePreFilter(context.TODO(), cycleState, pod)
+	pl.PreFilter(context.TODO(), cycleState, pod, nil)
+	pl.Filter(context.TODO(), cycleState, pod, nodeInfo)
+
+	state := getStateData(cycleState)
+	matched := state.nodeReservationStates[node.Name].matchedOrIgnored
+	assert.Len(t, matched, len(reservations))
+
+	nm := pl.handle.(frameworkext.FrameworkExtender).GetReservationNominator()
+	for i := 0; i < 3; i++ {
+		rInfo, status := nm.NominateReservation(context.TODO(), cycleState, pod, node.Name)
+		assert.True(t, status.IsSuccess())
+		assert.NotNil(t, rInfo)
+		assert.Equal(t, matched[0].UID(), rInfo.UID())
 	}
 }
 
