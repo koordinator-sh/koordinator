@@ -138,6 +138,86 @@ func TestGetResourceRequestQuantity(t *testing.T) {
 			resourceName: corev1.ResourceMemory,
 			want:         resource.MustParse("37Gi"), // 32Gi + 4Gi + 1Gi overhead
 		},
+		{
+			name: "pod-level requests override container-level",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									corev1.ResourceCPU: resource.MustParse("6"),
+								},
+							},
+						},
+					},
+					Resources: &corev1.ResourceRequirements{
+						Requests: map[corev1.ResourceName]resource.Quantity{
+							corev1.ResourceCPU: resource.MustParse("8"),
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceCPU,
+			want:         resource.MustParse("8"), // pod-level 8 overrides container sum 10
+		},
+		{
+			name: "pod-level requests with overhead",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+						},
+					},
+					Resources: &corev1.ResourceRequirements{
+						Requests: map[corev1.ResourceName]resource.Quantity{
+							corev1.ResourceMemory: resource.MustParse("20Gi"),
+						},
+					},
+					Overhead: map[corev1.ResourceName]resource.Quantity{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+			resourceName: corev1.ResourceMemory,
+			want:         resource.MustParse("21Gi"), // 20Gi pod-level + 1Gi overhead
+		},
+		{
+			name: "pod-level resources set but not for requested resource, falls back to container-level",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									corev1.ResourceCPU:    resource.MustParse("4"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
+								},
+							},
+						},
+					},
+					Resources: &corev1.ResourceRequirements{
+						Requests: map[corev1.ResourceName]resource.Quantity{
+							corev1.ResourceCPU: resource.MustParse("3"),
+						},
+					},
+				},
+			},
+			resourceName: corev1.ResourceMemory,
+			want:         resource.MustParse("8Gi"), // memory not in pod-level, fallback to container
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
