@@ -369,6 +369,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 	if err != nil {
 		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNotMatchNUMATopology)
 	}
+
 	if state.designatedAllocation != nil {
 		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node(), numaTopologyPolicy)
 		if !status.IsSuccess() {
@@ -376,6 +377,21 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 		}
 		return nil
 	}
+
+	// Filter by NUMA Node early
+	if numaTopologyPolicy != extension.NUMATopologyPolicyNone && numaTopologyPolicy != extension.NUMATopologyPolicyBestEffort {
+		// when numa topology policy is set on node, we should maintain the same behavior as before, so we only
+		// set default podNUMAExclusive when podNUMATopologyPolicy is not none
+		podNUMAExclusive := state.podNUMAExclusive
+		if podNUMAExclusive == "" && podNUMATopologyPolicy != "" {
+			podNUMAExclusive = extension.NumaTopologyExclusiveRequired
+		}
+		status := p.FilterByNUMANode(ctx, cycleState, pod, node, numaTopologyPolicy, podNUMAExclusive, topologyOptions)
+		if !status.IsSuccess() {
+			return status
+		}
+	}
+
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
 	if !status.IsSuccess() {
@@ -432,17 +448,6 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 			}
 			return nil
 		}
-	}
-
-	// FIXME: move it ahead the resourceManager.Allocate so that we can check with NUMA hints almost in the Filter
-	if numaTopologyPolicy != extension.NUMATopologyPolicyNone && numaTopologyPolicy != extension.NUMATopologyPolicyBestEffort {
-		// when numa topology policy is set on node, we should maintain the same behavior as before, so we only
-		// set default podNUMAExclusive when podNUMATopologyPolicy is not none
-		podNUMAExclusive := state.podNUMAExclusive
-		if podNUMAExclusive == "" && podNUMATopologyPolicy != "" {
-			podNUMAExclusive = extension.NumaTopologyExclusiveRequired
-		}
-		return p.FilterByNUMANode(ctx, cycleState, pod, node, numaTopologyPolicy, podNUMAExclusive, topologyOptions)
 	}
 
 	return nil
