@@ -950,6 +950,155 @@ func TestPatchGangPendingPodsCondition(t *testing.T) {
 	}
 }
 
+func TestPostFilter_PreemptionMessageForNonRootCausePod(t *testing.T) {
+	tests := []struct {
+		name                  string
+		pod                   *corev1.Pod
+		isRootCausePod        bool
+		gangSchedulingContext *GangSchedulingContext
+		wantResult            *fwktype.PostFilterResult
+		wantStatus            *fwktype.Status
+	}{
+		{
+			name:           "non-root-cause pod with preemptionMessage returns message",
+			pod:            st.MakePod().Name("pod-follower").UID("pod-follower").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			isRootCausePod: false,
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID:       "default/gangA",
+				gangGroup:         sets.New[string]("default/gangA"),
+				preemptionMessage: "preemption already attempted by default/pod-leader with no feasible nodes",
+			},
+			wantResult: &fwktype.PostFilterResult{},
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "preemption already attempted by default/pod-leader with no feasible nodes"),
+		},
+		{
+			name:           "non-root-cause pod without preemptionMessage returns plain Unschedulable",
+			pod:            st.MakePod().Name("pod-follower2").UID("pod-follower2").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangB").Obj(),
+			isRootCausePod: false,
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID:       "default/gangB",
+				gangGroup:         sets.New[string]("default/gangB"),
+				preemptionMessage: "",
+			},
+			wantResult: &fwktype.PostFilterResult{},
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable),
+		},
+		{
+			name:                  "root-cause pod does not short-circuit",
+			pod:                   st.MakePod().Name("pod-leader").UID("pod-leader").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangC").Obj(),
+			isRootCausePod:        true,
+			gangSchedulingContext: nil,
+			wantResult:            &fwktype.PostFilterResult{},
+			wantStatus:            fwktype.NewStatus(fwktype.Unschedulable),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgMgr := &PodGroupManager{
+				handle: NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil),
+				holder: GangSchedulingContextHolder{
+					gangSchedulingContext: tt.gangSchedulingContext,
+				},
+				args: &config.CoschedulingArgs{
+					EnablePreemption: ptr.To[bool](false),
+				},
+				cache: NewGangCache(nil, nil, nil, nil, nil),
+			}
+			state := framework.NewCycleState()
+			frameworkext.InitDiagnosis(state, tt.pod)
+			diagnosis := frameworkext.GetDiagnosis(state)
+			diagnosis.IsRootCausePod = tt.isRootCausePod
+
+			got, gotStatus := pgMgr.PostFilter(context.TODO(), state, tt.pod, nil)
+			assert.Equal(t, tt.wantResult, got)
+			assert.Equal(t, tt.wantStatus, gotStatus)
+		})
+	}
+}
+
+func TestAfterPostFilter_PreemptionDiagnosisFailedMessage(t *testing.T) {
+	tests := []struct {
+		name                  string
+		pod                   *corev1.Pod
+		isRootCausePod        bool
+		existingPreemptionMsg string
+		preemptionDiagnosis   *frameworkext.PreemptionDiagnosis
+		wantPreemptionMessage string
+	}{
+		{
+			name:                  "root-cause pod stores FailedMessage when preemptionMessage is empty",
+			pod:                   st.MakePod().Name("pod-root").UID("pod-root").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangD").Obj(),
+			isRootCausePod:        true,
+			existingPreemptionMsg: "",
+			preemptionDiagnosis: &frameworkext.PreemptionDiagnosis{
+				FailedMessage: "0/10 nodes can be preempted: insufficient cpu",
+			},
+			wantPreemptionMessage: "0/10 nodes can be preempted: insufficient cpu",
+		},
+		{
+			name:                  "root-cause pod does NOT overwrite existing preemptionMessage",
+			pod:                   st.MakePod().Name("pod-root2").UID("pod-root2").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangE").Obj(),
+			isRootCausePod:        true,
+			existingPreemptionMsg: "preemption already attempted by default/pod-x with reason",
+			preemptionDiagnosis: &frameworkext.PreemptionDiagnosis{
+				FailedMessage: "new message that should be ignored",
+			},
+			wantPreemptionMessage: "preemption already attempted by default/pod-x with reason",
+		},
+		{
+			name:                  "non-root-cause pod does NOT store FailedMessage",
+			pod:                   st.MakePod().Name("pod-follow").UID("pod-follow").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangF").Obj(),
+			isRootCausePod:        false,
+			existingPreemptionMsg: "",
+			preemptionDiagnosis: &frameworkext.PreemptionDiagnosis{
+				FailedMessage: "should not be stored",
+			},
+			wantPreemptionMessage: "",
+		},
+		{
+			name:                  "root-cause pod with nil PreemptionDiagnosis does nothing",
+			pod:                   st.MakePod().Name("pod-root3").UID("pod-root3").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangG").Obj(),
+			isRootCausePod:        true,
+			existingPreemptionMsg: "",
+			preemptionDiagnosis:   nil,
+			wantPreemptionMessage: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handle := NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil)
+			gangCache := NewGangCache(nil, nil, nil, nil, handle)
+			gangCache.onPodAdd(tt.pod)
+
+			gangSchedulingContext := &GangSchedulingContext{
+				gangGroupID:          "default/gang",
+				gangGroup:            sets.New[string]("default/gang"),
+				failedMessage:        "gang failed",
+				preemptionMessage:    tt.existingPreemptionMsg,
+				alreadyAttemptedPods: sets.New[string](),
+			}
+
+			pgMgr := &PodGroupManager{
+				handle: handle,
+				holder: GangSchedulingContextHolder{
+					gangSchedulingContext: gangSchedulingContext,
+				},
+				args:  &config.CoschedulingArgs{},
+				cache: gangCache,
+			}
+
+			cycleState := framework.NewCycleState()
+			frameworkext.InitDiagnosis(cycleState, tt.pod)
+			diagnosis := frameworkext.GetDiagnosis(cycleState)
+			diagnosis.IsRootCausePod = tt.isRootCausePod
+			diagnosis.PreemptionDiagnosis = tt.preemptionDiagnosis
+
+			pgMgr.AfterPostFilter(context.TODO(), cycleState, tt.pod, handle, "coscheduling", nil, nil)
+			assert.Equal(t, tt.wantPreemptionMessage, gangSchedulingContext.preemptionMessage)
+		})
+	}
+}
+
 func TestAfterPostFilter_PatchConditionOnlyOnce(t *testing.T) {
 	gangCreatedTime := time.Now()
 	pg := makePg("gangA", "ns", 3, &gangCreatedTime, nil)

@@ -374,10 +374,10 @@ func (w *workloadAuditorImpl) RecordGangScheduleResult(gangKey string, recordTyp
 func (w *workloadAuditorImpl) appendRecord(wr *WorkloadRecord, recordType RecordType, message string) {
 	wr.recordTypeCounts[recordType]++
 	if wr.gangMinMember > 0 {
-		klog.V(4).Infof("WorkloadAuditor record: workloadKey=%s %s, gangMinMember=%d(%s), type=%s, message=%q, attempts=%d",
+		klog.V(4).Infof("WorkloadAuditor record: workloadKey=%s %s, gangMinMember=%d(%s), type=%s, message=%s, attempts=%d",
 			wr.WorkloadKey, wr.labelDetail, wr.gangMinMember, wr.gangMinMemberBucket, recordType, message, wr.Attempts)
 	} else {
-		klog.V(4).Infof("WorkloadAuditor record: workloadKey=%s %s, type=%s, message=%q, attempts=%d",
+		klog.V(4).Infof("WorkloadAuditor record: workloadKey=%s %s, type=%s, message=%s, attempts=%d",
 			wr.WorkloadKey, wr.labelDetail, recordType, message, wr.Attempts)
 	}
 	checkRecordAnomaly(&w.Config, wr, recordType, message)
