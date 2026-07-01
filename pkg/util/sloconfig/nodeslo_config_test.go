@@ -31,6 +31,7 @@ func Test_DefaultNodeSLOSpecConfig(t *testing.T) {
 		ResourceQOSStrategy:         DefaultResourceQOSStrategy(),
 		CPUBurstStrategy:            DefaultCPUBurstStrategy(),
 		SystemStrategy:              DefaultSystemStrategy(),
+		PSIStrategy:                 DefaultPSIStrategy(),
 		Extensions:                  DefaultExtensions(),
 	}
 	got := DefaultNodeSLOSpecConfig()

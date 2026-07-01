@@ -158,6 +158,12 @@ const (
 	// PSICollector enables psi collector feature of koordlet.
 	PSICollector featuregate.Feature = "PSICollector"
 
+	// owner: @AutuSnow @Wheat2018
+	// alpha: v1.7
+	//
+	// PSIReconcile enables PSI-based QoS feature of koordlet.
+	PSIReconcile featuregate.Feature = "PSIReconcile"
+
 	// owner: @TheBeatles1994 @chzhj @zwzhang0107
 	// alpha: v1.3
 	//
@@ -233,6 +239,7 @@ var (
 		CPICollector:           {Default: false, PreRelease: featuregate.Alpha},
 		Libpfm4:                {Default: false, PreRelease: featuregate.Alpha},
 		PSICollector:           {Default: false, PreRelease: featuregate.Alpha},
+		PSIReconcile:           {Default: false, PreRelease: featuregate.Alpha},
 		BlkIOReconcile:         {Default: false, PreRelease: featuregate.Alpha},
 		ColdPageCollector:      {Default: false, PreRelease: featuregate.Alpha},
 		HugePageReport:         {Default: false, PreRelease: featuregate.Alpha},
