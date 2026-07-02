@@ -220,7 +220,7 @@ func (pgMgr *PodGroupManager) PreEnqueue(ctx context.Context, pod *corev1.Pod) (
 	}
 
 	// check if gang is initialized
-	if !gang.HasGangInit {
+	if !gang.hasGangInit() {
 		return fmt.Errorf("gang has not init, gangName: %v, podName: %v", gang.Name,
 			util.GetId(pod.Namespace, pod.Name))
 	}
@@ -267,7 +267,7 @@ func (pgMgr *PodGroupManager) basicGangRequirementsCheck(gang *Gang, pod *corev1
 			gangsOfGangIsNil = append(gangsOfGangIsNil, gangID)
 			continue
 		}
-		if !memberGang.HasGangInit {
+		if !memberGang.hasGangInit() {
 			gangsOfGangNotInit = append(gangsOfGangNotInit, gangID)
 			continue
 		}
@@ -308,7 +308,7 @@ func (pgMgr *PodGroupManager) BeforePreFilter(ctx context.Context, cycleState fw
 	}
 
 	// check if gang is initialized
-	if !gang.HasGangInit {
+	if !gang.hasGangInit() {
 		return fmt.Errorf("gang has not init, gangName: %v, podName: %v", gang.Name,
 			util.GetId(pod.Namespace, pod.Name))
 	}
@@ -566,7 +566,7 @@ func (pgMgr *PodGroupManager) Permit(ctx context.Context, pod *corev1.Pod) (time
 	}
 	if !allGangGroupAssumed {
 		gang.addWaitingGang()
-		return gang.WaitTime, Wait
+		return gang.getGangWaitTime(), Wait
 	}
 	return 0, Success
 }
