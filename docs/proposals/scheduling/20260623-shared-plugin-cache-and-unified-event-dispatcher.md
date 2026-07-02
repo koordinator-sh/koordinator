@@ -6,7 +6,7 @@ reviewers:
   - "@saintube"
   - "@ZiMengSheng"
 creation-date: 2026-06-23
-last-updated: 2026-07-01
+last-updated: 2026-07-02
 status: provisional
 ---
 
@@ -287,10 +287,17 @@ type CacheReserver interface {
 
 **Invariants that `CacheReserver` implementations must uphold:**
 
-1. **No double-counting.** `OnPodAdd` (informer event) must check the assumed set before
-   applying event-driven state. If the pod is already assumed, the handler merges or replaces
-   the assumed state with authoritative event data and calls `ForgetPod` — it does not add a
-   second allocation entry.
+1. **Reconciliation on informer event.** When an authoritative pod informer event arrives
+   for a pod in the assumed set, the cache reconciles rather than skips: it rolls back the
+   state `AssumePod` recorded (subtracting the assumed allocation on the assumed node),
+   applies the event's authoritative state, and clears the assumed marker. When the event
+   and the assumed result agree (the common case) this is a net-zero operation; when they
+   diverge — the pod was bound to a different node than Reserve assumed, an admission
+   webhook mutated the annotations after Reserve, or the pod was deleted before binding —
+   the cache converges on the event's state. Silently skipping the event would leave a
+   stale phantom allocation on the assumed node; naïvely re-applying it would double-count
+   on the same node. This mirrors how kube-scheduler's `schedulerCache.addPod` reconciles
+   an assumed pod against the authoritative informer event rather than skipping it.
 2. **Complete rollback.** `ForgetPod` must fully revert all state written by `AssumePod` and
    the preceding Reserve, regardless of how far the Reserve phase progressed.
 3. **Lock consistency.** The per-node lock that serializes informer event writes must also
@@ -345,20 +352,32 @@ var (
     _ frameworkext.CacheReserver     = &nodeDeviceCache{}
 )
 
+// assumedAllocation snapshots what Plugin.Reserve wrote to the cache for one pod: the
+// node the write went to and the allocation itself. Held only until the authoritative
+// pod informer event arrives (or Unreserve fires). Used to reconcile the cache when the
+// event's pod object diverges from what Reserve assumed (different node, mutated
+// annotations, or deletion before binding).
+type assumedAllocation struct {
+    nodeName    string
+    allocations apiext.DeviceAllocations
+}
+
 type nodeDeviceCache struct {
     lock            sync.RWMutex
     nodeDeviceInfos map[string]*nodeDevice
-    // assumedPods tracks pods whose allocations were written to nodeDeviceInfos during
-    // Reserve, but whose authoritative pod informer event has not yet arrived. Used by
-    // OnPodAdd/OnPodUpdate to skip re-applying an allocation Reserve already applied.
-    assumedPods map[types.UID]string // pod UID → nodeName
+    // assumedPods records what Reserve wrote to nodeDeviceInfos, keyed by pod UID. Used
+    // by OnPodAdd/OnPodUpdate/OnPodDelete to reconcile with the authoritative informer
+    // event: the assumed write is rolled back and the event's state is applied. If the
+    // event agrees with Reserve, the operation is net-zero; if it diverges, the cache
+    // converges on the event's state.
+    assumedPods map[types.UID]*assumedAllocation
     handle      frameworkext.ExtendedHandle
 }
 
 func newNodeDeviceCache(handle frameworkext.ExtendedHandle) *nodeDeviceCache {
     return &nodeDeviceCache{
         nodeDeviceInfos: make(map[string]*nodeDevice),
-        assumedPods:     make(map[types.UID]string),
+        assumedPods:     make(map[types.UID]*assumedAllocation),
         handle:          handle,
     }
 }
@@ -373,11 +392,11 @@ func (n *nodeDeviceCache) Start(ctx context.Context) {
 }
 
 // OnPodAdd implements SharedPluginCache. Called by the framework's unified dispatcher.
+// If the pod was previously assumed, reconciles against the authoritative event rather
+// than skipping — see invariant 1 in the Reserve/Unreserve section.
 func (n *nodeDeviceCache) OnPodAdd(pod *corev1.Pod) {
-    if n.consumeAssumedIfMatch(pod) {
-        // Reserve already applied this pod's allocations to nodeDeviceInfos and marked
-        // it as assumed. The informer event is now authoritative for the same pod, so
-        // we clear the assumed marker and skip re-applying — updatePod would double-count.
+    if assumed, ok := n.takeAssumed(pod.UID); ok {
+        n.reconcileAssumed(assumed, pod)
         return
     }
     n.updatePod(nil, pod)
@@ -385,7 +404,10 @@ func (n *nodeDeviceCache) OnPodAdd(pod *corev1.Pod) {
 
 // OnPodUpdate implements SharedPluginCache. Called by the framework's unified dispatcher.
 func (n *nodeDeviceCache) OnPodUpdate(oldPod, newPod *corev1.Pod) {
-    if n.consumeAssumedIfMatch(newPod) {
+    if assumed, ok := n.takeAssumed(newPod.UID); ok {
+        // Prior state in the cache is Reserve's assumed write, not oldPod's annotations,
+        // so reconcile against the assumed snapshot rather than treating oldPod as truth.
+        n.reconcileAssumed(assumed, newPod)
         return
     }
     n.updatePod(oldPod, newPod)
@@ -393,10 +415,13 @@ func (n *nodeDeviceCache) OnPodUpdate(oldPod, newPod *corev1.Pod) {
 
 // OnPodDelete implements SharedPluginCache. Called by the framework's unified dispatcher.
 func (n *nodeDeviceCache) OnPodDelete(pod *corev1.Pod) {
-    // If the pod was assumed but got deleted before binding, clear the marker.
-    n.lock.Lock()
-    delete(n.assumedPods, pod.UID)
-    n.lock.Unlock()
+    if assumed, ok := n.takeAssumed(pod.UID); ok {
+        // Pod was assumed but got deleted before the informer add/update ever landed.
+        // Roll back the assumed write; the annotations at this point may not carry the
+        // allocation Reserve wrote, so deletePod cannot be trusted to undo it.
+        n.rollbackAssumed(assumed, pod)
+        return
+    }
     n.deletePod(pod)
 }
 
@@ -407,16 +432,30 @@ func (n *nodeDeviceCache) OnNodeUpdate(_, _ *corev1.Node) {}
 func (n *nodeDeviceCache) OnNodeDelete(*corev1.Node)      {}
 
 // AssumePod implements CacheReserver. Called by Plugin.Reserve after allocations have
-// been written to the per-node cache.
+// been written to the per-node cache. Snapshots what Reserve wrote so a later informer
+// event or Unreserve can reconcile against it — the naive "just remember the UID"
+// approach cannot roll back Reserve's write if the informer event's pod object turns
+// out to disagree with what Reserve assumed.
 func (n *nodeDeviceCache) AssumePod(pod *corev1.Pod, nodeName string) error {
+    info := n.getNodeDevice(nodeName, false)
+    if info == nil {
+        return fmt.Errorf("nodeDevice for %s is missing when assuming pod %s", nodeName, klog.KObj(pod))
+    }
+    info.lock.RLock()
+    allocations := info.copyPodAllocations(pod) // read what Reserve just wrote from allocateSet
+    info.lock.RUnlock()
+
     n.lock.Lock()
-    defer n.lock.Unlock()
-    n.assumedPods[pod.UID] = nodeName
+    n.assumedPods[pod.UID] = &assumedAllocation{nodeName: nodeName, allocations: allocations}
+    n.lock.Unlock()
     return nil
 }
 
 // ForgetPod implements CacheReserver. Called by Plugin.Unreserve. Idempotent — safe to
-// call even if AssumePod was never called for this pod.
+// call even if AssumePod was never called for this pod. Only clears the assumed marker;
+// the actual cache rollback (subtracting the allocation) is handled by Plugin.Unreserve's
+// existing updateCacheUsed(..., add=false) call so behavior for non-CacheReserver caches
+// is unchanged.
 func (n *nodeDeviceCache) ForgetPod(pod *corev1.Pod) error {
     n.lock.Lock()
     defer n.lock.Unlock()
@@ -424,17 +463,44 @@ func (n *nodeDeviceCache) ForgetPod(pod *corev1.Pod) error {
     return nil
 }
 
-// consumeAssumedIfMatch atomically clears the assumed marker for pod and returns true
-// if the pod was in the assumed set. Callers use the result to skip re-applying an
-// allocation that Reserve has already applied to the cache.
-func (n *nodeDeviceCache) consumeAssumedIfMatch(pod *corev1.Pod) bool {
+// takeAssumed atomically removes and returns the assumed snapshot for uid.
+func (n *nodeDeviceCache) takeAssumed(uid types.UID) (*assumedAllocation, bool) {
     n.lock.Lock()
     defer n.lock.Unlock()
-    if _, ok := n.assumedPods[pod.UID]; !ok {
-        return false
+    assumed, ok := n.assumedPods[uid]
+    if !ok {
+        return nil, false
     }
-    delete(n.assumedPods, pod.UID)
-    return true
+    delete(n.assumedPods, uid)
+    return assumed, true
+}
+
+// reconcileAssumed rolls back what AssumePod recorded on assumed.nodeName, then applies
+// the informer event's authoritative state from pod.Spec.NodeName / pod.Annotations.
+// Two cases matter:
+//   - Event agrees with Reserve (same node, same allocation): subtract-then-add on the
+//     same node is net-zero. The cache is unchanged; only the assumed marker was cleared.
+//   - Event diverges (different node, mutated annotations, or empty allocation): the
+//     phantom write on assumed.nodeName is removed, and the event's state — which may be
+//     on a different node or empty — becomes truth. The cache converges on the event.
+func (n *nodeDeviceCache) reconcileAssumed(assumed *assumedAllocation, pod *corev1.Pod) {
+    n.rollbackAssumed(assumed, pod)
+    n.updatePod(nil, pod)
+}
+
+// rollbackAssumed subtracts the assumed allocation from assumed.nodeName. Extracted so
+// OnPodDelete (which has nothing to apply afterward) can reuse it.
+func (n *nodeDeviceCache) rollbackAssumed(assumed *assumedAllocation, pod *corev1.Pod) {
+    if len(assumed.allocations) == 0 {
+        return
+    }
+    info := n.getNodeDevice(assumed.nodeName, false)
+    if info == nil {
+        return
+    }
+    info.lock.Lock()
+    defer info.lock.Unlock()
+    info.updateCacheUsed(assumed.allocations, pod, false)
 }
 ```
 
@@ -482,16 +548,23 @@ func (p *Plugin) Unreserve(ctx context.Context, cs fwktype.CycleState, pod *core
   the dispatcher, Device CRD events stay in `Start()`, node events are no-ops.
 - `CacheReserver` closes the assume-window gap without adding methods to
   `SharedPluginCache`. A hypothetical read-only cache simply does not implement it.
-- The assumed-pod check is small and localized: one map, one helper (`consumeAssumedIfMatch`),
-  and one line each in `OnPodAdd`/`OnPodUpdate`. The existing `updatePod`/`deletePod`
-  paths are untouched.
+- The reconciliation path is small and localized: one snapshot per assumed pod, two
+  helpers (`takeAssumed`, `rollbackAssumed`) plus one composed helper (`reconcileAssumed`),
+  and a single conditional at the top of `OnPodAdd`/`OnPodUpdate`/`OnPodDelete`. The
+  existing `updatePod`/`deletePod` paths are untouched, so plugins that do not implement
+  `CacheReserver` are not affected.
 - The interfaces fit the existing per-node lock model. No global write lock is introduced;
   `nodeDevice.lock` continues to serialize allocation writes, and the top-level
-  `nodeDeviceCache.lock` protects only the node map and the assumed set.
-- The invariants from the previous subsection are visibly upheld: no double-count
-  (guaranteed by `consumeAssumedIfMatch`), complete rollback (`ForgetPod` clears the marker
-  and `Unreserve`'s existing rollback reverts the cache write), and lock consistency (both
-  paths acquire `nodeDeviceCache.lock` for the assumed set).
+  `nodeDeviceCache.lock` protects only the node map and the assumed set. `AssumePod`
+  releases `nodeDevice.lock` before acquiring `nodeDeviceCache.lock` so lock order matches
+  the rest of the cache (top-level first, per-node second) and there is no deadlock.
+- The invariants from the previous subsection are visibly upheld: reconciliation on
+  informer event (guaranteed by `reconcileAssumed` — rollback-then-apply is net-zero when
+  the event agrees, and convergent when it diverges), complete rollback (`ForgetPod`
+  clears the marker and `Unreserve`'s existing `updateCacheUsed(..., add=false)` reverts
+  the cache write; `OnPodDelete` handles the delete-before-bind case via `rollbackAssumed`),
+  and lock consistency (`AssumePod`/`ForgetPod` and every reconcile path acquire
+  `nodeDeviceCache.lock` for the assumed set).
 
 Reservation follows the same pattern with its own per-reservation lock. NodeNUMAResource
 is analyzed during PR-2 to determine whether its `resourceManager` writes assumed state
@@ -570,3 +643,10 @@ members of `ExtendedHandle`.
 - 2026-07-01: Address review feedback — add a full DeviceShare migration example demonstrating
   SharedPluginCache + CacheReserver on nodeDeviceCache (Start, event handlers, AssumePod/ForgetPod,
   and Plugin.Reserve/Unreserve integration) to validate the interface shape.
+- 2026-07-02: Address review feedback — replace the naive "skip if assumed" strategy in
+  OnPodAdd/OnPodUpdate with a reconcile-on-event pattern that handles the case where the
+  informer event's pod object differs from what Reserve assumed (different node, mutated
+  annotations, or deletion before binding). AssumePod now snapshots (nodeName + allocations)
+  rather than just nodeName; reconcileAssumed rolls the snapshot back and applies the
+  event's authoritative state. Invariant 1 rewritten from "no double-count" to
+  "reconciliation on informer event." Mirrors kube-scheduler's schedulerCache.addPod.
