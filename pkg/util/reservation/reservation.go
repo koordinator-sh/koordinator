@@ -591,6 +591,17 @@ func (s *RequiredReservationAffinity) MatchAffinity(node *corev1.Node) bool {
 	return true
 }
 
+func (s *RequiredReservationAffinity) MatchLabelSelector(l labels.Labels) bool {
+	if s == nil || s.labelSelector == nil {
+		return true
+	}
+	return s.labelSelector.Matches(l)
+}
+
+func (s *RequiredReservationAffinity) HasNodeSelector() bool {
+	return s != nil && s.nodeSelector != nil
+}
+
 // FindMatchingUntoleratedTaint checks if the reservation tolerations tolerates all the filtered reservation taints.
 // It returns the first taint without a toleration and the status if any taint is NOT tolerated.
 func (s *RequiredReservationAffinity) FindMatchingUntoleratedTaint(taints []corev1.Taint, inclusionFilter func(*corev1.Taint) bool) (corev1.Taint, bool) {

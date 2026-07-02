@@ -108,6 +108,8 @@ type Plugin struct {
 	preemptionMgr                  *PreemptionMgr
 	enableLazyReservationRestore   bool
 	enableSkipReservationFitsNode  bool
+	enableReservationFirstFit      bool
+	enableOmitNodeLabels           bool
 	enablePreAllocationClusterMode bool
 	ignoredResources               sets.Set[string]
 	ignoredResourceGroups          sets.Set[string]
@@ -146,6 +148,8 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 		nominator:                     nm,
 		enableLazyReservationRestore:  k8sfeature.DefaultFeatureGate.Enabled(features.LazyReservationRestore),
 		enableSkipReservationFitsNode: k8sfeature.DefaultFeatureGate.Enabled(features.SkipReservationFitsNode),
+		enableReservationFirstFit:     k8sfeature.DefaultFeatureGate.Enabled(features.ReservationFirstFitNomination),
+		enableOmitNodeLabels:          k8sfeature.DefaultFeatureGate.Enabled(features.OmitNodeLabelsForReservation),
 		ignoredResources:              sets.New[string](pluginArgs.IgnoredResources...),
 		ignoredResourceGroups:         sets.New[string](pluginArgs.IgnoredResourceGroups...),
 	}
