@@ -1227,6 +1227,261 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 	}
 }
 
+// Tests for nil annotations and labels safety
+func TestGeneralDevicePluginAdapter_NilAnnotations(t *testing.T) {
+	now := time.Now()
+	dpAdapterClock = fakeclock.NewFakeClock(now)
+
+	adapter := &generalDevicePluginAdapter{}
+
+	// Test with nil annotations
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod",
+		},
+	}
+	// Explicitly set annotations to nil
+	pod.Annotations = nil
+
+	err := adapter.Adapt(nil, pod, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, pod.Annotations)
+	assert.Equal(t, strconv.FormatInt(now.UnixNano(), 10), pod.Annotations[AnnotationBindTimestamp])
+}
+
+func TestGeneralGPUDevicePluginAdapter_NilAnnotationsAndLabels(t *testing.T) {
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+
+	adapter := &generalGPUDevicePluginAdapter{}
+
+	tests := []struct {
+		name string
+		pod  *corev1.Pod
+	}{
+		{
+			name: "nil annotations",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod-nil-annot",
+				},
+			},
+		},
+		{
+			name: "nil labels and nil annotations with HAMI isolation provider",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod-hami",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Explicitly set to nil
+			tt.pod.Annotations = nil
+			tt.pod.Labels = nil
+
+			// For HAMI test case, set the label after creating pod to test nil check
+			if tt.name == "nil labels and nil annotations with HAMI isolation provider" {
+				tt.pod.Labels = map[string]string{
+					apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+				}
+				tt.pod.Annotations = nil
+			}
+
+			allocation := []*apiext.DeviceAllocation{
+				{Minor: 0},
+			}
+
+			ctx := &DevicePluginAdaptContext{
+				Context: context.TODO(),
+				node:    testNode,
+			}
+			err := adapter.Adapt(ctx, tt.pod, allocation)
+			assert.NoError(t, err)
+			assert.NotNil(t, tt.pod.Annotations)
+			assert.Equal(t, "0", tt.pod.Annotations[AnnotationGPUMinors])
+
+			// For HAMI case, verify label was set
+			if tt.name == "nil labels and nil annotations with HAMI isolation provider" {
+				assert.NotNil(t, tt.pod.Labels)
+				assert.Equal(t, testNode.Name, tt.pod.Labels[apiext.LabelHAMIVGPUNodeName])
+			}
+		})
+	}
+}
+
+type nilLabelsObject struct {
+	metav1.ObjectMeta
+	firstLabels map[string]string
+	labelCalls  int
+}
+
+func (o *nilLabelsObject) GetLabels() map[string]string {
+	o.labelCalls++
+	if o.labelCalls == 1 {
+		return o.firstLabels
+	}
+	return nil
+}
+
+func (o *nilLabelsObject) SetLabels(labels map[string]string) {
+	o.ObjectMeta.Labels = labels
+}
+
+func TestGeneralGPUDevicePluginAdapter_NilLabelsMapInit(t *testing.T) {
+	testNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+
+	adapter := &generalGPUDevicePluginAdapter{}
+	object := &nilLabelsObject{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod",
+		},
+		firstLabels: map[string]string{
+			apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+		},
+	}
+
+	allocation := []*apiext.DeviceAllocation{
+		{Minor: 0},
+	}
+
+	ctx := &DevicePluginAdaptContext{
+		Context: context.TODO(),
+		node:    testNode,
+	}
+	err := adapter.Adapt(ctx, object, allocation)
+	assert.NoError(t, err)
+	assert.NotNil(t, object.Annotations)
+	assert.Equal(t, "0", object.Annotations[AnnotationGPUMinors])
+	assert.NotNil(t, object.Labels)
+	assert.Equal(t, testNode.Name, object.Labels[apiext.LabelHAMIVGPUNodeName])
+}
+
+func TestHuaweiGPUDevicePluginAdapter_NilAnnotations(t *testing.T) {
+	now := time.Now()
+	dpAdapterClock = fakeclock.NewFakeClock(now)
+
+	adapter := &huaweiGPUDevicePluginAdapter{}
+
+	tests := []struct {
+		name     string
+		gpuModel string
+	}{
+		{
+			name:     "full NPU with nil annotations",
+			gpuModel: "",
+		},
+		{
+			name:     "Ascend-310P3-300I-DUO with nil annotations",
+			gpuModel: "Ascend-310P3-300I-DUO",
+		},
+		{
+			name:     "vNPU with nil annotations",
+			gpuModel: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-pod",
+				},
+			}
+			// Explicitly set annotations to nil
+			pod.Annotations = nil
+
+			allocation := []*apiext.DeviceAllocation{
+				{Minor: 0},
+			}
+
+			if tt.name == "vNPU with nil annotations" {
+				allocation[0].Extension = &apiext.DeviceAllocationExtension{
+					GPUSharedResourceTemplate: "vir02",
+				}
+			}
+
+			err := adapter.Adapt(&DevicePluginAdaptContext{gpuModel: tt.gpuModel}, pod, allocation)
+			assert.NoError(t, err)
+			assert.NotNil(t, pod.Annotations)
+			assert.NotEmpty(t, pod.Annotations[AnnotationPredicateTime])
+
+			if tt.name == "Ascend-310P3-300I-DUO with nil annotations" {
+				assert.Equal(t, "Ascend310P-0", pod.Annotations[AnnotationHuaweiAscend310P])
+			} else if tt.name == "vNPU with nil annotations" {
+				assert.Equal(t, "0-vir02", pod.Annotations[AnnotationHuaweiNPUCore])
+			} else {
+				assert.Equal(t, "0", pod.Annotations[AnnotationHuaweiNPUCore])
+			}
+		})
+	}
+}
+
+func TestCambriconGPUDevicePluginAdapter_NilAnnotations(t *testing.T) {
+	adapter := &cambriconGPUDevicePluginAdapter{}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod",
+		},
+	}
+	// Explicitly set annotations to nil
+	pod.Annotations = nil
+
+	allocation := []*apiext.DeviceAllocation{
+		{
+			Minor: 0,
+			Resources: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("5"),
+				apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+
+	err := adapter.Adapt(nil, pod, allocation)
+	assert.NoError(t, err)
+	assert.NotNil(t, pod.Annotations)
+	assert.Equal(t, "false", pod.Annotations[AnnotationCambriconDsmluAssigned])
+	assert.Equal(t, "0_5_4", pod.Annotations[AnnotationCambriconDsmluProfile])
+}
+
+func TestMetaXGPUDevicePluginAdapter_NilAnnotations(t *testing.T) {
+	adapter := &metaxDevicePluginAdapter{}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-pod",
+		},
+	}
+	// Explicitly set annotations to nil
+	pod.Annotations = nil
+
+	allocation := []*apiext.DeviceAllocation{
+		{
+			ID: "GPU-0",
+			Resources: corev1.ResourceList{
+				apiext.ResourceGPUCore:   resource.MustParse("5"),
+				apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+
+	err := adapter.Adapt(nil, pod, allocation)
+	assert.NoError(t, err)
+	assert.NotNil(t, pod.Annotations)
+	assert.Equal(t, `[[{"uuid":"GPU-0","compute":5,"vRam":1024}]]`, pod.Annotations[AnnotationMetaXGPUDevicesAllocated])
+}
+
 func Test_buildGPUMinorsStr(t *testing.T) {
 	type args struct {
 		allocation []*apiext.DeviceAllocation
