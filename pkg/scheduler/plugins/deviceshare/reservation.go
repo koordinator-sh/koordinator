@@ -445,7 +445,7 @@ func calcRequiredDeviceResources(alloc *reusableAlloc, preemptibleInRR map[sched
 		}
 		for deviceType, minors := range minorHints {
 			resources := deviceResources{}
-			for minor := range minors.UnsortedList() {
+			for _, minor := range minors.UnsortedList() {
 				resources[minor] = corev1.ResourceList{}
 			}
 			required[deviceType] = resources
