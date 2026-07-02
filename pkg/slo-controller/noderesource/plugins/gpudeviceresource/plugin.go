@@ -119,14 +119,10 @@ func (p *Plugin) Prepare(_ *configuration.ColocationStrategy, node *corev1.Node,
 	// prepare node labels
 	// TBD: shall we reset labels if not exist in the NR
 	if nr.Labels != nil {
-		if _, ok := nr.Labels[extension.LabelGPUVendor]; ok {
-			node.Labels[extension.LabelGPUVendor] = nr.Labels[extension.LabelGPUVendor]
-		}
-		if _, ok := nr.Labels[extension.LabelGPUModel]; ok {
-			node.Labels[extension.LabelGPUModel] = nr.Labels[extension.LabelGPUModel]
-		}
-		if _, ok := nr.Labels[extension.LabelGPUDriverVersion]; ok {
-			node.Labels[extension.LabelGPUDriverVersion] = nr.Labels[extension.LabelGPUDriverVersion]
+		for _, label := range Labels {
+			if val, ok := nr.Labels[label]; ok {
+				node.Labels[label] = val
+			}
 		}
 	}
 
@@ -213,14 +209,10 @@ func (p *Plugin) calculate(node *corev1.Node, device *schedulingv1alpha1.Device)
 
 	// calculate labels about gpu driver and model
 	updatedLabels := map[string]string{}
-	if gpuVendor, ok := device.Labels[extension.LabelGPUVendor]; ok {
-		updatedLabels[extension.LabelGPUVendor] = gpuVendor
-	}
-	if gpuModel, ok := device.Labels[extension.LabelGPUModel]; ok {
-		updatedLabels[extension.LabelGPUModel] = gpuModel
-	}
-	if gpuDriverVersion, ok := device.Labels[extension.LabelGPUDriverVersion]; ok {
-		updatedLabels[extension.LabelGPUDriverVersion] = gpuDriverVersion
+	for _, label := range Labels {
+		if val, ok := device.Labels[label]; ok {
+			updatedLabels[label] = val
+		}
 	}
 	if len(updatedLabels) != 0 {
 		items = append(items, framework.ResourceItem{
