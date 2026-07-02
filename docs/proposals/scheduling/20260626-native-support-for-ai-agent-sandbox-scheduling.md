@@ -307,7 +307,7 @@ Sandbox exists, Reservation missing
 
 | Common state | Reservation action |
 |---|---|
-| Pending (no node selected) | Do not create yet |
+| Pending (no node selected) | Create Reservation and wait for it to become `Available` (do not start runtime yet) |
 | Running (consumes resources) | Keep |
 | Suspended (suspended but still consumes resources) | Keep |
 | Released (suspended and resources released) | Delete |
@@ -315,10 +315,11 @@ Sandbox exists, Reservation missing
 
 One detail is important: "suspended" must distinguish whether resources are released. The same pause semantics can have different effects in different runtimes. The reduced lifecycle keeps only the state boundaries that change node resource usage; other transitional states are folded into adjacent stable states.
 
-Accounting-only Reservations need two layers of protection:
+Accounting-only Reservations need three layers of protection:
 
-- Mark the Reservation as `unschedulable: true` so it is not assigned to ordinary Pods by default.
-- Protect accounting-only Reservations through admission to prevent ordinary users from forging owners or explicitly referencing this kind of Reservation.
+- Set `spec.unschedulable: true` so they are not allocatable by default.
+- Set `spec.owners` to an object reference derived from the external sandbox instance identity, with `object.name` set to the sandbox name and `object.uid` set to the sandbox UID. The sandbox UID MUST be unique per sandbox instance and MUST NOT be derived only from the sandbox template hash. This makes the Reservation valid while preventing ordinary Pods from satisfying the owner matcher.
+- Add admission validation for accounting-only Reservations to ensure `spec.unschedulable` and `spec.owners` follow the constraints above.
 
 #### Sandbox Scheduling Performance Optimization
 
@@ -381,7 +382,7 @@ The benchmark should publish a small fixed PromQL report so different runs are c
 | E2E scheduling p99 | Measures scheduling latency seen by the scheduler. | `histogram_quantile(0.99, sum(rate(scheduler_e2e_scheduling_duration_seconds_bucket[5m])) by (le))` |
 | Scheduling stage p99 | Finds slow framework extension points such as Filter, Score, Reserve, PreBind, and Bind. | `histogram_quantile(0.99, sum(rate(scheduler_framework_extension_point_duration_seconds_bucket[5m])) by (extension_point, le))` |
 | Pod binding write rate | Measures Pod-shaped sandbox binding throughput. | `sum(rate(apiserver_request_total{resource="pods",subresource="binding",verb="POST",code=~"2.."}[1m]))` |
-| Reservation write rate | Measures Non-Pod sandbox Reservation create / update throughput. | `sum(rate(apiserver_request_total{resource="reservations",verb=~"POST|PUT|PATCH",code=~"2.."}[1m])) by (verb, subresource)` |
+| Reservation write rate | Measures Non-Pod sandbox Reservation create / update throughput. | `sum(rate(apiserver_request_total{group="scheduling.koordinator.sh",resource="reservations",verb=~"POST|PUT|PATCH",code=~"2.."}[1m])) by (verb, subresource)` |
 | API write p99 | Finds slow Pod binding or Reservation writes. | `histogram_quantile(0.99, sum(rate(apiserver_request_duration_seconds_bucket{verb=~"POST|PUT|PATCH",resource=~"pods|reservations"}[5m])) by (verb, resource, subresource, le))` |
 | API write failures | Detects failed Pod binding or Reservation writes. | `sum(rate(apiserver_request_total{verb=~"POST|PUT|PATCH",resource=~"pods|reservations",code!~"2.."}[1m])) by (verb, resource, subresource, code)` |
 | APIServer flow-control rejections | Detects APIServer throttling. | `sum(rate(apiserver_flowcontrol_rejected_requests_total[1m])) by (priority_level, flow_schema)` |
