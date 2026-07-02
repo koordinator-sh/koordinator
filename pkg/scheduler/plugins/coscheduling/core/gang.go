@@ -41,11 +41,6 @@ var (
 	timeNowFn = time.Now
 )
 
-const (
-	GangFromPodGroupCrd   string = "GangFromPodGroupCrd"
-	GangFromPodAnnotation string = "GangFromPodAnnotation"
-)
-
 // Gang  basic podGroup info recorded in gangCache:
 type Gang struct {
 	Name       string
@@ -99,169 +94,60 @@ func NewGang(gangName string) *Gang {
 	}
 }
 
-func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs) bool {
+func (gang *Gang) InitByGangInfo(info GangInfo) bool {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
 	if gang.HasGangInit {
 		return false
 	}
-	minRequiredNumber, err := util.GetGangMinNumFromPod(pod)
-	if err != nil {
-		klog.Errorf("pod's annotation MinRequiredNumber illegal, gangName: %v, value: %v",
-			gang.Name, pod.Annotations[extension.AnnotationGangMinNum])
+	return gang.doInitByGangInfo(info)
+}
+
+func (gang *Gang) UpdateByGangInfo(info GangInfo) bool {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	return gang.doInitByGangInfo(info)
+}
+
+func (gang *Gang) doInitByGangInfo(info GangInfo) bool {
+	minRequiredNumber := int(info.GetMinMember())
+	if minRequiredNumber < 0 {
 		return false
 	}
 	gang.MinRequiredNumber = minRequiredNumber
-
-	totalChildrenNum, err := extension.GetGangTotalNum(pod)
-	if err != nil {
-		klog.ErrorS(err, "pod's annotation totalNumber illegal",
-			"gangName", gang.Name, "value", pod.Annotations[extension.AnnotationGangTotalNum])
-		totalChildrenNum = minRequiredNumber
-	} else if totalChildrenNum == 0 {
-		totalChildrenNum = minRequiredNumber
-	} else if totalChildrenNum < minRequiredNumber {
-		klog.Errorf("pod's annotation totalNumber cannot less than minRequiredNumber, gangName: %v, totalNumber: %v,minRequiredNumber: %v",
-			gang.Name, pod.Annotations[extension.AnnotationGangTotalNum], minRequiredNumber)
-		totalChildrenNum = minRequiredNumber
-	}
-	gang.TotalChildrenNum = totalChildrenNum
-
-	mode := pod.Annotations[extension.AnnotationGangMode]
-	if mode == "" {
-		mode = extension.GangModeStrict
-	}
-	if mode != extension.GangModeStrict && mode != extension.GangModeNonStrict {
-		klog.Errorf("pod's annotation GangModeAnnotation illegal, gangName: %v, value: %v",
-			gang.Name, pod.Annotations[extension.AnnotationGangMode])
-		mode = extension.GangModeStrict
-	}
-	gang.Mode = mode
-
-	matchPolicy := extension.GetGangMatchPolicy(pod)
-	if matchPolicy == "" {
-		matchPolicy = args.DefaultMatchPolicy
-	}
-	if matchPolicy != extension.GangMatchPolicyOnlyWaiting && matchPolicy != extension.GangMatchPolicyWaitingAndRunning &&
-		matchPolicy != extension.GangMatchPolicyOnceSatisfied {
-		klog.Errorf("pod's annotation AnnotationGangMatchPolicy illegal, gangName: %v, value: %v",
-			gang.Name, matchPolicy)
-		matchPolicy = args.DefaultMatchPolicy
-	}
-	gang.GangMatchPolicy = matchPolicy
-
-	// here we assume that Coscheduling's CreateTime equal with the pod's CreateTime
-	gang.CreateTime = pod.CreationTimestamp.Time
-
-	waitTime, err := extension.GetGangWaitTime(pod)
-	if waitTime == 0 {
-		waitTime = args.DefaultTimeout.Duration
-	}
-	if err != nil || waitTime < 0 {
-		klog.ErrorS(err, "pod's annotation GangWaitTimeAnnotation illegal",
-			"gangName", gang.Name, "value", pod.Annotations[extension.AnnotationGangWaitTime])
-		waitTime = args.DefaultTimeout.Duration
-	}
-	gang.WaitTime = waitTime
-
-	groupSlice, err := util.StringToGangGroupSlice(pod.Annotations[extension.AnnotationGangGroups])
-	if err != nil {
-		klog.ErrorS(err, "pod's annotation GangGroupsAnnotation illegal",
-			"gangName", gang.Name, "value", pod.Annotations[extension.AnnotationGangGroups])
-	}
-	if len(groupSlice) == 0 {
-		groupSlice = append(groupSlice, gang.Name)
-	}
-	gang.GangGroup = groupSlice
-	gang.GangGroupId = util.GetGangGroupId(groupSlice)
-
-	gang.NetworkTopologySpec, err = extension.GetNetworkTopologySpec(pod)
-	if err != nil {
-		klog.ErrorS(err, "pod's annotation AnnotationGangNetworkTopologySpec illegal",
-			"gangName", gang.Name, "value", pod.Annotations[extension.AnnotationGangNetworkTopologySpec])
+	gang.TotalChildrenNum = int(info.GetTotalMember())
+	if gang.TotalChildrenNum < gang.MinRequiredNumber {
+		gang.TotalChildrenNum = gang.MinRequiredNumber
 	}
 
-	gang.GangFrom = GangFromPodAnnotation
+	gang.Mode = info.GetMode()
+	gang.WaitTime = info.GetWaitTime()
+	gang.GangMatchPolicy = info.GetMatchPolicy()
+	gang.CreateTime = info.GetCreationTimestamp().Time
+	gang.GangGroup = info.GetGangGroups()
+	gang.GangGroupId = util.GetGangGroupId(gang.GangGroup)
+	gang.NetworkTopologySpec = info.GetNetworkTopologySpec()
+	gang.GangFrom = info.GetGangFrom()
 	gang.HasGangInit = true
 
-	klog.Infof("TryInitByPodConfig done, gangName: %v, minRequiredNumber: %v, totalChildrenNum: %v, "+
+	klog.Infof("InitByGangInfo done, gangName: %v, minRequiredNumber: %v, totalChildrenNum: %v, "+
 		"mode: %v, waitTime: %v, groupSlice: %v", gang.Name, gang.MinRequiredNumber, gang.TotalChildrenNum,
 		gang.Mode, gang.WaitTime, gang.GangGroup)
 	return true
 }
 
+func (gang *Gang) tryInitByPodConfig(pod *v1.Pod, args *config.CoschedulingArgs) bool {
+	return gang.InitByGangInfo(NewAnnotationGangInfo(pod, args))
+}
+
 func (gang *Gang) tryInitByPodGroup(pg *v1alpha1.PodGroup, args *config.CoschedulingArgs) {
+	gang.UpdateByGangInfo(NewPodGroupGangInfo(pg, args))
+}
+
+func (gang *Gang) setGangFrom(from string) {
 	gang.lock.Lock()
 	defer gang.lock.Unlock()
-	minRequiredNumber := int(pg.Spec.MinMember)
-	gang.MinRequiredNumber = minRequiredNumber
-
-	totalChildrenNum, err := extension.GetGangTotalNum(pg)
-	if err != nil {
-		klog.ErrorS(err, "podGroup's annotation totalNumber illegal",
-			"gangName", gang.Name, "value", pg.Annotations[extension.AnnotationGangTotalNum])
-		totalChildrenNum = minRequiredNumber
-	} else if totalChildrenNum == 0 {
-		totalChildrenNum = minRequiredNumber
-	} else if totalChildrenNum < minRequiredNumber {
-		klog.Errorf("podGroup's annotation totalNumber cannot less than minRequiredNumber, gangName:%v, totalNumber: %v,minRequiredNumber: %v",
-			gang.Name, pg.Annotations[extension.AnnotationGangTotalNum], minRequiredNumber)
-		totalChildrenNum = minRequiredNumber
-	}
-	gang.TotalChildrenNum = totalChildrenNum
-
-	mode := pg.Annotations[extension.AnnotationGangMode]
-	if mode == "" {
-		mode = extension.GangModeStrict
-	}
-	if mode != extension.GangModeStrict && mode != extension.GangModeNonStrict {
-		klog.Errorf("podGroup's annotation GangModeAnnotation illegal, gangName: %v, value: %v",
-			gang.Name, pg.Annotations[extension.AnnotationGangMode])
-		mode = extension.GangModeStrict
-	}
-	gang.Mode = mode
-
-	matchPolicy := extension.GetGangMatchPolicy(pg)
-	if matchPolicy == "" {
-		matchPolicy = args.DefaultMatchPolicy
-	}
-	if matchPolicy != extension.GangMatchPolicyOnlyWaiting && matchPolicy != extension.GangMatchPolicyWaitingAndRunning &&
-		matchPolicy != extension.GangMatchPolicyOnceSatisfied {
-		klog.Errorf("podGroup's annotation AnnotationGangMatchPolicy illegal, gangName: %v, value: %v",
-			gang.Name, matchPolicy)
-		matchPolicy = args.DefaultMatchPolicy
-	}
-	gang.GangMatchPolicy = matchPolicy
-
-	// here we assume that Coscheduling's CreateTime equal with the podGroup CRD CreateTime
-	gang.CreateTime = pg.CreationTimestamp.Time
-
-	waitTime := util.GetWaitTimeDuration(pg, args.DefaultTimeout.Duration)
-	gang.WaitTime = waitTime
-
-	groupSlice, err := util.StringToGangGroupSlice(pg.Annotations[extension.AnnotationGangGroups])
-	if err != nil {
-		klog.ErrorS(err, "podGroup's annotation GangGroupsAnnotation illegal",
-			"gangName", gang.Name, "value", pg.Annotations[extension.AnnotationGangGroups])
-	}
-	if len(groupSlice) == 0 {
-		groupSlice = append(groupSlice, gang.Name)
-	}
-	gang.GangGroup = groupSlice
-	gang.GangGroupId = util.GetGangGroupId(groupSlice)
-
-	gang.NetworkTopologySpec, err = extension.GetNetworkTopologySpec(pg)
-	if err != nil {
-		klog.ErrorS(err, "podGroup's annotation AnnotationGangNetworkTopologySpec illegal",
-			"gangName", gang.Name, "value", pg.Annotations[extension.AnnotationGangNetworkTopologySpec])
-	}
-
-	gang.GangFrom = GangFromPodGroupCrd
-	gang.HasGangInit = true
-
-	klog.Infof("TryInitByPodGroup done, gangName: %v, minRequiredNumber: %v, totalChildrenNum: %v, "+
-		"mode: %v, waitTime: %v, groupSlice: %v", gang.Name, gang.MinRequiredNumber, gang.TotalChildrenNum,
-		gang.Mode, gang.WaitTime, gang.GangGroup)
+	gang.GangFrom = from
 }
 
 func (gang *Gang) SetGangGroupInfo(gangGroupInfo *GangGroupInfo) {

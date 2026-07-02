@@ -1896,7 +1896,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 			logger := klog.FromContext(context.TODO())
 			pgMgr := &PodGroupManager{handle: extendedFramework, networkTopologySolver: NewNetworkTopologySolver(extendedFramework)}
 			pgMgr.holder = GangSchedulingContextHolder{gangSchedulingContext: tt.gangSchedulingContext}
-			pgMgr.cache = NewGangCache(nil, nil, nil, nil, nil)
+			pgMgr.cache = NewGangCache(nil, nil, nil, nil, nil, nil)
 			for i := range tt.allPendingPods {
 				pod := tt.allPendingPods[i]
 				pgMgr.cache.onPodAdd(pod)
