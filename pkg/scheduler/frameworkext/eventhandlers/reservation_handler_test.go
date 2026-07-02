@@ -1829,3 +1829,234 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 		})
 	}
 }
+
+
+func TestMakeReservationErrorHandler_NominatedNodeName_Persistence(t *testing.T) {
+	testR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "reserve-pod-persistence-test",
+			UID:  "persistence-uid",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{
+					Object: &corev1.ObjectReference{
+						Name: "test-pod-1",
+					},
+				},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationPending,
+		},
+	}
+
+	tests := []struct {
+		name              string
+		initialNomination string
+		nominatingInfo    *fwktype.NominatingInfo
+		expectPersisted   string
+	}{
+		{
+			name:            "ModeOverride -> persists new nominated node",
+			nominatingInfo:  &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: "target-node"},
+			expectPersisted: "target-node",
+		},
+		{
+			name:              "ModeOverride with empty node -> clears existing nomination",
+			initialNomination: "old-node",
+			nominatingInfo:    &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""},
+			expectPersisted:   "",
+		},
+		{
+			name:              "ModeNoop -> preserves existing nominated node",
+			initialNomination: "existing-node",
+			nominatingInfo:    &fwktype.NominatingInfo{NominatingMode: fwktype.ModeNoop},
+			expectPersisted:   "existing-node",
+		},
+		{
+			// nominatingInfo is nil on non-preemption failures (e.g. resource mismatch).
+			// The existing persisted nomination must NOT be cleared in this case.
+			name:              "nil nominatingInfo -> preserves existing nomination on non-preemption failure",
+			initialNomination: "stale-node",
+			nominatingInfo:    nil,
+			expectPersisted:   "stale-node",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+
+			fakeRecorder := record.NewFakeRecorder(1024)
+			eventRecorder := record.NewEventRecorderAdapter(fakeRecorder)
+
+			clientSet := kubefake.NewSimpleClientset()
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "default-scheduler",
+				frameworkruntime.WithEventRecorder(eventRecorder),
+				frameworkruntime.WithClientSet(clientSet),
+				frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(clientSet, 0)),
+			)
+			assert.Nil(t, err)
+
+			rCopy := testR.DeepCopy()
+			if tt.initialNomination != "" {
+				rCopy.Status.NominatedNodeName = tt.initialNomination
+			}
+			koordClientSet := koordfake.NewSimpleClientset(rCopy)
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			rNominator := frameworkext.NewFakeReservationNominator()
+			frameworkExtenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+				frameworkext.WithReservationNominator(rNominator),
+			)
+			extendedHandle := frameworkext.NewFrameworkExtender(frameworkExtenderFactory, fh)
+			sched := &scheduler.Scheduler{
+				Profiles: profile.Map{
+					"default-scheduler": extendedHandle,
+				},
+			}
+
+			internalHandler := frameworkext.NewFakeScheduler()
+			handler := MakeReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
+
+			koordSharedInformerFactory.Start(nil)
+			koordSharedInformerFactory.WaitForCacheSync(nil)
+
+			pod := reservationutil.NewReservePod(rCopy)
+			podInfo, _ := framework.NewPodInfo(pod)
+			queuedPodInfo := &framework.QueuedPodInfo{
+				PodInfo: podInfo,
+			}
+
+			handler(context.TODO(), extendedHandle, queuedPodInfo, fwktype.NewStatus(fwktype.Unschedulable, "test error"), tt.nominatingInfo, time.Now())
+
+			updatedR, err := koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), rCopy.Name, metav1.GetOptions{})
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectPersisted, updatedR.Status.NominatedNodeName)
+		})
+	}
+}
+
+// TestUpdateReservation_NominationLeak verifies that when scheduler responsibility for an active
+// reservation is transferred from one scheduler profile to another (the oldResponsible &&
+// !newResponsible branch in updateReservation Case 5), the old profile's ReservationNominator
+// is cleaned up so that its in-memory resource nomination does not persist as a ghost lock.
+//
+// The production topology modelled here:
+//
+//	Instance A  (Profiles: scheduler-A)   ← this scheduler only knows scheduler-A
+//	Instance B  (Profiles: scheduler-B)   ← separate process, not modelled
+//
+// When the reservation's schedulerName changes from scheduler-A to scheduler-B:
+//   - oldResponsible = true  (scheduler-A is in Instance A's profile map)
+//   - newResponsible = false (scheduler-B is NOT in Instance A's profile map)
+//
+// This is the exact condition that triggers the bug.
+func TestUpdateReservation_NominationLeak(t *testing.T) {
+	const (
+		schedulerA = "scheduler-A"
+		schedulerB = "scheduler-B"
+		nodeName   = "node-1"
+	)
+
+	// Build a minimal reservation owned by the given schedulerName.
+	makeReservation := func(name, schedulerName, version string) *schedulingv1alpha1.Reservation {
+		return &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            name,
+				UID:             "reservation-uid-001",
+				ResourceVersion: version,
+			},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template: &corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						SchedulerName: schedulerName,
+					},
+				},
+				Owners: []schedulingv1alpha1.ReservationOwner{
+					{
+						Object: &corev1.ObjectReference{Kind: "Pod", Name: "p-1"},
+					},
+				},
+				TTL: &metav1.Duration{Duration: 30 * time.Minute},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{
+				Phase: schedulingv1alpha1.ReservationPending,
+			},
+		}
+	}
+
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+
+	clientSet := kubefake.NewSimpleClientset()
+	coordClientSet := koordfake.NewSimpleClientset()
+	coordInformerFactory := koordinatorinformers.NewSharedInformerFactory(coordClientSet, 0)
+
+	// Build the FrameworkExtender and FakeNominator for scheduler-A.
+	nominatorA := frameworkext.NewFakeReservationNominator()
+	factoryA, err := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(coordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(coordInformerFactory),
+		frameworkext.WithReservationNominator(nominatorA),
+	)
+	assert.NoError(t, err)
+
+	fhA, err := schedulertesting.NewFramework(
+		context.TODO(), registeredPlugins, schedulerA,
+		frameworkruntime.WithClientSet(clientSet),
+		frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(clientSet, 0)),
+		frameworkruntime.WithWaitingPods(frameworkruntime.NewWaitingPodsMap()),
+	)
+	assert.NoError(t, err)
+	extenderA := frameworkext.NewFrameworkExtender(factoryA, fhA)
+
+	// This scheduler instance ONLY knows scheduler-A. scheduler-B runs on a different process.
+	// This is the key condition: newResponsible=false because scheduler-B is not in Profiles.
+	sched := &scheduler.Scheduler{
+		Profiles: profile.Map{
+			schedulerA: extenderA,
+		},
+	}
+	schedAdapter := frameworkext.NewFakeScheduler()
+
+	// oldR is owned by scheduler-A and is in the pending/active state (no nodeName).
+	oldR := makeReservation("r-a", schedulerA, "1")
+	// newR is the same reservation but its schedulerName has been changed to scheduler-B.
+	// This scheduler instance does NOT handle scheduler-B, so newResponsible=false.
+	newR := makeReservation("r-a", schedulerB, "2")
+
+	// Seed an in-queue entry so deleteReservationFromSchedulingQueue has something to remove.
+	reservePodA := reservationutil.NewReservePod(oldR)
+	schedAdapter.Queue.Pods[string(oldR.UID)] = reservePodA
+
+	// Seed a nomination for the reserve pod in scheduler-A's nominator.
+	nominatorA.AddNominatedReservePod(reservePodA, nodeName)
+
+	// Pre-condition: nomination exists in scheduler-A.
+	assert.Len(t, nominatorA.NominatedReservePodForNode(nodeName), 1,
+		"pre-condition: scheduler-A should have one nominated reserve pod")
+	assert.NotNil(t, schedAdapter.Queue.Pods[string(oldR.UID)],
+		"pre-condition: reserve pod should be in the scheduling queue")
+
+	// Trigger the handover: oldResponsible=true (scheduler-A is in Profiles),
+	// newResponsible=false (scheduler-B is NOT in Profiles).
+	updateReservation(sched, schedAdapter, oldR, newR)
+
+	// Post-condition 1: nomination is gone from scheduler-A's nominator (the bug target).
+	assert.Len(t, nominatorA.NominatedReservePodForNode(nodeName), 0,
+		"scheduler-A nomination must be cleared after handover to scheduler-B")
+
+	// Post-condition 2: the reserve pod is removed from the scheduling queue.
+	assert.Nil(t, schedAdapter.Queue.Pods[string(oldR.UID)],
+		"reserve pod must be removed from the scheduling queue after handover")
+}

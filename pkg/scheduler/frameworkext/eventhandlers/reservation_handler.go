@@ -485,7 +485,11 @@ func updateReservation(sched *scheduler.Scheduler, schedAdapter frameworkext.Sch
 		} else if !oldResponsible && newResponsible {
 			addReservationToSchedulingQueue(schedAdapter, newR)
 		} else if oldResponsible && !newResponsible {
+			// The reservation is no longer managed by the current scheduler.
+			// Remove from the scheduling queue and retract the in-memory nomination
+			// so this profile no longer holds a ghost resource lock on the nominated node.
 			deleteReservationFromSchedulingQueue(sched, schedAdapter, oldR)
+			deleteNominatedReservationFromProfile(sched, oldR)
 		}
 		return
 	}
@@ -669,6 +673,30 @@ func deleteReservationFromSchedulingQueue(sched *scheduler.Scheduler, schedAdapt
 	if fwk != nil {
 		fwk.RejectWaitingPod(reservePod.UID)
 	}
+}
+
+// deleteNominatedReservationFromProfile retracts the in-memory reservation nomination
+// held by the old scheduler profile during a scheduler-name handover. Nominations
+// that are not cleaned up here become ghost resource locks on the nominated node,
+// causing the old profile to inflate its resource accounting and reject other pods.
+func deleteNominatedReservationFromProfile(sched *scheduler.Scheduler, r *schedulingv1alpha1.Reservation) {
+	schedulerName := reservationutil.GetReservationSchedulerName(r)
+	fwk := sched.Profiles[schedulerName]
+	if fwk == nil {
+		return
+	}
+	extender, ok := fwk.(frameworkext.FrameworkExtender)
+	if !ok {
+		return
+	}
+	nominator := extender.GetReservationNominator()
+	if nominator == nil {
+		return
+	}
+	reservePod := reservationutil.NewReservePod(r)
+	nominator.DeleteNominatedReservePodOrReservation(reservePod)
+	klog.V(4).InfoS("Deleted reservation nomination on scheduler handover",
+		"reservation", klog.KObj(r), "schedulerName", schedulerName)
 }
 
 func isResponsibleForReservation(profiles profile.Map, r *schedulingv1alpha1.Reservation) bool {
