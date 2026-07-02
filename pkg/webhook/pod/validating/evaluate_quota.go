@@ -39,19 +39,28 @@ var podTransformersForQuotaEvaluation = []func(pod *corev1.Pod){
 	transformer.TransformReplaceResources,
 }
 
-func (h *PodValidatingHandler) evaluateQuota(ctx context.Context, req admission.Request, newPod *corev1.Pod) (bool, string, error) {
+func (h *PodValidatingHandler) evaluateQuota(ctx context.Context, req admission.Request, newPod, oldPod *corev1.Pod) (bool, string, error) {
 	if !utilfeature.DefaultFeatureGate.Enabled(features.EnableQuotaAdmission) {
 		return true, "", nil
 	}
-
+	var quotaName string
 	switch req.Operation {
 	case admissionv1.Create:
+		quotaName = elasticquota.GetQuotaName(newPod, h.Client)
+	case admissionv1.Update:
+		if !utilfeature.DefaultFeatureGate.Enabled(features.EnableQuotaAdmissionOnUpdate) {
+			return true, "", nil
+		}
+		oldQuotaName := elasticquota.GetQuotaName(oldPod, h.Client)
+		quotaName = elasticquota.GetQuotaName(newPod, h.Client)
+		if oldQuotaName == quotaName {
+			return true, "", nil
+		}
 	default:
 		return true, "", nil
 	}
 
 	// quota is system quota or empty, skip it.
-	quotaName := elasticquota.GetQuotaName(newPod, h.Client)
 	if quotaName == "" || quotaName == extension.DefaultQuotaName ||
 		quotaName == extension.SystemQuotaName || quotaName == extension.RootQuotaName {
 		return true, "", nil

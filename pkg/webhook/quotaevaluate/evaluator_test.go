@@ -117,7 +117,7 @@ func TestCheckRequest(t *testing.T) {
 			expectDelta: corev1.ResourceList{},
 		},
 		{
-			name: "non-create operation is no-op",
+			name: "update operation is handled and counts resources",
 			quota: elasticquota.MakeQuota("test").Namespace("ns").Max(
 				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20")}).Obj(),
 			ctx: &quotaCheckContext{
@@ -128,6 +128,49 @@ func TestCheckRequest(t *testing.T) {
 			},
 			attr: &Attributes{
 				Operation: admissionv1.Update,
+				Pod: elasticquota.MakePod("ns", "pod1").Container(
+					corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")}).Obj(),
+			},
+			expectErr:   false,
+			expectUsed:  corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+			expectDelta: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		},
+		{
+			name: "update operation exceeds quota returns error",
+			quota: elasticquota.MakeQuota("test").Namespace("ns").Max(
+				corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				}).Obj(),
+			ctx: &quotaCheckContext{
+				used:      corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")},
+				admission: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+				delta:     corev1.ResourceList{},
+				names:     sets.New(corev1.ResourceCPU),
+			},
+			attr: &Attributes{
+				Operation: admissionv1.Update,
+				Pod: elasticquota.MakePod("ns", "pod1").Container(
+					corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("2"),
+					}).Obj(),
+			},
+			expectErr:   true,
+			errContains: "exceeded quota",
+			expectUsed:  corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("3")},
+			expectDelta: corev1.ResourceList{},
+		},
+		{
+			name: "delete operation is no-op",
+			quota: elasticquota.MakeQuota("test").Namespace("ns").Max(
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20")}).Obj(),
+			ctx: &quotaCheckContext{
+				used:      corev1.ResourceList{},
+				admission: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20")},
+				delta:     corev1.ResourceList{},
+				names:     sets.New(corev1.ResourceCPU),
+			},
+			attr: &Attributes{
+				Operation: admissionv1.Delete,
 				Pod: elasticquota.MakePod("ns", "pod1").Container(
 					corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")}).Obj(),
 			},

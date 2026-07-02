@@ -114,7 +114,7 @@ func (h *PodValidatingHandler) validatingPodFn(ctx context.Context, req admissio
 		metrics.Pod, string(req.Operation), nil, plugin.Name(), time.Since(start).Seconds())
 
 	start = time.Now()
-	_, reason, err = h.evaluateQuota(ctx, req, newPod)
+	_, reason, err = h.evaluateQuota(ctx, req, newPod, oldPod)
 	metrics.RecordWebhookDurationMilliseconds(metrics.ValidatingWebhook,
 		metrics.Pod, string(req.Operation), err, EvaluateQuota, time.Since(start).Seconds())
 

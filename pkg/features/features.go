@@ -91,6 +91,9 @@ const (
 	// EnableQuotaAdmission enables quota admission.
 	EnableQuotaAdmission featuregate.Feature = "EnableQuotaAdmission"
 
+	// EnableQuotaAdmissionOnUpdate enables quota admission on pod update when quota label changes.
+	EnableQuotaAdmissionOnUpdate featuregate.Feature = "EnableQuotaAdmissionOnUpdate"
+
 	// EnablePodEnhancedValidator enables enhanced validator for pods with configurable rules.
 	EnablePodEnhancedValidator featuregate.Feature = "EnablePodEnhancedValidator"
 
@@ -134,6 +137,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	DisableDefaultQuota:                     {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:             {Default: false, PreRelease: featuregate.Alpha},
 	EnableQuotaAdmission:                    {Default: false, PreRelease: featuregate.Alpha},
+	EnableQuotaAdmissionOnUpdate:            {Default: false, PreRelease: featuregate.Alpha},
 	EnableSyncGPUSharedResource:             {Default: false, PreRelease: featuregate.Alpha},
 	ColocationProfileController:             {Default: false, PreRelease: featuregate.Alpha},
 	ValidatePodDeviceResource:               {Default: false, PreRelease: featuregate.Alpha},
