@@ -85,6 +85,21 @@ func TestSyncedEventHandler(t *testing.T) {
 	mu.Unlock()
 
 	sharedInformerFactory.WaitForCacheSync(stopCh)
+
+	// Ensure the reflector's Watch has been established before mutating.
+	// WaitForCacheSync only guarantees the initial List was consumed by the
+	// FIFO; the Watch registration with the fake tracker may lag behind,
+	// causing the Update event to be silently dropped.
+	err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Millisecond, 5*time.Second, true, func(ctx context.Context) (done bool, err error) {
+		for _, action := range fakeClientSet.Actions() {
+			if action.GetVerb() == "watch" {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	assert.NoError(t, err, "timed out waiting for watch to be established")
+
 	node, err := nodeInformer.Lister().Get("node-0")
 	assert.NoError(t, err)
 	assert.NotNil(t, node)
@@ -92,12 +107,12 @@ func TestSyncedEventHandler(t *testing.T) {
 	node.ResourceVersion = "100"
 	_, err = fakeClientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 	assert.NoError(t, err)
-	err = wait.PollUntil(1*time.Second, func() (done bool, err error) {
+	err = wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 30*time.Second, true, func(ctx context.Context) (done bool, err error) {
 		node, err := nodeInformer.Lister().Get("node-0")
 		assert.NoError(t, err)
 		assert.NotNil(t, node)
 		return node.ResourceVersion == "100", nil
-	}, wait.NeverStop)
+	})
 	assert.NoError(t, err)
 }
 
@@ -298,6 +313,18 @@ func TestSyncedEventHandlerWithReplace(t *testing.T) {
 	}
 
 	sharedInformerFactory.WaitForCacheSync(stopCh)
+
+	// Ensure the reflector's Watch has been established before mutating.
+	err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Millisecond, 5*time.Second, true, func(ctx context.Context) (done bool, err error) {
+		for _, action := range fakeClientSet.Actions() {
+			if action.GetVerb() == "watch" {
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	assert.NoError(t, err, "timed out waiting for watch to be established")
+
 	node, err := nodeInformer.Lister().Get("node-0")
 	assert.NoError(t, err)
 	assert.NotNil(t, node)
@@ -305,11 +332,11 @@ func TestSyncedEventHandlerWithReplace(t *testing.T) {
 	node.ResourceVersion = "100"
 	_, err = fakeClientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 	assert.NoError(t, err)
-	err = wait.PollUntil(1*time.Second, func() (done bool, err error) {
+	err = wait.PollUntilContextTimeout(context.TODO(), 1*time.Second, 30*time.Second, true, func(ctx context.Context) (done bool, err error) {
 		node, err := nodeInformer.Lister().Get("node-0")
 		assert.NoError(t, err)
 		assert.NotNil(t, node)
 		return node.ResourceVersion == "100", nil
-	}, wait.NeverStop)
+	})
 	assert.NoError(t, err)
 }
