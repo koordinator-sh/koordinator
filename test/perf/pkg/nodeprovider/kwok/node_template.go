@@ -18,10 +18,12 @@ package kwok
 
 import (
 	"fmt"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	sigsyaml "sigs.k8s.io/yaml"
 
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
@@ -31,9 +33,12 @@ const RunIDLabel = "benchmark.koordinator.sh/run-id"
 // buildKwokNode constructs a fake Node object for the kwok controller to simulate as Ready.
 // Direct Node creation via the API is the documented pattern for programmatic kwok usage;
 // the kwok Stage configuration (stage-fast.yaml) handles the simulation side automatically.
-// Uses stable kubernetes.io/os and kubernetes.io/arch labels instead of the
-// deprecated beta.kubernetes.io/* equivalents.
+// When spec.NodeTemplateFile is set the node is loaded from that YAML file at runtime,
+// so the template can be changed without rebuilding the binary.
 func buildKwokNode(name, runID string, spec types.NodeSpec) (*corev1.Node, error) {
+	if spec.NodeTemplateFile != "" {
+		return buildKwokNodeFromFile(name, runID, spec)
+	}
 	cpu := spec.CPU
 	if cpu == "" {
 		cpu = "32"
@@ -104,4 +109,53 @@ func buildKwokNode(name, runID string, spec types.NodeSpec) (*corev1.Node, error
 			}},
 		},
 	}, nil
+}
+
+// buildKwokNodeFromFile loads a Node object from a YAML file and overlays the
+// benchmark-required labels, annotations, and kwok taint on top. This allows
+// node templates to be modified at runtime without rebuilding the binary.
+func buildKwokNodeFromFile(name, runID string, spec types.NodeSpec) (*corev1.Node, error) {
+	data, err := os.ReadFile(spec.NodeTemplateFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading node template %q: %w", spec.NodeTemplateFile, err)
+	}
+	var node corev1.Node
+	if err := sigsyaml.Unmarshal(data, &node); err != nil {
+		return nil, fmt.Errorf("parsing node template %q: %w", spec.NodeTemplateFile, err)
+	}
+
+	if node.Labels == nil {
+		node.Labels = make(map[string]string)
+	}
+	node.Name = name
+	node.Labels["type"] = "kwok"
+	node.Labels["kubernetes.io/hostname"] = name
+	node.Labels[RunIDLabel] = runID
+	for k, v := range spec.Labels {
+		node.Labels[k] = v
+	}
+
+	if node.Annotations == nil {
+		node.Annotations = make(map[string]string)
+	}
+	node.Annotations["node.alpha.kubernetes.io/ttl"] = "0"
+	node.Annotations["kwok.x-k8s.io/node"] = "fake"
+
+	kwokTaint := corev1.Taint{
+		Key:    "kwok.x-k8s.io/node",
+		Value:  "fake",
+		Effect: corev1.TaintEffectNoSchedule,
+	}
+	hasTaint := false
+	for _, t := range node.Spec.Taints {
+		if t.Key == kwokTaint.Key {
+			hasTaint = true
+			break
+		}
+	}
+	if !hasTaint {
+		node.Spec.Taints = append(node.Spec.Taints, kwokTaint)
+	}
+
+	return &node, nil
 }
