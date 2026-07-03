@@ -362,3 +362,26 @@ func SetDefaults_FragmentationAwareArgs(obj *FragmentationAwareArgs) {
 		obj.MinImprovementThreshold = ptr.To[float64](0.02)
 	}
 }
+
+func SetDefaults_ScaleDownBinPackArgs(obj *ScaleDownBinPackArgs) {
+	if obj.Paused == nil {
+		obj.Paused = ptr.To[bool](false)
+	}
+	if obj.Strategy == "" {
+		obj.Strategy = ScaleDownBinPackStrategyCalculateOnly
+	}
+	if obj.MaxPodsToEvict == nil {
+		obj.MaxPodsToEvict = ptr.To[int32](0)
+	}
+	if len(obj.Resources) == 0 {
+		obj.Resources = []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory}
+	}
+	if obj.ResourceWeights == nil {
+		obj.ResourceWeights = make(map[corev1.ResourceName]float64)
+	}
+	for _, res := range obj.Resources {
+		if _, exists := obj.ResourceWeights[res]; !exists {
+			obj.ResourceWeights[res] = 1.0
+		}
+	}
+}

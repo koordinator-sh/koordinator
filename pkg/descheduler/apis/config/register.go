@@ -50,6 +50,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&LowNodeLoadArgs{},
 		&CustomPriorityArgs{},
 		&FragmentationAwareArgs{},
+		&ScaleDownBinPackArgs{},
 	)
 	return nil
 }

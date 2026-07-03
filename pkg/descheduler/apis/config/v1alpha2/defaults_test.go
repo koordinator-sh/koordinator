@@ -454,3 +454,71 @@ func TestSetDefaults_FragmentationAwareArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestSetDefaults_ScaleDownBinPackArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     *ScaleDownBinPackArgs
+		expected *ScaleDownBinPackArgs
+	}{
+		{
+			name: "empty args",
+			args: &ScaleDownBinPackArgs{},
+			expected: &ScaleDownBinPackArgs{
+				Paused:         ptr.To[bool](false),
+				Strategy:       ScaleDownBinPackStrategyCalculateOnly,
+				MaxPodsToEvict: ptr.To[int32](0),
+				Resources:      []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				ResourceWeights: map[corev1.ResourceName]float64{
+					corev1.ResourceCPU:    1.0,
+					corev1.ResourceMemory: 1.0,
+				},
+			},
+		},
+		{
+			name: "partial args",
+			args: &ScaleDownBinPackArgs{
+				Paused:    ptr.To[bool](true),
+				Strategy:  ScaleDownBinPackStrategyEvictDirectly,
+				Resources: []corev1.ResourceName{corev1.ResourceCPU},
+				ResourceWeights: map[corev1.ResourceName]float64{
+					corev1.ResourceCPU: 2.5,
+				},
+			},
+			expected: &ScaleDownBinPackArgs{
+				Paused:         ptr.To[bool](true),
+				Strategy:       ScaleDownBinPackStrategyEvictDirectly,
+				MaxPodsToEvict: ptr.To[int32](0),
+				Resources:      []corev1.ResourceName{corev1.ResourceCPU},
+				ResourceWeights: map[corev1.ResourceName]float64{
+					corev1.ResourceCPU: 2.5,
+				},
+			},
+		},
+		{
+			name: "partial weights",
+			args: &ScaleDownBinPackArgs{
+				Resources: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				ResourceWeights: map[corev1.ResourceName]float64{
+					corev1.ResourceCPU: 2.5,
+				},
+			},
+			expected: &ScaleDownBinPackArgs{
+				Paused:         ptr.To[bool](false),
+				Strategy:       ScaleDownBinPackStrategyCalculateOnly,
+				MaxPodsToEvict: ptr.To[int32](0),
+				Resources:      []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				ResourceWeights: map[corev1.ResourceName]float64{
+					corev1.ResourceCPU:    2.5,
+					corev1.ResourceMemory: 1.0,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SetDefaults_ScaleDownBinPackArgs(tt.args)
+			assert.Equal(t, tt.expected, tt.args)
+		})
+	}
+}
