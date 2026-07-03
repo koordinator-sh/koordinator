@@ -38,8 +38,19 @@ type ScenarioConfig struct {
 	ResourceRequests map[string]string      `yaml:"resourceRequests"`
 	Labels           map[string]string      `yaml:"labels"`
 	Annotations      map[string]string      `yaml:"annotations"`
-	Thresholds       Thresholds             `yaml:"thresholds"`
-	Extra            map[string]interface{} `yaml:"extra"`
+	Thresholds Thresholds `yaml:"thresholds"`
+	Extra      map[string]interface{} `yaml:"extra"`
+
+	// NodeTemplateFile is an optional path to a YAML file containing a
+	// complete corev1.Node object. When set, nodes are built from this
+	// file at runtime so the node shape can change without rebuilding
+	// the binary. Benchmark-required kwok labels, annotation, and taint
+	// are always overlaid on top of whatever the file specifies.
+	NodeTemplateFile string `yaml:"nodeTemplateFile"`
+
+	// NodeCreationWorkers controls how many nodes are provisioned in
+	// parallel. Defaults to 20 when unset or zero.
+	NodeCreationWorkers int `yaml:"nodeCreationWorkers"`
 }
 
 // Thresholds defines regression detection limits used by CI comparison.
@@ -49,11 +60,15 @@ type Thresholds struct {
 }
 
 // NodeSpec describes what simulated nodes should look like.
+// When NodeTemplateFile is set, the node object is loaded from that YAML file
+// at runtime so the template can be changed without rebuilding the binary.
 type NodeSpec struct {
-	CPU     string
-	Memory  string
-	MaxPods int
-	Labels  map[string]string
+	CPU                 string            `yaml:"cpu"`
+	Memory              string            `yaml:"memory"`
+	MaxPods             int               `yaml:"maxPods"`
+	Labels              map[string]string `yaml:"labels"`
+	NodeTemplateFile    string            `yaml:"nodeTemplateFile"`
+	NodeCreationWorkers int               `yaml:"nodeCreationWorkers"`
 }
 
 // BenchmarkResult is the structured output of one complete benchmark run.

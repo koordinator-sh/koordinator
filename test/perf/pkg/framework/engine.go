@@ -98,6 +98,14 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 
 	fmt.Printf("API server reachable. Scenario %q is registered.\n", scenario.Name())
 
+	// Week 2: replace this stub with the full run loop.
+	// NodeSpec is built here so NodeTemplateFile flows from the scenario
+	// YAML through ScenarioConfig into the node provider at runtime.
+	_ = types.NodeSpec{
+		NodeTemplateFile:    cfg.NodeTemplateFile,
+		NodeCreationWorkers: cfg.NodeCreationWorkers,
+	}
+
 	result := types.BenchmarkResult{
 		Name:      cfg.Name,
 		RunID:     runID,

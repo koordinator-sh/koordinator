@@ -24,9 +24,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
+
+// defaultNodeCreationWorkers is used when ScenarioConfig.NodeCreationWorkers is unset.
+const defaultNodeCreationWorkers = 20
 
 // Provider implements nodeprovider.NodeProvider using kwok simulated nodes.
 type Provider struct {
@@ -48,17 +52,31 @@ func (p *Provider) CreateNodes(ctx context.Context, runID string, spec types.Nod
 	if len(runIDPrefix) > 8 {
 		runIDPrefix = runIDPrefix[:8]
 	}
-	for i := 0; i < count; i++ {
-		name := fmt.Sprintf("kwok-bench-node-%s-%04d", runIDPrefix, i)
-		node, err := buildKwokNode(name, runID, spec)
-		if err != nil {
-			return err
-		}
-		if _, err := p.client.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{}); err != nil {
-			return fmt.Errorf("failed to create node %q: %w", name, err)
-		}
+
+	workers := spec.NodeCreationWorkers
+	if workers <= 0 {
+		workers = defaultNodeCreationWorkers
 	}
-	return nil
+
+	g, gctx := errgroup.WithContext(ctx)
+	sem := make(chan struct{}, workers)
+
+	for i := range count {
+		name := fmt.Sprintf("kwok-bench-node-%s-%04d", runIDPrefix, i)
+		g.Go(func() error {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			node, err := buildKwokNode(name, runID, spec)
+			if err != nil {
+				return err
+			}
+			if _, err := p.client.CoreV1().Nodes().Create(gctx, node, metav1.CreateOptions{}); err != nil {
+				return fmt.Errorf("failed to create node %q: %w", name, err)
+			}
+			return nil
+		})
+	}
+	return g.Wait()
 }
 
 // DeleteNodes removes all nodes labelled with runID.
