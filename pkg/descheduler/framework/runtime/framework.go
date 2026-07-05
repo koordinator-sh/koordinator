@@ -296,6 +296,10 @@ func (f *frameworkImpl) EventRecorder() events.EventRecorder {
 	return f.eventRecorder
 }
 
+func (f *frameworkImpl) IsDryRun() bool {
+	return f.dryRun
+}
+
 func (f *frameworkImpl) Evictor() framework.Evictor {
 	return &evictorProxy{
 		dryRun:          f.dryRun,
