@@ -56,6 +56,9 @@ func main() {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		log.Fatalf("Failed to parse config %q: %v", *configPath, err)
 	}
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Invalid config %q: %v", *configPath, err)
+	}
 
 	// nil client is intentional: the engine owns the k8s client; the provider
 	// receives it in Week 2 when CreateNodes is wired into engine.Run.
