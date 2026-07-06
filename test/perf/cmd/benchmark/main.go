@@ -22,8 +22,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/framework"
 	kwokprovider "github.com/koordinator-sh/koordinator/test/perf/pkg/nodeprovider/kwok"
@@ -60,9 +63,22 @@ func main() {
 		log.Fatalf("Invalid config %q: %v", *configPath, err)
 	}
 
-	// nil client is intentional: the engine owns the k8s client; the provider
-	// receives it in Week 2 when CreateNodes is wired into engine.Run.
-	provider := kwokprovider.New(nil)
+	kubeconfigPath := *kubeconfig
+	if kubeconfigPath == "" {
+		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "config")
+	}
+	restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		log.Fatalf("Failed to build kubeconfig: %v", err)
+	}
+	restCfg.QPS = cfg.ClientQPS
+	restCfg.Burst = cfg.ClientBurst
+	k8sClient, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		log.Fatalf("Failed to create k8s client: %v", err)
+	}
+
+	provider := kwokprovider.New(k8sClient)
 
 	engine, err := framework.NewEngine(*kubeconfig, cfg.ClientQPS, cfg.ClientBurst, provider)
 	if err != nil {
