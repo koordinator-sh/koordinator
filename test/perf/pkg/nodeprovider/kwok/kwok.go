@@ -29,7 +29,7 @@ import (
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
-// defaultNodeCreationWorkers is used when ScenarioConfig.NodeCreationWorkers is unset.
+// defaultNodeCreationWorkers is used when types.NodeSpec.NodeCreationWorkers is unset.
 const defaultNodeCreationWorkers = 20
 
 // Provider implements nodeprovider.NodeProvider using kwok simulated nodes.
@@ -61,7 +61,7 @@ func (p *Provider) CreateNodes(ctx context.Context, runID string, spec types.Nod
 	g, gctx := errgroup.WithContext(ctx)
 	sem := make(chan struct{}, workers)
 
-	for i := range count {
+	for i := 0; i < count; i++ {
 		name := fmt.Sprintf("kwok-bench-node-%s-%04d", runIDPrefix, i)
 		g.Go(func() error {
 			sem <- struct{}{}

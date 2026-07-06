@@ -19,7 +19,10 @@ limitations under the License.
 // leaf node in the import graph.
 package types
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // ScenarioConfig holds all parameters parsed from a configs/scenarios/*.yaml file.
 type ScenarioConfig struct {
@@ -38,8 +41,8 @@ type ScenarioConfig struct {
 	ResourceRequests map[string]string      `yaml:"resourceRequests"`
 	Labels           map[string]string      `yaml:"labels"`
 	Annotations      map[string]string      `yaml:"annotations"`
-	Thresholds Thresholds `yaml:"thresholds"`
-	Extra      map[string]interface{} `yaml:"extra"`
+	Thresholds       Thresholds            	`yaml:"thresholds"`
+	Extra            map[string]interface{} `yaml:"extra"`
 
 	// NodeTemplateFile is an optional path to a YAML file containing a
 	// complete corev1.Node object. When set, nodes are built from this
@@ -51,6 +54,39 @@ type ScenarioConfig struct {
 	// NodeCreationWorkers controls how many nodes are provisioned in
 	// parallel. Defaults to 20 when unset or zero.
 	NodeCreationWorkers int `yaml:"nodeCreationWorkers"`
+}
+
+// Validate returns an error if any ScenarioConfig field contains an invalid value.
+// Call this immediately after unmarshalling to catch bad YAML before the run starts.
+func (c ScenarioConfig) Validate() error {
+	if c.Name == "" {
+		return fmt.Errorf("name must not be empty")
+	}
+	if c.NodeCount <= 0 {
+		return fmt.Errorf("nodeCount must be > 0, got %d", c.NodeCount)
+	}
+	if c.PodCount <= 0 {
+		return fmt.Errorf("podCount must be > 0, got %d", c.PodCount)
+	}
+	if c.Concurrency <= 0 {
+		return fmt.Errorf("concurrency must be > 0, got %d", c.Concurrency)
+	}
+	if c.ClientQPS <= 0 {
+		return fmt.Errorf("clientQPS must be > 0, got %g", c.ClientQPS)
+	}
+	if c.ClientBurst <= 0 {
+		return fmt.Errorf("clientBurst must be > 0, got %d", c.ClientBurst)
+	}
+	if c.NodeCreationWorkers < 0 {
+		return fmt.Errorf("nodeCreationWorkers must be >= 0, got %d", c.NodeCreationWorkers)
+	}
+	if c.Thresholds.ThroughputDropPct < 0 || c.Thresholds.ThroughputDropPct > 100 {
+		return fmt.Errorf("thresholds.throughputDropPct must be in [0, 100], got %g", c.Thresholds.ThroughputDropPct)
+	}
+	if c.Thresholds.P99IncreasePct < 0 {
+		return fmt.Errorf("thresholds.p99IncreasePct must be >= 0, got %g", c.Thresholds.P99IncreasePct)
+	}
+	return nil
 }
 
 // Thresholds defines regression detection limits used by CI comparison.
