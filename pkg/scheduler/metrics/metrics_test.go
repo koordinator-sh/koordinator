@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/component-base/metrics/testutil"
@@ -77,4 +78,177 @@ func TestRecordGangScheduleCycleDuration(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(1), vec2.GetAggregatedSampleCount())
 	assert.InDelta(t, 35.0, vec2.GetAggregatedSampleSum(), 1e-9)
+}
+
+func TestRecordReservationPhaseAndReset(t *testing.T) {
+	Register()
+	ReservationStatusPhase.Reset()
+
+	RecordReservationPhase("reservation-a", "Pending", 1.0)
+	value, ok := getGaugeValue(t, "scheduler_reservation_status_phase", map[string]string{
+		reservationNameKey:  "reservation-a",
+		reservationPhaseKey: "Pending",
+	})
+	assert.True(t, ok)
+	assert.Equal(t, 1.0, value)
+
+	ResetReservationPhase()
+	_, ok = getGaugeValue(t, "scheduler_reservation_status_phase", map[string]string{
+		reservationNameKey:  "reservation-a",
+		reservationPhaseKey: "Pending",
+	})
+	assert.False(t, ok)
+}
+
+func TestRecordReservationResourceByTypeWithUnit(t *testing.T) {
+	Register()
+	ReservationResource.GetGaugeVec().Reset()
+
+	RecordReservationResourceByTypeWithUnit("reservation-a", "cpu", TypeAllocatable, UnitCore, 4.0)
+	value, ok := getGaugeValue(t, "scheduler_reservation_resource", map[string]string{
+		reservationResourceTypeKey: TypeAllocatable,
+		reservationNameKey:         "reservation-a",
+		reservationResourceKey:     "cpu",
+		reservationResourceUnitKey: UnitCore,
+	})
+	assert.True(t, ok)
+	assert.Equal(t, 4.0, value)
+}
+
+func TestRecordElasticQuotaLatencies(t *testing.T) {
+	Register()
+	ElasticQuotaProcessLatency.Reset()
+	ElasticQuotaHookPluginLatency.Reset()
+
+	RecordElasticQuotaProcessLatency("update", 1500*time.Millisecond)
+	RecordElasticQuotaProcessLatency("update", 500*time.Millisecond)
+
+	count, sum, ok := getHistogramCountSum(t, "scheduler_elastic_quota_process_latency", map[string]string{
+		"operation": "update",
+	})
+	assert.True(t, ok)
+	assert.Equal(t, uint64(2), count)
+	assert.InDelta(t, 2.0, sum, 1e-9)
+
+	RecordElasticQuotaHookPluginLatency("plugin-a", "reserve", 2*time.Second)
+	count, sum, ok = getHistogramCountSum(t, "scheduler_elastic_quota_hook_plugin_latency", map[string]string{
+		"plugin":    "plugin-a",
+		"operation": "reserve",
+	})
+	assert.True(t, ok)
+	assert.Equal(t, uint64(1), count)
+	assert.InDelta(t, 2.0, sum, 1e-9)
+}
+
+func TestRecordSecondaryDeviceNotWellPlanned(t *testing.T) {
+	Register()
+	SecondaryDeviceNotWellPlannedNodes.Reset()
+
+	originalMetricVec := SecondaryDeviceNotWellPlannedNodes.MetricVec
+	SecondaryDeviceNotWellPlannedNodes.MetricVec = nil
+	RecordSecondaryDeviceNotWellPlanned("node-a", true)
+	SecondaryDeviceNotWellPlannedNodes.MetricVec = originalMetricVec
+
+	RecordSecondaryDeviceNotWellPlanned("node-a", true)
+	value, ok := getGaugeValue(t, "scheduler_secondary_device_not_well_planned", map[string]string{
+		NodeNameKey: "node-a",
+	})
+	assert.True(t, ok)
+	assert.Equal(t, 1.0, value)
+
+	RecordSecondaryDeviceNotWellPlanned("node-a", false)
+	_, ok = getGaugeValue(t, "scheduler_secondary_device_not_well_planned", map[string]string{
+		NodeNameKey: "node-a",
+	})
+	assert.False(t, ok)
+}
+
+func TestRecordQueueAndPreemptionMetrics(t *testing.T) {
+	Register()
+	NextPodDeleteFromQueueLatency.Reset()
+	JobPreemptionDuration.GetHistogramVec().Reset()
+
+	RecordNextPodPluginsDeletePodFromQueue(500 * time.Millisecond)
+	count, sum, ok := getHistogramCountSum(t, "scheduler_next_pod_delete_from_queue_latency", nil)
+	assert.True(t, ok)
+	assert.Equal(t, uint64(1), count)
+	assert.InDelta(t, 0.5, sum, 1e-9)
+
+	RecordJobPreemptionDuration("job-a", "success", 250*time.Millisecond)
+	RecordJobPreemptionDuration("job-a", "success", 250*time.Millisecond)
+	count, sum, ok = getHistogramCountSum(t, "scheduler_job_preemption_duration_seconds", map[string]string{
+		"jobName": "job-a",
+		"result":  "success",
+	})
+	assert.True(t, ok)
+	assert.Equal(t, uint64(2), count)
+	assert.InDelta(t, 0.5, sum, 1e-9)
+}
+
+func getGaugeValue(t *testing.T, name string, labels map[string]string) (float64, bool) {
+	t.Helper()
+
+	mf, ok := getMetricFamily(t, name)
+	if !ok {
+		return 0, false
+	}
+	metric, ok := findMetricWithLabels(mf, labels)
+	if !ok || metric.GetGauge() == nil {
+		return 0, false
+	}
+	return metric.GetGauge().GetValue(), true
+}
+
+func getHistogramCountSum(t *testing.T, name string, labels map[string]string) (uint64, float64, bool) {
+	t.Helper()
+
+	mf, ok := getMetricFamily(t, name)
+	if !ok {
+		return 0, 0, false
+	}
+	metric, ok := findMetricWithLabels(mf, labels)
+	if !ok || metric.GetHistogram() == nil {
+		return 0, 0, false
+	}
+	hist := metric.GetHistogram()
+	return hist.GetSampleCount(), hist.GetSampleSum(), true
+}
+
+func getMetricFamily(t *testing.T, name string) (*dto.MetricFamily, bool) {
+	t.Helper()
+
+	metricsFamilies, err := legacyregistry.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatalf("gather metrics: %v", err)
+	}
+	for _, mf := range metricsFamilies {
+		if mf.GetName() == name {
+			return mf, true
+		}
+	}
+	return nil, false
+}
+
+func findMetricWithLabels(mf *dto.MetricFamily, labels map[string]string) (*dto.Metric, bool) {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	for _, metric := range mf.GetMetric() {
+		if labelsMatch(metric, labels) {
+			return metric, true
+		}
+	}
+	return nil, false
+}
+
+func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
+	if len(metric.GetLabel()) != len(labels) {
+		return false
+	}
+	for _, label := range metric.GetLabel() {
+		if labels[label.GetName()] != label.GetValue() {
+			return false
+		}
+	}
+	return true
 }
