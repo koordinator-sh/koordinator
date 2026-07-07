@@ -209,6 +209,46 @@ func getContainerCFSQuota(podDir string, containerStat *corev1.ContainerStatus, 
 	return val
 }
 
+func getContainerStatusByName(podMeta *statesinformer.PodMeta, containerName string) *corev1.ContainerStatus {
+	for i := range podMeta.Pod.Status.ContainerStatuses {
+		containerStat := &podMeta.Pod.Status.ContainerStatuses[i]
+		if containerStat.Name == containerName {
+			return containerStat
+		}
+	}
+	return nil
+}
+
+func newTestNodeBurstContext(state nodeStateForBurst) nodeBurstContext {
+	nodeCtx := newNodeBurstContext(state)
+	if state == nodeBurstOverload {
+		nodeCtx.sharePoolOverageCores = 1000
+	}
+	return nodeCtx
+}
+
+func newTestCFSQuotaBurstCandidate(t *testing.T, podMeta *statesinformer.PodMeta, containerName string,
+	curCFS, baseCFS int64, operation cfsOperation) *cfsQuotaBurstCandidate {
+	t.Helper()
+	containerStat := getContainerStatusByName(podMeta, containerName)
+	assert.NotNil(t, containerStat)
+	candidate := &cfsQuotaBurstCandidate{
+		podMeta:         podMeta,
+		containerStat:   containerStat,
+		namespace:       podMeta.Pod.Namespace,
+		podName:         podMeta.Pod.Name,
+		containerName:   containerName,
+		containerID:     containerStat.ContainerID,
+		curCFS:          curCFS,
+		baseCFS:         baseCFS,
+		ceilCFS:         baseCFS * 3,
+		originOperation: operation,
+		finalOperation:  operation,
+	}
+	candidate.updateTargetCFS()
+	return candidate
+}
+
 func genTestContainerIDByName(containerName string) string {
 	return fmt.Sprintf("docker://%s-id", containerName)
 }
@@ -410,7 +450,7 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 			}
 			b := newTestCPUBurst(opt)
 			got := b.getNodeStateForBurst(tt.args.sharePoolThresholdPercent, podMetas)
-			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.want, got.state)
 		})
 	}
 }
@@ -1282,7 +1322,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerLimiter: make(map[string]*burstLimiter),
 			}
 			b.init(stop)
-			b.applyCFSQuotaBurst(&tt.args.burstCfg, podMeta, tt.args.nodeState)
+			b.applyCFSQuotaBurst(&tt.args.burstCfg, podMeta, newTestNodeBurstContext(tt.args.nodeState))
 
 			gotPod := getPodCFSQuota(podMeta, testHelper)
 			if !reflect.DeepEqual(gotPod, tt.want.podCFSQuotaVal) {
@@ -1299,6 +1339,132 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCPUBurst_applyCFSQuotaBurstCandidatesPartialScaleUpInCooling(t *testing.T) {
+	testHelper := system.NewFileTestUtil(t)
+	stop := make(chan struct{})
+	defer func() { stop <- struct{}{} }()
+
+	podMetaA := createPodMetaByResource("test-pod-a", map[string]corev1.ResourceRequirements{
+		"test-container-a-1": {
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+			},
+		},
+		"test-container-a-2": {
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+			},
+		},
+	})
+	podMetaB := createPodMetaByResource("test-pod-b", map[string]corev1.ResourceRequirements{
+		"test-container-b-1": {
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+			},
+		},
+	})
+
+	baseCFS := int64(2 * system.CFSBasePeriodValue)
+	initPodCFSQuota(podMetaA, 2*baseCFS, testHelper)
+	initContainerCFSQuota(podMetaA, map[string]int64{
+		"test-container-a-1": baseCFS,
+		"test-container-a-2": baseCFS,
+	}, testHelper)
+	initPodCFSQuota(podMetaB, baseCFS, testHelper)
+	initContainerCFSQuota(podMetaB, map[string]int64{
+		"test-container-b-1": baseCFS,
+	}, testHelper)
+
+	candidates := []*cfsQuotaBurstCandidate{
+		newTestCFSQuotaBurstCandidate(t, podMetaB, "test-container-b-1", baseCFS, baseCFS, cfsScaleUp),
+		newTestCFSQuotaBurstCandidate(t, podMetaA, "test-container-a-2", baseCFS, baseCFS, cfsScaleUp),
+		newTestCFSQuotaBurstCandidate(t, podMetaA, "test-container-a-1", baseCFS, baseCFS, cfsScaleUp),
+	}
+	nodeCtx := nodeBurstContext{
+		state:                  nodeBurstCooling,
+		sharePoolHeadroomCores: 0.5,
+	}
+
+	b := &cpuBurst{
+		executor:     newTestExecutor(),
+		cgroupReader: resourceexecutor.NewCgroupReader(),
+	}
+	b.init(stop)
+	b.applyCFSQuotaBurstCandidates(selectCFSQuotaBurstCandidates(candidates, nodeCtx))
+
+	wantScaledCFS := int64(float64(baseCFS) * cfsIncreaseStep)
+	assert.Equal(t, baseCFS+wantScaledCFS, getPodCFSQuota(podMetaA, testHelper))
+	assert.Equal(t, baseCFS, getPodCFSQuota(podMetaB, testHelper))
+	assert.Equal(t, wantScaledCFS, getContainerCFSQuota(podMetaA.CgroupDir, getContainerStatusByName(podMetaA, "test-container-a-1"), testHelper))
+	assert.Equal(t, baseCFS, getContainerCFSQuota(podMetaA.CgroupDir, getContainerStatusByName(podMetaA, "test-container-a-2"), testHelper))
+	assert.Equal(t, baseCFS, getContainerCFSQuota(podMetaB.CgroupDir, getContainerStatusByName(podMetaB, "test-container-b-1"), testHelper))
+}
+
+func TestCPUBurst_applyCFSQuotaBurstCandidatesPartialScaleDownInOverload(t *testing.T) {
+	testHelper := system.NewFileTestUtil(t)
+	stop := make(chan struct{})
+	defer func() { stop <- struct{}{} }()
+
+	podMetaA := createPodMetaByResource("test-pod-a", map[string]corev1.ResourceRequirements{
+		"test-container-a-1": {
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+			},
+		},
+		"test-container-a-2": {
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+			},
+		},
+	})
+	podMetaB := createPodMetaByResource("test-pod-b", map[string]corev1.ResourceRequirements{
+		"test-container-b-1": {
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+			},
+		},
+	})
+
+	baseCFS := int64(2 * system.CFSBasePeriodValue)
+	curCFSA1 := int64(3 * system.CFSBasePeriodValue)
+	curCFSA2 := int64(4 * system.CFSBasePeriodValue)
+	curCFSB1 := int64(5 * system.CFSBasePeriodValue)
+	initPodCFSQuota(podMetaA, curCFSA1+curCFSA2, testHelper)
+	initContainerCFSQuota(podMetaA, map[string]int64{
+		"test-container-a-1": curCFSA1,
+		"test-container-a-2": curCFSA2,
+	}, testHelper)
+	initPodCFSQuota(podMetaB, curCFSB1, testHelper)
+	initContainerCFSQuota(podMetaB, map[string]int64{
+		"test-container-b-1": curCFSB1,
+	}, testHelper)
+
+	candidates := []*cfsQuotaBurstCandidate{
+		newTestCFSQuotaBurstCandidate(t, podMetaA, "test-container-a-1", curCFSA1, baseCFS, cfsRemain),
+		newTestCFSQuotaBurstCandidate(t, podMetaA, "test-container-a-2", curCFSA2, baseCFS, cfsRemain),
+		newTestCFSQuotaBurstCandidate(t, podMetaB, "test-container-b-1", curCFSB1, baseCFS, cfsRemain),
+	}
+	nodeCtx := nodeBurstContext{
+		state:                 nodeBurstOverload,
+		sharePoolOverageCores: 1.1,
+	}
+
+	b := &cpuBurst{
+		executor:     newTestExecutor(),
+		cgroupReader: resourceexecutor.NewCgroupReader(),
+	}
+	b.init(stop)
+	b.applyCFSQuotaBurstCandidates(selectCFSQuotaBurstCandidates(candidates, nodeCtx))
+
+	wantCFSA2 := int64(float64(curCFSA2) * cfsDecreaseStep)
+	wantCFSB1 := int64(float64(curCFSB1) * cfsDecreaseStep)
+	assert.Equal(t, curCFSA1+wantCFSA2, getPodCFSQuota(podMetaA, testHelper))
+	assert.Equal(t, wantCFSB1, getPodCFSQuota(podMetaB, testHelper))
+	assert.Equal(t, curCFSA1, getContainerCFSQuota(podMetaA.CgroupDir, getContainerStatusByName(podMetaA, "test-container-a-1"), testHelper))
+	assert.Equal(t, wantCFSA2, getContainerCFSQuota(podMetaA.CgroupDir, getContainerStatusByName(podMetaA, "test-container-a-2"), testHelper))
+	assert.Equal(t, wantCFSB1, getContainerCFSQuota(podMetaB.CgroupDir, getContainerStatusByName(podMetaB, "test-container-b-1"), testHelper))
 }
 
 func Test_burstLimiter_Allow(t *testing.T) {

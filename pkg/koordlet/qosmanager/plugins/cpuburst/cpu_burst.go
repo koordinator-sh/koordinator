@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"math/rand"
+	"sort"
 	"strconv"
 	"time"
 
@@ -107,6 +108,48 @@ func (s nodeStateForBurst) String() string {
 	default:
 		return fmt.Sprintf("unrecognized(%d)", s)
 	}
+}
+
+// nodeBurstContext depends on cpu-share-pool usage, used for CFSBurstStrategy.
+type nodeBurstContext struct {
+	state                          nodeStateForBurst
+	sharePoolCPUCoresUsage         float64
+	sharePoolCPUCoresTotal         float64
+	sharePoolThresholdCores        float64
+	sharePoolCoolingThresholdCores float64
+	sharePoolHeadroomCores         float64
+	sharePoolOverageCores          float64
+}
+
+func newNodeBurstContext(state nodeStateForBurst) nodeBurstContext {
+	return nodeBurstContext{state: state}
+}
+
+type cfsQuotaBurstCandidate struct {
+	podMeta         *statesinformer.PodMeta
+	containerStat   *corev1.ContainerStatus
+	namespace       string
+	podName         string
+	containerName   string
+	containerID     string
+	curCFS          int64
+	baseCFS         int64
+	ceilCFS         int64
+	originOperation cfsOperation
+	finalOperation  cfsOperation
+	targetCFS       int64
+}
+
+func (c *cfsQuotaBurstCandidate) stableIdentity() string {
+	return fmt.Sprintf("%s/%s/%s", c.namespace, c.podName, c.containerName)
+}
+
+func (c *cfsQuotaBurstCandidate) excessCFS() int64 {
+	return util.MaxInt64(c.curCFS-c.baseCFS, 0)
+}
+
+func (c *cfsQuotaBurstCandidate) updateTargetCFS() {
+	c.targetCFS = calcContainerTargetCFS(c.curCFS, c.baseCFS, c.ceilCFS, c.finalOperation)
 }
 
 // burstLimiter is a token bucket limiter for CFSQuotaBurst strategy, limit container continuously overused
@@ -218,9 +261,10 @@ func (b *cpuBurst) start() {
 	podsMeta := b.statesInformer.GetAllPods()
 
 	// get node state by node share pool usage
-	nodeState := b.getNodeStateForBurst(*b.nodeCPUBurstStrategy.SharePoolThresholdPercent, podsMeta)
-	klog.V(5).Infof("get node state %v for cpu burst", nodeState)
+	nodeBurstCtx := b.getNodeStateForBurst(*b.nodeCPUBurstStrategy.SharePoolThresholdPercent, podsMeta)
+	klog.V(5).Infof("get node state %v for cpu burst", nodeBurstCtx.state)
 
+	var cfsQuotaBurstCandidates []*cfsQuotaBurstCandidate
 	for _, podMeta := range podsMeta {
 		if podMeta == nil || podMeta.Pod == nil {
 			klog.Warningf("podMeta is illegal, detail %v", podMeta)
@@ -245,32 +289,34 @@ func (b *cpuBurst) start() {
 		klog.V(5).Infof("get pod %v/%v cpu burst config: %v", podMeta.Pod.Namespace, podMeta.Pod.Name, cpuBurstCfg)
 		// set cpu.cfs_burst_us for pod and containers
 		b.applyCPUBurst(cpuBurstCfg, podMeta)
-		// scale cpu.cfs_quota_us for pod and containers
-		b.applyCFSQuotaBurst(cpuBurstCfg, podMeta, nodeState)
+		// collect cpu.cfs_quota_us scaling candidates for pod and containers
+		cfsQuotaBurstCandidates = append(cfsQuotaBurstCandidates, b.collectCFSQuotaBurstCandidates(cpuBurstCfg, podMeta)...)
 	}
+	// scale cpu.cfs_quota_us for pods and containers
+	b.applyCFSQuotaBurstCandidates(selectCFSQuotaBurstCandidates(cfsQuotaBurstCandidates, nodeBurstCtx))
 	b.Recycle()
 }
 
 // getNodeStateForBurst checks whether node share pool cpu usage beyonds the threshold
 // return isOverload, share pool usage ratio and message detail
 func (b *cpuBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
-	podsMeta []*statesinformer.PodMeta) nodeStateForBurst {
+	podsMeta []*statesinformer.PodMeta) nodeBurstContext {
 	overloadMetricDuration := time.Duration(util.MinInt64(int64(b.reconcileInterval*5), int64(10*time.Second)))
 	queryParam := helpers.GenerateQueryParamsAvg(overloadMetricDuration)
 
 	queryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
 	if err != nil {
 		klog.Warningf("get node metric queryMeta failed, error: %v", err)
-		return nodeBurstUnknown
+		return newNodeBurstContext(nodeBurstUnknown)
 	}
 	queryResult, err := helpers.CollectNodeMetrics(b.metricCache, *queryParam.Start, *queryParam.End, queryMeta)
 	if err != nil {
 		klog.Warningf("get node cpu metric failed, error: %v", err)
-		return nodeBurstUnknown
+		return newNodeBurstContext(nodeBurstUnknown)
 	}
 	if queryResult.Count() == 0 {
 		klog.Warning("node metric is empty during handle cfs burst scale down")
-		return nodeBurstUnknown
+		return newNodeBurstContext(nodeBurstUnknown)
 	}
 	nodeCPUUsed, err := queryResult.Value(queryParam.Aggregate)
 	if err != nil {
@@ -280,12 +326,12 @@ func (b *cpuBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 	nodeCPUInfoRaw, exist := b.metricCache.Get(metriccache.NodeCPUInfoKey)
 	if !exist {
 		klog.Warning("get node cpu info failed : not exist")
-		return nodeBurstUnknown
+		return newNodeBurstContext(nodeBurstUnknown)
 	}
 	nodeCPUInfo := nodeCPUInfoRaw.(*metriccache.NodeCPUInfo)
 	if nodeCPUInfo == nil {
 		klog.Warning("get node cpu info failed : value is nil")
-		return nodeBurstUnknown
+		return newNodeBurstContext(nodeBurstUnknown)
 	}
 	podMetricMap := helpers.CollectAllPodMetrics(b.statesInformer, b.metricCache, *queryParam, metriccache.PodCPUUsageMetric)
 
@@ -315,12 +361,22 @@ func (b *cpuBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 	// calculate cpu share pool usage ratio
 	sharePoolThresholdRatio := float64(sharePoolThresholdPercent) / 100
 	sharePoolCoolingRatio := sharePoolThresholdRatio * sharePoolCoolingThresholdRatio
+	sharePoolThresholdCores := sharePoolCPUCoresTotal * sharePoolThresholdRatio
+	sharePoolCoolingThresholdCores := sharePoolCPUCoresTotal * sharePoolCoolingRatio
 	sharePoolUsageRatio := 1.0
 	if sharePoolCPUCoresTotal > 0 {
 		sharePoolUsageRatio = sharePoolCPUCoresUsage / sharePoolCPUCoresTotal
 	}
-	klog.V(5).Infof("share pool usage / share pool total = [%v/%v] = [%v],  threshold = [%v]",
-		sharePoolCPUCoresUsage, sharePoolCPUCoresTotal, sharePoolUsageRatio, sharePoolThresholdRatio)
+	sharePoolHeadroomCores := 0.0
+	if sharePoolThresholdCores > sharePoolCPUCoresUsage {
+		sharePoolHeadroomCores = sharePoolThresholdCores - sharePoolCPUCoresUsage
+	}
+	sharePoolOverageCores := 0.0
+	if sharePoolCPUCoresUsage > sharePoolThresholdCores {
+		sharePoolOverageCores = sharePoolCPUCoresUsage - sharePoolThresholdCores
+	}
+	klog.V(5).Infof("share pool usage / share pool total = [%v/%v] = [%v], threshold = [%v], cooling threshold cores = [%v], headroom cores = [%v], overage cores = [%v]",
+		sharePoolCPUCoresUsage, sharePoolCPUCoresTotal, sharePoolUsageRatio, sharePoolThresholdRatio, sharePoolCoolingThresholdCores, sharePoolHeadroomCores, sharePoolOverageCores)
 
 	// generate node burst state by cpu share pool usage
 	var nodeBurstState nodeStateForBurst
@@ -331,12 +387,21 @@ func (b *cpuBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 	} else { // sharePoolUsageRatio < sharePoolCoolingRatio
 		nodeBurstState = nodeBurstIdle
 	}
-	return nodeBurstState
+	return nodeBurstContext{
+		state:                          nodeBurstState,
+		sharePoolCPUCoresUsage:         sharePoolCPUCoresUsage,
+		sharePoolCPUCoresTotal:         sharePoolCPUCoresTotal,
+		sharePoolThresholdCores:        sharePoolThresholdCores,
+		sharePoolCoolingThresholdCores: sharePoolCoolingThresholdCores,
+		sharePoolHeadroomCores:         sharePoolHeadroomCores,
+		sharePoolOverageCores:          sharePoolOverageCores,
+	}
 }
 
-// scale cpu.cfs_quota_us for pod/containers by container throttled state and node state
-func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *statesinformer.PodMeta,
-	nodeState nodeStateForBurst) {
+// collectCFSQuotaBurstCandidates collects cpu.cfs_quota_us operations for pod/containers by container throttled state.
+func (b *cpuBurst) collectCFSQuotaBurstCandidates(burstCfg *slov1alpha1.CPUBurstConfig,
+	podMeta *statesinformer.PodMeta) []*cfsQuotaBurstCandidate {
+	var candidates []*cfsQuotaBurstCandidate
 	pod := podMeta.Pod
 	containerMap := make(map[string]*corev1.Container)
 	for i := range pod.Spec.Containers {
@@ -386,41 +451,163 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 		klog.V(6).Infof("cfs burst operation for container %v/%v/%v is %v",
 			pod.Namespace, pod.Name, containerStat.Name, originOperation)
 
-		changed, finalOperation := changeOperationByNode(nodeState, originOperation)
-		if changed {
-			klog.Infof("node is in %v state, switch origin scale operation %v to %v",
-				nodeState, originOperation.String(), finalOperation.String())
-		} else {
-			klog.V(5).Infof("node is in %v state, operation %v is same as before %v",
-				nodeState, finalOperation.String(), originOperation.String())
+		candidate := &cfsQuotaBurstCandidate{
+			podMeta:         podMeta,
+			containerStat:   containerStat,
+			namespace:       pod.Namespace,
+			podName:         pod.Name,
+			containerName:   containerStat.Name,
+			containerID:     containerStat.ContainerID,
+			curCFS:          containerCurCFS,
+			baseCFS:         containerBaseCFS,
+			ceilCFS:         containerCeilCFS,
+			originOperation: originOperation,
+			finalOperation:  originOperation,
 		}
+		candidate.updateTargetCFS()
+		candidates = append(candidates, candidate)
+	} // end for containers
 
-		containerTargetCFS := containerCurCFS
-		if finalOperation == cfsScaleUp {
-			containerTargetCFS = int64(float64(containerCurCFS) * cfsIncreaseStep)
-		} else if finalOperation == cfsScaleDown {
-			containerTargetCFS = int64(float64(containerCurCFS) * cfsDecreaseStep)
-		} else if finalOperation == cfsReset {
-			containerTargetCFS = containerBaseCFS
+	return candidates
+}
+
+// scale cpu.cfs_quota_us for pod/containers by container throttled state and node state
+func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *statesinformer.PodMeta,
+	nodeCtx nodeBurstContext) {
+	candidates := b.collectCFSQuotaBurstCandidates(burstCfg, podMeta)
+	b.applyCFSQuotaBurstCandidates(selectCFSQuotaBurstCandidates(candidates, nodeCtx))
+}
+
+func selectCFSQuotaBurstCandidates(candidates []*cfsQuotaBurstCandidate, nodeCtx nodeBurstContext) []*cfsQuotaBurstCandidate {
+	for _, candidate := range candidates {
+		candidate.finalOperation = candidate.originOperation
+		candidate.updateTargetCFS()
+	}
+
+	switch nodeCtx.state {
+	case nodeBurstCooling:
+		selectCFSQuotaBurstScaleUpCandidates(candidates, nodeCtx.sharePoolHeadroomCores)
+	case nodeBurstOverload:
+		selectCFSQuotaBurstScaleDownCandidates(candidates, nodeCtx.sharePoolOverageCores)
+	case nodeBurstUnknown:
+		for _, candidate := range candidates {
+			if candidate.originOperation == cfsScaleUp {
+				candidate.finalOperation = cfsRemain
+				candidate.updateTargetCFS()
+			}
 		}
-		containerTargetCFS = util.MaxInt64(containerBaseCFS, util.MinInt64(containerTargetCFS, containerCeilCFS))
+	}
 
-		if containerTargetCFS == containerCurCFS {
-			klog.V(5).Infof("no need to scale for container %v/%v/%v, operation %v, target cfs quota %v",
-				pod.Namespace, pod.Name, containerStat.Name, finalOperation, containerTargetCFS)
+	return candidates
+}
+
+func selectCFSQuotaBurstScaleUpCandidates(candidates []*cfsQuotaBurstCandidate, headroomCores float64) {
+	var scaleUpCandidates []*cfsQuotaBurstCandidate
+	for _, candidate := range candidates {
+		if candidate.originOperation != cfsScaleUp {
 			continue
 		}
-		deltaContainerCFS := containerTargetCFS - containerCurCFS
-		err = b.applyContainerCFSQuota(podMeta, containerStat, containerCurCFS, deltaContainerCFS)
+		candidate.finalOperation = cfsRemain
+		candidate.updateTargetCFS()
+		scaleUpCandidates = append(scaleUpCandidates, candidate)
+	}
+	sort.SliceStable(scaleUpCandidates, func(i, j int) bool {
+		return scaleUpCandidates[i].stableIdentity() < scaleUpCandidates[j].stableIdentity()
+	})
+
+	for _, candidate := range scaleUpCandidates {
+		scaleUpTargetCFS := calcContainerTargetCFS(candidate.curCFS, candidate.baseCFS, candidate.ceilCFS, cfsScaleUp)
+		scaleUpCores := float64(scaleUpTargetCFS-candidate.curCFS) / float64(system.CFSBasePeriodValue)
+		if scaleUpCores <= 0 || scaleUpCores > headroomCores {
+			continue
+		}
+		candidate.finalOperation = cfsScaleUp
+		candidate.targetCFS = scaleUpTargetCFS
+		headroomCores -= scaleUpCores
+	}
+}
+
+func selectCFSQuotaBurstScaleDownCandidates(candidates []*cfsQuotaBurstCandidate, overageCores float64) {
+	var scaleDownCandidates []*cfsQuotaBurstCandidate
+	for _, candidate := range candidates {
+		if candidate.originOperation == cfsScaleUp {
+			candidate.finalOperation = cfsRemain
+			candidate.updateTargetCFS()
+		}
+		if candidate.originOperation != cfsScaleUp && candidate.originOperation != cfsRemain {
+			continue
+		}
+		if candidate.excessCFS() <= 0 {
+			continue
+		}
+		scaleDownTargetCFS := calcContainerTargetCFS(candidate.curCFS, candidate.baseCFS, candidate.ceilCFS, cfsScaleDown)
+		if scaleDownTargetCFS >= candidate.curCFS {
+			continue
+		}
+		scaleDownCandidates = append(scaleDownCandidates, candidate)
+	}
+	sort.SliceStable(scaleDownCandidates, func(i, j int) bool {
+		leftExcessCFS := scaleDownCandidates[i].excessCFS()
+		rightExcessCFS := scaleDownCandidates[j].excessCFS()
+		if leftExcessCFS != rightExcessCFS {
+			return leftExcessCFS > rightExcessCFS
+		}
+		return scaleDownCandidates[i].stableIdentity() < scaleDownCandidates[j].stableIdentity()
+	})
+
+	for _, candidate := range scaleDownCandidates {
+		if overageCores <= 0 {
+			break
+		}
+		scaleDownTargetCFS := calcContainerTargetCFS(candidate.curCFS, candidate.baseCFS, candidate.ceilCFS, cfsScaleDown)
+		scaleDownCores := float64(candidate.curCFS-scaleDownTargetCFS) / float64(system.CFSBasePeriodValue)
+		if scaleDownCores <= 0 {
+			continue
+		}
+		candidate.finalOperation = cfsScaleDown
+		candidate.targetCFS = scaleDownTargetCFS
+		overageCores -= scaleDownCores
+	}
+}
+
+func (b *cpuBurst) applyCFSQuotaBurstCandidates(candidates []*cfsQuotaBurstCandidate) {
+	for _, candidate := range candidates {
+		if candidate.targetCFS == candidate.curCFS {
+			klog.V(5).Infof("no need to scale for container %v/%v/%v, operation %v, target cfs quota %v",
+				candidate.namespace, candidate.podName, candidate.containerName, candidate.finalOperation, candidate.targetCFS)
+			continue
+		}
+		if candidate.finalOperation != candidate.originOperation {
+			klog.Infof("node is in share-pool guarded state, switch origin scale operation %v to %v for container %v/%v/%v",
+				candidate.originOperation.String(), candidate.finalOperation.String(), candidate.namespace, candidate.podName, candidate.containerName)
+		} else {
+			klog.V(5).Infof("operation %v is same as before %v for container %v/%v/%v",
+				candidate.finalOperation.String(), candidate.originOperation.String(), candidate.namespace, candidate.podName, candidate.containerName)
+		}
+
+		deltaContainerCFS := candidate.targetCFS - candidate.curCFS
+		err := b.applyContainerCFSQuota(candidate.podMeta, candidate.containerStat, candidate.curCFS, deltaContainerCFS)
 		if err != nil {
 			klog.Infof("scale container %v/%v/%v cfs quota failed, operation %v, delta cfs quota %v, reason %v",
-				pod.Namespace, pod.Name, containerStat.Name, finalOperation, deltaContainerCFS, err)
+				candidate.namespace, candidate.podName, candidate.containerName, candidate.finalOperation, deltaContainerCFS, err)
 			continue
 		}
-		metrics.RecordContainerScaledCFSQuotaUS(pod.Namespace, pod.Name, containerStat.ContainerID, containerStat.Name, float64(containerTargetCFS))
+		metrics.RecordContainerScaledCFSQuotaUS(candidate.namespace, candidate.podName, candidate.containerID, candidate.containerName, float64(candidate.targetCFS))
 		klog.Infof("scale container %v/%v/%v cfs quota success, operation %v, current cfs %v, target cfs %v",
-			pod.Namespace, pod.Name, containerStat.Name, finalOperation, containerCurCFS, containerTargetCFS)
+			candidate.namespace, candidate.podName, candidate.containerName, candidate.finalOperation, candidate.curCFS, candidate.targetCFS)
 	} // end for containers
+}
+
+func calcContainerTargetCFS(containerCurCFS, containerBaseCFS, containerCeilCFS int64, operation cfsOperation) int64 {
+	containerTargetCFS := containerCurCFS
+	if operation == cfsScaleUp {
+		containerTargetCFS = int64(float64(containerCurCFS) * cfsIncreaseStep)
+	} else if operation == cfsScaleDown {
+		containerTargetCFS = int64(float64(containerCurCFS) * cfsDecreaseStep)
+	} else if operation == cfsReset {
+		containerTargetCFS = containerBaseCFS
+	}
+	return util.MaxInt64(containerBaseCFS, util.MinInt64(containerTargetCFS, containerCeilCFS))
 }
 
 // check if cfs burst for container is allowed by limiter config, return true if allowed
@@ -698,14 +885,4 @@ func cpuBurstEnabled(burstPolicy slov1alpha1.CPUBurstPolicy) bool {
 
 func cfsQuotaBurstEnabled(burstPolicy slov1alpha1.CPUBurstPolicy) bool {
 	return burstPolicy == slov1alpha1.CPUBurstAuto || burstPolicy == slov1alpha1.CFSQuotaBurstOnly
-}
-
-func changeOperationByNode(nodeState nodeStateForBurst, originOperation cfsOperation) (bool, cfsOperation) {
-	changedOperation := originOperation
-	if nodeState == nodeBurstOverload && (originOperation == cfsScaleUp || originOperation == cfsRemain) {
-		changedOperation = cfsScaleDown
-	} else if (nodeState == nodeBurstCooling || nodeState == nodeBurstUnknown) && originOperation == cfsScaleUp {
-		changedOperation = cfsRemain
-	}
-	return changedOperation != originOperation, changedOperation
 }
