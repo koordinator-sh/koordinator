@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"k8s.io/klog/v2"
+
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
@@ -41,14 +43,16 @@ func WriteReport(result types.BenchmarkResult, outputPath string) error {
 		return fmt.Errorf("failed to write result: %w", err)
 	}
 
-	fmt.Printf("\n=== Benchmark Result: %s ===\n", result.Name)
-	fmt.Printf("Throughput:        %.2f pods/sec\n", result.ThroughputPodsPerSec)
-	fmt.Printf("API Creation Time: %.2fs\n", result.APICreationDurationSec)
-	fmt.Printf("Total Time:        %.2fs\n", result.TotalDurationSec)
-	fmt.Printf("P50 Latency:       %.2fs\n", result.LatencyP50Sec)
-	fmt.Printf("P90 Latency:       %.2fs\n", result.LatencyP90Sec)
-	fmt.Printf("P99 Latency:       %.2fs\n", result.LatencyP99Sec)
-	fmt.Printf("Result written to: %s\n\n", outputPath)
+	klog.InfoS("Benchmark result",
+		"scenario", result.Name,
+		"throughputPodsPerSec", fmt.Sprintf("%.2f", result.ThroughputPodsPerSec),
+		"apiCreationDurationSec", fmt.Sprintf("%.2fs", result.APICreationDurationSec),
+		"totalDurationSec", fmt.Sprintf("%.2fs", result.TotalDurationSec),
+		"p50LatencySec", fmt.Sprintf("%.2fs", result.LatencyP50Sec),
+		"p90LatencySec", fmt.Sprintf("%.2fs", result.LatencyP90Sec),
+		"p99LatencySec", fmt.Sprintf("%.2fs", result.LatencyP99Sec),
+		"output", outputPath,
+	)
 
 	return nil
 }
