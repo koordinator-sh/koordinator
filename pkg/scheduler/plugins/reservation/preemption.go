@@ -61,10 +61,11 @@ var (
 // TODO: support the reservation being preempted
 type PreemptionMgr struct {
 	*defaultpreemption.DefaultPreemption
-	fh                frameworkext.ExtendedHandle
-	podLister         corelisters.PodLister
-	pdbLister         policylisters.PodDisruptionBudgetLister
-	reservationLister listerschedulingv1alpha1.ReservationLister
+	fh                    frameworkext.ExtendedHandle
+	podLister             corelisters.PodLister
+	pdbLister             policylisters.PodDisruptionBudgetLister
+	reservationLister     listerschedulingv1alpha1.ReservationLister
+	enableAsyncPreemption bool
 }
 
 func newPreemptionMgr(pluginArgs *config.ReservationArgs, extendedHandle frameworkext.ExtendedHandle,
@@ -74,7 +75,9 @@ func newPreemptionMgr(pluginArgs *config.ReservationArgs, extendedHandle framewo
 		return nil, err
 	}
 
-	fts := plfeature.Features{}
+	fts := plfeature.Features{
+		EnableAsyncPreemption: pluginArgs.EnableAsyncPreemption,
+	}
 
 	preemptionPl, err := defaultpreemption.New(context.Background(), preemptionArgs, extendedHandle, fts)
 	if err != nil {
@@ -87,11 +90,12 @@ func newPreemptionMgr(pluginArgs *config.ReservationArgs, extendedHandle framewo
 	}
 
 	return &PreemptionMgr{
-		DefaultPreemption: preemptionPl,
-		fh:                extendedHandle,
-		podLister:         podLister,
-		pdbLister:         pdbLister,
-		reservationLister: rLister,
+		DefaultPreemption:     preemptionPl,
+		fh:                    extendedHandle,
+		podLister:             podLister,
+		pdbLister:             pdbLister,
+		reservationLister:     rLister,
+		enableAsyncPreemption: pluginArgs.EnableAsyncPreemption,
 	}, nil
 }
 
@@ -104,7 +108,7 @@ func (pm *PreemptionMgr) PostFilter(ctx context.Context, state fwktype.CycleStat
 		metrics.PreemptionAttempts.Inc()
 	}()
 
-	pe := preemption.NewEvaluator(Name, pm.fh, pm, false)
+	pe := preemption.NewEvaluator(Name, pm.fh, pm, pm.enableAsyncPreemption)
 	pe.PodLister = newDelegatingPodLister(pm.podLister, pm.reservationLister, pod)
 	klog.V(4).InfoS("Attempt to do reservation preemption in the PostFilter", "pod", klog.KObj(pod))
 

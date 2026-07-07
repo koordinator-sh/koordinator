@@ -52,6 +52,11 @@ func (in *CoschedulingArgs) DeepCopyInto(out *CoschedulingArgs) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EnableAsyncPreemption != nil {
+		in, out := &in.EnableAsyncPreemption, &out.EnableAsyncPreemption
+		*out = new(bool)
+		**out = **in
+	}
 	if in.AwareNetworkTopology != nil {
 		in, out := &in.AwareNetworkTopology, &out.AwareNetworkTopology
 		*out = new(bool)
@@ -485,6 +490,11 @@ func (in *ReservationArgs) DeepCopyInto(out *ReservationArgs) {
 	out.TypeMeta = in.TypeMeta
 	if in.EnablePreemption != nil {
 		in, out := &in.EnablePreemption, &out.EnablePreemption
+		*out = new(bool)
+		**out = **in
+	}
+	if in.EnableAsyncPreemption != nil {
+		in, out := &in.EnableAsyncPreemption, &out.EnableAsyncPreemption
 		*out = new(bool)
 		**out = **in
 	}
