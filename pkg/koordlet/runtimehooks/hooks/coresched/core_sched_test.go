@@ -2224,3 +2224,124 @@ func testGetEnabledPlugin() *Plugin {
 		initialized:     atomic.NewBool(true),
 	}
 }
+
+func TestPlugin_SetPodQOSCPUIdle(t *testing.T) {
+	type fields struct {
+		rule *Rule
+	}
+	tests := []struct {
+		name      string
+		fields    fields
+		arg       protocol.HooksProtocol
+		wantErr   bool
+		wantField *protocol.PodContext
+	}{
+		{
+			name:    "nil context",
+			arg:     (*protocol.PodContext)(nil),
+			wantErr: true,
+		},
+		{
+			name: "rule not inited",
+			fields: fields{
+				rule: newRule(),
+			},
+			arg: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels:      map[string]string{extension.LabelPodQoS: string(extension.QoSBE)},
+					Annotations: map[string]string{},
+				},
+			},
+			wantErr: false,
+			wantField: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels:      map[string]string{extension.LabelPodQoS: string(extension.QoSBE)},
+					Annotations: map[string]string{},
+				},
+			},
+		},
+		{
+			name: "cpu idle disabled for BE pod",
+			fields: fields{
+				rule: testGetDisabledRule(),
+			},
+			arg: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels:      map[string]string{extension.LabelPodQoS: string(extension.QoSBE)},
+					Annotations: map[string]string{},
+				},
+			},
+			wantErr: false,
+			wantField: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels:      map[string]string{extension.LabelPodQoS: string(extension.QoSBE)},
+					Annotations: map[string]string{},
+				},
+				Response: protocol.PodResponse{
+					Resources: protocol.Resources{
+						CPUIdle: ptr.To[int64](0),
+					},
+				},
+			},
+		},
+		{
+			name: "cpu idle enabled for BE pod",
+			fields: fields{
+				rule: testGetAllEnabledRule(),
+			},
+			arg: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels:      map[string]string{extension.LabelPodQoS: string(extension.QoSBE)},
+					Annotations: map[string]string{},
+				},
+			},
+			wantErr: false,
+			wantField: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels:      map[string]string{extension.LabelPodQoS: string(extension.QoSBE)},
+					Annotations: map[string]string{},
+				},
+				Response: protocol.PodResponse{
+					Resources: protocol.Resources{
+						CPUIdle: ptr.To[int64](1),
+					},
+				},
+			},
+		},
+		{
+			name: "cpu idle not applied for LS pod",
+			fields: fields{
+				rule: testGetAllEnabledRule(),
+			},
+			arg: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels:      map[string]string{extension.LabelPodQoS: string(extension.QoSLS)},
+					Annotations: map[string]string{},
+				},
+			},
+			wantErr: false,
+			wantField: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					Labels:      map[string]string{extension.LabelPodQoS: string(extension.QoSLS)},
+					Annotations: map[string]string{},
+				},
+				Response: protocol.PodResponse{
+					Resources: protocol.Resources{
+						CPUIdle: ptr.To[int64](0),
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := newPlugin()
+			p.rule = tt.fields.rule
+			gotErr := p.SetPodQOSCPUIdle(tt.arg)
+			assert.Equal(t, tt.wantErr, gotErr != nil, gotErr)
+			if !tt.wantErr {
+				assert.Equal(t, tt.wantField, tt.arg)
+			}
+		})
+	}
+}

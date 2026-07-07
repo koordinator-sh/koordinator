@@ -994,8 +994,9 @@ func Test_ruleUpdateCb(t *testing.T) {
 				parentDirToCPUIdle: map[string]int64{
 					util.GetPodQoSRelativePath(corev1.PodQOSGuaranteed): 0,
 					util.GetPodQoSRelativePath(corev1.PodQOSBurstable):  0,
-					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort): 1,
-					"kubepods.slice/kubepods-podxxxxxx.slice":           0,
+					util.GetPodQoSRelativePath(corev1.PodQOSBestEffort): 0,
+					// pod-level cpu.idle: LS pod gets 0 (LS is not cpu-idle), LSR pod skipped (failed)
+					"kubepods.slice/kubepods-podxxxxxx.slice": 0,
 				},
 			},
 		},
@@ -1824,4 +1825,80 @@ func testGetContainerCgroupParentDir(t *testing.T, podParentDir string, containe
 	dir, err := util.GetContainerCgroupParentDirByID(podParentDir, containerID)
 	assert.NoError(t, err)
 	return dir
+}
+
+func TestRule_IsPodQOSCPUIdle(t *testing.T) {
+	tests := []struct {
+		name   string
+		rule   *Rule
+		podQOS extension.QoSClass
+		want   bool
+	}{
+		{
+			name:   "uninitialized rule returns false for BE",
+			rule:   newRule(),
+			podQOS: extension.QoSBE,
+			want:   false,
+		},
+		{
+			name:   "uninitialized rule returns false for LS",
+			rule:   newRule(),
+			podQOS: extension.QoSLS,
+			want:   false,
+		},
+		{
+			name:   "disabled rule returns false for BE",
+			rule:   testGetDisabledRule(),
+			podQOS: extension.QoSBE,
+			want:   false,
+		},
+		{
+			name:   "disabled rule returns false for LS",
+			rule:   testGetDisabledRule(),
+			podQOS: extension.QoSLS,
+			want:   false,
+		},
+		{
+			name:   "all-enabled rule returns true for BE",
+			rule:   testGetAllEnabledRule(),
+			podQOS: extension.QoSBE,
+			want:   true,
+		},
+		{
+			name:   "all-enabled rule returns false for LS (LS is not cpu-idle)",
+			rule:   testGetAllEnabledRule(),
+			podQOS: extension.QoSLS,
+			want:   false,
+		},
+		{
+			name:   "all-enabled rule returns false for LSR",
+			rule:   testGetAllEnabledRule(),
+			podQOS: extension.QoSLSR,
+			want:   false,
+		},
+		{
+			name:   "all-enabled rule returns false for LSE",
+			rule:   testGetAllEnabledRule(),
+			podQOS: extension.QoSLSE,
+			want:   false,
+		},
+		{
+			name:   "all-enabled rule returns false for unknown QoS class",
+			rule:   testGetAllEnabledRule(),
+			podQOS: extension.QoSClass("unknown"),
+			want:   false,
+		},
+		{
+			name:   "all-enabled rule returns false for empty QoS class",
+			rule:   testGetAllEnabledRule(),
+			podQOS: extension.QoSClass(""),
+			want:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.rule.IsPodQOSCPUIdle(tt.podQOS)
+			assert.Equal(t, tt.want, got, "IsPodQOSCPUIdle(%v)", tt.podQOS)
+		})
+	}
 }
