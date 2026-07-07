@@ -37,6 +37,10 @@ import (
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
+// Version is injected at build time via -ldflags by the Makefile.
+// Falls back to "dev" when building outside of make (e.g. go run directly).
+var Version = "dev"
+
 // defaultNodeWaitTimeout bounds how long Run waits for simulated nodes to
 // report Ready before giving up.
 const defaultNodeWaitTimeout = 60 * time.Second
@@ -92,6 +96,18 @@ func NewEngine(kubeconfig string, qps float32, burst int, provider nodeprovider.
 	return &Engine{client: client, dynClient: dynClient, provider: provider}, nil
 }
 
+// Client returns the engine's k8s client so callers can share it with the
+// node provider instead of building a second client from the same kubeconfig.
+func (e *Engine) Client() kubernetes.Interface {
+	return e.client
+}
+
+// SetProvider replaces the node provider. Call this after NewEngine when the
+// provider needs the engine's client (avoids constructing a second client).
+func (e *Engine) SetProvider(p nodeprovider.NodeProvider) {
+	e.provider = p
+}
+
 // Run executes one full benchmark scenario end-to-end and writes the result.
 //
 // Sequence:
@@ -111,7 +127,7 @@ func NewEngine(kubeconfig string, qps float32, burst int, provider nodeprovider.
 //
 // Teardown and DeleteNodes use context.Background() so cleanup still reaches
 // the API server even if the run's ctx has been cancelled or timed out.
-func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath string) error {
+func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, baselinePath string) error {
 	scenario, ok := scenarios.Get(cfg.Name)
 	if !ok {
 		return fmt.Errorf("scenario %q not registered; available: %v",
@@ -213,10 +229,19 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 	p50, p90, p99 := ComputeLatencyPercentiles(watcher.Latencies())
 	throughput := ComputeThroughput(cfg.PodCount, totalDuration)
 
+	breached, err := CompareToBaseline(types.BenchmarkResult{
+		ThroughputPodsPerSec: throughput,
+		LatencyP99Sec:        p99.Seconds(),
+	}, baselinePath, cfg.Thresholds)
+	if err != nil {
+		klog.ErrorS(err, "baseline comparison failed — ThresholdBreached will be false")
+	}
+
 	result := types.BenchmarkResult{
 		Name:                   cfg.Name,
 		RunID:                  runID,
 		Timestamp:              time.Now().UTC().Format(time.RFC3339),
+		KoordinatorVersion:     Version,
 		NodeCount:              cfg.NodeCount,
 		PodCount:               cfg.PodCount,
 		ThroughputPodsPerSec:   throughput,
@@ -225,7 +250,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 		LatencyP50Sec:          p50.Seconds(),
 		LatencyP90Sec:          p90.Seconds(),
 		LatencyP99Sec:          p99.Seconds(),
-		ThresholdBreached:      breachesThresholds(cfg.Thresholds, throughput, p99),
+		ThresholdBreached:      breached,
 	}
 
 	// Step 13: write JSON report + stdout summary.
@@ -242,9 +267,3 @@ func effectiveWorkers(configured int) int {
 	return configured
 }
 
-// breachesThresholds is a placeholder for CI baseline comparison.
-// Until baselines are wired in there is nothing to compare against,
-// so this always returns false.
-func breachesThresholds(_ types.Thresholds, _ float64, _ time.Duration) bool {
-	return false
-}
