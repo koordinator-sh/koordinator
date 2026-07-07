@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/nodeprovider"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios"
@@ -118,12 +119,12 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 	}
 
 	runID := uuid.New().String()
-	fmt.Printf("Starting benchmark: scenario=%s runID=%s\n", cfg.Name, runID)
+	klog.InfoS("Starting benchmark", "scenario", cfg.Name, "runID", runID)
 
 	if _, err := e.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 1}); err != nil {
 		return fmt.Errorf("cannot reach API server: %w", err)
 	}
-	fmt.Printf("API server reachable. Scenario %q is registered.\n", scenario.Name())
+	klog.InfoS("API server reachable", "scenario", scenario.Name())
 
 	namespace := cfg.Namespace
 	if namespace == "" {
@@ -135,15 +136,14 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 		NodeTemplateFile:    cfg.NodeTemplateFile,
 		NodeCreationWorkers: cfg.NodeCreationWorkers,
 	}
-	fmt.Printf("Creating %d kwok nodes (%d parallel workers)...\n",
-		cfg.NodeCount, effectiveWorkers(cfg.NodeCreationWorkers))
+	klog.InfoS("Creating kwok nodes", "count", cfg.NodeCount, "workers", effectiveWorkers(cfg.NodeCreationWorkers))
 	if err := e.provider.CreateNodes(ctx, runID, nodeSpec, cfg.NodeCount); err != nil {
 		return fmt.Errorf("CreateNodes failed: %w", err)
 	}
 	// Step 12 (deferred): always attempt cleanup, even on a later failure.
 	defer func() {
 		if err := e.provider.DeleteNodes(context.Background(), runID); err != nil {
-			fmt.Printf("warning: DeleteNodes failed for runID=%s: %v\n", runID, err)
+			klog.ErrorS(err, "DeleteNodes failed", "runID", runID)
 		}
 	}()
 
@@ -151,7 +151,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 	if err := e.provider.WaitReady(ctx, runID, defaultNodeWaitTimeout); err != nil {
 		return fmt.Errorf("WaitReady failed: %w", err)
 	}
-	fmt.Println("Nodes ready.")
+	klog.InfoS("Nodes ready")
 
 	// Step 3: scenario-specific prerequisites (e.g. namespace creation).
 	if err := scenario.Setup(ctx, e.client, e.dynClient, cfg, runID); err != nil {
@@ -160,7 +160,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 	// Step 11 (deferred): always tear down scenario objects.
 	defer func() {
 		if err := scenario.Teardown(context.Background(), e.client, e.dynClient, runID); err != nil {
-			fmt.Printf("warning: scenario Teardown failed for runID=%s: %v\n", runID, err)
+			klog.ErrorS(err, "scenario Teardown failed", "runID", runID)
 		}
 	}()
 
@@ -177,7 +177,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 		watcherErrCh <- watcher.Start(ctx)
 	}()
 
-	fmt.Printf("Starting pod burst: %d pods, concurrency=%d...\n", cfg.PodCount, cfg.Concurrency)
+	klog.InfoS("Starting pod burst", "pods", cfg.PodCount, "concurrency", cfg.Concurrency)
 
 	// Step 5: mark the start of the API creation phase.
 	burstStart := time.Now()
@@ -200,10 +200,10 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath s
 		return fmt.Errorf("pod creation failed: %w", err)
 	}
 	apiCreationDuration := time.Since(burstStart)
-	fmt.Printf("API creation phase complete: %s\n", apiCreationDuration.Round(10*time.Millisecond))
+	klog.InfoS("API creation phase complete", "duration", apiCreationDuration.Round(10*time.Millisecond))
 
 	// Step 8: wait for watcher to observe every pod scheduled.
-	fmt.Println("Waiting for all pods to be scheduled...")
+	klog.InfoS("Waiting for all pods to be scheduled")
 	if err := <-watcherErrCh; err != nil {
 		return fmt.Errorf("watcher failed: %w", err)
 	}

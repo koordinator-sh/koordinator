@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"golang.org/x/sync/errgroup"
+	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
@@ -45,7 +46,7 @@ func New(client kubernetes.Interface) *Provider {
 // CreateNodes provisions count kwok nodes labelled with runID.
 func (p *Provider) CreateNodes(ctx context.Context, runID string, spec types.NodeSpec, count int) error {
 	if p.client == nil {
-		fmt.Printf("[kwok stub] Would create %d nodes for runID=%s\n", count, runID)
+		klog.InfoS("kwok stub: skipping node creation", "count", count, "runID", runID)
 		return nil
 	}
 	runIDPrefix := runID
@@ -82,7 +83,7 @@ func (p *Provider) CreateNodes(ctx context.Context, runID string, spec types.Nod
 // DeleteNodes removes all nodes labelled with runID.
 func (p *Provider) DeleteNodes(ctx context.Context, runID string) error {
 	if p.client == nil {
-		fmt.Printf("[kwok stub] Would delete nodes for runID=%s\n", runID)
+		klog.InfoS("kwok stub: skipping node deletion", "runID", runID)
 		return nil
 	}
 	policy := metav1.DeletePropagationBackground
@@ -95,7 +96,7 @@ func (p *Provider) DeleteNodes(ctx context.Context, runID string) error {
 // WaitReady blocks until all nodes labelled with runID are Ready, or until timeout fires.
 func (p *Provider) WaitReady(ctx context.Context, runID string, timeout time.Duration) error {
 	if p.client == nil {
-		fmt.Printf("[kwok stub] Would wait for nodes runID=%s\n", runID)
+		klog.InfoS("kwok stub: skipping node readiness wait", "runID", runID)
 		return nil
 	}
 	deadline := time.Now().Add(timeout)
