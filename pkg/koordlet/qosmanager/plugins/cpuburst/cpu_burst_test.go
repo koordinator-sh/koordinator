@@ -1282,7 +1282,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				containerLimiter: make(map[string]*burstLimiter),
 			}
 			b.init(stop)
-			b.applyCFSQuotaBurst(&tt.args.burstCfg, podMeta, tt.args.nodeState)
+			b.applyCFSQuotaBurst(&tt.args.burstCfg, podMeta, tt.args.nodeState, 1.0)
 
 			gotPod := getPodCFSQuota(podMeta, testHelper)
 			if !reflect.DeepEqual(gotPod, tt.want.podCFSQuotaVal) {
@@ -1559,6 +1559,7 @@ func TestCPUBurst_start(t *testing.T) {
 			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
 			mockStatesInformer.EXPECT().GetAllPods().Return(testutil.GetPodMetas(tt.fields.pods)).AnyTimes()
 			mockStatesInformer.EXPECT().GetNodeSLO().Return(tt.fields.nodeSLO).AnyTimes()
+			mockStatesInformer.EXPECT().GetNode().Return(nil).AnyTimes()
 
 			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
 			metriccache.DefaultAggregateResultFactory = mockResultFactory

@@ -23,6 +23,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
@@ -81,6 +82,10 @@ func (p *Plugin) AdjustPodCFSQuota(proto protocol.HooksProtocol) error {
 	if podCtx == nil {
 		return fmt.Errorf("pod protocol is nil for plugin %s", name)
 	}
+	if features.DefaultKoordletFeatureGate.Enabled(features.CPUBurst) {
+		klog.V(5).Infof("skip %s pod cfs quota adjustment since CPUBurst is enabled", name)
+		return nil
+	}
 	if podCtx.Request.Resources == nil { // currently only reconciler mode provides Resources in ctx
 		return nil
 	}
@@ -96,6 +101,10 @@ func (p *Plugin) AdjustContainerCFSQuota(proto protocol.HooksProtocol) error {
 	containerCtx := proto.(*protocol.ContainerContext)
 	if containerCtx == nil {
 		return fmt.Errorf("container protocol is nil for plugin %s", name)
+	}
+	if features.DefaultKoordletFeatureGate.Enabled(features.CPUBurst) {
+		klog.V(5).Infof("skip %s container cfs quota adjustment since CPUBurst is enabled", name)
+		return nil
 	}
 	if containerCtx.Request.Resources == nil { // currently only reconciler mode provides Resources in ctx
 		return nil
