@@ -17,13 +17,35 @@ limitations under the License.
 package resourceexecutor
 
 import (
+	"context"
+	"math"
 	"path/filepath"
 	"testing"
 
+	systemddbus "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/stretchr/testify/assert"
 
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
+
+type fakeSystemdPropertyWriter struct {
+	calls []systemdPropertyCall
+}
+
+type systemdPropertyCall struct {
+	unitName   string
+	runtime    bool
+	properties []systemddbus.Property
+}
+
+func (f *fakeSystemdPropertyWriter) SetUnitProperties(_ context.Context, unitName string, runtime bool, properties ...systemddbus.Property) error {
+	f.calls = append(f.calls, systemdPropertyCall{
+		unitName:   unitName,
+		runtime:    runtime,
+		properties: append([]systemddbus.Property(nil), properties...),
+	})
+	return nil
+}
 
 func TestNewCommonCgroupUpdater(t *testing.T) {
 	type fields struct {
@@ -179,6 +201,125 @@ func TestCgroupResourceUpdater_Update(t *testing.T) {
 	}
 }
 
+func TestCgroupResourceUpdater_UpdateSystemdCPUQuotaForQOSPath(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	defer helper.Cleanup()
+
+	writer := &fakeSystemdPropertyWriter{}
+	restoreWriter := setSystemdPropertyWriterForTest(writer)
+	defer restoreWriter()
+
+	beQOSDir := "kubepods.slice/kubepods-besteffort.slice"
+	helper.WriteCgroupFileContents(beQOSDir, sysutil.CPUCFSQuota, "100000")
+
+	u, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, beQOSDir, "-1", nil)
+	assert.NoError(t, err)
+
+	err = u.update()
+	assert.NoError(t, err)
+	assert.Equal(t, "-1", helper.ReadCgroupFileContents(beQOSDir, sysutil.CPUCFSQuota))
+	assert.Len(t, writer.calls, 1)
+	assert.Equal(t, "kubepods-besteffort.slice", writer.calls[0].unitName)
+	assert.True(t, writer.calls[0].runtime)
+	assert.Len(t, writer.calls[0].properties, 1)
+	assert.Equal(t, "CPUQuotaPerSecUSec", writer.calls[0].properties[0].Name)
+	assert.Equal(t, uint64(math.MaxUint64), writer.calls[0].properties[0].Value.Value())
+}
+
+func TestCgroupResourceUpdater_UpdateSystemdOnlyForExactQOSPath(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	defer helper.Cleanup()
+
+	writer := &fakeSystemdPropertyWriter{}
+	restoreWriter := setSystemdPropertyWriterForTest(writer)
+	defer restoreWriter()
+
+	podDir := "kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-podxxx.slice"
+	helper.WriteCgroupFileContents(podDir, sysutil.CPUCFSQuota, "100000")
+
+	u, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, podDir, "200000", nil)
+	assert.NoError(t, err)
+
+	err = u.update()
+	assert.NoError(t, err)
+	assert.Equal(t, "200000", helper.ReadCgroupFileContents(podDir, sysutil.CPUCFSQuota))
+	assert.Empty(t, writer.calls)
+}
+
+func TestSystemdPropertyForCgroupResource(t *testing.T) {
+	tests := []struct {
+		name          string
+		resourceType  sysutil.ResourceType
+		value         string
+		wantName      string
+		wantValue     uint64
+		wantSupported bool
+	}{
+		{
+			name:          "finite cpu quota",
+			resourceType:  sysutil.CPUCFSQuotaName,
+			value:         "200000",
+			wantName:      "CPUQuotaPerSecUSec",
+			wantValue:     2000000,
+			wantSupported: true,
+		},
+		{
+			name:          "cpu quota max",
+			resourceType:  sysutil.CPUCFSQuotaName,
+			value:         "max",
+			wantName:      "CPUQuotaPerSecUSec",
+			wantValue:     uint64(math.MaxUint64),
+			wantSupported: true,
+		},
+		{
+			name:          "memory high max",
+			resourceType:  sysutil.MemoryHighName,
+			value:         "max",
+			wantName:      "MemoryHigh",
+			wantValue:     uint64(math.MaxUint64),
+			wantSupported: true,
+		},
+		{
+			name:          "unsupported resource",
+			resourceType:  sysutil.CPUSharesName,
+			value:         "1024",
+			wantSupported: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			property, supported, err := systemdPropertyForCgroupResource(tt.resourceType, tt.value)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantSupported, supported)
+			if !tt.wantSupported {
+				return
+			}
+			assert.Equal(t, tt.wantName, property.Name)
+			assert.Equal(t, tt.wantValue, property.Value.Value())
+		})
+	}
+}
+
+func TestSystemBusAddressUsesHostRunRoot(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	t.Setenv("DBUS_SYSTEM_BUS_ADDRESS", "")
+
+	oldRunRootDir := sysutil.Conf.RunRootDir
+	oldVarRunRootDir := sysutil.Conf.VarRunRootDir
+	defer func() {
+		sysutil.Conf.RunRootDir = oldRunRootDir
+		sysutil.Conf.VarRunRootDir = oldVarRunRootDir
+	}()
+
+	sysutil.Conf.RunRootDir = filepath.Join(helper.TempDir, "host-run")
+	sysutil.Conf.VarRunRootDir = filepath.Join(helper.TempDir, "host-var-run")
+	socketPath := filepath.Join(sysutil.Conf.RunRootDir, "dbus/system_bus_socket")
+	helper.WriteFileContents(socketPath, "")
+
+	assert.Equal(t, "unix:path="+socketPath, systemBusAddress())
+}
+
 func TestCgroupResourceUpdater_MergeUpdate(t *testing.T) {
 	type fields struct {
 		UseCgroupsV2 bool
@@ -325,6 +466,56 @@ func TestCgroupResourceUpdater_MergeUpdate(t *testing.T) {
 			gotErr = u.update()
 			assert.NoError(t, gotErr)
 			assert.Equal(t, tt.wantFinal, helper.ReadCgroupFileContents(c.parentDir, c.file))
+		})
+	}
+}
+
+func TestCgroupResourceUpdater_MergeUpdateSystemdMemoryQOS(t *testing.T) {
+	tests := []struct {
+		name         string
+		resourceType sysutil.ResourceType
+		file         sysutil.Resource
+		propertyName string
+	}{
+		{
+			name:         "memory.min",
+			resourceType: sysutil.MemoryMinName,
+			file:         sysutil.MemoryMinV2,
+			propertyName: "MemoryMin",
+		},
+		{
+			name:         "memory.low",
+			resourceType: sysutil.MemoryLowName,
+			file:         sysutil.MemoryLowV2,
+			propertyName: "MemoryLow",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := sysutil.NewFileTestUtil(t)
+			defer helper.Cleanup()
+			helper.SetCgroupsV2(true)
+
+			writer := &fakeSystemdPropertyWriter{}
+			restoreWriter := setSystemdPropertyWriterForTest(writer)
+			defer restoreWriter()
+
+			burstableQOSDir := "kubepods.slice/kubepods-burstable.slice"
+			helper.WriteCgroupFileContents(burstableQOSDir, tt.file, "1024")
+
+			u, err := DefaultCgroupUpdaterFactory.New(tt.resourceType, burstableQOSDir, "2048", nil)
+			assert.NoError(t, err)
+
+			mergedUpdater, err := u.MergeUpdate()
+			assert.NoError(t, err)
+			assert.NotNil(t, mergedUpdater)
+			assert.Equal(t, "2048", helper.ReadCgroupFileContents(burstableQOSDir, tt.file))
+			assert.Len(t, writer.calls, 1)
+			assert.Equal(t, "kubepods-burstable.slice", writer.calls[0].unitName)
+			assert.True(t, writer.calls[0].runtime)
+			assert.Len(t, writer.calls[0].properties, 1)
+			assert.Equal(t, tt.propertyName, writer.calls[0].properties[0].Name)
+			assert.Equal(t, uint64(2048), writer.calls[0].properties[0].Value.Value())
 		})
 	}
 }
