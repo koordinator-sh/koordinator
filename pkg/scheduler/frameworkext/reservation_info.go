@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	componentresource "k8s.io/component-helpers/resource"
 	corev1helpers "k8s.io/component-helpers/scheduling/corev1"
 	"k8s.io/klog/v2"
@@ -36,7 +35,6 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
@@ -329,33 +327,73 @@ func (ri *ReservationInfo) GetTaints() []corev1.Taint {
 
 // MatchReservationAffinity returns the statuses of whether the reservation affinity matches, whether the reservation
 // taints are tolerated, and whether the reservation name matches.
-func (ri *ReservationInfo) MatchReservationAffinity(reservationAffinity *reservationutil.RequiredReservationAffinity, node *corev1.Node) bool {
-	if reservationAffinity != nil {
+func (ri *ReservationInfo) MatchReservationAffinity(reservationAffinity *reservationutil.RequiredReservationAffinity, node *corev1.Node, omitNodeLabels bool) bool {
+	if reservationAffinity == nil {
+		return true
+	}
+	reservationLabels := ri.GetObject().GetLabels()
+
+	var nodeLabels map[string]string
+	if !omitNodeLabels {
+		nodeLabels = node.GetLabels()
+	}
+
+	if !reservationAffinity.MatchLabelSelector(reservationLabelsOverlay{reservation: reservationLabels, node: nodeLabels}) {
+		return false
+	}
+
+	if reservationAffinity.HasNodeSelector() {
 		fakeNode := &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: ri.GetName(),
+				Name:   ri.GetName(),
+				Labels: mergeReservationLabels(reservationLabels, nodeLabels),
 			},
-		}
-		reservationLabels := ri.GetObject().GetLabels()
-		if k8sfeature.DefaultFeatureGate.Enabled(features.OmitNodeLabelsForReservation) {
-			// In this case, we suppose the necessary node labels have been patched to the reservation.
-			fakeNode.Labels = reservationLabels
-		} else {
-			// NOTE: There are some special scenarios.
-			// For example, the AZ where the Pod wants to select the Reservation is cn-hangzhou, but the Reservation itself
-			// does not have this information, so it needs to perceive the label of the Node when Matching Affinity.
-			nodeLabels := node.GetLabels()
-			fakeNode.Labels = make(map[string]string, len(nodeLabels)+len(reservationLabels))
-			for k, v := range nodeLabels {
-				fakeNode.Labels[k] = v
-			}
-			for k, v := range reservationLabels {
-				fakeNode.Labels[k] = v
-			}
 		}
 		return reservationAffinity.MatchAffinity(fakeNode)
 	}
 	return true
+}
+
+type reservationLabelsOverlay struct {
+	reservation map[string]string
+	node        map[string]string
+}
+
+func (o reservationLabelsOverlay) Has(label string) bool {
+	if _, ok := o.reservation[label]; ok {
+		return true
+	}
+	_, ok := o.node[label]
+	return ok
+}
+
+func (o reservationLabelsOverlay) Get(label string) string {
+	if v, ok := o.reservation[label]; ok {
+		return v
+	}
+	return o.node[label]
+}
+
+func (o reservationLabelsOverlay) Lookup(label string) (string, bool) {
+	if v, ok := o.reservation[label]; ok {
+		return v, true
+	}
+	v, ok := o.node[label]
+	return v, ok
+}
+
+func mergeReservationLabels(reservationLabels, nodeLabels map[string]string) map[string]string {
+	if len(nodeLabels) == 0 {
+		return reservationLabels
+	}
+	merged := make(map[string]string, len(nodeLabels)+len(reservationLabels))
+	for k, v := range nodeLabels {
+		merged[k] = v
+	}
+	for k, v := range reservationLabels {
+		merged[k] = v
+	}
+	return merged
 }
 
 func (ri *ReservationInfo) MatchExactMatchSpec(podRequests corev1.ResourceList, spec *apiext.ExactMatchReservationSpec) bool {
@@ -367,21 +405,11 @@ func (ri *ReservationInfo) FindMatchingUntoleratedTaint(reservationAffinity *res
 }
 
 func (ri *ReservationInfo) Clone() *ReservationInfo {
-	resourceNames := make([]corev1.ResourceName, 0, len(ri.ResourceNames))
-	for _, v := range ri.ResourceNames {
-		resourceNames = append(resourceNames, v)
-	}
-
-	assignedPods := make(map[types.UID]*PodRequirement, len(ri.AssignedPods))
-	for k, v := range ri.AssignedPods {
-		assignedPods[k] = v
-	}
-
 	// use a shallow copy to reduce overhead
 	return &ReservationInfo{
 		Reservation:           ri.Reservation,
 		Pod:                   ri.Pod,
-		ResourceNames:         resourceNames,
+		ResourceNames:         ri.ResourceNames,
 		Allocatable:           ri.Allocatable,
 		Allocated:             ri.Allocated,
 		Reserved:              ri.Reserved,
@@ -389,9 +417,9 @@ func (ri *ReservationInfo) Clone() *ReservationInfo {
 		AllocatedResource:     ri.AllocatedResource,
 		Non0AllocatedMilliCPU: ri.Non0AllocatedMilliCPU,
 		Non0AllocatedMem:      ri.Non0AllocatedMem,
-		AllocatablePorts:      util.CloneHostPorts(ri.AllocatablePorts),
+		AllocatablePorts:      ri.AllocatablePorts,
 		AllocatedPorts:        util.CloneHostPorts(ri.AllocatedPorts),
-		AssignedPods:          assignedPods,
+		AssignedPods:          ri.AssignedPods,
 		OwnerMatchers:         ri.OwnerMatchers,
 		ParseError:            ri.ParseError,
 	}
@@ -495,7 +523,12 @@ func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {
 	requirement := NewPodRequirement(pod)
 	ri.Allocated = quotav1.Add(ri.Allocated, quotav1.Mask(requirement.Requests, ri.ResourceNames))
 	ri.AllocatedPorts = util.AppendHostPorts(ri.AllocatedPorts, requirement.Ports)
-	ri.AssignedPods[pod.UID] = requirement
+	assignedPods := make(map[types.UID]*PodRequirement, len(ri.AssignedPods)+1)
+	for k, v := range ri.AssignedPods {
+		assignedPods[k] = v
+	}
+	assignedPods[pod.UID] = requirement
+	ri.AssignedPods = assignedPods
 	ri.RefreshPreCalculated()
 }
 
@@ -509,7 +542,13 @@ func (ri *ReservationInfo) RemoveAssignedPod(pod *corev1.Pod) {
 			util.RemoveHostPorts(ri.AllocatedPorts, requirement.Ports)
 		}
 
-		delete(ri.AssignedPods, pod.UID)
+		assignedPods := make(map[types.UID]*PodRequirement, len(ri.AssignedPods))
+		for k, v := range ri.AssignedPods {
+			if k != pod.UID {
+				assignedPods[k] = v
+			}
+		}
+		ri.AssignedPods = assignedPods
 	}
 }
 

@@ -208,7 +208,7 @@ func (pl *Plugin) prepareMatchReservationStateForNormalPod(ctx context.Context, 
 
 		status := pl.reservationCache.ForEachMatchableReservationOnNode(nodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *fwktype.Status) {
 			// check if the reservation matches or can be ignored by the pod
-			isMatchedOrIgnored := checkReservationMatchedOrIgnored(pod, rInfo, diagnosisState, node, podRequests, reservationAffinity, exactMatchReservationSpec, affinityReservationName, isReservationIgnored)
+			isMatchedOrIgnored := checkReservationMatchedOrIgnored(pod, rInfo, diagnosisState, node, podRequests, reservationAffinity, exactMatchReservationSpec, affinityReservationName, isReservationIgnored, pl.enableOmitNodeLabels)
 
 			if isMatchedOrIgnored { // reservation is matched or ignored for the pod
 				matchedOrIgnored = append(matchedOrIgnored, rInfo.Clone())
@@ -448,7 +448,7 @@ func (pl *Plugin) prepareMatchReservationStateForReservePod(ctx context.Context,
 		if preAllocatableCandidates := preAllocatableCandidatesOnNode[nodeName]; len(preAllocatableCandidates) > 0 {
 			preAllocatablePods = make([]*corev1.Pod, 0, len(preAllocatableCandidates))
 			for _, candidatePod := range preAllocatableCandidatesOnNode[nodeName] {
-				matched, err := checkPreAllocatableMatched(preAllocationMode, rInfo, candidatePod, diagnosisState, node)
+				matched, err := checkPreAllocatableMatched(preAllocationMode, rInfo, candidatePod, diagnosisState, node, pl.enableOmitNodeLabels)
 				if err != nil {
 					klog.ErrorS(err, "Failed to check pre-allocatable pod for reservation", "pod", klog.KObj(pod), "node", nodeName,
 						"reservation", rName, "preAllocatable", klog.KObj(candidatePod))
@@ -595,7 +595,7 @@ func (pl *Plugin) listPreAllocatableCandidates(preAllocationMode schedulingv1alp
 // checkReservationMatchedOrIgnored checks if the reservation is matched or can be ignored by the pod and
 // updates the node diagnosis states.
 func checkReservationMatchedOrIgnored(pod *corev1.Pod, rInfo *frameworkext.ReservationInfo, diagnosisState *nodeDiagnosisState, node *corev1.Node, podRequests corev1.ResourceList,
-	reservationAffinity *reservationutil.RequiredReservationAffinity, exactMatchReservationSpec *extension.ExactMatchReservationSpec, affinityReservationName string, isReservationIgnored bool) bool {
+	reservationAffinity *reservationutil.RequiredReservationAffinity, exactMatchReservationSpec *extension.ExactMatchReservationSpec, affinityReservationName string, isReservationIgnored, omitNodeLabels bool) bool {
 	// pod specifies reservation ignored
 	if isReservationIgnored {
 		diagnosisState.ignored++
@@ -628,7 +628,7 @@ func checkReservationMatchedOrIgnored(pod *corev1.Pod, rInfo *frameworkext.Reser
 			// TODO: support effect=PreferNoSchedule
 			diagnosisState.taintsUnmatched++
 			diagnosisState.taintsUnmatchedReasons[getDiagnosisTaintKey(&firstUnmatchedTaint)]++
-		} else if !rInfo.MatchReservationAffinity(reservationAffinity, node) { // ReservationAffinity unmatched
+		} else if !rInfo.MatchReservationAffinity(reservationAffinity, node, omitNodeLabels) { // ReservationAffinity unmatched
 			diagnosisState.affinityUnmatched++
 		} else if !extension.ExactMatchReservation(podRequests, rInfo.Allocatable, exactMatchReservationSpec) { // exactMatchSpec unmatched
 			diagnosisState.notExactMatched++
@@ -642,7 +642,7 @@ func checkReservationMatchedOrIgnored(pod *corev1.Pod, rInfo *frameworkext.Reser
 
 func checkPreAllocatableMatched(preAllocationMode schedulingv1alpha1.PreAllocationMode,
 	rInfo *frameworkext.ReservationInfo, candidatePod *corev1.Pod, diagnosisState *nodeDiagnosisState,
-	node *corev1.Node) (bool, error) {
+	node *corev1.Node, omitNodeLabels bool) (bool, error) {
 	// check if candidate pod matches the reservation, the matching logic must differ based on the pre-allocation mode:
 	//   - Default mode: OwnerMatchers (ObjectRef, Controller, Labels) check is placed here for performance reasons.
 	//   - Cluster mode: Pods are retrieved from a global cache that already contains sorted pre-allocatable candidates
@@ -685,7 +685,7 @@ func checkPreAllocatableMatched(preAllocationMode schedulingv1alpha1.PreAllocati
 		diagnosisState.taintsUnmatchedReasons[getDiagnosisTaintKey(&firstUnmatchedTaint)]++
 		return false, nil
 	}
-	if !rInfo.MatchReservationAffinity(reservationAffinity, node) { // ReservationAffinity unmatched
+	if !rInfo.MatchReservationAffinity(reservationAffinity, node, omitNodeLabels) { // ReservationAffinity unmatched
 		diagnosisState.affinityUnmatched++
 		return false, nil
 	}
