@@ -22,11 +22,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
 	"gopkg.in/yaml.v3"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/framework"
 	kwokprovider "github.com/koordinator-sh/koordinator/test/perf/pkg/nodeprovider/kwok"
@@ -38,9 +35,10 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "", "Path to scenario YAML config (required)")
-	outputPath := flag.String("output", "results/result.json", "Path for JSON result output")
-	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (default: ~/.kube/config)")
+	configPath  := flag.String("config", "", "Path to scenario YAML config (required)")
+	outputPath  := flag.String("output", "results/result.json", "Path for JSON result output")
+	kubeconfig  := flag.String("kubeconfig", "", "Path to kubeconfig (default: ~/.kube/config)")
+	baselinePath := flag.String("baseline", "", "Path to baseline JSON for regression detection (optional)")
 	flag.Parse()
 
 	if *configPath == "" {
@@ -63,29 +61,15 @@ func main() {
 		log.Fatalf("Invalid config %q: %v", *configPath, err)
 	}
 
-	kubeconfigPath := *kubeconfig
-	if kubeconfigPath == "" {
-		kubeconfigPath = filepath.Join(os.Getenv("HOME"), ".kube", "config")
-	}
-	restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		log.Fatalf("Failed to build kubeconfig: %v", err)
-	}
-	restCfg.QPS = cfg.ClientQPS
-	restCfg.Burst = cfg.ClientBurst
-	k8sClient, err := kubernetes.NewForConfig(restCfg)
-	if err != nil {
-		log.Fatalf("Failed to create k8s client: %v", err)
-	}
-
-	provider := kwokprovider.New(k8sClient)
-
-	engine, err := framework.NewEngine(*kubeconfig, cfg.ClientQPS, cfg.ClientBurst, provider)
+	// Engine builds and owns the k8s client. The provider then reuses that
+	// same client so only one connection pool exists per run.
+	engine, err := framework.NewEngine(*kubeconfig, cfg.ClientQPS, cfg.ClientBurst, nil)
 	if err != nil {
 		log.Fatalf("Failed to create engine: %v", err)
 	}
+	engine.SetProvider(kwokprovider.New(engine.Client()))
 
-	if err := engine.Run(context.Background(), cfg, *outputPath); err != nil {
+	if err := engine.Run(context.Background(), cfg, *outputPath, *baselinePath); err != nil {
 		log.Fatalf("Benchmark failed: %v", err)
 	}
 }
