@@ -28,6 +28,7 @@ type ElasticQuotaProfileSpec struct {
 	// +required
 	QuotaName string `json:"quotaName"`
 	// QuotaLabels defines the labels of the quota.
+	// +kubebuilder:validation:XValidation:rule="self.values().all(v, v.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$') && size(v) <= 63)"
 	QuotaLabels map[string]string `json:"quotaLabels,omitempty"`
 	// ResourceRatio is a ratio, we will use it to fix the resource fragmentation problem.
 	// If the total resource is 100 and the resource ratio is 0.9, the allocable resource is 100*0.9=90

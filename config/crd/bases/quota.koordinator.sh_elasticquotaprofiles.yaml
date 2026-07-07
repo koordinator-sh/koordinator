@@ -90,6 +90,9 @@ spec:
                   type: string
                 description: QuotaLabels defines the labels of the quota.
                 type: object
+                x-kubernetes-validations:
+                - rule: self.values().all(v, v.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$')
+                    && size(v) <= 63)
               quotaName:
                 description: QuotaName defines the associated quota name of the profile.
                 type: string
