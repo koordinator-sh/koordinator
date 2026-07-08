@@ -176,7 +176,6 @@ var transformerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 func init() {
 	runtime.Must(utilfeature.DefaultMutableFeatureGate.Add(defaultFeatureGates))
 	runtime.Must(utilfeature.DefaultMutableFeatureGate.Add(defaultDeschedulerFeatureGates))
-	// TODO: use a unified feature-gate
 	runtime.Must(utilfeature.DefaultMutableFeatureGate.Add(transformerFeatureGates))
 }
 
