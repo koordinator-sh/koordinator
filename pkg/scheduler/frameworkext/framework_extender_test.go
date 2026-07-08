@@ -2311,3 +2311,102 @@ func buildCrossSchedulerExtenderAndNodeInfo(t *testing.T, node *corev1.Node, cro
 	extender.SetConfiguredPlugins(fh.ListPlugins())
 	return extender, nodeInfo
 }
+
+// fakePostFilterPlugin implements PostFilterPlugin and PostFilterTransformer for testing.
+type fakePostFilterPlugin struct {
+	result      *fwktype.PostFilterResult
+	status      *fwktype.Status
+	afterCalled bool
+}
+
+func (f *fakePostFilterPlugin) Name() string { return "FakePostFilter" }
+
+func (f *fakePostFilterPlugin) PostFilter(_ context.Context, _ fwktype.CycleState, _ *corev1.Pod, _ fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status) {
+	return f.result, f.status
+}
+
+func (f *fakePostFilterPlugin) AfterPostFilter(_ context.Context, _ fwktype.CycleState, _ *corev1.Pod, _ fwktype.NodeToStatusReader, _ *fwktype.Status) {
+	f.afterCalled = true
+}
+
+func Test_frameworkExtenderImpl_RunPostFilterPlugins(t *testing.T) {
+	tests := []struct {
+		name       string
+		pod        *corev1.Pod
+		suggestion *ScheduleSuggestion
+	}{
+		{
+			name: "suggestion appended to status",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+			},
+			suggestion: &ScheduleSuggestion{
+				Type:    SuggestionWaitingVictimReleased,
+				Message: "waiting for victims",
+			},
+		},
+		{
+			name: "no suggestion",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod2", Namespace: "default"},
+			},
+			suggestion: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, err := NewFrameworkExtenderFactory(
+				WithServicesEngine(services.NewEngine(gin.New())),
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			fakePlugin := &fakePostFilterPlugin{
+				result: &fwktype.PostFilterResult{},
+				status: fwktype.NewStatus(fwktype.Unschedulable, "not schedulable"),
+			}
+
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				registeredPlugins,
+				"koord-scheduler",
+				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfoLister{}}),
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
+			// Directly inject the PostFilterTransformer since the test helper doesn't support PostFilter
+			ext := frameworkExtender.(*frameworkExtenderImpl)
+			ext.postFilterTransformersEnabled = append(ext.postFilterTransformersEnabled, fakePlugin)
+
+			state := framework.NewCycleState()
+			InitDiagnosis(state, tt.pod)
+			if tt.suggestion != nil {
+				diagnosis := GetDiagnosis(state)
+				diagnosis.SetSuggestion(tt.suggestion)
+			}
+
+			_, status := frameworkExtender.RunPostFilterPlugins(context.TODO(), state, tt.pod, nil)
+			assert.NotNil(t, status)
+
+			if tt.suggestion != nil {
+				assert.Contains(t, status.Message(), "Suggestion:")
+			}
+
+			// Verify AfterPostFilter was called on the transformer
+			assert.True(t, fakePlugin.afterCalled, "AfterPostFilter should have been called")
+		})
+	}
+}

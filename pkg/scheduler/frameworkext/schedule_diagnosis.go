@@ -215,6 +215,7 @@ const (
 type PreemptionDiagnosis struct {
 	DryRunFilterDiagnosis *ScheduleDiagnosis `json:"dryRunFilterDiagnosis"`
 	OtherDiagnosis        interface{}        `json:"otherDiagnosis"`
+	FailedMessage         string             `json:"failedMessage,omitempty"`
 }
 
 // DiagnosisQueue is a queue for handling diagnosis logs asynchronously

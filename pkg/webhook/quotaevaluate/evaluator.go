@@ -448,8 +448,11 @@ func (e *quotaEvaluator) initCtx(ctx *quotaCheckContext, quota *v1alpha1.Elastic
 	return ctx
 }
 
+// Handles returns true if the evaluator should process this operation.
+// For Update, the caller (evaluateQuota) has already checked the EnableQuotaAdmissionOnUpdate feature gate
+// before constructing the Attributes, so no redundant gate check is needed here.
 func (e *quotaEvaluator) Handles(a *Attributes) bool {
-	if a.Operation == admissionv1.Create {
+	if a.Operation == admissionv1.Create || a.Operation == admissionv1.Update {
 		return true
 	}
 	return false
