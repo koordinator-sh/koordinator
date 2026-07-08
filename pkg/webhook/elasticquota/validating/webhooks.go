@@ -26,11 +26,13 @@ import (
 )
 
 // +kubebuilder:webhook:path=/validate-scheduling-sigs-k8s-io-v1alpha1-elasticquota,mutating=false,failurePolicy=fail,sideEffects=None,admissionReviewVersions=v1;v1beta1,groups=scheduling.sigs.k8s.io,resources=elasticquotas,verbs=create;update;delete,versions=v1alpha1,name=velasticquota.koordinator.sh
+// +kubebuilder:webhook:path=/validate-quota-koordinator-sh-v1alpha1-elasticquotaprofile,mutating=false,failurePolicy=fail,sideEffects=None,admissionReviewVersions=v1;v1beta1,groups=quota.koordinator.sh,resources=elasticquotaprofiles,verbs=create;update,versions=v1alpha1,name=velasticquotaprofile.koordinator.sh
 
 var (
 	// HandlerBuilderMap contains admission webhook handlers builder
 	HandlerBuilderMap = map[string]framework.HandlerBuilder{
-		"validate-scheduling-sigs-k8s-io-v1alpha1-elasticquota": &quotaValidateBuilder{},
+		"validate-scheduling-sigs-k8s-io-v1alpha1-elasticquota":      &quotaValidateBuilder{},
+		"validate-quota-koordinator-sh-v1alpha1-elasticquotaprofile": &profileValidateBuilder{},
 	}
 )
 
@@ -55,4 +57,21 @@ func (b *quotaValidateBuilder) Build() admission.Handler {
 		klog.Fatalf("failed to inject cache for quotaValidateBuilder: %v", err)
 	}
 	return h
+}
+
+var _ framework.HandlerBuilder = &profileValidateBuilder{}
+
+type profileValidateBuilder struct {
+	mgr manager.Manager
+}
+
+func (b *profileValidateBuilder) WithControllerManager(mgr ctrl.Manager) framework.HandlerBuilder {
+	b.mgr = mgr
+	return b
+}
+
+func (b *profileValidateBuilder) Build() admission.Handler {
+	return &ElasticQuotaProfileValidatingHandler{
+		Decoder: admission.NewDecoder(b.mgr.GetScheme()),
+	}
 }
