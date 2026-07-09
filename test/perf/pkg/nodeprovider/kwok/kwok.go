@@ -21,10 +21,10 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
@@ -65,7 +65,11 @@ func (p *Provider) CreateNodes(ctx context.Context, runID string, spec types.Nod
 	for i := 0; i < count; i++ {
 		name := fmt.Sprintf("kwok-bench-node-%s-%04d", runIDPrefix, i)
 		g.Go(func() error {
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-gctx.Done():
+				return gctx.Err()
+			}
 			defer func() { <-sem }()
 			node, err := buildKwokNode(name, runID, spec)
 			if err != nil {
@@ -89,7 +93,7 @@ func (p *Provider) DeleteNodes(ctx context.Context, runID string) error {
 	policy := metav1.DeletePropagationBackground
 	return p.client.CoreV1().Nodes().DeleteCollection(ctx,
 		metav1.DeleteOptions{PropagationPolicy: &policy},
-		metav1.ListOptions{LabelSelector: fmt.Sprintf("%s=%s", RunIDLabel, runID)},
+		metav1.ListOptions{LabelSelector: fmt.Sprintf("%s=%s", types.RunIDLabel, runID)},
 	)
 }
 
@@ -100,7 +104,7 @@ func (p *Provider) WaitReady(ctx context.Context, runID string, timeout time.Dur
 		return nil
 	}
 	deadline := time.Now().Add(timeout)
-	labelSel := fmt.Sprintf("%s=%s", RunIDLabel, runID)
+	labelSel := fmt.Sprintf("%s=%s", types.RunIDLabel, runID)
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()

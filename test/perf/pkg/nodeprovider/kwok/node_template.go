@@ -28,8 +28,6 @@ import (
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
-const RunIDLabel = "benchmark.koordinator.sh/run-id"
-
 // buildKwokNode constructs a fake Node object for the kwok controller to simulate as Ready.
 // Direct Node creation via the API is the documented pattern for programmatic kwok usage;
 // the kwok Stage configuration (stage-fast.yaml) handles the simulation side automatically.
@@ -57,7 +55,7 @@ func buildKwokNode(name, runID string, spec types.NodeSpec) (*corev1.Node, error
 		"kubernetes.io/hostname": name,
 		"kubernetes.io/os":       "linux",
 		"kubernetes.io/arch":     "amd64",
-		RunIDLabel:               runID,
+		types.RunIDLabel:               runID,
 	}
 	for k, v := range spec.Labels {
 		labels[k] = v
@@ -130,7 +128,7 @@ func buildKwokNodeFromFile(name, runID string, spec types.NodeSpec) (*corev1.Nod
 	node.Name = name
 	node.Labels["type"] = "kwok"
 	node.Labels["kubernetes.io/hostname"] = name
-	node.Labels[RunIDLabel] = runID
+	node.Labels[types.RunIDLabel] = runID
 	for k, v := range spec.Labels {
 		node.Labels[k] = v
 	}
@@ -147,15 +145,17 @@ func buildKwokNodeFromFile(name, runID string, spec types.NodeSpec) (*corev1.Nod
 		Effect: corev1.TaintEffectNoSchedule,
 	}
 	hasTaint := false
-	for _, t := range node.Spec.Taints {
-		if t.Key == kwokTaint.Key {
-			hasTaint = true
-			break
-		}
+ for i := range node.Spec.Taints {
+ 	if node.Spec.Taints[i].Key == kwokTaint.Key {
+ 		node.Spec.Taints[i].Value = kwokTaint.Value
+ 		node.Spec.Taints[i].Effect = kwokTaint.Effect
+ 		hasTaint = true
+ 		break
 	}
+}
 	if !hasTaint {
-		node.Spec.Taints = append(node.Spec.Taints, kwokTaint)
-	}
+ 	node.Spec.Taints = append(node.Spec.Taints, kwokTaint)
+ }
 
 	return &node, nil
 }

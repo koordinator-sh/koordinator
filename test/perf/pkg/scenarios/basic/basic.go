@@ -31,8 +31,6 @@ import (
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
-const runIDLabel = "benchmark.koordinator.sh/run-id"
-
 func init() {
 	scenarios.Register(func() scenarios.Scenario { return &BasicScenario{} })
 }
@@ -107,7 +105,7 @@ func (s *BasicScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.
 	}
 
 	labels := map[string]string{
-		runIDLabel: runID,
+		types.RunIDLabel: runID,
 		"app":      "kwok-bench",
 	}
 	for k, v := range cfg.Labels {
@@ -166,6 +164,6 @@ func (s *BasicScenario) Teardown(
 	policy := metav1.DeletePropagationBackground
 	return client.CoreV1().Pods(ns).DeleteCollection(ctx,
 		metav1.DeleteOptions{PropagationPolicy: &policy},
-		metav1.ListOptions{LabelSelector: fmt.Sprintf("%s=%s", runIDLabel, runID)},
+		metav1.ListOptions{LabelSelector: fmt.Sprintf("%s=%s", types.RunIDLabel, runID)},
 	)
 }

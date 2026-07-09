@@ -184,6 +184,9 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	if err != nil {
 		return fmt.Errorf("scenario Pods failed: %w", err)
 	}
+	if len(pods) != cfg.PodCount {
+		return fmt.Errorf("scenario %q returned %d pods, but config podCount is %d", scenario.Name(), len(pods), cfg.PodCount)
+	}
 
 	// Step 4: start the PodScheduled watcher before the burst so no event
 	// is missed. Errors surface through watcherErrCh.
@@ -192,6 +195,14 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	go func() {
 		watcherErrCh <- watcher.Start(ctx)
 	}()
+
+	// Block until the watch stream is established so no PodScheduled events
+	// are missed between burst start and watch initialisation.
+	select {
+	case <-watcher.Ready():
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 
 	klog.InfoS("Starting pod burst", "pods", cfg.PodCount, "concurrency", cfg.Concurrency)
 
@@ -204,7 +215,11 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	for _, pod := range pods {
 		pod := pod
 		g.Go(func() error {
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-gctx.Done():
+				return gctx.Err()
+			}
 			defer func() { <-sem }()
 			_, err := e.client.CoreV1().Pods(pod.Namespace).Create(gctx, pod, metav1.CreateOptions{})
 			return err
@@ -266,4 +281,3 @@ func effectiveWorkers(configured int) int {
 	}
 	return configured
 }
-

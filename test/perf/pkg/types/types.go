@@ -24,6 +24,11 @@ import (
 	"time"
 )
 
+// RunIDLabel is the pod and node label key used to associate all objects
+// created by a single benchmark run. Defined here so every package uses
+// the same string and a typo in one place cannot cause a silent mismatch.
+const RunIDLabel = "benchmark.koordinator.sh/run-id"
+
 // ScenarioConfig holds all parameters parsed from a configs/scenarios/*.yaml file.
 type ScenarioConfig struct {
 	Name             string                 `yaml:"name"`
