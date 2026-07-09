@@ -375,6 +375,14 @@ func (p *podAssignCache) OnUpdate(oldObj, newObj interface{}) {
 	if !ok || pod == nil {
 		return
 	}
+	// When spec.nodeName changes, remove the pod from the old node's cache to
+	// prevent ghost load: the old node would otherwise permanently retain the
+	// pod's estimated resources in nodeDelta/nodeEstimated, inflating Filter
+	// and Score results for new pods targeting that node.
+	if oldPod, ok := oldObj.(*corev1.Pod); ok && oldPod != nil &&
+		oldPod.Spec.NodeName != "" && oldPod.Spec.NodeName != pod.Spec.NodeName {
+		p.unAssign(oldPod.Spec.NodeName, pod)
+	}
 	switch oldPodInfo := p.getPodAssignInfo(pod.Spec.NodeName, pod); {
 	case oldPodInfo == nil: // pod was not cached
 		p.assign(pod.Spec.NodeName, pod)
