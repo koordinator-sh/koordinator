@@ -59,6 +59,30 @@ type ScenarioConfig struct {
 	// NodeCreationWorkers controls how many nodes are provisioned in
 	// parallel. Defaults to 20 when unset or zero.
 	NodeCreationWorkers int `yaml:"nodeCreationWorkers"`
+
+	// Timeout bounds the total wall-clock duration of one benchmark run,
+	// expressed as a Go duration string (e.g. "10m", "90s"). A run that
+	// exceeds this is aborted and reported with TimedOut: true rather than
+	// hanging indefinitely on a stuck scheduler. Defaults to DefaultRunTimeout
+	// when unset.
+	Timeout string `yaml:"timeout"`
+}
+
+// DefaultRunTimeout is used when ScenarioConfig.Timeout is unset.
+const DefaultRunTimeout = 10 * time.Minute
+
+// TimeoutDuration parses Timeout, falling back to DefaultRunTimeout when
+// unset. Validate() already rejects an unparseable non-empty value, so this
+// is safe to call unconditionally after Validate() has passed.
+func (c ScenarioConfig) TimeoutDuration() time.Duration {
+	if c.Timeout == "" {
+		return DefaultRunTimeout
+	}
+	d, err := time.ParseDuration(c.Timeout)
+	if err != nil {
+		return DefaultRunTimeout
+	}
+	return d
 }
 
 // Validate returns an error if any ScenarioConfig field contains an invalid value.
@@ -90,6 +114,15 @@ func (c ScenarioConfig) Validate() error {
 	}
 	if c.Thresholds.P99IncreasePct < 0 {
 		return fmt.Errorf("thresholds.p99IncreasePct must be >= 0, got %g", c.Thresholds.P99IncreasePct)
+	}
+	if c.Timeout != "" {
+		d, err := time.ParseDuration(c.Timeout)
+		if err != nil {
+			return fmt.Errorf("timeout %q is not a valid duration: %w", c.Timeout, err)
+		}
+		if d <= 0 {
+			return fmt.Errorf("timeout must be > 0, got %q", c.Timeout)
+		}
 	}
 	return nil
 }
@@ -131,6 +164,19 @@ type BenchmarkResult struct {
 	PProfCPUArtifact       string   `json:"pprofCPUArtifact,omitempty"`
 	PProfHeapArtifact      string   `json:"pprofHeapArtifact,omitempty"`
 	ThresholdBreached      bool     `json:"thresholdBreached"`
+
+	// TimedOut is true when the run was aborted because it exceeded
+	// ScenarioConfig.Timeout. Throughput/latency fields reflect whatever
+	// was measured before the deadline and should be treated as partial.
+	TimedOut bool `json:"timedOut"`
+
+	// SchedulingFailureCount is the total number of FailedScheduling events
+	// observed across all pods in the run (a single pod may retry multiple times).
+	SchedulingFailureCount int `json:"schedulingFailureCount"`
+
+	// SchedulingFailureRate is the fraction of pods (0.0–1.0) that received
+	// at least one FailedScheduling event during the run.
+	SchedulingFailureRate float64 `json:"schedulingFailureRate"`
 }
 
 // PodLatency records the scheduling latency for a single pod.
