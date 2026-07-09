@@ -26,6 +26,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
 // Watcher observes PodScheduled conditions and records per-pod latencies.
@@ -34,6 +36,10 @@ type Watcher struct {
 	namespace string
 	runID     string
 	podCount  int
+
+	// ready is closed by Start() once the watch stream is established,
+	// so the caller can block until it is safe to begin the pod burst.
+	ready chan struct{}
 
 	mu        sync.Mutex
 	latencies []PodLatency
@@ -50,23 +56,32 @@ func NewWatcher(client kubernetes.Interface, namespace, runID string, podCount i
 		namespace: namespace,
 		runID:     runID,
 		podCount:  podCount,
+		ready:     make(chan struct{}),
 		seen:      make(map[string]struct{}),
 	}
+}
+
+// Ready returns a channel that is closed once the watch stream is established.
+// Block on this before starting the pod burst to avoid missing early events.
+func (w *Watcher) Ready() <-chan struct{} {
+	return w.ready
 }
 
 // Start begins watching for PodScheduled=True events.
 // Blocks until all pods are scheduled, ctx is cancelled, or the channel closes.
 // Call this before the pod burst begins.
 func (w *Watcher) Start(ctx context.Context) error {
-	labelSel := fmt.Sprintf("benchmark.koordinator.sh/run-id=%s", w.runID)
+	labelSel := fmt.Sprintf("%s=%s", types.RunIDLabel, w.runID)
 
 	watcher, err := w.client.CoreV1().Pods(w.namespace).Watch(ctx, metav1.ListOptions{
 		LabelSelector: labelSel,
 	})
 	if err != nil {
+		close(w.ready) // unblock callers so they don't hang on a failed watch
 		return fmt.Errorf("failed to start pod watcher: %w", err)
 	}
 	defer watcher.Stop()
+	close(w.ready) // signal that the stream is established; burst may now begin
 
 	for {
 		select {
