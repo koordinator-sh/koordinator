@@ -183,6 +183,18 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 
 	logger.Info("Golang settings", "GOGC", os.Getenv("GOGC"), "GOMAXPROCS", os.Getenv("GOMAXPROCS"), "GOTRACEBACK", os.Getenv("GOTRACEBACK"))
 
+	// Setup OpenTelemetry distributed tracing. When no tracing config file is provided,
+	// this is a no-op and there is no behavior change.
+	tracingShutdown, err := setupTracing(ctx, cc.TracingConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to setup tracing: %w", err)
+	}
+	defer func() {
+		if err := tracingShutdown(context.Background()); err != nil {
+			logger.Error(err, "Failed to shutdown tracing provider")
+		}
+	}()
+
 	// Configz registration.
 	if cz, err := configz.New("componentconfig"); err == nil {
 		cz.Set(cc.ComponentConfig)
