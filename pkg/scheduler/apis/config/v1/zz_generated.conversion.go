@@ -612,6 +612,8 @@ func autoConvert_v1_ReservationArgs_To_config_ReservationArgs(in *ReservationArg
 	out.DisableGarbageCollection = in.DisableGarbageCollection
 	out.ResyncIntervalSeconds = in.ResyncIntervalSeconds
 	out.PreAllocationConfig = (*config.PreAllocationConfig)(unsafe.Pointer(in.PreAllocationConfig))
+	out.IgnoredResources = *(*[]string)(unsafe.Pointer(&in.IgnoredResources))
+	out.IgnoredResourceGroups = *(*[]string)(unsafe.Pointer(&in.IgnoredResourceGroups))
 	return nil
 }
 
@@ -638,6 +640,8 @@ func autoConvert_config_ReservationArgs_To_v1_ReservationArgs(in *config.Reserva
 	out.DisableGarbageCollection = in.DisableGarbageCollection
 	out.ResyncIntervalSeconds = in.ResyncIntervalSeconds
 	out.PreAllocationConfig = (*PreAllocationConfig)(unsafe.Pointer(in.PreAllocationConfig))
+	out.IgnoredResources = *(*[]string)(unsafe.Pointer(&in.IgnoredResources))
+	out.IgnoredResourceGroups = *(*[]string)(unsafe.Pointer(&in.IgnoredResourceGroups))
 	return nil
 }
 
