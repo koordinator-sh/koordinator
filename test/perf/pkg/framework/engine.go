@@ -18,6 +18,7 @@ package framework
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -114,7 +115,7 @@ func (e *Engine) SetProvider(p nodeprovider.NodeProvider) {
 //  1. provider.CreateNodes
 //  2. provider.WaitReady
 //  3. scenario.Setup
-//  4. watcher.Start in a goroutine
+//  4. watcher.Start + failureWatcher.Start in goroutines
 //  5. record burstStart
 //  6. bounded worker pool fires cfg.PodCount pods from scenario.Pods
 //  7. g.Wait() -> apiCreationDuration
@@ -127,6 +128,8 @@ func (e *Engine) SetProvider(p nodeprovider.NodeProvider) {
 //
 // Teardown and DeleteNodes use context.Background() so cleanup still reaches
 // the API server even if the run's ctx has been cancelled or timed out.
+// The whole run is bounded by cfg.TimeoutDuration(). On timeout a partial
+// report marked TimedOut: true is written before returning an error.
 func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, baselinePath string) error {
 	scenario, ok := scenarios.Get(cfg.Name)
 	if !ok {
@@ -135,10 +138,14 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	}
 
 	runID := uuid.New().String()
-	klog.InfoS("Starting benchmark", "scenario", cfg.Name, "runID", runID)
+	timeout := cfg.TimeoutDuration()
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
-	if _, err := e.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{Limit: 1}); err != nil {
-		return fmt.Errorf("cannot reach API server: %w", err)
+	klog.InfoS("Starting benchmark", "scenario", cfg.Name, "runID", runID, "timeout", timeout)
+
+	if _, err := e.client.CoreV1().Nodes().List(runCtx, metav1.ListOptions{Limit: 1}); err != nil {
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("cannot reach API server: %w", err), nil, 0, 0)
 	}
 	klog.InfoS("API server reachable", "scenario", scenario.Name())
 
@@ -153,10 +160,9 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 		NodeCreationWorkers: cfg.NodeCreationWorkers,
 	}
 	klog.InfoS("Creating kwok nodes", "count", cfg.NodeCount, "workers", effectiveWorkers(cfg.NodeCreationWorkers))
-	if err := e.provider.CreateNodes(ctx, runID, nodeSpec, cfg.NodeCount); err != nil {
-		return fmt.Errorf("CreateNodes failed: %w", err)
+	if err := e.provider.CreateNodes(runCtx, runID, nodeSpec, cfg.NodeCount); err != nil {
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("CreateNodes failed: %w", err), nil, 0, 0)
 	}
-	// Step 12 (deferred): always attempt cleanup, even on a later failure.
 	defer func() {
 		if err := e.provider.DeleteNodes(context.Background(), runID); err != nil {
 			klog.ErrorS(err, "DeleteNodes failed", "runID", runID)
@@ -164,16 +170,15 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	}()
 
 	// Step 2: block until nodes are Ready or the timeout fires.
-	if err := e.provider.WaitReady(ctx, runID, defaultNodeWaitTimeout); err != nil {
-		return fmt.Errorf("WaitReady failed: %w", err)
+	if err := e.provider.WaitReady(runCtx, runID, defaultNodeWaitTimeout); err != nil {
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("WaitReady failed: %w", err), nil, 0, 0)
 	}
 	klog.InfoS("Nodes ready")
 
 	// Step 3: scenario-specific prerequisites (e.g. namespace creation).
-	if err := scenario.Setup(ctx, e.client, e.dynClient, cfg, runID); err != nil {
-		return fmt.Errorf("scenario Setup failed: %w", err)
+	if err := scenario.Setup(runCtx, e.client, e.dynClient, cfg, runID); err != nil {
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("scenario Setup failed: %w", err), nil, 0, 0)
 	}
-	// Step 11 (deferred): always tear down scenario objects.
 	defer func() {
 		if err := scenario.Teardown(context.Background(), e.client, e.dynClient, runID); err != nil {
 			klog.ErrorS(err, "scenario Teardown failed", "runID", runID)
@@ -182,26 +187,39 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 
 	pods, err := scenario.Pods(cfg, runID)
 	if err != nil {
-		return fmt.Errorf("scenario Pods failed: %w", err)
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("scenario Pods failed: %w", err), nil, 0, 0)
 	}
 	if len(pods) != cfg.PodCount {
 		return fmt.Errorf("scenario %q returned %d pods, but config podCount is %d", scenario.Name(), len(pods), cfg.PodCount)
 	}
+	podNames := make([]string, len(pods))
+	for i, pod := range pods {
+		podNames[i] = pod.Name
+	}
 
-	// Step 4: start the PodScheduled watcher before the burst so no event
-	// is missed. Errors surface through watcherErrCh.
+	// Step 4: start both watchers before the burst so no event is missed.
 	watcher := NewWatcher(e.client, namespace, runID, cfg.PodCount)
 	watcherErrCh := make(chan error, 1)
-	go func() {
-		watcherErrCh <- watcher.Start(ctx)
-	}()
+	go func() { watcherErrCh <- watcher.Start(runCtx) }()
 
-	// Block until the watch stream is established so no PodScheduled events
-	// are missed between burst start and watch initialisation.
+	// FailureWatcher has no natural end — cancel it explicitly once the
+	// main watcher finishes rather than relying on the run timeout.
+	failureCtx, failureCancel := context.WithCancel(runCtx)
+	defer failureCancel()
+	failureWatcher := NewFailureWatcher(e.client, namespace, podNames)
+	failureWatcherErrCh := make(chan error, 1)
+	go func() { failureWatcherErrCh <- failureWatcher.Start(failureCtx) }()
+
+	// Block until both streams are established before starting the burst.
 	select {
 	case <-watcher.Ready():
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-runCtx.Done():
+		return e.timeoutAwareReport(cfg, runID, outputPath, runCtx.Err(), nil, 0, 0)
+	}
+	select {
+	case <-failureWatcher.Ready():
+	case <-runCtx.Done():
+		return e.timeoutAwareReport(cfg, runID, outputPath, runCtx.Err(), nil, 0, 0)
 	}
 
 	klog.InfoS("Starting pod burst", "pods", cfg.PodCount, "concurrency", cfg.Concurrency)
@@ -210,7 +228,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	burstStart := time.Now()
 
 	// Step 6: bounded worker pool creates all pods.
-	g, gctx := errgroup.WithContext(ctx)
+	g, gctx := errgroup.WithContext(runCtx)
 	sem := make(chan struct{}, cfg.Concurrency)
 	for _, pod := range pods {
 		pod := pod
@@ -228,7 +246,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 
 	// Step 7: wait for all creates and record API creation time.
 	if err := g.Wait(); err != nil {
-		return fmt.Errorf("pod creation failed: %w", err)
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("pod creation failed: %w", err), watcher, time.Since(burstStart), 0)
 	}
 	apiCreationDuration := time.Since(burstStart)
 	klog.InfoS("API creation phase complete", "duration", apiCreationDuration.Round(10*time.Millisecond))
@@ -236,11 +254,16 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	// Step 8: wait for watcher to observe every pod scheduled.
 	klog.InfoS("Waiting for all pods to be scheduled")
 	if err := <-watcherErrCh; err != nil {
-		return fmt.Errorf("watcher failed: %w", err)
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("watcher failed: %w", err), watcher, apiCreationDuration, time.Since(burstStart))
 	}
 	totalDuration := time.Since(burstStart)
 
-	// Steps 9-10: compute percentiles and throughput from recorded latencies.
+	// Stop the failure watcher and collect its results.
+	failureCancel()
+	<-failureWatcherErrCh
+	failedPodCount, failureEventCount := failureWatcher.Stats()
+
+	// Steps 9-10: compute percentiles and throughput.
 	p50, p90, p99 := ComputeLatencyPercentiles(watcher.Latencies())
 	throughput := ComputeThroughput(cfg.PodCount, totalDuration)
 
@@ -266,11 +289,57 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 		LatencyP90Sec:          p90.Seconds(),
 		LatencyP99Sec:          p99.Seconds(),
 		ThresholdBreached:      breached,
+		SchedulingFailureCount: failureEventCount,
+		SchedulingFailureRate:  schedulingFailureRate(failedPodCount, cfg.PodCount),
 	}
 
-	// Step 13: write JSON report + stdout summary.
-	// Steps 11-12 run via defer after this returns.
+	// Step 13: write JSON report. Steps 11-12 run via defer after this returns.
 	return WriteReport(result, outputPath)
+}
+
+// timeoutAwareReport handles errors that abort Run early. On DeadlineExceeded
+// it writes a partial report with TimedOut: true so partial numbers are not
+// lost. For any other error it returns immediately without writing a report.
+func (e *Engine) timeoutAwareReport(cfg types.ScenarioConfig, runID, outputPath string, runErr error, watcher *Watcher, apiCreationDuration, totalDuration time.Duration) error {
+	if !errors.Is(runErr, context.DeadlineExceeded) {
+		return fmt.Errorf("benchmark run failed: %w", runErr)
+	}
+
+	klog.ErrorS(runErr, "Benchmark timed out; writing partial report", "runID", runID, "timeout", cfg.TimeoutDuration())
+
+	result := types.BenchmarkResult{
+		Name:                   cfg.Name,
+		RunID:                  runID,
+		Timestamp:              time.Now().UTC().Format(time.RFC3339),
+		KoordinatorVersion:     Version,
+		NodeCount:              cfg.NodeCount,
+		PodCount:               cfg.PodCount,
+		APICreationDurationSec: apiCreationDuration.Seconds(),
+		TotalDurationSec:       totalDuration.Seconds(),
+		TimedOut:               true,
+	}
+	if watcher != nil {
+		p50, p90, p99 := ComputeLatencyPercentiles(watcher.Latencies())
+		result.LatencyP50Sec = p50.Seconds()
+		result.LatencyP90Sec = p90.Seconds()
+		result.LatencyP99Sec = p99.Seconds()
+		if totalDuration > 0 {
+			result.ThroughputPodsPerSec = ComputeThroughput(len(watcher.Latencies()), totalDuration)
+		}
+	}
+	if writeErr := WriteReport(result, outputPath); writeErr != nil {
+		klog.ErrorS(writeErr, "failed to write partial timeout report", "runID", runID)
+	}
+	return fmt.Errorf("benchmark timed out after %s: %w", cfg.TimeoutDuration(), runErr)
+}
+
+// schedulingFailureRate returns the fraction (0.0–1.0) of pods that received
+// at least one FailedScheduling event.
+func schedulingFailureRate(failedPodCount, podCount int) float64 {
+	if podCount <= 0 {
+		return 0
+	}
+	return float64(failedPodCount) / float64(podCount)
 }
 
 // effectiveWorkers mirrors the default in pkg/nodeprovider/kwok for accurate
