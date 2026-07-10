@@ -64,6 +64,11 @@ type ExtendedHandle interface {
 	// It returns nil when the feature is not enabled or not configured.
 	GetCrossSchedulerPodNominator() *CrossSchedulerPodNominator
 	GetWorkloadAuditor() workloadauditor.WorkloadAuditor
+	// GetOrRegisterSharedCache registers a plugin's SharedPluginCache under key, or returns
+	// the previously-registered instance if key is already taken. Guarantees exactly-once
+	// creation across scheduling profiles. Plugins call this from their New() to opt into
+	// the shared cache mechanism instead of building a per-profile cache.
+	GetOrRegisterSharedCache(key string, create func(handle ExtendedHandle) SharedPluginCache) SharedPluginCache
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.
