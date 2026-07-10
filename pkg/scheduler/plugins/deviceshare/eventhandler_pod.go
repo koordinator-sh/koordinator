@@ -20,7 +20,6 @@ import (
 	"context"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
@@ -31,15 +30,16 @@ import (
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-func registerPodEventHandler(deviceCache *nodeDeviceCache, sharedInformerFactory informers.SharedInformerFactory, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
-	podInformer := sharedInformerFactory.Core().V1().Pods().Informer()
+// registerReservationEventHandler subscribes the deviceCache to Reservation CRD events,
+// which are converted to synthetic pod events by NewReservationToPodEventHandler. K8s Pod
+// events flow through the framework's unified SharedPluginCache dispatcher instead and
+// are handled by nodeDeviceCache.OnPodAdd/OnPodUpdate/OnPodDelete.
+func registerReservationEventHandler(deviceCache *nodeDeviceCache, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
 	eventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    deviceCache.onPodAdd,
 		UpdateFunc: deviceCache.onPodUpdate,
 		DeleteFunc: deviceCache.onPodDelete,
 	}
-	// make sure Pods are loaded before scheduler starts working
-	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer, eventHandler)
 	reservationInformer := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations()
 	reservationEventHandler := reservationutil.NewReservationToPodEventHandler(eventHandler, reservationutil.IsObjValidActiveReservation)
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordSharedInformerFactory, reservationInformer.Informer(), reservationEventHandler)

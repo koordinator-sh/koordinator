@@ -18,6 +18,7 @@ package deviceshare
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -140,6 +142,32 @@ func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations,
 			n.updateAllocateSet(deviceType, allocations, pod, add)
 		}
 	}
+}
+
+// copyPodAllocations returns the DeviceAllocations recorded in allocateSet for pod. The
+// caller must hold n.lock.RLock or n.lock.Lock. The returned allocations are a snapshot
+// safe to hold beyond the lock; the underlying resource maps are shallow-copied.
+func (n *nodeDevice) copyPodAllocations(pod *corev1.Pod) apiext.DeviceAllocations {
+	podNamespacedName := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
+	var result apiext.DeviceAllocations
+	for deviceType, allocations := range n.allocateSet {
+		res, ok := allocations[podNamespacedName]
+		if !ok || len(res) == 0 {
+			continue
+		}
+		if result == nil {
+			result = apiext.DeviceAllocations{}
+		}
+		list := make([]*apiext.DeviceAllocation, 0, len(res))
+		for minor, resources := range res {
+			list = append(list, &apiext.DeviceAllocation{
+				Minor:     int32(minor),
+				Resources: resources.DeepCopy(),
+			})
+		}
+		result[deviceType] = list
+	}
+	return result
 }
 
 func (n *nodeDevice) getUsed(namespace, name string) map[schedulingv1alpha1.DeviceType]deviceResources {
@@ -452,16 +480,163 @@ func (n *nodeDevice) split(requestsPerInstance corev1.ResourceList, deviceType s
 	return r
 }
 
+var (
+	_ frameworkext.SharedPluginCache = &nodeDeviceCache{}
+	_ frameworkext.CacheReserver     = &nodeDeviceCache{}
+)
+
+// assumedAllocation snapshots what Plugin.Reserve wrote to the cache for one pod: the
+// node the write went to and the allocation itself. Held only until the authoritative
+// pod informer event arrives (or Unreserve fires). Used to reconcile the cache when the
+// event's pod object diverges from what Reserve assumed (different node, mutated
+// annotations, or deletion before binding).
+type assumedAllocation struct {
+	nodeName    string
+	allocations apiext.DeviceAllocations
+}
+
 type nodeDeviceCache struct {
 	lock sync.RWMutex
 	// nodeDeviceInfos stores nodeDevice for each node.
 	nodeDeviceInfos map[string]*nodeDevice
+	// assumedPods records what Reserve wrote to nodeDeviceInfos, keyed by pod UID. Used
+	// by OnPodAdd/OnPodUpdate/OnPodDelete to reconcile with the authoritative informer
+	// event: the assumed write is rolled back and the event's state is applied.
+	assumedPods map[types.UID]*assumedAllocation
+	handle      frameworkext.ExtendedHandle
 }
 
-func newNodeDeviceCache() *nodeDeviceCache {
+func newNodeDeviceCache(handle frameworkext.ExtendedHandle) *nodeDeviceCache {
 	return &nodeDeviceCache{
 		nodeDeviceInfos: make(map[string]*nodeDevice),
+		assumedPods:     make(map[types.UID]*assumedAllocation),
+		handle:          handle,
 	}
+}
+
+// Start implements frameworkext.SharedPluginCache. Called exactly once per scheduler
+// instance after all profiles are built and before the shared informer factory starts.
+// Registers Device CRD handlers (plugin-specific, not centrally dispatched) and starts
+// the single GC goroutine.
+func (n *nodeDeviceCache) Start(ctx context.Context) {
+	registerDeviceEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
+	registerReservationEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
+	n.handle.RegisterForgetPodHandler(n.deletePod)
+	go n.gcNodeDevice(ctx, n.handle.SharedInformerFactory(), defaultGCPeriod)
+}
+
+// OnPodAdd implements frameworkext.SharedPluginCache. If the pod was previously assumed,
+// reconciles against the authoritative event instead of skipping — see the CacheReserver
+// invariants in the proposal.
+func (n *nodeDeviceCache) OnPodAdd(pod *corev1.Pod) {
+	if assumed, ok := n.takeAssumed(pod.UID); ok {
+		n.reconcileAssumed(assumed, pod)
+		return
+	}
+	n.updatePod(nil, pod)
+}
+
+// OnPodUpdate implements frameworkext.SharedPluginCache.
+func (n *nodeDeviceCache) OnPodUpdate(oldPod, newPod *corev1.Pod) {
+	if assumed, ok := n.takeAssumed(newPod.UID); ok {
+		// Prior cache state is Reserve's assumed write, not oldPod's annotations, so
+		// reconcile against the assumed snapshot rather than treating oldPod as truth.
+		n.reconcileAssumed(assumed, newPod)
+		return
+	}
+	n.updatePod(oldPod, newPod)
+}
+
+// OnPodDelete implements frameworkext.SharedPluginCache.
+func (n *nodeDeviceCache) OnPodDelete(pod *corev1.Pod) {
+	if assumed, ok := n.takeAssumed(pod.UID); ok {
+		// Pod was assumed but got deleted before the informer add/update ever landed.
+		// Roll back the assumed write; annotations at this point may not carry the
+		// allocation Reserve wrote, so deletePod cannot be trusted to undo it.
+		n.rollbackAssumed(assumed, pod)
+		return
+	}
+	n.deletePod(pod)
+}
+
+// OnNodeAdd implements frameworkext.SharedPluginCache. nodeDeviceInfos is keyed by node
+// name and populated lazily by Device CRD events; the GC goroutine's node lister handles
+// stale-entry removal, so node events are no-ops here.
+func (n *nodeDeviceCache) OnNodeAdd(*corev1.Node) {}
+
+// OnNodeUpdate implements frameworkext.SharedPluginCache.
+func (n *nodeDeviceCache) OnNodeUpdate(_, _ *corev1.Node) {}
+
+// OnNodeDelete implements frameworkext.SharedPluginCache.
+func (n *nodeDeviceCache) OnNodeDelete(*corev1.Node) {}
+
+// AssumePod implements frameworkext.CacheReserver. Called by Plugin.Reserve after
+// allocations have been written to the per-node cache. Snapshots what Reserve wrote so a
+// later informer event or Unreserve can reconcile against it — the naive "remember the
+// UID only" approach cannot roll back Reserve's write if the informer event's pod object
+// disagrees with what Reserve assumed.
+func (n *nodeDeviceCache) AssumePod(pod *corev1.Pod, nodeName string) error {
+	info := n.getNodeDevice(nodeName, false)
+	if info == nil {
+		return fmt.Errorf("nodeDevice for %s is missing when assuming pod %s", nodeName, klog.KObj(pod))
+	}
+	info.lock.RLock()
+	allocations := info.copyPodAllocations(pod)
+	info.lock.RUnlock()
+
+	n.lock.Lock()
+	if n.assumedPods == nil {
+		n.assumedPods = make(map[types.UID]*assumedAllocation)
+	}
+	n.assumedPods[pod.UID] = &assumedAllocation{nodeName: nodeName, allocations: allocations}
+	n.lock.Unlock()
+	return nil
+}
+
+// ForgetPod implements frameworkext.CacheReserver. Called by Plugin.Unreserve. Idempotent
+// — safe to call even if AssumePod was never called for this pod. Only clears the assumed
+// marker; Plugin.Unreserve's existing updateCacheUsed(..., add=false) reverts the cache
+// write itself so behavior for non-CacheReserver code paths is unchanged.
+func (n *nodeDeviceCache) ForgetPod(pod *corev1.Pod) error {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	delete(n.assumedPods, pod.UID)
+	return nil
+}
+
+func (n *nodeDeviceCache) takeAssumed(uid types.UID) (*assumedAllocation, bool) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	assumed, ok := n.assumedPods[uid]
+	if !ok {
+		return nil, false
+	}
+	delete(n.assumedPods, uid)
+	return assumed, true
+}
+
+// reconcileAssumed rolls back what AssumePod recorded on assumed.nodeName, then applies
+// the informer event's authoritative state from pod.Spec.NodeName / pod.Annotations. When
+// the event agrees with Reserve this is a net-zero operation; when it diverges the cache
+// converges on the event's state.
+func (n *nodeDeviceCache) reconcileAssumed(assumed *assumedAllocation, pod *corev1.Pod) {
+	n.rollbackAssumed(assumed, pod)
+	n.updatePod(nil, pod)
+}
+
+// rollbackAssumed subtracts the assumed allocation from assumed.nodeName. Extracted so
+// OnPodDelete (nothing to apply afterward) can reuse it.
+func (n *nodeDeviceCache) rollbackAssumed(assumed *assumedAllocation, pod *corev1.Pod) {
+	if len(assumed.allocations) == 0 {
+		return
+	}
+	info := n.getNodeDevice(assumed.nodeName, false)
+	if info == nil {
+		return
+	}
+	info.lock.Lock()
+	defer info.lock.Unlock()
+	info.updateCacheUsed(assumed.allocations, pod, false)
 }
 
 func (n *nodeDeviceCache) getNodeDevice(nodeName string, needInit bool) *nodeDevice {

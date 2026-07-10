@@ -543,8 +543,11 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 	}
 	logAllocationContext(pod, nodeName, nodeDeviceInfo, state.designatedAllocation, state.allocationResult)
 	nodeDeviceInfo.lock.Lock()
-	defer nodeDeviceInfo.lock.Unlock()
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
+	nodeDeviceInfo.lock.Unlock()
+	if err := p.nodeDeviceCache.AssumePod(pod, nodeName); err != nil {
+		return fwktype.AsStatus(err)
+	}
 	return nil
 }
 
@@ -654,9 +657,9 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState fwktype.CycleState, p
 	}
 
 	nodeDeviceInfo.lock.Lock()
-	defer nodeDeviceInfo.lock.Unlock()
-
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
+	nodeDeviceInfo.lock.Unlock()
+	_ = p.nodeDeviceCache.ForgetPod(pod)
 	state.allocationResult = nil
 }
 
@@ -822,10 +825,10 @@ func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktyp
 		return nil, fmt.Errorf("expect handle to be type frameworkext.ExtendedHandle, got %T", handle)
 	}
 
-	deviceCache := newNodeDeviceCache()
-	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
-	registerPodEventHandler(deviceCache, handle.SharedInformerFactory(), extendedHandle.KoordinatorSharedInformerFactory())
-	extendedHandle.RegisterForgetPodHandler(deviceCache.deletePod)
+	sharedCache := extendedHandle.GetOrRegisterSharedCache(Name, func(h frameworkext.ExtendedHandle) frameworkext.SharedPluginCache {
+		return newNodeDeviceCache(h)
+	})
+	deviceCache := sharedCache.(*nodeDeviceCache)
 	// Register the node informer synchronously during New so that the registration
 	// is visible to the framework's WaitForHandlersSync. If we registered it inside
 	// the gcNodeDevice goroutine, the framework might start scheduling before the
@@ -835,7 +838,6 @@ func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktyp
 	if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), nodeInformer, nil); err != nil {
 		return nil, err
 	}
-	go deviceCache.gcNodeDevice(ctx, handle.SharedInformerFactory(), defaultGCPeriod)
 
 	gpuSharedResourceTemplatesCache := newGPUSharedResourceTemplatesCache()
 	registerGPUSharedResourceTemplatesConfigMapEventHandler(gpuSharedResourceTemplatesCache,

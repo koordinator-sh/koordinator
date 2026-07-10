@@ -426,7 +426,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			Resources: resources,
 		})
 	}
-	deviceCache := newNodeDeviceCache()
+	deviceCache := newNodeDeviceCache(nil)
 	deviceCache.updateNodeDevice("test-node", device)
 
 	podRequestsHalfGPU := map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
