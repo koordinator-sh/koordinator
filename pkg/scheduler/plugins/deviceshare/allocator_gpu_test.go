@@ -896,9 +896,9 @@ func TestAllocateByPartition(t *testing.T) {
 			}
 
 			frameworkexthelper.ResetRegistrations()
-			deviceCache := newNodeDeviceCache()
+			deviceCache := newNodeDeviceCache(nil)
 			registerDeviceEventHandler(deviceCache, koordShareInformerFactory)
-			registerPodEventHandler(deviceCache, sharedInformerFactory, koordShareInformerFactory)
+			registerPodEventHandlerForTest(deviceCache, sharedInformerFactory, koordShareInformerFactory)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -1332,9 +1332,9 @@ func TestAllocateByTopology(t *testing.T) {
 			}
 
 			frameworkexthelper.ResetRegistrations()
-			deviceCache := newNodeDeviceCache()
+			deviceCache := newNodeDeviceCache(nil)
 			registerDeviceEventHandler(deviceCache, koordShareInformerFactory)
-			registerPodEventHandler(deviceCache, sharedInformerFactory, koordShareInformerFactory)
+			registerPodEventHandlerForTest(deviceCache, sharedInformerFactory, koordShareInformerFactory)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -1590,9 +1590,9 @@ func TestAllocateSharedGPU(t *testing.T) {
 			}
 
 			frameworkexthelper.ResetRegistrations()
-			deviceCache := newNodeDeviceCache()
+			deviceCache := newNodeDeviceCache(nil)
 			registerDeviceEventHandler(deviceCache, koordShareInformerFactory)
-			registerPodEventHandler(deviceCache, sharedInformerFactory, koordShareInformerFactory)
+			registerPodEventHandlerForTest(deviceCache, sharedInformerFactory, koordShareInformerFactory)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -1916,9 +1916,9 @@ func TestAllocateByTemplate(t *testing.T) {
 			}
 
 			frameworkexthelper.ResetRegistrations()
-			deviceCache := newNodeDeviceCache()
+			deviceCache := newNodeDeviceCache(nil)
 			registerDeviceEventHandler(deviceCache, koordShareInformerFactory)
-			registerPodEventHandler(deviceCache, sharedInformerFactory, koordShareInformerFactory)
+			registerPodEventHandlerForTest(deviceCache, sharedInformerFactory, koordShareInformerFactory)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
