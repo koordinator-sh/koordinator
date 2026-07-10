@@ -205,7 +205,7 @@ func Test_nodeDeviceCache_onDeviceAdd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
-				deviceCache = newNodeDeviceCache()
+				deviceCache = newNodeDeviceCache(nil)
 			}
 			deviceCache.onDeviceAdd(tt.device)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
@@ -462,7 +462,7 @@ func Test_nodeDeviceCache_onDeviceUpdate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
-				deviceCache = newNodeDeviceCache()
+				deviceCache = newNodeDeviceCache(nil)
 			}
 			deviceCache.onDeviceUpdate(tt.oldDevice, tt.newDevice)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
@@ -542,7 +542,7 @@ func Test_nodeDeviceCache_onDeviceDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
-				deviceCache = newNodeDeviceCache()
+				deviceCache = newNodeDeviceCache(nil)
 			}
 			deviceCache.onDeviceDelete(tt.device)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)

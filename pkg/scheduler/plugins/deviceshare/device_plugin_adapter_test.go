@@ -1213,6 +1213,7 @@ func TestPlugin_adaptForDevicePlugin(t *testing.T) {
 			pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 
+			suit.start(context.TODO())
 			suit.Framework.SharedInformerFactory().Start(nil)
 			suit.koordinatorSharedInformerFactory.Start(nil)
 			suit.Framework.SharedInformerFactory().WaitForCacheSync(nil)
