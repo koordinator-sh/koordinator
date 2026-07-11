@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -197,9 +198,9 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 // explicitly opt in to reservation matching: reserve pods that own a
 // Reservation, and pods that carry the reservation-affinity annotation.
 // Pods that can be matched only via Reservation.Spec.Owners (without
-// explicit affinity) are not covered here; the QueueingHintFns fall
+// explicit affinity) are not covered here; both QueueingHintFns fall
 // back to ReservationInfo.MatchOwners against the affected reservation
-// for those, see isSchedulableAfterReservationChange.
+// for those.
 //
 // The earlier implementation called GetRequiredReservationAffinity here,
 // which parses the affinity JSON and builds selectors on every call.
@@ -240,16 +241,39 @@ func (pl *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.
 	if deletedPod == nil {
 		return fwktype.Queue, nil
 	}
-	if !podUsesReservation(pod) {
-		return fwktype.QueueSkip, nil
-	}
+	usesReservation := podUsesReservation(pod)
 	if reservationutil.IsReservePod(deletedPod) {
-		return fwktype.Queue, nil
-	}
-	if pl.reservationCache != nil && deletedPod.Spec.NodeName != "" {
-		if pl.reservationCache.GetReservationInfoByPod(deletedPod, deletedPod.Spec.NodeName) != nil {
+		if usesReservation {
 			return fwktype.Queue, nil
 		}
+		// A deleted reserve pod means the reservation itself is going away;
+		// owner-matched waiters without an explicit affinity annotation are
+		// woken by isSchedulableAfterReservationChange on the reservation
+		// Delete event instead.
+		return fwktype.QueueSkip, nil
+	}
+	if pl.reservationCache == nil || deletedPod.Spec.NodeName == "" {
+		// A pod that never bound never occupied any reservation.
+		return fwktype.QueueSkip, nil
+	}
+	// The deleted pod released reservation capacity only if it was assigned
+	// to a reservation on its node. In that case wake every waiter that can
+	// consume the reservation: pods with an explicit affinity annotation and
+	// pods matched by the reservation's owner selectors. MatchOwners runs on
+	// the cached ReservationInfo under the cache lock, so no JSON is parsed
+	// and no selector is rebuilt here.
+	queue := false
+	pl.reservationCache.ForEachMatchableReservationOnNode(deletedPod.Spec.NodeName, func(rInfo *frameworkext.ReservationInfo) (bool, *fwktype.Status) {
+		if _, ok := rInfo.AssignedPods[deletedPod.UID]; ok {
+			if usesReservation || rInfo.MatchOwners(pod) {
+				queue = true
+			}
+			return false, nil
+		}
+		return true, nil
+	})
+	if queue {
+		return fwktype.Queue, nil
 	}
 	return fwktype.QueueSkip, nil
 }
@@ -283,11 +307,50 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 		}
 		return fwktype.QueueSkip, nil
 	}
-	// Update: the wake-up signal is the transition into the Available phase.
+	// Update: the strongest wake-up signal is the transition into the
+	// Available phase.
 	if !reservationutil.IsReservationAvailable(oldR) && reservationutil.IsReservationAvailable(newR) {
 		return fwktype.Queue, nil
 	}
+	// An update that keeps the reservation Available can still change the
+	// pod's fit, because the plugin cache rebuilds its ReservationInfo from
+	// the updated object:
+	//   - spec changes (owners widened, template resized, ...): the CRD has
+	//     the status subresource, so metadata.generation bumps exactly on
+	//     spec updates;
+	//   - label changes: reservation affinity selects reservations by label;
+	//   - annotation changes: NewReservationInfo derives the reserved
+	//     resources and the restricted-allocation options from annotations;
+	//   - released capacity: status.allocated shrinking in any dimension
+	//     means a waiter may now fit.
+	// Allocation increases and pure status heartbeats cannot help a pending
+	// pod, so they are skipped.
+	if reservationutil.IsReservationAvailable(oldR) && reservationutil.IsReservationAvailable(newR) {
+		if oldR.Generation != newR.Generation {
+			return fwktype.Queue, nil
+		}
+		if !apiequality.Semantic.DeepEqual(oldR.Labels, newR.Labels) ||
+			!apiequality.Semantic.DeepEqual(oldR.Annotations, newR.Annotations) {
+			return fwktype.Queue, nil
+		}
+		if reservationAllocatedDecreased(oldR, newR) {
+			return fwktype.Queue, nil
+		}
+	}
 	return fwktype.QueueSkip, nil
+}
+
+// reservationAllocatedDecreased reports whether any allocated resource of
+// the reservation shrank in the update, i.e. previously held capacity was
+// released back to the reservation.
+func reservationAllocatedDecreased(oldR, newR *schedulingv1alpha1.Reservation) bool {
+	for name, oldVal := range oldR.Status.Allocated {
+		newVal, ok := newR.Status.Allocated[name]
+		if !ok || newVal.Cmp(oldVal) < 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
