@@ -176,6 +176,14 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
+			name: "waiting pod is itself a reserve pod, deleted reserve pod frees its spot, requeue",
+			args: args{
+				waitingPod: makeReservePod("waiting-reserve"),
+				oldObj:     makeReservePod("deleted-reserve"),
+			},
+			expectedHint: fwktype.Queue,
+		},
+		{
 			name: "waiting pod uses reservation, deleted pod is unrelated, skip",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w4"),
@@ -293,6 +301,17 @@ func TestPlugin_QueueingHint_PodDeletion_OwnerMatchedWaiter(t *testing.T) {
 	got, err = pl.isSchedulableAfterPodDeletion(klog.Background(), unrelatedWaiter, assignedPod, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, fwktype.QueueSkip, got, "waiter that matches neither affinity nor owners must stay skipped")
+
+	// A deleted pod bound to the same node but not assigned to the matchable
+	// reservation walks past it in the cache iteration and frees no
+	// reservation capacity, so even an owner-matched waiter stays skipped.
+	unassignedDeleted := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "unassigned", Namespace: "default", UID: "unassigned-uid"},
+		Spec:       corev1.PodSpec{NodeName: "node-1"},
+	}
+	got, err = pl.isSchedulableAfterPodDeletion(klog.Background(), ownerMatchedWaiter, unassignedDeleted, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, fwktype.QueueSkip, got, "deleted pod not assigned to any reservation releases nothing")
 }
 
 func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
