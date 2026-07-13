@@ -39,7 +39,7 @@ func newTestController(t *testing.T) *Controller {
 	fakeKoordClientSet := koordfake.NewSimpleClientset()
 	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
 	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
-	return New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+	return New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{}, &noopResizeLock{}, nil)
 }
 
 func podWithReservation(uid, name, ns, nodeName, rName, rUID string) *corev1.Pod {

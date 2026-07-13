@@ -438,7 +438,10 @@ func updateReservation(sched *scheduler.Scheduler, schedAdapter frameworkext.Sch
 
 	// Case 1: Keep available
 	if oldAvailable && newAvailable {
-		// Update available reservation in cache (handles nodeName change internally)
+		// Update available reservation in cache.
+		// For in-place resize: when the controller updates status.allocatable, this path
+		// creates a new ReservePod with the updated size and calls cache.UpdatePod to
+		// adjust NodeInfo resources accordingly.
 		updateReservationInSchedulerCache(schedAdapter, oldR, newR)
 		return
 	}
