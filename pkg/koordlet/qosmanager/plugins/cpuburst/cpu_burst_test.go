@@ -732,6 +732,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 		podName              string
 		containerRes         map[string]corev1.ResourceRequirements
 		podCurCFSQuota       int64
+		podCurCPUBurst       *int64
 		containerCurCFSQuota map[string]int64
 		containerMetric      map[string]containerMetricSample
 		containersThrottled  map[string]testThrottledMetrics
@@ -742,6 +743,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 	}
 	type want struct {
 		podCFSQuotaVal       int64
+		podCPUBurstVal       *int64
 		containerCFSQuotaVal map[string]int64
 	}
 	tests := []struct {
@@ -917,6 +919,66 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				podCFSQuotaVal: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
 					testContainerName1: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
+				},
+			},
+		},
+		{
+			name: "scale-down-two-container-pod-burst-capped-by-pod-quota",
+			fields: fields{
+				podName: testPodName1,
+				containerRes: map[string]corev1.ResourceRequirements{
+					testContainerName1: {
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
+						},
+					},
+					testContainerName2: {
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(3000, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
+						},
+					},
+				},
+				podCurCFSQuota: int64((2 + 3) * 2 * float64(system.CFSBasePeriodValue)),
+				podCurCPUBurst: ptr.To[int64](int64((2 + 3) * 2 * float64(system.CFSBasePeriodValue))),
+				containerCurCFSQuota: map[string]int64{
+					testContainerName1: int64(2 * 2 * float64(system.CFSBasePeriodValue)),
+					testContainerName2: int64(3 * 2 * float64(system.CFSBasePeriodValue)),
+				},
+				containerMetric: map[string]containerMetricSample{
+					testContainerName1: {testContainerID1, 1.5},
+					testContainerName2: {testContainerID2, 1.5},
+				},
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
+					testContainerName2: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
+				},
+			},
+			args: args{
+				burstCfg:  defaultAutoBurstCfg,
+				nodeState: nodeBurstOverload,
+			},
+			want: want{
+				podCFSQuotaVal: int64((2 + 3) * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
+				podCPUBurstVal: ptr.To[int64](int64((2 + 3) * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue))),
+				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
+					testContainerName2: int64(3 * 2 * cfsDecreaseStep * float64(system.CFSBasePeriodValue)),
 				},
 			},
 		},
@@ -1289,6 +1351,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 
 			initPodCFSQuota(podMeta, tt.fields.podCurCFSQuota, testHelper)
 			initContainerCFSQuota(podMeta, tt.fields.containerCurCFSQuota, testHelper)
+			if tt.fields.podCurCPUBurst != nil {
+				initPodCPUBurst(podMeta, *tt.fields.podCurCPUBurst, testHelper)
+				initContainerCPUBurst(podMeta, 0, testHelper)
+			}
 
 			b := &cpuBurst{
 				statesInformer:   mockStatesInformer,
@@ -1304,6 +1370,13 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			if !reflect.DeepEqual(gotPod, tt.want.podCFSQuotaVal) {
 				t.Errorf("pod %v applyCFSQuotaBurst() = %v, want = %v",
 					podMeta.Pod.Name, gotPod, tt.want.podCFSQuotaVal)
+			}
+			if tt.want.podCPUBurstVal != nil {
+				gotPodBurst := getPodCPUBurst(podMeta.CgroupDir, testHelper)
+				if !reflect.DeepEqual(gotPodBurst, *tt.want.podCPUBurstVal) {
+					t.Errorf("pod %v cpu burst after applyCFSQuotaBurst() = %v, want = %v",
+						podMeta.Pod.Name, gotPodBurst, *tt.want.podCPUBurstVal)
+				}
 			}
 			for i := range podMeta.Pod.Status.ContainerStatuses {
 				containerStat := &podMeta.Pod.Status.ContainerStatuses[i]

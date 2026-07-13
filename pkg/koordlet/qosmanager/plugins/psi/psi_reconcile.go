@@ -45,6 +45,8 @@ type psiReconcile struct {
 	statesInformer    statesinformer.StatesInformer
 	kubeClient        clientset.Interface
 	manager           *PsiManager
+
+	callbacksRegistered bool
 }
 
 func (p *psiReconcile) Enabled() bool {
@@ -52,6 +54,12 @@ func (p *psiReconcile) Enabled() bool {
 }
 
 func (p *psiReconcile) Setup(context *framework.Context) {
+	if !p.Enabled() || p.callbacksRegistered {
+		return
+	}
+	p.statesInformer.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "psi-reconcile",
+		"Update psi managed pod", p.updatePods)
+	p.callbacksRegistered = true
 }
 
 func (p *psiReconcile) Run(stopCh <-chan struct{}) {
@@ -71,8 +79,6 @@ func New(opt *framework.Options) framework.QOSStrategy {
 		kubeClient:        opt.KubeClient,
 		manager:           NewManager(cgroup.ResourceMaskAll),
 	}
-	opt.StatesInformer.RegisterCallbacks(statesinformer.RegisterTypeAllPods, "psi-reconcile",
-		"Update psi managed pod", p.updatePods)
 	return p
 }
 

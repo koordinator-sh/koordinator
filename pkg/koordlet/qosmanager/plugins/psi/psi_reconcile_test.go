@@ -21,12 +21,15 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/psi/operator"
+	mock_statesinformer "github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer/mockstatesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/util/sloconfig"
@@ -92,6 +95,33 @@ func TestPSIReconcileEnabled(t *testing.T) {
 
 	reconcile.reconcileInterval = 0
 	assert.False(t, reconcile.Enabled())
+}
+
+func TestPSIReconcileRegistersCallbacksInSetupWhenEnabled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
+	defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.PSIReconcile, true)()
+
+	reconcile := &psiReconcile{
+		reconcileInterval: 10 * time.Second,
+		statesInformer:    statesInformer,
+	}
+	statesInformer.EXPECT().RegisterCallbacks(gomock.Any(), "psi-reconcile", gomock.Any(), gomock.Any()).Times(1)
+
+	reconcile.Setup(&framework.Context{})
+	reconcile.Setup(&framework.Context{})
+}
+
+func TestPSIReconcileDoesNotRegisterCallbacksWhenDisabled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	statesInformer := mock_statesinformer.NewMockStatesInformer(ctrl)
+	defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.PSIReconcile, false)()
+
+	New(&framework.Options{
+		Config:         framework.NewDefaultConfig(),
+		StatesInformer: statesInformer,
+		KubeClient:     clientsetfake.NewSimpleClientset(),
+	}).Setup(&framework.Context{})
 }
 
 func TestInjectOperatorDependencies(t *testing.T) {

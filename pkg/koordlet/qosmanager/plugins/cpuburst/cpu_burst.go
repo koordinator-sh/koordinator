@@ -553,17 +553,38 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 			return nil
 		}
 
-		containerBurst, err := b.cgroupReader.ReadCPUBurst(containerDir)
-		if err != nil {
-			klog.V(5).Infof("read container burst failed, skip pod burst update: %v", err)
+		targetPodCFS := curPodCFS + deltaContainerCFS
+		if targetPodCFS <= 0 {
 			return nil
 		}
 
-		// TODO: Sum all container bursts instead of using single container as reference
-		// This would provide more accurate pod burst values for multi-container pods
-		// Calculate target pod burst
-		targetPodBurst := containerBurst
+		targetPodBurst := int64(0)
+		for i := range podMeta.Pod.Status.ContainerStatuses {
+			containerStat := &podMeta.Pod.Status.ContainerStatuses[i]
+			containerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, containerStat)
+			if err != nil {
+				klog.V(5).Infof("get container dir failed, skip pod burst update: %v", err)
+				return nil
+			}
+			containerBurst, err := b.cgroupReader.ReadCPUBurst(containerDir)
+			if err != nil {
+				klog.V(5).Infof("read container burst failed, skip pod burst update: %v", err)
+				return nil
+			}
+			targetPodBurst += containerBurst
+		}
 		if targetPodBurst <= 0 {
+			return nil
+		}
+		if targetPodBurst > targetPodCFS {
+			targetPodBurst = targetPodCFS
+		}
+		currentPodBurst, err := b.cgroupReader.ReadCPUBurst(podDir)
+		if err != nil {
+			klog.V(5).Infof("read pod burst failed, skip pod burst update: %v", err)
+			return nil
+		}
+		if currentPodBurst == targetPodBurst {
 			return nil
 		}
 
