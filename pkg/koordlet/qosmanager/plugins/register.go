@@ -24,6 +24,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/cpuevict"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/cpusuppress"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/memoryevict"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/psi"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/resctrl"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/sysreconcile"
 )
@@ -38,5 +39,6 @@ var (
 		memoryevict.MemoryEvictName:            memoryevict.New,
 		resctrl.ResctrlReconcileName:           resctrl.New,
 		sysreconcile.SystemConfigReconcileName: sysreconcile.New,
+		psi.PSIReconcileName:                   psi.New,
 	}
 )

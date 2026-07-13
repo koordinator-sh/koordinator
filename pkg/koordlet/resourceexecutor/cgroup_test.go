@@ -152,6 +152,66 @@ func TestCgroupFileReadInt(t *testing.T) {
 	}
 }
 
+func TestReadAndWriteCgroupResource(t *testing.T) {
+	taskDir := "/test-pod"
+	helper := sysutil.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	helper.SetCgroupsV2(true)
+
+	tests := []struct {
+		name      string
+		resource  sysutil.Resource
+		initial   string
+		write     string
+		wantRead  string
+		wantInt   int64
+		wantIntOK bool
+	}{
+		{
+			name:      "memory.high supports max",
+			resource:  sysutil.MemoryHighV2,
+			initial:   "max",
+			write:     "1048576",
+			wantRead:  "1048576",
+			wantInt:   0,
+			wantIntOK: true,
+		},
+		{
+			name:      "cpu.weight keeps raw value",
+			resource:  sysutil.CPUSharesV2,
+			initial:   "100",
+			write:     "200",
+			wantRead:  "200",
+			wantInt:   100,
+			wantIntOK: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper.WriteCgroupFileContents(taskDir, tt.resource, tt.initial)
+
+			got, err := ReadCgroupResource(taskDir, tt.resource)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.initial, got)
+
+			if tt.wantIntOK {
+				value, err := ReadCgroupResourceInt(taskDir, tt.resource)
+				assert.NoError(t, err)
+				if tt.initial == CgroupMaxSymbolStr {
+					assert.Equal(t, int64(math.MaxInt64), value)
+				} else {
+					assert.Equal(t, tt.wantInt, value)
+				}
+			}
+
+			err = WriteCgroupResource(taskDir, tt.resource, tt.write)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantRead, helper.ReadCgroupFileContents(taskDir, tt.resource))
+		})
+	}
+}
+
 func TestCgroupPathExist(t *testing.T) {
 	type fields struct {
 		isV2         bool

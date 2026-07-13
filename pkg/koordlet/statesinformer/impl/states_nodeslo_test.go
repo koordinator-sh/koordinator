@@ -412,6 +412,67 @@ func Test_mergeSLOSpecResourceQOSStrategy(t *testing.T) {
 	}
 }
 
+func Test_mergeSLOSpecPSIStrategy(t *testing.T) {
+	testingDefaultSpec := sloconfig.DefaultPSIStrategy()
+	testingNewSpec := &slov1alpha1.PSIStrategy{
+		PSIExport: &slov1alpha1.PSIExportConfig{
+			Enable: ptr.To(false),
+			Threshold: &slov1alpha1.PSIExporterThresholdConfig{
+				CPU: &slov1alpha1.PSIThreshold{
+					Avg10: 1000,
+				},
+			},
+		},
+		MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+			MinSpot: ptr.To[int64](6000),
+		},
+	}
+	testingMergedSpec := testingDefaultSpec.DeepCopy()
+	testingMergedSpec.PSIExport.Enable = ptr.To(false)
+	testingMergedSpec.PSIExport.Threshold.CPU.Avg10 = 1000
+	testingMergedSpec.MemorySuppress.MinSpot = ptr.To[int64](6000)
+
+	type args struct {
+		defaultSpec *slov1alpha1.PSIStrategy
+		newSpec     *slov1alpha1.PSIStrategy
+	}
+	tests := []struct {
+		name string
+		args args
+		want *slov1alpha1.PSIStrategy
+	}{
+		{
+			name: "both empty",
+			args: args{
+				defaultSpec: &slov1alpha1.PSIStrategy{},
+				newSpec:     &slov1alpha1.PSIStrategy{},
+			},
+			want: &slov1alpha1.PSIStrategy{},
+		},
+		{
+			name: "partially use new, merging with the default",
+			args: args{
+				defaultSpec: testingDefaultSpec,
+				newSpec:     testingNewSpec,
+			},
+			want: testingMergedSpec,
+		},
+		{
+			name: "new overwrite a nil",
+			args: args{
+				defaultSpec: testingDefaultSpec,
+			},
+			want: testingDefaultSpec,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeSLOSpecPSIStrategy(tt.args.defaultSpec, tt.args.newSpec)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func Test_mergeNoneResourceQOSIfDisabled(t *testing.T) {
 	testDefault := sloconfig.DefaultResourceQOSStrategy()
 	testAllNone := sloconfig.NoneResourceQOSStrategy()

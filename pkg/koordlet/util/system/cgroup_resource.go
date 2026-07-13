@@ -171,6 +171,8 @@ const (
 	BlkioIOWeightName = "blkio.cost.weight"
 	BlkioIOQoSName    = "blkio.cost.qos"
 	BlkioIOModelName  = "blkio.cost.model"
+	IOStatName        = "io.stat"
+	IOMaxName         = "io.max"
 
 	NetClsClassIdName = "net_cls.classid"
 )
@@ -321,6 +323,8 @@ var (
 	MemoryPriorityV2         = DefaultFactory.NewV2(MemoryPriorityName, MemoryPriorityName).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryUsePriorityOomV2   = DefaultFactory.NewV2(MemoryUsePriorityOomName, MemoryUsePriorityOomName).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryOomGroupV2         = DefaultFactory.NewV2(MemoryOomGroupName, MemoryOomGroupName).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExists)
+	IOStatV2                 = DefaultFactory.NewV2(IOStatName, IOStatName).WithCheckSupported(SupportedIfFileExists)
+	IOMaxV2                  = DefaultFactory.NewV2(IOMaxName, IOMaxName).WithCheckSupported(SupportedIfFileExists)
 
 	knownCgroupV2Resources = []Resource{
 		CPUCFSQuotaV2,
@@ -352,6 +356,8 @@ var (
 		MemoryPriorityV2,
 		MemoryUsePriorityOomV2,
 		MemoryOomGroupV2,
+		IOStatV2,
+		IOMaxV2,
 		// TODO: register BlkioIOWeight, BlkioIOQoS and BlkioIOModel
 
 		NetClsClassId,

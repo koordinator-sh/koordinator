@@ -41,6 +41,25 @@ const (
 const EmptyValueError string = "EmptyValueError"
 const ErrCgroupDir = "cgroup path or file not exist"
 
+// ReadCgroupResource reads the content of a registered cgroup resource file.
+func ReadCgroupResource(parentDir string, r sysutil.Resource) (string, error) {
+	return cgroupFileRead(parentDir, r)
+}
+
+// ReadCgroupResourceInt reads the content of a registered cgroup resource file as int64.
+func ReadCgroupResourceInt(parentDir string, r sysutil.Resource) (int64, error) {
+	value, err := cgroupFileReadInt(parentDir, r)
+	if err != nil {
+		return 0, err
+	}
+	return *value, nil
+}
+
+// WriteCgroupResource writes the content of a registered cgroup resource file.
+func WriteCgroupResource(parentDir string, r sysutil.Resource, value string) error {
+	return cgroupFileWrite(parentDir, r, value)
+}
+
 // CgroupFileWriteIfDifferent writes the cgroup file if current value is different from the given value.
 func cgroupFileWriteIfDifferent(cgroupTaskDir string, r sysutil.Resource, value string) (bool, error) {
 	if supported, msg := r.IsSupported(cgroupTaskDir); !supported {

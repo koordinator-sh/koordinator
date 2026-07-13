@@ -46,6 +46,7 @@ func DefaultNodeSLOSpecConfig() slov1alpha1.NodeSLOSpec {
 		ResourceQOSStrategy:         DefaultResourceQOSStrategy(),
 		CPUBurstStrategy:            DefaultCPUBurstStrategy(),
 		SystemStrategy:              DefaultSystemStrategy(),
+		PSIStrategy:                 DefaultPSIStrategy(),
 		Extensions:                  DefaultExtensions(),
 	}
 }
@@ -416,8 +417,12 @@ func DefaultCPUBurstStrategy() *slov1alpha1.CPUBurstStrategy {
 
 func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
 	return slov1alpha1.CPUBurstConfig{
-		Policy:                     slov1alpha1.CPUBurstNone,
-		CPUBurstPercent:            ptr.To[int64](1000),
+		Policy: slov1alpha1.CPUBurstNone,
+		// CPUBurstPercent is set to 100% (burst = quota) for compatibility with cgroup v2 kernels
+		// that enforce the constraint: cpu.max.burst <= cpu.max (cfs_burst_us <= cfs_quota_us).
+		// This prevents "invalid argument" errors on standard Linux kernels (GKE, Ubuntu, etc.).
+		// Users on permissive kernels (e.g., Anolis OS) can configure higher values via NodeSLO.
+		CPUBurstPercent:            ptr.To[int64](100),
 		CFSQuotaBurstPercent:       ptr.To[int64](300),
 		CFSQuotaBurstPeriodSeconds: ptr.To[int64](-1),
 	}
@@ -426,6 +431,47 @@ func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
 func DefaultSystemStrategy() *slov1alpha1.SystemStrategy {
 	return &slov1alpha1.SystemStrategy{
 		TotalNetworkBandwidth: resource.MustParse("0"),
+	}
+}
+
+func DefaultPSIStrategy() *slov1alpha1.PSIStrategy {
+	return &slov1alpha1.PSIStrategy{
+		PSIExport: &slov1alpha1.PSIExportConfig{
+			Enable: ptr.To(true),
+			Threshold: &slov1alpha1.PSIExporterThresholdConfig{
+				CPU: &slov1alpha1.PSIThreshold{
+					Avg10:  2000,
+					Avg60:  2000,
+					Avg300: 2000,
+				},
+				Memory: &slov1alpha1.PSIThreshold{
+					Avg10:  2000,
+					Avg60:  2000,
+					Avg300: 2000,
+				},
+				IO: &slov1alpha1.PSIThreshold{
+					Avg10:  2000,
+					Avg60:  2000,
+					Avg300: 2000,
+				},
+			},
+		},
+		MemorySuppress: &slov1alpha1.MemorySuppressConfig{
+			Enable:      ptr.To(true),
+			MinSpot:     ptr.To(int64(5000)),
+			MaxSpot:     ptr.To(int64(9000)),
+			GrowPeriods: ptr.To(int64(10)),
+			KillPeriods: ptr.To(int64(60)),
+		},
+		GroupShare: &slov1alpha1.GroupShareConfig{
+			Enable:     ptr.To(true),
+			LowerBound: ptr.To(int64(5000)),
+		},
+		BudgetBalance: &slov1alpha1.BudgetBalanceConfig{
+			Enable:     ptr.To(true),
+			BasePrice:  ptr.To(int64(50)),
+			LowerBound: ptr.To(int64(5000)),
+		},
 	}
 }
 
