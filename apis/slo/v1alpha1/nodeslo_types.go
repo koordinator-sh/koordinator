@@ -120,6 +120,32 @@ type MemoryQOS struct {
 	PriorityEnable *int64 `json:"priorityEnable,omitempty" validate:"omitempty,min=0,max=1"`
 	Priority       *int64 `json:"priority,omitempty" validate:"omitempty,min=0,max=12"`
 	OomKillGroup   *int64 `json:"oomKillGroup,omitempty" validate:"omitempty,min=0,max=1"`
+
+	// Page Cache Limit (Anolis OS required)
+	// PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
+	// When set, it overrides the value implicitly derived from PageCacheLimitSize/PageCacheLimitPercent,
+	// which allows keeping the configured size while toggling the limit on or off.
+	// 0 to disable, 1 to enable.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	PageCacheEnable *int64 `json:"pageCacheEnable,omitempty" validate:"omitempty,min=0,max=1"`
+	// PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
+	// The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
+	// Set to 0 to disable the page cache limit for the cgroup.
+	// Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	PageCacheLimitPercent *int64 `json:"pageCacheLimitPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
+	// When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
+	// Set to 0 to disable the page cache limit for the cgroup.
+	PageCacheLimitSize *resource.Quantity `json:"pageCacheLimitSize,omitempty"`
+	// PageCacheLimitSyncMode specifies the reclaim mode for `memory.pagecache_limit.sync`.
+	// 0: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
+	// 1: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	PageCacheLimitSyncMode *int64 `json:"pageCacheLimitSyncMode,omitempty" validate:"omitempty,min=0,max=1"`
 }
 
 type PodMemoryQOSPolicy string
@@ -470,6 +496,11 @@ type SystemStrategy struct {
 	// /sys/kernel/sched_features
 	// Extra scheduling features supported by the kernel.
 	SchedFeatures map[string]bool `json:"schedFeatures,omitempty"`
+
+	// /sys/kernel/mm/pagecache_limit/enabled (Anolis OS required)
+	// Global switch for memcg page cache limit feature. Must be set to 1 for per-cgroup pagecache_limit to take effect.
+	// 0 to disable, 1 to enable. Unset by default.
+	PageCacheLimitEnabled *int64 `json:"pageCacheLimitEnabled,omitempty" validate:"omitempty,min=0,max=1"`
 
 	// TotalNetworkBandwidth indicates the overall network bandwidth, cluster manager can set this field, and default value taken from /sys/class/net/${NIC_NAME}/speed, unit: Mbps
 	TotalNetworkBandwidth resource.Quantity `json:"totalNetworkBandwidth,omitempty"`
