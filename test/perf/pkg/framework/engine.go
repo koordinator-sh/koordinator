@@ -159,7 +159,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 		NodeTemplateFile:    cfg.NodeTemplateFile,
 		NodeCreationWorkers: cfg.NodeCreationWorkers,
 	}
-	klog.InfoS("Creating kwok nodes", "count", cfg.NodeCount, "workers", effectiveWorkers(cfg.NodeCreationWorkers))
+	klog.InfoS("Creating nodes", "count", cfg.NodeCount, "workers", effectiveWorkers(cfg.NodeCreationWorkers))
 	if err := e.provider.CreateNodes(runCtx, runID, nodeSpec, cfg.NodeCount); err != nil {
 		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("CreateNodes failed: %w", err), nil, 0, 0)
 	}
@@ -260,7 +260,9 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 
 	// Stop the failure watcher and collect its results.
 	failureCancel()
-	<-failureWatcherErrCh
+	if err := <-failureWatcherErrCh; err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+ 		klog.ErrorS(err, "failure watcher failed", "runID", runID)
+ 	}
 	failedPodCount, failureEventCount := failureWatcher.Stats()
 
 	// Steps 9-10: compute percentiles and throughput.
