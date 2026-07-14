@@ -55,7 +55,7 @@ func buildKwokNode(name, runID string, spec types.NodeSpec) (*corev1.Node, error
 		"kubernetes.io/hostname": name,
 		"kubernetes.io/os":       "linux",
 		"kubernetes.io/arch":     "amd64",
-		types.RunIDLabel:               runID,
+		types.RunIDLabel:         runID,
 	}
 	for k, v := range spec.Labels {
 		labels[k] = v
@@ -81,7 +81,7 @@ func buildKwokNode(name, runID string, spec types.NodeSpec) (*corev1.Node, error
 			Name: name,
 			Annotations: map[string]string{
 				"node.alpha.kubernetes.io/ttl": "0",
-				"kwok.x-k8s.io/node":          "fake",
+				"kwok.x-k8s.io/node":           "fake",
 			},
 			Labels: labels,
 		},
@@ -145,17 +145,17 @@ func buildKwokNodeFromFile(name, runID string, spec types.NodeSpec) (*corev1.Nod
 		Effect: corev1.TaintEffectNoSchedule,
 	}
 	hasTaint := false
- for i := range node.Spec.Taints {
- 	if node.Spec.Taints[i].Key == kwokTaint.Key {
- 		node.Spec.Taints[i].Value = kwokTaint.Value
- 		node.Spec.Taints[i].Effect = kwokTaint.Effect
- 		hasTaint = true
- 		break
+	for i := range node.Spec.Taints {
+		if node.Spec.Taints[i].Key == kwokTaint.Key {
+			node.Spec.Taints[i].Value = kwokTaint.Value
+			node.Spec.Taints[i].Effect = kwokTaint.Effect
+			hasTaint = true
+			break
+		}
 	}
-}
 	if !hasTaint {
- 	node.Spec.Taints = append(node.Spec.Taints, kwokTaint)
- }
+		node.Spec.Taints = append(node.Spec.Taints, kwokTaint)
+	}
 
 	return &node, nil
 }

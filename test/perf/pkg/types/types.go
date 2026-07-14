@@ -46,7 +46,7 @@ type ScenarioConfig struct {
 	ResourceRequests map[string]string      `yaml:"resourceRequests"`
 	Labels           map[string]string      `yaml:"labels"`
 	Annotations      map[string]string      `yaml:"annotations"`
-	Thresholds       Thresholds            	`yaml:"thresholds"`
+	Thresholds       Thresholds             `yaml:"thresholds"`
 	Extra            map[string]interface{} `yaml:"extra"`
 
 	// NodeTemplateFile is an optional path to a YAML file containing a

@@ -63,8 +63,9 @@ func (p *Provider) CreateNodes(ctx context.Context, runID string, spec types.Nod
 	sem := make(chan struct{}, workers)
 
 	for i := 0; i < count; i++ {
-		name := fmt.Sprintf("kwok-bench-node-%s-%04d", runIDPrefix, i)
+		i := i
 		g.Go(func() error {
+			name := fmt.Sprintf("kwok-bench-node-%s-%04d", runIDPrefix, i)
 			select {
 			case sem <- struct{}{}:
 			case <-gctx.Done():
