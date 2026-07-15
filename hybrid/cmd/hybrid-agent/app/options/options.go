@@ -77,6 +77,10 @@ type AgentOptions struct {
 
 	// LongPollTimeout is the maximum wait time for Model5Long tasks (should exceed 24h).
 	LongPollTimeout time.Duration
+
+	// Models is a comma-separated list of models to enable for data push/fetch
+	// (e.g. "MODEL4,MODEL5,MODEL6"). Empty means all models are enabled.
+	Models string
 }
 
 func NewAgentOptions() *AgentOptions {
@@ -130,6 +134,9 @@ func (o *AgentOptions) AddFlags(fs *pflag.FlagSet) {
 
 	fs.DurationVar(&o.LongPollTimeout, "long-poll-timeout", o.LongPollTimeout,
 		"Maximum wait time for Model5Long tasks; should exceed 24h (e.g. 30h, 48h).")
+
+	fs.StringVar(&o.Models, "models", o.Models,
+		"Comma-separated list of models to enable for data push/fetch (e.g. MODEL4,MODEL5,MODEL6). Defaults to all models.")
 }
 
 func (o *AgentOptions) Validate() error {
@@ -161,6 +168,14 @@ type Agent struct {
 }
 
 func (o *AgentOptions) NewAgent() (*Agent, error) {
+	if o.Models != "" {
+		models, err := algorithm.ParseModels(o.Models)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --models: %w", err)
+		}
+		algorithm.Models = models
+	}
+
 	// load config for collector
 	cfg, err := config.LoadConfig(o.Config)
 	if err != nil {

@@ -6,6 +6,11 @@
 
 package algorithm
 
+import (
+	"fmt"
+	"strings"
+)
+
 // MODEL4 负载分类算法
 // MODEL5 负载均衡算法
 // MODEL6 干扰分析算法
@@ -29,6 +34,27 @@ const (
 )
 
 var Models = []ModelType{Model4, Model5, Model6}
+
+// ParseModels 将逗号分隔的模型列表(如 "MODEL4,MODEL6")解析为 []ModelType,
+// 用于通过 --models 参数配置本次启用哪些模型进行数据推送/获取
+func ParseModels(csv string) ([]ModelType, error) {
+	valid := map[ModelType]bool{Model4: true, Model5: true, Model6: true}
+	var models []ModelType
+	for _, part := range strings.Split(csv, ",") {
+		m := ModelType(strings.ToUpper(strings.TrimSpace(part)))
+		if m == "" {
+			continue
+		}
+		if !valid[m] {
+			return nil, fmt.Errorf("unsupported model %q, must be one of MODEL4, MODEL5, MODEL6", m)
+		}
+		models = append(models, m)
+	}
+	if len(models) == 0 {
+		return nil, fmt.Errorf("models list is empty")
+	}
+	return models, nil
+}
 
 type Result struct {
 	Status  string `json:"status"`
