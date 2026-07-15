@@ -228,6 +228,16 @@ type FakeQueue struct {
 	UnschedulablePods   map[string]*corev1.Pod
 	AssignedPods        map[string]*corev1.Pod
 	AssignedUpdatedPods map[string]*corev1.Pod
+	// MovedEvents records the arguments of every MoveAllToActiveOrBackoffQueue call so tests
+	// can assert the event and the carried objects (e.g. the oldObj must not be nil).
+	MovedEvents []MovedEvent
+}
+
+// MovedEvent captures a single MoveAllToActiveOrBackoffQueue invocation for assertions in tests.
+type MovedEvent struct {
+	Event  fwktype.ClusterEvent
+	OldObj interface{}
+	NewObj interface{}
 }
 
 func (f *FakeScheduler) GetCache() SchedulerCache {
@@ -335,7 +345,7 @@ func (f *FakeQueue) AssignedPodUpdated(logger klog.Logger, oldPod, newPod *corev
 }
 
 func (f *FakeQueue) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event fwktype.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck) {
-
+	f.MovedEvents = append(f.MovedEvents, MovedEvent{Event: event, OldObj: oldObj, NewObj: newObj})
 }
 
 func (f *FakeQueue) Activate(logger klog.Logger, pods map[string]*corev1.Pod) {

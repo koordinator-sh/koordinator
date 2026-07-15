@@ -623,7 +623,11 @@ func deleteReservationFromSchedulerCache(sched frameworkext.Scheduler, r *schedu
 		klog.V(4).InfoS("Successfully delete reservation from SchedulerCache", "reservation", klog.KObj(r), "reservationUID", r.UID)
 	}
 
-	sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(klog.Background(), frameworkext.AssignedPodDelete, nil, nil, nil)
+	// The deleted reserve pod must be carried as the oldObj of the delete event.
+	// This event may be recorded into the scheduler's inFlightEvents and later replayed
+	// by QueueingHintFns (e.g. NodeResourceFit.isSchedulableAfterPodEvent), which
+	// dereference the carried Pod object. Passing nil here caused a nil pointer panic.
+	sched.GetSchedulingQueue().MoveAllToActiveOrBackoffQueue(klog.Background(), frameworkext.AssignedPodDelete, reservePod, nil, nil)
 }
 
 func addReservationToSchedulingQueue(sched frameworkext.Scheduler, r *schedulingv1alpha1.Reservation) {
