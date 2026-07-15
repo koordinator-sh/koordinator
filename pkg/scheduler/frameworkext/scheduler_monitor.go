@@ -17,10 +17,15 @@ limitations under the License.
 package frameworkext
 
 import (
+	"context"
 	"sync"
 	"time"
 
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -30,6 +35,10 @@ import (
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
+
+// tracingInstrumentationScope is the OpenTelemetry instrumentation scope reported
+// for spans emitted by the koord-scheduler framework extender.
+const tracingInstrumentationScope = "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 
 var (
 	schedulerMonitorPeriod         = 10 * time.Second
@@ -72,6 +81,10 @@ type podScheduleState struct {
 	initialEnqueued *time.Time
 	// for extensions
 	extensionInfo interface{}
+	// span is the OpenTelemetry root span for the current scheduling attempt. It is
+	// started in StartMonitoring and ended in Complete, and is nil when no attempt is
+	// in flight or no tracer provider is configured.
+	span oteltrace.Span
 }
 
 func NewSchedulerMonitor(period time.Duration, timeout time.Duration) *SchedulerMonitor {
@@ -132,8 +145,18 @@ func (m *SchedulerMonitor) RecordNextPod(podInfo *framework.QueuedPodInfo) {
 	m.lock.Unlock()
 }
 
-func (m *SchedulerMonitor) StartMonitoring(pod *corev1.Pod) {
+func (m *SchedulerMonitor) StartMonitoring(ctx context.Context, pod *corev1.Pod) context.Context {
 	now := time.Now()
+
+	// Start the root span for the whole scheduling attempt. When no tracer provider is
+	// configured, the global provider is a no-op, so this adds negligible overhead. The
+	// span is ended in Complete. Returning the derived ctx lets downstream extension
+	// points nest their spans under this attempt span.
+	ctx, span := otel.GetTracerProvider().Tracer(tracingInstrumentationScope).Start(ctx, "SchedulingCycle",
+		oteltrace.WithAttributes(
+			attribute.String("pod.namespace", pod.Namespace),
+			attribute.String("pod.name", pod.Name),
+		))
 
 	m.lock.Lock()
 	scheduleState, exists := m.schedulingPods[pod.UID]
@@ -147,9 +170,11 @@ func (m *SchedulerMonitor) StartMonitoring(pod *corev1.Pod) {
 	} else {
 		scheduleState.start = now
 	}
+	scheduleState.span = span
 	StartMonitor(pod, &scheduleState)
 	m.schedulingPods[pod.UID] = scheduleState
 	m.lock.Unlock()
+	return ctx
 }
 
 func (m *SchedulerMonitor) Complete(pod *corev1.Pod, status *fwktype.Status) {
@@ -160,6 +185,12 @@ func (m *SchedulerMonitor) Complete(pod *corev1.Pod, status *fwktype.Status) {
 
 	if ok {
 		now := time.Now()
+		if state.span != nil {
+			if status != nil && !status.IsSuccess() {
+				state.span.SetStatus(codes.Error, status.Message())
+			}
+			state.span.End()
+		}
 		CompleteMonitor(pod, &state, now, m.timeout, status)
 	}
 }

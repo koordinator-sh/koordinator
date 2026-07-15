@@ -22,9 +22,6 @@ import (
 	"time"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	oteltrace "go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -48,10 +45,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
-
-// tracingInstrumentationScope is the OpenTelemetry instrumentation scope reported
-// for spans emitted by the koord-scheduler framework extender.
-const tracingInstrumentationScope = "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 
 var (
 	_ FrameworkExtender                               = &frameworkExtenderImpl{}
@@ -307,16 +300,6 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 	trace := utiltrace.New("RunPreFilterPluginTransformers", utiltrace.Field{Key: "namespace", Value: pod.Namespace}, utiltrace.Field{Key: "name", Value: pod.Name})
 	defer trace.LogIfLong(5 * time.Millisecond)
 
-	// Emit an OpenTelemetry span for the PreFilter transformer phase. When no tracer
-	// provider is configured, the global provider is a no-op and this adds negligible
-	// overhead. Reassigning ctx lets downstream extension points nest under this span.
-	ctx, span := otel.GetTracerProvider().Tracer(tracingInstrumentationScope).Start(ctx, "RunPreFilterPluginTransformers",
-		oteltrace.WithAttributes(
-			attribute.String("pod.namespace", pod.Namespace),
-			attribute.String("pod.name", pod.Name),
-		))
-	defer span.End()
-
 	for _, transformer := range ext.preFilterTransformersEnabled {
 		startTime := time.Now()
 		trace.Step(fmt.Sprintf("BeforePrefilter %s begin", transformer.Name()))
@@ -325,7 +308,6 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		ext.metricsRecorder.ObservePluginDurationAsync("BeforePreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			status = status.WithPlugin(transformer.Name())
-			span.RecordError(status.AsError(), oteltrace.WithAttributes(attribute.String("plugin", transformer.Name())))
 			klog.ErrorS(status.AsError(), "Failed to run BeforePreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status, nil
 		}
@@ -348,7 +330,6 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		ext.metricsRecorder.ObservePluginDurationAsync("AfterPreFilter", transformer.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
 		if !status.IsSuccess() {
 			status = status.WithPlugin(transformer.Name())
-			span.RecordError(status.AsError(), oteltrace.WithAttributes(attribute.String("plugin", transformer.Name())))
 			klog.ErrorS(status.AsError(), "Failed to run AfterPreFilter", "pod", klog.KObj(pod), "plugin", transformer.Name())
 			return nil, status, nil
 		}
