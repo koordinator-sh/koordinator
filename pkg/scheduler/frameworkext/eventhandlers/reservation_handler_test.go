@@ -1297,6 +1297,92 @@ func Test_deleteReservationFromCache(t *testing.T) {
 	}
 }
 
+// Test_deleteReservationFromCache_EmitsDeleteEventCarryingReservePod is a regression test for the
+// nil pointer panic in NodeResourceFit.isSchedulableAfterPodEvent: when a scheduled reservation is
+// deleted, the emitted AssignedPodDelete event MUST carry the deleted reserve pod as oldObj.
+// Previously oldObj was passed as nil, which was recorded into the scheduler inFlightEvents and later
+// dereferenced by the QueueingHintFn, causing a nil pointer dereference.
+func Test_deleteReservationFromCache_EmitsDeleteEventCarryingReservePod(t *testing.T) {
+	now := time.Now()
+	newScheduledReservation := func(phase schedulingv1alpha1.ReservationPhase) *schedulingv1alpha1.Reservation {
+		return &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: "r-0", UID: "123456"},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template: &corev1.PodTemplateSpec{},
+				Owners: []schedulingv1alpha1.ReservationOwner{
+					{Object: &corev1.ObjectReference{Kind: "Pod", Name: "pod-0"}},
+				},
+				Expires: &metav1.Time{Time: now.Add(30 * time.Minute)},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{NodeName: "test-node", Phase: phase},
+		}
+	}
+
+	tests := []struct {
+		name           string
+		obj            *schedulingv1alpha1.Reservation
+		addReservePod  bool
+		wantMoveCalled bool
+	}{
+		{
+			name:           "scheduled available reservation deleted emits delete event carrying reserve pod",
+			obj:            newScheduledReservation(schedulingv1alpha1.ReservationAvailable),
+			addReservePod:  true,
+			wantMoveCalled: true,
+		},
+		{
+			name:           "scheduled succeeded reservation deleted emits delete event carrying reserve pod",
+			obj:            newScheduledReservation(schedulingv1alpha1.ReservationSucceeded),
+			addReservePod:  true,
+			wantMoveCalled: true,
+		},
+		{
+			// Unscheduled reservation returns early (no NodeName), so it must not emit any move event.
+			name: "unscheduled reservation does not emit move event",
+			obj: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "r-0", UID: "123456"},
+				Spec:       schedulingv1alpha1.ReservationSpec{Template: &corev1.PodTemplateSpec{}},
+			},
+			addReservePod:  false,
+			wantMoveCalled: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			frameworkext.SetReservationCache(&frameworkext.FakeReservationCache{}, corev1.DefaultSchedulerName)
+			sched := frameworkext.NewFakeScheduler()
+			if tt.addReservePod {
+				assert.NoError(t, sched.AddPod(klog.Background(), reservationutil.NewReservePod(tt.obj)))
+			}
+
+			deleteReservationFromSchedulerCache(sched, tt.obj)
+
+			if !tt.wantMoveCalled {
+				assert.Empty(t, sched.Queue.MovedEvents, "should not emit any move event")
+				return
+			}
+
+			if !assert.Len(t, sched.Queue.MovedEvents, 1) {
+				return
+			}
+			moved := sched.Queue.MovedEvents[0]
+			assert.Equal(t, frameworkext.AssignedPodDelete, moved.Event)
+			assert.Nil(t, moved.NewObj, "newObj of a delete event must be nil")
+
+			// Regression guard: oldObj must be a concrete non-nil *corev1.Pod. A nil (or typed-nil)
+			// oldObj is exactly what triggered the panic in isSchedulableAfterPodEvent.
+			oldPod, ok := moved.OldObj.(*corev1.Pod)
+			assert.True(t, ok, "oldObj must be a *corev1.Pod")
+			if assert.NotNil(t, oldPod, "oldObj (reserve pod) must not be nil") {
+				assert.Equal(t, tt.obj.UID, oldPod.UID)
+				// Mirrors the fit.go modifiedPod==nil branch: a scheduled pod carries a NodeName,
+				// so the event can be consumed without dereferencing a nil pod.
+				assert.NotEmpty(t, oldPod.Spec.NodeName, "reserve pod must carry the scheduled node name")
+			}
+		})
+	}
+}
+
 func Test_addReservationToSchedulingQueue(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
