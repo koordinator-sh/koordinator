@@ -2,6 +2,8 @@
 FROM golang:1.25-alpine AS builder
 
 ARG TARGETARCH=amd64
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
 
 WORKDIR /app
 
