@@ -456,6 +456,11 @@ func (in *MemoryQOS) DeepCopyInto(out *MemoryQOS) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.PageCacheLimitPercent != nil {
+		in, out := &in.PageCacheLimitPercent, &out.PageCacheLimitPercent
+		*out = new(int64)
+		**out = **in
+	}
 	if in.PageCacheLimitSize != nil {
 		in, out := &in.PageCacheLimitSize, &out.PageCacheLimitSize
 		*out = new(int64)

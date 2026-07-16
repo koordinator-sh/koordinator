@@ -125,8 +125,16 @@ type MemoryQOS struct {
 	// PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
 	// true to enable, false to disable.
 	PageCacheEnable *bool `json:"pageCacheEnable,omitempty"`
+	// PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
+	// The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
+	// Set to 0 to disable the page cache limit for the cgroup.
+	// Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	PageCacheLimitPercent *int64 `json:"pageCacheLimitPercent,omitempty" validate:"omitempty,min=0,max=100"`
 	// PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-	// The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
+	// When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
+	// Set to 0 to disable the page cache limit for the cgroup.
 	PageCacheLimitSize *int64 `json:"pageCacheLimitSize,omitempty"`
 	// PageCacheReclaimSync specifies the reclaim mode for `memory.pagecache_limit.sync`.
 	// false: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.

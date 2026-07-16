@@ -292,10 +292,21 @@ spec:
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
                               true to enable, false to disable.
                             type: boolean
+                          pageCacheLimitPercent:
+                            description: |-
+                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
+                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
+                              Set to 0 to disable the page cache limit for the cgroup.
+                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
                           pageCacheLimitSize:
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
+                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
+                              Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
                             type: integer
                           pageCacheReclaimSync:
@@ -616,10 +627,21 @@ spec:
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
                               true to enable, false to disable.
                             type: boolean
+                          pageCacheLimitPercent:
+                            description: |-
+                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
+                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
+                              Set to 0 to disable the page cache limit for the cgroup.
+                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
                           pageCacheLimitSize:
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
+                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
+                              Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
                             type: integer
                           pageCacheReclaimSync:
@@ -940,10 +962,21 @@ spec:
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
                               true to enable, false to disable.
                             type: boolean
+                          pageCacheLimitPercent:
+                            description: |-
+                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
+                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
+                              Set to 0 to disable the page cache limit for the cgroup.
+                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
                           pageCacheLimitSize:
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
+                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
+                              Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
                             type: integer
                           pageCacheReclaimSync:
@@ -1264,10 +1297,21 @@ spec:
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
                               true to enable, false to disable.
                             type: boolean
+                          pageCacheLimitPercent:
+                            description: |-
+                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
+                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
+                              Set to 0 to disable the page cache limit for the cgroup.
+                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
                           pageCacheLimitSize:
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
+                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
+                              Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
                             type: integer
                           pageCacheReclaimSync:
@@ -1598,10 +1642,21 @@ spec:
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
                               true to enable, false to disable.
                             type: boolean
+                          pageCacheLimitPercent:
+                            description: |-
+                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
+                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
+                              Set to 0 to disable the page cache limit for the cgroup.
+                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
+                            format: int64
+                            maximum: 100
+                            minimum: 0
+                            type: integer
                           pageCacheLimitSize:
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
+                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
+                              Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
                             type: integer
                           pageCacheReclaimSync:

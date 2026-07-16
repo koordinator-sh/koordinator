@@ -1389,6 +1389,25 @@ func Test_calculatePodResources_PageCacheLimit(t *testing.T) {
 			wantSize:        strconv.FormatInt(512*1024*1024, 10),
 			wantSizeExist:   true,
 		},
+		{
+			name:            "legacy percent field",
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitPercent: ptr.To[int64](50)},
+			wantEnable:      "1",
+			wantEnableExist: true,
+			wantSize:        strconv.FormatInt(podMemLimitBytes*50/100, 10),
+			wantSizeExist:   true,
+		},
+		{
+			name: "size takes precedence over percent",
+			memoryQOS: slov1alpha1.MemoryQOS{
+				PageCacheLimitPercent: ptr.To[int64](50),
+				PageCacheLimitSize:    ptr.To[int64](256 * 1024 * 1024),
+			},
+			wantEnable:      "1",
+			wantEnableExist: true,
+			wantSize:        strconv.FormatInt(256*1024*1024, 10),
+			wantSizeExist:   true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
