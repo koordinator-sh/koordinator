@@ -123,29 +123,15 @@ type MemoryQOS struct {
 
 	// Page Cache Limit (Anolis OS required)
 	// PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
-	// When set, it overrides the value implicitly derived from PageCacheLimitSize/PageCacheLimitPercent,
-	// which allows keeping the configured size while toggling the limit on or off.
-	// 0 to disable, 1 to enable.
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=1
-	PageCacheEnable *int64 `json:"pageCacheEnable,omitempty" validate:"omitempty,min=0,max=1"`
-	// PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
-	// The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
-	// Set to 0 to disable the page cache limit for the cgroup.
-	// Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=100
-	PageCacheLimitPercent *int64 `json:"pageCacheLimitPercent,omitempty" validate:"omitempty,min=0,max=100"`
+	// true to enable, false to disable.
+	PageCacheEnable *bool `json:"pageCacheEnable,omitempty"`
 	// PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-	// When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
-	// Set to 0 to disable the page cache limit for the cgroup.
-	PageCacheLimitSize *resource.Quantity `json:"pageCacheLimitSize,omitempty"`
-	// PageCacheLimitSyncMode specifies the reclaim mode for `memory.pagecache_limit.sync`.
-	// 0: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
-	// 1: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
-	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=1
-	PageCacheLimitSyncMode *int64 `json:"pageCacheLimitSyncMode,omitempty" validate:"omitempty,min=0,max=1"`
+	// The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
+	PageCacheLimitSize *int64 `json:"pageCacheLimitSize,omitempty"`
+	// PageCacheReclaimSync specifies the reclaim mode for `memory.pagecache_limit.sync`.
+	// false: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
+	// true: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+	PageCacheReclaimSync *bool `json:"pageCacheReclaimSync,omitempty"`
 }
 
 type PodMemoryQOSPolicy string

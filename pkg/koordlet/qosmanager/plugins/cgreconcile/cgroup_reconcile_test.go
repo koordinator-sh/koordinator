@@ -909,14 +909,13 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 					createPodWithMemoryQOS(corev1.PodQOSBurstable, apiext.QoSLS, &slov1alpha1.PodMemoryQOSConfig{
 						Policy: slov1alpha1.PodMemoryQOSPolicyAuto,
 						MemoryQOS: slov1alpha1.MemoryQOS{
-							MinLimitPercent:        ptr.To[int64](0),
-							LowLimitPercent:        ptr.To[int64](0),
-							ThrottlingPercent:      ptr.To[int64](80),
-							WmarkRatio:             ptr.To[int64](95),
-							WmarkScalePermill:      ptr.To[int64](20),
-							WmarkMinAdj:            ptr.To[int64](0),
-							PageCacheLimitPercent:  ptr.To[int64](50),
-							PageCacheLimitSyncMode: ptr.To[int64](0),
+							MinLimitPercent:    ptr.To[int64](0),
+							LowLimitPercent:    ptr.To[int64](0),
+							ThrottlingPercent:  ptr.To[int64](80),
+							WmarkRatio:         ptr.To[int64](95),
+							WmarkScalePermill:  ptr.To[int64](20),
+							WmarkMinAdj:        ptr.To[int64](0),
+							PageCacheLimitSize: ptr.To[int64](testingPodMemRequestLimitBytes * 50 / 100),
 						},
 					}),
 				},
@@ -1334,35 +1333,16 @@ func Test_calculatePodResources_PageCacheLimit(t *testing.T) {
 		wantSizeExist   bool
 	}{
 		{
-			name:            "only percent",
-			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitPercent: ptr.To[int64](50)},
-			wantEnable:      "1",
-			wantEnableExist: true,
-			wantSize:        strconv.FormatInt(podMemLimitBytes*50/100, 10),
-			wantSizeExist:   true,
-		},
-		{
-			name:            "only size takes effect",
-			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitSize: ptr.To(resource.MustParse("512Mi"))},
+			name:            "size only",
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitSize: ptr.To[int64](512 * 1024 * 1024)},
 			wantEnable:      "1",
 			wantEnableExist: true,
 			wantSize:        strconv.FormatInt(512*1024*1024, 10),
 			wantSizeExist:   true,
 		},
 		{
-			name: "size takes precedence over percent",
-			memoryQOS: slov1alpha1.MemoryQOS{
-				PageCacheLimitPercent: ptr.To[int64](50),
-				PageCacheLimitSize:    ptr.To(resource.MustParse("256Mi")),
-			},
-			wantEnable:      "1",
-			wantEnableExist: true,
-			wantSize:        strconv.FormatInt(256*1024*1024, 10),
-			wantSizeExist:   true,
-		},
-		{
 			name:            "size capped by memory limit",
-			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitSize: ptr.To(resource.MustParse("2Gi"))},
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitSize: ptr.To[int64](2 * 1024 * 1024 * 1024)},
 			wantEnable:      "1",
 			wantEnableExist: true,
 			wantSize:        strconv.FormatInt(podMemLimitBytes, 10),
@@ -1370,15 +1350,7 @@ func Test_calculatePodResources_PageCacheLimit(t *testing.T) {
 		},
 		{
 			name:            "size zero resets",
-			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitSize: ptr.To(resource.MustParse("0"))},
-			wantEnable:      "0",
-			wantEnableExist: true,
-			wantSize:        "0",
-			wantSizeExist:   true,
-		},
-		{
-			name:            "percent zero resets",
-			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitPercent: ptr.To[int64](0)},
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitSize: ptr.To[int64](0)},
 			wantEnable:      "0",
 			wantEnableExist: true,
 			wantSize:        "0",
@@ -1391,8 +1363,8 @@ func Test_calculatePodResources_PageCacheLimit(t *testing.T) {
 		{
 			name: "explicit enable overrides implicit enable, keeps size",
 			memoryQOS: slov1alpha1.MemoryQOS{
-				PageCacheLimitSize: ptr.To(resource.MustParse("512Mi")),
-				PageCacheEnable:    ptr.To[int64](0),
+				PageCacheLimitSize: ptr.To[int64](512 * 1024 * 1024),
+				PageCacheEnable:    ptr.To(false),
 			},
 			wantEnable:      "0",
 			wantEnableExist: true,
@@ -1401,10 +1373,21 @@ func Test_calculatePodResources_PageCacheLimit(t *testing.T) {
 		},
 		{
 			name:            "explicit enable alone toggles switch",
-			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheEnable: ptr.To[int64](1)},
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheEnable: ptr.To(true)},
 			wantEnable:      "1",
 			wantEnableExist: true,
 			wantSizeExist:   false, // size not written, only enable
+		},
+		{
+			name: "sync reclaim mode",
+			memoryQOS: slov1alpha1.MemoryQOS{
+				PageCacheLimitSize:   ptr.To[int64](512 * 1024 * 1024),
+				PageCacheReclaimSync: ptr.To(true),
+			},
+			wantEnable:      "1",
+			wantEnableExist: true,
+			wantSize:        strconv.FormatInt(512*1024*1024, 10),
+			wantSizeExist:   true,
 		},
 	}
 	for _, tt := range tests {

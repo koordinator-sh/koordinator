@@ -281,8 +281,9 @@ func (m *cgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 				"pod %s, current value %v", util.GetPodKey(pod), summary.memoryLow)
 		}
 		// Alinux memcg page cache limit
-		// page cache limit is set at pod level. PageCacheLimitSize (absolute bytes) takes precedence
-		// over PageCacheLimitPercent when set; percent is calculated from pod memory limit.
+		// PageCacheLimitSize is the absolute value in bytes; capped by memory.limit_in_bytes.
+		// PageCacheEnable explicitly controls the enable switch; if unset, it is implicitly
+		// enabled when PageCacheLimitSize > 0, or disabled when PageCacheLimitSize == 0.
 		var podMemLimit int64
 		if apiext.GetPodQoSClassRaw(pod) != apiext.QoSBE {
 			podLimits := resourcehelper.PodLimits(pod, resourcehelper.PodResourcesOptions{})
@@ -294,23 +295,21 @@ func (m *cgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 		} else {
 			podMemLimit = util.GetPodBEMemoryByteLimit(pod)
 		}
-		var pageCacheLimitSize *int64
 		if podCfg.MemoryQOS.PageCacheLimitSize != nil {
-			size := podCfg.MemoryQOS.PageCacheLimitSize.Value()
+			size := *podCfg.MemoryQOS.PageCacheLimitSize
 			// kernel requires size within [0, memory.limit_in_bytes]
 			if podMemLimit > 0 && size > podMemLimit {
 				size = podMemLimit
 			}
-			pageCacheLimitSize = ptr.To[int64](size)
-		} else if podCfg.MemoryQOS.PageCacheLimitPercent != nil && podMemLimit > 0 {
-			pageCacheLimitSize = ptr.To[int64](podMemLimit * (*podCfg.MemoryQOS.PageCacheLimitPercent) / 100)
-		}
-		if pageCacheLimitSize != nil {
-			if *pageCacheLimitSize > 0 {
-				summary.memoryPageCacheLimitSize = pageCacheLimitSize
+			if size > 0 {
+				summary.memoryPageCacheLimitSize = ptr.To[int64](size)
 				summary.memoryPageCacheLimitEnable = ptr.To[int64](1)
-				if podCfg.MemoryQOS.PageCacheLimitSyncMode != nil {
-					summary.memoryPageCacheLimitSyncMode = podCfg.MemoryQOS.PageCacheLimitSyncMode
+				if podCfg.MemoryQOS.PageCacheReclaimSync != nil {
+					if *podCfg.MemoryQOS.PageCacheReclaimSync {
+						summary.memoryPageCacheLimitSyncMode = ptr.To[int64](1)
+					} else {
+						summary.memoryPageCacheLimitSyncMode = ptr.To[int64](0)
+					}
 				} else {
 					summary.memoryPageCacheLimitSyncMode = ptr.To[int64](0) // async mode by default
 				}
@@ -320,9 +319,13 @@ func (m *cgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 				summary.memoryPageCacheLimitSize = ptr.To[int64](0)
 			}
 		}
-		// explicit PageCacheEnable overrides the enable value derived from size/percent
+		// explicit PageCacheEnable overrides the enable value derived from size
 		if podCfg.MemoryQOS.PageCacheEnable != nil {
-			summary.memoryPageCacheLimitEnable = podCfg.MemoryQOS.PageCacheEnable
+			if *podCfg.MemoryQOS.PageCacheEnable {
+				summary.memoryPageCacheLimitEnable = ptr.To[int64](1)
+			} else {
+				summary.memoryPageCacheLimitEnable = ptr.To[int64](0)
+			}
 		}
 	}
 

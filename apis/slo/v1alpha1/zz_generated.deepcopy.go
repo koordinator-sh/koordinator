@@ -453,22 +453,17 @@ func (in *MemoryQOS) DeepCopyInto(out *MemoryQOS) {
 	}
 	if in.PageCacheEnable != nil {
 		in, out := &in.PageCacheEnable, &out.PageCacheEnable
-		*out = new(int64)
-		**out = **in
-	}
-	if in.PageCacheLimitPercent != nil {
-		in, out := &in.PageCacheLimitPercent, &out.PageCacheLimitPercent
-		*out = new(int64)
+		*out = new(bool)
 		**out = **in
 	}
 	if in.PageCacheLimitSize != nil {
 		in, out := &in.PageCacheLimitSize, &out.PageCacheLimitSize
-		x := (*in).DeepCopy()
-		*out = &x
-	}
-	if in.PageCacheLimitSyncMode != nil {
-		in, out := &in.PageCacheLimitSyncMode, &out.PageCacheLimitSyncMode
 		*out = new(int64)
+		**out = **in
+	}
+	if in.PageCacheReclaimSync != nil {
+		in, out := &in.PageCacheReclaimSync, &out.PageCacheReclaimSync
+		*out = new(bool)
 		**out = **in
 	}
 }

@@ -290,42 +290,20 @@ spec:
                             description: |-
                               Page Cache Limit (Anolis OS required)
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
-                              When set, it overrides the value implicitly derived from PageCacheLimitSize/PageCacheLimitPercent,
-                              which allows keeping the configured size while toggling the limit on or off.
-                              0 to disable, 1 to enable.
-                            format: int64
-                            maximum: 1
-                            minimum: 0
-                            type: integer
-                          pageCacheLimitPercent:
-                            description: |-
-                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
-                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
-                            format: int64
-                            maximum: 100
-                            minimum: 0
-                            type: integer
+                              true to enable, false to disable.
+                            type: boolean
                           pageCacheLimitSize:
-                            anyOf:
-                            - type: integer
-                            - type: string
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                          pageCacheLimitSyncMode:
-                            description: |-
-                              PageCacheLimitSyncMode specifies the reclaim mode for `memory.pagecache_limit.sync`.
-                              0: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
-                              1: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
-                            maximum: 1
-                            minimum: 0
                             type: integer
+                          pageCacheReclaimSync:
+                            description: |-
+                              PageCacheReclaimSync specifies the reclaim mode for `memory.pagecache_limit.sync`.
+                              false: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
+                              true: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                            type: boolean
                           priority:
                             format: int64
                             type: integer
@@ -636,42 +614,20 @@ spec:
                             description: |-
                               Page Cache Limit (Anolis OS required)
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
-                              When set, it overrides the value implicitly derived from PageCacheLimitSize/PageCacheLimitPercent,
-                              which allows keeping the configured size while toggling the limit on or off.
-                              0 to disable, 1 to enable.
-                            format: int64
-                            maximum: 1
-                            minimum: 0
-                            type: integer
-                          pageCacheLimitPercent:
-                            description: |-
-                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
-                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
-                            format: int64
-                            maximum: 100
-                            minimum: 0
-                            type: integer
+                              true to enable, false to disable.
+                            type: boolean
                           pageCacheLimitSize:
-                            anyOf:
-                            - type: integer
-                            - type: string
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                          pageCacheLimitSyncMode:
-                            description: |-
-                              PageCacheLimitSyncMode specifies the reclaim mode for `memory.pagecache_limit.sync`.
-                              0: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
-                              1: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
-                            maximum: 1
-                            minimum: 0
                             type: integer
+                          pageCacheReclaimSync:
+                            description: |-
+                              PageCacheReclaimSync specifies the reclaim mode for `memory.pagecache_limit.sync`.
+                              false: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
+                              true: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                            type: boolean
                           priority:
                             format: int64
                             type: integer
@@ -982,42 +938,20 @@ spec:
                             description: |-
                               Page Cache Limit (Anolis OS required)
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
-                              When set, it overrides the value implicitly derived from PageCacheLimitSize/PageCacheLimitPercent,
-                              which allows keeping the configured size while toggling the limit on or off.
-                              0 to disable, 1 to enable.
-                            format: int64
-                            maximum: 1
-                            minimum: 0
-                            type: integer
-                          pageCacheLimitPercent:
-                            description: |-
-                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
-                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
-                            format: int64
-                            maximum: 100
-                            minimum: 0
-                            type: integer
+                              true to enable, false to disable.
+                            type: boolean
                           pageCacheLimitSize:
-                            anyOf:
-                            - type: integer
-                            - type: string
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                          pageCacheLimitSyncMode:
-                            description: |-
-                              PageCacheLimitSyncMode specifies the reclaim mode for `memory.pagecache_limit.sync`.
-                              0: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
-                              1: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
-                            maximum: 1
-                            minimum: 0
                             type: integer
+                          pageCacheReclaimSync:
+                            description: |-
+                              PageCacheReclaimSync specifies the reclaim mode for `memory.pagecache_limit.sync`.
+                              false: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
+                              true: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                            type: boolean
                           priority:
                             format: int64
                             type: integer
@@ -1328,42 +1262,20 @@ spec:
                             description: |-
                               Page Cache Limit (Anolis OS required)
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
-                              When set, it overrides the value implicitly derived from PageCacheLimitSize/PageCacheLimitPercent,
-                              which allows keeping the configured size while toggling the limit on or off.
-                              0 to disable, 1 to enable.
-                            format: int64
-                            maximum: 1
-                            minimum: 0
-                            type: integer
-                          pageCacheLimitPercent:
-                            description: |-
-                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
-                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
-                            format: int64
-                            maximum: 100
-                            minimum: 0
-                            type: integer
+                              true to enable, false to disable.
+                            type: boolean
                           pageCacheLimitSize:
-                            anyOf:
-                            - type: integer
-                            - type: string
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                          pageCacheLimitSyncMode:
-                            description: |-
-                              PageCacheLimitSyncMode specifies the reclaim mode for `memory.pagecache_limit.sync`.
-                              0: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
-                              1: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
-                            maximum: 1
-                            minimum: 0
                             type: integer
+                          pageCacheReclaimSync:
+                            description: |-
+                              PageCacheReclaimSync specifies the reclaim mode for `memory.pagecache_limit.sync`.
+                              false: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
+                              true: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                            type: boolean
                           priority:
                             format: int64
                             type: integer
@@ -1684,42 +1596,20 @@ spec:
                             description: |-
                               Page Cache Limit (Anolis OS required)
                               PageCacheEnable explicitly sets `memory.pagecache_limit.enable`, the per-memcg switch.
-                              When set, it overrides the value implicitly derived from PageCacheLimitSize/PageCacheLimitPercent,
-                              which allows keeping the configured size while toggling the limit on or off.
-                              0 to disable, 1 to enable.
-                            format: int64
-                            maximum: 1
-                            minimum: 0
-                            type: integer
-                          pageCacheLimitPercent:
-                            description: |-
-                              PageCacheLimitPercent specifies the percentage of pod memory limit to calculate `memory.pagecache_limit.size`.
-                              The value is calculated as: memory.limit_in_bytes * pageCacheLimitPercent / 100.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                              Close: 0. Recommended: 50-80 for workloads with heavy sequential I/O (e.g. Spark).
-                            format: int64
-                            maximum: 100
-                            minimum: 0
-                            type: integer
+                              true to enable, false to disable.
+                            type: boolean
                           pageCacheLimitSize:
-                            anyOf:
-                            - type: integer
-                            - type: string
                             description: |-
                               PageCacheLimitSize specifies the absolute value of `memory.pagecache_limit.size` in bytes.
-                              When set, it takes precedence over PageCacheLimitPercent. The value is capped by memory.limit_in_bytes.
-                              Set to 0 to disable the page cache limit for the cgroup.
-                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                            x-kubernetes-int-or-string: true
-                          pageCacheLimitSyncMode:
-                            description: |-
-                              PageCacheLimitSyncMode specifies the reclaim mode for `memory.pagecache_limit.sync`.
-                              0: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
-                              1: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                              The value is capped by memory.limit_in_bytes. Set to 0 to disable the page cache limit for the cgroup.
                             format: int64
-                            maximum: 1
-                            minimum: 0
                             type: integer
+                          pageCacheReclaimSync:
+                            description: |-
+                              PageCacheReclaimSync specifies the reclaim mode for `memory.pagecache_limit.sync`.
+                              false: asynchronous reclaim (default). Reclaim runs in background threads, reducing impact on main threads.
+                              true: synchronous reclaim. Reclaim blocks the current process until enough cache is freed, which may cause latency spikes.
+                            type: boolean
                           priority:
                             format: int64
                             type: integer
