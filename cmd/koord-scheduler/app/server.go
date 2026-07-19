@@ -65,6 +65,7 @@ import (
 	schedulerserverconfig "github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/config"
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app/options"
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/batch"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/defaultprofile"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/eventhandlers"
@@ -542,6 +543,10 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	frameworkExtenderFactory.InterceptSchedulerError(sched)
 	frameworkExtenderFactory.InitScheduler(&frameworkext.SchedulerAdapter{Scheduler: sched})
+	// Wire the inline batch scheduler (used by the FindOneNode success path) and register the error
+	// handler filter that suppresses the default failure handling for batch-scheduled pods.
+	frameworkExtenderFactory.SetBatchScheduler(batch.NewBatchScheduler(sched.Cache, sched.FailureHandler))
+	frameworkExtenderFactory.RegisterErrorHandlerFilters(frameworkext.NewBatchScheduledErrorHandlerFilter(), nil)
 	schedAdapter := frameworkExtenderFactory.Scheduler()
 
 	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, cc.InformerFactory, cc.KoordinatorSharedInformerFactory, crossSchedulerNominator)

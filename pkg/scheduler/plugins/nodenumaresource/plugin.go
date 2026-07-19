@@ -28,12 +28,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	resourceapi "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
@@ -311,6 +313,14 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, p
 				state.designatedAllocation = alloc
 			}
 		}
+	}
+
+	// Inline batch scheduling does not support scheduling to a designated allocation (specific NUMA
+	// nodes / CPUSet): the batch engine sets the nodenumaresource scheduling hint for the whole job,
+	// but on this path the pod must not be pinned to the annotation-recorded allocation. Clear it so
+	// the normal allocation runs.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.EnableInlineBatchSchedule) && hinter.IsBatchSchedulingCycle(cycleState) {
+		state.designatedAllocation = nil
 	}
 
 	if AllowUseCPUSet(pod) {

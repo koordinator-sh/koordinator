@@ -316,9 +316,9 @@ func (ev *preemptionEvaluatorImpl) preempt(ctx context.Context, state fwktype.Cy
 		return nil, fwktype.AsStatus(errors.New(ReasonNoNodesAvailable))
 	}
 
-	var allPendingPodUIDs []string
+	allPendingPodUIDs := sets.New[string]()
 	for _, pendingPod := range preemptionState.allPendingPods {
-		allPendingPodUIDs = append(allPendingPodUIDs, string(pendingPod.UID))
+		allPendingPodUIDs.Insert(string(pendingPod.UID))
 	}
 	frameworkext.MakeNominatedPodsOfTheSameJob(state, allPendingPodUIDs)
 
