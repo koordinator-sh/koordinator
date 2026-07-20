@@ -3,6 +3,7 @@
 # Or from test/perf/: make <target>
 
 SCENARIO   ?= basic
+CONFIG     ?= configs/scenarios/$(SCENARIO)-1k.yaml
 OUTPUT     ?= results/result.json
 KUBECONFIG ?= $(HOME)/.kube/config
 BASELINE   ?=
@@ -11,13 +12,14 @@ BASELINE   ?=
 GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 VERSION_FLAG := -X github.com/koordinator-sh/koordinator/test/perf/pkg/framework.Version=$(GIT_VERSION)
 
-.PHONY: benchmark setup teardown clean help
+.PHONY: benchmark setup teardown clean test help
 
-## Run a single scenario benchmark
+## Run a single scenario benchmark. Override CONFIG directly to use any
+## config file, e.g. `make benchmark CONFIG=configs/scenarios/basic-100.yaml`
 benchmark:
 	@echo "Running scenario: $(SCENARIO)"
 	go run -ldflags="$(VERSION_FLAG)" ./cmd/benchmark/main.go \
-		--config    configs/scenarios/$(SCENARIO)-1k.yaml \
+		--config    $(CONFIG) \
 		--output    $(OUTPUT) \
 		--kubeconfig $(KUBECONFIG) \
 		$(if $(BASELINE),--baseline $(BASELINE),)
@@ -33,6 +35,10 @@ teardown:
 ## Remove result files
 clean:
 	rm -rf results/
+
+## Run unit tests
+test:
+	go test ./...
 
 ## Show available targets
 help:
