@@ -36,6 +36,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -448,6 +449,246 @@ func BenchmarkBeforePrefilterWithUnmatchedPod(b *testing.B) {
 	}
 }
 
+// BenchmarkBeforePrefilterWithMatchedPodReservationSelectorIndex measures the
+// full BeforePreFilter -> PreFilter -> AfterPreFilter path for a normal pod
+// carrying a reservationSelector. About 1/k% of the cluster's reservations
+// carry an indexed prefix label (matching the pod) and the rest are owned by a
+// different tenant. With the index enabled, prepareMatchReservationStateForNormalPod
+// can shrink allNodes to the indexed subset; with the index disabled it has
+// to scan every node. The two sub-benches make this delta directly
+// observable.
+func BenchmarkBeforePrefilterWithMatchedPodReservationSelectorIndex(b *testing.B) {
+	const (
+		nodeCount     = 1000
+		indexedStride = 10 // every 1/k node has an indexed reservation
+		targetTeam    = "team-A"
+	)
+	indexedLabelKey := idxPrefixQuota + "team"
+
+	cases := []struct {
+		name        string
+		enableIndex bool
+	}{
+		{"index_disabled", false},
+		{"index_enabled", true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		b.Run(tc.name, func(b *testing.B) {
+			runBenchmarkBeforePrefilterReservationSelectorIndex(b, nodeCount, indexedStride, indexedLabelKey, targetTeam, tc.enableIndex)
+		})
+	}
+}
+
+func runBenchmarkBeforePrefilterReservationSelectorIndex(b *testing.B, nodeCount, indexedStride int, indexedLabelKey, targetTeam string, enableIndex bool) {
+	var nodes []*corev1.Node
+	var pods []*corev1.Pod
+	var preFilterNodeNames []string
+	for i := 0; i < nodeCount; i++ {
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: fmt.Sprintf("node-%d", i),
+				Labels: map[string]string{
+					"zone": fmt.Sprintf("zone-%d", i%2),
+				},
+			},
+			Status: corev1.NodeStatus{
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("40"),
+					corev1.ResourceMemory: resource.MustParse("80Gi"),
+				},
+			},
+		}
+		nodes = append(nodes, node)
+		if i%16 == 0 {
+			preFilterNodeNames = append(preFilterNodeNames, node.Name)
+		}
+
+		for j := 0; j < 8; j++ {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("test-pod-%d-%d", i, j),
+					Namespace: "default",
+					UID:       types.UID(fmt.Sprintf("%d-%d", i, j)),
+				},
+				Spec: corev1.PodSpec{
+					NodeName: fmt.Sprintf("node-%d", i),
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1"),
+									corev1.ResourceMemory: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+				},
+			}
+			pods = append(pods, pod)
+		}
+	}
+	suit := newPluginTestSuitWith(b, pods, nodes)
+	p, err := suit.pluginFactory()
+	assert.NoError(b, err)
+	pl := p.(*Plugin)
+	if enableIndex {
+		pl.reservationCache.setReservationSelectorIndexConfig(&config.ReservationSelectorIndexArgs{
+			Enabled:     true,
+			KeyPrefixes: []string{idxPrefixQuota, idxPrefixTenant},
+		})
+	}
+	fakePreFilterPl := schedulertesting.FakePreFilterPlugin{
+		Result: &fwktype.PreFilterResult{
+			NodeNames: sets.New[string](preFilterNodeNames...),
+		},
+	}
+
+	reservePods := map[string]*corev1.Pod{}
+	for i, node := range nodes {
+		indexed := i%indexedStride == 0
+		var rLabels map[string]string
+		var ownerTenant string
+		if indexed {
+			rLabels = map[string]string{
+				indexedLabelKey: targetTeam,
+			}
+			ownerTenant = targetTeam
+		} else {
+			rLabels = map[string]string{
+				"app": "bench",
+			}
+			ownerTenant = "other-team"
+		}
+		reservation := &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:    uuid.NewUUID(),
+				Name:   fmt.Sprintf("reservation-%d", i),
+				Labels: rLabels,
+			},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				AllocateOnce: ptr.To[bool](false),
+				Owners: []schedulingv1alpha1.ReservationOwner{
+					{
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"tenant": ownerTenant,
+							},
+						},
+					},
+				},
+				Template: &corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("32"),
+										corev1.ResourceMemory: resource.MustParse("64Gi"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{
+				Phase:    schedulingv1alpha1.ReservationAvailable,
+				NodeName: node.Name,
+				Allocatable: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("32"),
+					corev1.ResourceMemory: resource.MustParse("64Gi"),
+				},
+			},
+		}
+		pl.reservationCache.updateReservation(reservation)
+		nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(node.Name)
+		assert.NoError(b, err)
+		reservePod := reservationutil.NewReservePod(reservation)
+		reservePods[string(reservePod.UID)] = reservePod
+		nodeInfo.(*framework.NodeInfo).AddPod(reservePod)
+		assert.NoError(b, pl.handle.Scheduler().GetCache().AddPod(klog.Background(), reservePod))
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			Labels: map[string]string{
+				"tenant": targetTeam,
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("32"),
+							corev1.ResourceMemory: resource.MustParse("64Gi"),
+						},
+					},
+				},
+			},
+			Affinity: &corev1.Affinity{
+				NodeAffinity: &corev1.NodeAffinity{
+					RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+						NodeSelectorTerms: []corev1.NodeSelectorTerm{
+							{
+								MatchExpressions: []corev1.NodeSelectorRequirement{
+									{
+										Key:      "zone",
+										Operator: corev1.NodeSelectorOpIn,
+										Values: []string{
+											"zone-0",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	err = apiext.SetReservationAffinity(pod, &apiext.ReservationAffinity{
+		ReservationSelector: map[string]string{
+			indexedLabelKey: targetTeam,
+		},
+	})
+	assert.NoError(b, err)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cycleState := framework.NewCycleState()
+		_, restored, status := pl.BeforePreFilter(context.TODO(), cycleState, pod)
+		assert.True(b, restored)
+		assert.True(b, status.IsSuccess())
+
+		preFilterResult, status := pl.PreFilter(context.TODO(), cycleState, pod, nil)
+		assert.True(b, status.IsSuccess())
+
+		preFilterResult1, status := fakePreFilterPl.PreFilter(context.TODO(), cycleState, pod, nil)
+		assert.True(b, status.IsSuccess())
+		preFilterResult = preFilterResult.Merge(preFilterResult1)
+
+		status = pl.AfterPreFilter(context.TODO(), cycleState, pod, preFilterResult)
+		assert.True(b, status.IsSuccess())
+
+		b.StopTimer()
+		sd := getStateData(cycleState)
+		for _, v := range sd.nodeReservationStates {
+			nodeInfo, err := pl.handle.SnapshotSharedLister().NodeInfos().Get(v.nodeName)
+			assert.NoError(b, err)
+			for _, ri := range v.matchedOrIgnored {
+				p := reservePods[string(ri.UID())]
+				if p != nil {
+					nodeInfo.(*framework.NodeInfo).AddPod(p)
+				}
+			}
+		}
+		b.StartTimer()
+	}
+}
 func BenchmarkBeforePrefilterWithMatchedPodEnableLazyReservationRestore(b *testing.B) {
 	var nodes []*corev1.Node
 	var pods []*corev1.Pod
