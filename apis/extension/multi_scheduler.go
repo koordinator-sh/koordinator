@@ -26,6 +26,9 @@ const (
 	// LabelSchedulerName is used to specify the internal scheduler name for a pod, overriding the spec.schedulerName.
 	LabelSchedulerName = SchedulingDomainPrefix + "/scheduler-name"
 
+	// SandboxSchedulerName is the scheduler profile used for sandbox workloads.
+	SandboxSchedulerName = "koord-scheduler-sandbox"
+
 	// AnnotationOriginalSchedulerName stores the original pod.Spec.SchedulerName before
 	// TransformSchedulerName overwrites it, allowing later restoration.
 	AnnotationOriginalSchedulerName = InternalSchedulingDomainPrefix + "/original-scheduler-name"
