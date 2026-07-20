@@ -258,3 +258,93 @@ func TestEventHandlerDelete(t *testing.T) {
 	assert.False(t, rInfo.IsAvailable())
 	assert.Equal(t, []*framework.PodInfo{}, eh.rrNominator.NominatedReservePodForNode("test-node"))
 }
+
+func TestEventHandler_NominatedNodeName_Restoration(t *testing.T) {
+	pendingR := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-pending-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:             schedulingv1alpha1.ReservationPending,
+			NominatedNodeName: "nominated-node-xyz",
+		},
+	}
+
+	// 1. Test OnAdd restoration
+	cache := newReservationCache(nil)
+	nominator := newNominator(nil, nil)
+	eh := &reservationEventHandler{cache: cache, rrNominator: nominator}
+
+	eh.OnAdd(pendingR, true)
+
+	// Verify nominated pod info in nominator
+	reservePod := reservation.NewReservePod(pendingR)
+	reservePodInfo, _ := framework.NewPodInfo(reservePod)
+	nominatedPods := nominator.NominatedReservePodForNode("nominated-node-xyz")
+	assert.Len(t, nominatedPods, 1)
+	assert.Equal(t, reservePodInfo.Pod.UID, nominatedPods[0].Pod.UID)
+
+	// 2. Test OnUpdate restoration
+	nominator2 := newNominator(nil, nil)
+	eh2 := &reservationEventHandler{cache: cache, rrNominator: nominator2}
+
+	oldR := pendingR.DeepCopy()
+	oldR.Status.NominatedNodeName = "" // no nomination on old
+
+	newR := pendingR.DeepCopy() // has nomination "nominated-node-xyz"
+
+	eh2.OnUpdate(oldR, newR)
+
+	nominatedPods2 := nominator2.NominatedReservePodForNode("nominated-node-xyz")
+	assert.Len(t, nominatedPods2, 1)
+	assert.Equal(t, reservePodInfo.Pod.UID, nominatedPods2[0].Pod.UID)
+}
+
+// TestEventHandler_NominatedNodeName_AtomicUpdate validates the atomic nominator update behaviour
+// requested by @saintube: "align with how pod NNN is handled".
+// When NominatedNodeName changes from oldNode to newNode, the old stale entry must be
+// deleted from the nominator and the new node entry must be added — exactly as the upstream
+// kubernetes UpdateNominatedPod does (deleteNominatedPodInQueue then addNominatedPodUnlocked).
+func TestEventHandler_NominatedNodeName_AtomicUpdate(t *testing.T) {
+	r := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "test-reservation-atomic",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:             schedulingv1alpha1.ReservationPending,
+			NominatedNodeName: "node-A",
+		},
+	}
+
+	cache := newReservationCache(nil)
+	nom := newNominator(nil, nil)
+	eh := &reservationEventHandler{cache: cache, rrNominator: nom}
+
+	// Seed the nominator with the old nomination (node-A).
+	reservePod := reservation.NewReservePod(r)
+	reservePodInfo, _ := framework.NewPodInfo(reservePod)
+	nom.AddNominatedReservePod(reservePodInfo, "node-A")
+	assert.Len(t, nom.NominatedReservePodForNode("node-A"), 1, "expected 1 nomination for node-A before update")
+	assert.Empty(t, nom.NominatedReservePodForNode("node-B"), "expected 0 nominations for node-B before update")
+
+	// Simulate the informer update where NominatedNodeName changes from node-A to node-B.
+	oldR := r.DeepCopy()
+	newR := r.DeepCopy()
+	newR.Status.NominatedNodeName = "node-B"
+
+	eh.OnUpdate(oldR, newR)
+
+	// After the atomic update: node-A entry must be gone, node-B entry must exist.
+	assert.Empty(t, nom.NominatedReservePodForNode("node-A"),
+		"stale nomination for node-A should have been deleted atomically")
+	assert.Len(t, nom.NominatedReservePodForNode("node-B"), 1,
+		"new nomination for node-B should have been added")
+}
