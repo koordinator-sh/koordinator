@@ -543,11 +543,12 @@ func TestNriServer_UpdateContainer(t *testing.T) {
 				mask:    tt.fields.mask,
 				options: tt.fields.options,
 			}
-			_, err := p.UpdateContainer(context.TODO(), tt.args.pod, tt.args.container, nil)
+			got, err := p.UpdateContainer(context.TODO(), tt.args.pod, tt.args.container, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("UpdateContainer() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
