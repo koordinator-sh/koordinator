@@ -552,6 +552,39 @@ func TestNriServer_UpdateContainer(t *testing.T) {
 	}
 }
 
+func TestNriServer_UpdateContainerTargetsCurrentContainer(t *testing.T) {
+	hooks.Register(config.PreUpdateContainerResources, "nri-update-container-target", "set cpuset for update", func(proto protocol.HooksProtocol) error {
+		containerCtx := proto.(*protocol.ContainerContext)
+		cpuset := "1,3"
+		containerCtx.Response.Resources.CPUSet = &cpuset
+		return nil
+	})
+
+	p := &NriServer{
+		options: Options{
+			Executor: resourceexecutor.NewTestResourceExecutor(),
+		},
+	}
+	pod := &api.PodSandbox{
+		Id:        "pod-id",
+		Name:      "pod",
+		Uid:       "pod-uid",
+		Namespace: "default",
+		Linux:     &api.LinuxPodSandbox{},
+	}
+	container := &api.Container{
+		Id:   "raw-container-id",
+		Name: "container",
+	}
+
+	updates, err := p.UpdateContainer(context.Background(), pod, container, nil)
+	assert.NoError(t, err)
+	if assert.Len(t, updates, 1) {
+		assert.Equal(t, container.GetId(), updates[0].GetContainerId())
+		assert.Equal(t, "1,3", updates[0].GetLinux().GetResources().GetCpu().GetCpus())
+	}
+}
+
 func TestNriServer_RemovePodSandbox(t *testing.T) {
 	type fields struct {
 		stub            stub.Stub
