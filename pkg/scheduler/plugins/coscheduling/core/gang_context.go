@@ -108,6 +108,8 @@ type GangSchedulingContext struct {
 	preemptionMessage string
 	suggestion        *frameworkext.ScheduleSuggestion
 
+	pendingPodsConditionPatched bool
+
 	networkTopologySpec         *extension.NetworkTopologySpec
 	networkTopologySnapshot     *networktopology.TreeSnapshot
 	networkTopologyPlannedNodes map[string]string // podKey -> nodeName

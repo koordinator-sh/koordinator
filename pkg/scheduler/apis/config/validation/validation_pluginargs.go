@@ -18,10 +18,12 @@ package validation
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -259,6 +261,35 @@ func ValidateReservationArgs(path *field.Path, args *config.ReservationArgs) err
 			args.ResyncIntervalSeconds,
 			"must be non-negative",
 		))
+	}
+
+	// Validate ignoredResources and ignoredResourceGroups the same way as k8s scheduler NodeResourcesFit plugin.
+	// IgnoredResources entries must be extended resource names: fitsNode enforces native dimensions
+	// (cpu/memory/pods/ephemeral-storage) unconditionally, so accepting native names here would
+	// silently no-op and mislead operators.
+	resPath := path.Child("ignoredResources")
+	for i, res := range args.IgnoredResources {
+		path := resPath.Index(i)
+		if !v1helper.IsExtendedResourceName(corev1.ResourceName(res)) {
+			allErrs = append(allErrs, field.Invalid(path, res,
+				"must be an extended resource name (e.g. example.com/gpu); native resources cannot be ignored"))
+		}
+	}
+
+	groupPath := path.Child("ignoredResourceGroups")
+	for i, group := range args.IgnoredResourceGroups {
+		path := groupPath.Index(i)
+		if strings.Contains(group, "/") {
+			allErrs = append(allErrs, field.Invalid(path, group, "resource group name can't contain '/'"))
+			continue
+		}
+		// A group must be usable as an extended-resource prefix: IsExtendedResourceName(group+"/x")
+		// applies IsQualifiedName (DNS-subdomain rules, up to 253 chars) and rejects the reserved
+		// "kubernetes.io" namespace, giving the same scope guarantee as IgnoredResources above.
+		if !v1helper.IsExtendedResourceName(corev1.ResourceName(group + "/x")) {
+			allErrs = append(allErrs, field.Invalid(path, group,
+				"must be usable as an extended resource prefix (a valid DNS subdomain and not the reserved \"kubernetes.io\" namespace)"))
+		}
 	}
 
 	if len(allErrs) == 0 {

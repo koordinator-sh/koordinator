@@ -109,6 +109,8 @@ type Plugin struct {
 	enableLazyReservationRestore   bool
 	enableSkipReservationFitsNode  bool
 	enablePreAllocationClusterMode bool
+	ignoredResources               sets.Set[string]
+	ignoredResourceGroups          sets.Set[string]
 }
 
 func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
@@ -130,6 +132,7 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	cache := newReservationCache(reservationLister)
 	cache.setPreAllocationConfig(pluginArgs.PreAllocationConfig)
+	cache.setReservationSelectorIndexConfig(pluginArgs.ReservationSelectorIndex)
 	nm := newNominator(podLister, reservationLister)
 	registerReservationEventHandler(cache, koordSharedInformerFactory, nm)
 	registerPodEventHandler(extendedHandle, cache, nm, sharedInformerFactory)
@@ -144,6 +147,8 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 		nominator:                     nm,
 		enableLazyReservationRestore:  k8sfeature.DefaultFeatureGate.Enabled(features.LazyReservationRestore),
 		enableSkipReservationFitsNode: k8sfeature.DefaultFeatureGate.Enabled(features.SkipReservationFitsNode),
+		ignoredResources:              sets.New[string](pluginArgs.IgnoredResources...),
+		ignoredResourceGroups:         sets.New[string](pluginArgs.IgnoredResourceGroups...),
 	}
 
 	if pluginArgs.EnablePreemption {
@@ -384,7 +389,7 @@ func (pl *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod
 				preemptible := state.preemptible[node.Name]
 				preemptibleResource := framework.NewResource(preemptible)
 				nodeAllocatable := nodeInfo.GetAllocatable().(*framework.Resource)
-				insufficientResources := fitsNode(state.podRequestsResources, nodeAllocatable, nodeRState.podRequested, nodeRState.rAllocated, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.GetPods()), preemptibleResource)
+				insufficientResources := fitsNode(state.podRequestsResources, nodeAllocatable, nodeRState.podRequested, nodeRState.rAllocated, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.GetPods()), preemptibleResource, pl.ignoredResources, pl.ignoredResourceGroups)
 				if len(insufficientResources) != 0 {
 					// Return Unschedulable (not UnschedulableAndUnresolvable) so that the preemption evaluator
 					// can consider this node as a potential preemption candidate via NodesForStatusCode(Unschedulable).
@@ -467,7 +472,7 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 
 		insufficientResourcesByNode, insufficientResourceReasonsByReservation := fitsNodeAndReservation(state.podRequestsResources, nodeRState.podRequested,
 			nodeRState.rAllocated, preemptibleWithRR, rInfo.GetAvailable(), state.podRequests, preemptibleInRR, pod, rInfo, nodeInfo, len(nodeRState.matchedOrIgnored),
-			requireDetailReasons, isFitsNodeSkipped)
+			requireDetailReasons, isFitsNodeSkipped, pl.ignoredResources, pl.ignoredResourceGroups)
 		allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
 		allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, insufficientResourceReasonsByReservation...)
 
@@ -511,7 +516,7 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 			failureReasons = buildNodeFailureReasons(allInsufficientResourcesByNode.List())
 		} else {
 			// try to allocate from node alone
-			insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo.GetAllocatable(), nodeRState.podRequested, nodeRState.rAllocated, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.GetPods()), preemptible)
+			insufficientResourcesByNode := fitsNode(state.podRequestsResources, nodeInfo.GetAllocatable(), nodeRState.podRequested, nodeRState.rAllocated, nil, len(nodeRState.matchedOrIgnored), len(nodeInfo.GetPods()), preemptible, pl.ignoredResources, pl.ignoredResourceGroups)
 			failureReasons = buildNodeFailureReasons(insufficientResourcesByNode)
 		}
 		if len(failureReasons) > 0 {
@@ -564,7 +569,7 @@ func (pl *Plugin) filterWithPreAllocatablePod(ctx context.Context, cycleState fw
 			// Check if the reserve pod can be placed with node-unallocated resource when pre-allocation is not required.
 			// For reserve pod, matchedOrIgnored should be 0, both rAllocated and rRemained should be nil.
 			insufficientResourcesByNodeUnallocated = fitsNode(state.podRequestsResources, nodeInfo.GetAllocatable(),
-				podRequested, nil, nil, 0, len(nodeInfo.GetPods()), preemptible)
+				podRequested, nil, nil, 0, len(nodeInfo.GetPods()), preemptible, pl.ignoredResources, pl.ignoredResourceGroups)
 			checkNodeUnallocatedDone = true
 		}
 		return insufficientResourcesByNodeUnallocated
@@ -607,7 +612,7 @@ func (pl *Plugin) filterWithPreAllocatablePod(ctx context.Context, cycleState fw
 		// 1. Check if the reservation can place into the node if pod uses the reserved resource.
 		// 2. Check if the pod can place into the reservation.
 		insufficientResourcesByNode, insufficientResourceReasonsByReservation := fitsNodeAndReservation(state.podRequestsResources, podRequestedWithoutPreAllocatable,
-			nodeRState.rAllocated, preemptible, nil, podRequests, nil, pod, rInfo, nodeInfo, 1, false, false)
+			nodeRState.rAllocated, preemptible, nil, podRequests, nil, pod, rInfo, nodeInfo, 1, false, false, pl.ignoredResources, pl.ignoredResourceGroups)
 		allInsufficientResourcesByNode.Insert(insufficientResourcesByNode...)
 		allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, insufficientResourceReasonsByReservation...)
 
@@ -714,7 +719,7 @@ func (pl *Plugin) filterWithMultiplePreAllocatablePods(ctx context.Context, cycl
 			// Check if the reserve pod can be placed with node-unallocated resource when pre-allocation is not required.
 			// For reserve pod, matchedOrIgnored should be 0, both rAllocated and rRemained should be nil.
 			insufficientResourcesByNodeUnallocated = fitsNode(state.podRequestsResources, nodeInfo.GetAllocatable(),
-				podRequested, nil, nil, 0, len(nodeInfo.GetPods()), preemptible)
+				podRequested, nil, nil, 0, len(nodeInfo.GetPods()), preemptible, pl.ignoredResources, pl.ignoredResourceGroups)
 			checkNodeUnallocatedDone = true
 		}
 		return insufficientResourcesByNodeUnallocated
@@ -755,7 +760,7 @@ func (pl *Plugin) filterWithMultiplePreAllocatablePods(ctx context.Context, cycl
 
 		// Check if adding this pod still fits
 		insufficientResourcesByNode, insufficientResourceReasonsByReservation = fitsNodeAndReservation(state.podRequestsResources, podRequestedWithoutPreAllocatable,
-			nodeRState.rAllocated, preemptible, nil, trialAccumulatedRequests, nil, pod, rInfo, nodeInfo, len(selectedPAPods)+1, false, false)
+			nodeRState.rAllocated, preemptible, nil, trialAccumulatedRequests, nil, pod, rInfo, nodeInfo, len(selectedPAPods)+1, false, false, pl.ignoredResources, pl.ignoredResourceGroups)
 		// If any dimension exceeds, skip this pod
 		if len(insufficientResourceReasonsByReservation) > 0 {
 			// Record reasons for later diagnosis
@@ -852,12 +857,12 @@ var dummyResource = framework.NewResource(nil)
 
 func fitsNodeAndReservation(podRequestsResources, allPodsRequested, allRAllocated, preemptible, rRemained fwktype.Resource,
 	podRequests, preemptibleInRR corev1.ResourceList, pod *corev1.Pod, rInfo *frameworkext.ReservationInfo,
-	nodeInfo fwktype.NodeInfo, matchedCount int, requireDetailReasons, isFitsNodeSkipped bool) ([]string, []string) {
+	nodeInfo fwktype.NodeInfo, matchedCount int, requireDetailReasons, isFitsNodeSkipped bool, ignoredResources, ignoredResourceGroups sets.Set[string]) ([]string, []string) {
 	var insufficientResourcesByNode, insufficientResourceReasonsByReservation []string
 
 	if !isFitsNodeSkipped {
 		fnrNodeAlloc := nodeInfo.GetAllocatable().(*framework.Resource)
-		insufficientResourcesByNode = fitsNode(podRequestsResources, fnrNodeAlloc, allPodsRequested, allRAllocated, rRemained, matchedCount, len(nodeInfo.GetPods()), preemptible)
+		insufficientResourcesByNode = fitsNode(podRequestsResources, fnrNodeAlloc, allPodsRequested, allRAllocated, rRemained, matchedCount, len(nodeInfo.GetPods()), preemptible, ignoredResources, ignoredResourceGroups)
 		if len(insufficientResourcesByNode) > 0 && klog.V(5).Enabled() {
 			var podRequested fwktype.Resource
 			if allPodsRequested != nil {
@@ -880,7 +885,7 @@ func fitsNodeAndReservation(podRequestsResources, allPodsRequested, allRAllocate
 			return nil, nil
 		}
 	} else if allocatePolicy == schedulingv1alpha1.ReservationAllocatePolicyRestricted {
-		insufficientResourceReasonsByReservation = fitsReservation(podRequests, rInfo, preemptibleInRR, requireDetailReasons)
+		insufficientResourceReasonsByReservation = fitsReservation(podRequests, rInfo, preemptibleInRR, requireDetailReasons, ignoredResources, ignoredResourceGroups)
 		if nodeFits && len(insufficientResourceReasonsByReservation) <= 0 { // fit the reservation
 			return nil, nil
 		}
@@ -889,8 +894,25 @@ func fitsNodeAndReservation(podRequestsResources, allPodsRequested, allRAllocate
 	return insufficientResourcesByNode, insufficientResourceReasonsByReservation
 }
 
+func isResourceIgnored(name corev1.ResourceName, ignoredResources, ignoredResourceGroups sets.Set[string]) bool {
+	s := string(name)
+	if ignoredResources.Has(s) {
+		return true
+	}
+	if ignoredResourceGroups.Len() > 0 {
+		if prefix, _, ok := strings.Cut(s, "/"); ok && prefix != "" && ignoredResourceGroups.Has(prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // fitsNode checks if node have enough resources to host the pod.
-func fitsNode(podRequest, nodeAllocatable, allPodsRequested, allRAllocated, rRemained fwktype.Resource, matchedOrIgnored, allocatedPods int, preemptible fwktype.Resource) []string {
+// Note: ignoredResources / ignoredResourceGroups only suppress *scalar* resource checks.
+// Native dimensions (CPU/Memory/EphemeralStorage/Pods) are intentionally enforced
+// unconditionally; ValidateReservationArgs ensures only extended resource names
+// can be configured as ignored, so the two layers are consistent by construction.
+func fitsNode(podRequest, nodeAllocatable, allPodsRequested, allRAllocated, rRemained fwktype.Resource, matchedOrIgnored, allocatedPods int, preemptible fwktype.Resource, ignoredResources, ignoredResourceGroups sets.Set[string]) []string {
 	var insufficientResources []string
 
 	if allocatedPods-matchedOrIgnored+1 > nodeAllocatable.GetAllowedPodNumber() {
@@ -928,6 +950,9 @@ func fitsNode(podRequest, nodeAllocatable, allPodsRequested, allRAllocated, rRem
 	}
 
 	for rName := range podRequest.GetScalarResources() {
+		if isResourceIgnored(rName, ignoredResources, ignoredResourceGroups) {
+			continue
+		}
 		if podRequest.GetScalarResources()[rName] > nodeAllocatable.GetScalarResources()[rName]-(allPodsRequested.GetScalarResources()[rName]-rRemained.GetScalarResources()[rName]-allRAllocated.GetScalarResources()[rName]-preemptible.GetScalarResources()[rName]) {
 			insufficientResources = append(insufficientResources, string(rName))
 		}
@@ -939,7 +964,13 @@ func fitsNode(podRequest, nodeAllocatable, allPodsRequested, allRAllocated, rRem
 	return insufficientResources
 }
 
-func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.ReservationInfo, preemptibleInRR corev1.ResourceList, isDetailed bool) []string {
+// fitsReservation checks if the reservation has enough resources to host the pod.
+// The per-resource loop applies isResourceIgnored to every resource name including
+// native ones, which differs from fitsNode (where natives are checked unconditionally
+// outside the loop). ValidateReservationArgs rejects native names from being ignored,
+// so both functions behave identically in practice. The ResourcePods check above is
+// likewise unconditional for the same reason.
+func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.ReservationInfo, preemptibleInRR corev1.ResourceList, isDetailed bool, ignoredResources, ignoredResourceGroups sets.Set[string]) []string {
 	allocated := rInfo.Allocated
 	allocatable := rInfo.Allocatable
 	reserved := rInfo.Reserved
@@ -965,6 +996,9 @@ func fitsReservation(podRequest corev1.ResourceList, rInfo *frameworkext.Reserva
 	}
 
 	for _, resourceName := range rInfo.ResourceNames {
+		if isResourceIgnored(resourceName, ignoredResources, ignoredResourceGroups) {
+			continue
+		}
 		requested, found := podRequest[resourceName]
 		if !found || requested.IsZero() {
 			continue

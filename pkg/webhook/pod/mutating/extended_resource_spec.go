@@ -27,17 +27,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
-func (h *PodMutatingHandler) extendedResourceSpecMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) error {
+func (h *PodMutatingHandler) extendedResourceSpecMutatingPod(ctx context.Context, req admission.Request, pod *corev1.Pod) (bool, error) {
+	if utilfeature.DefaultFeatureGate.Enabled(features.DisableExtendedResourceSpec) {
+		return false, nil
+	}
 	if req.Operation != admissionv1.Create && req.Operation != admissionv1.Update {
-		return nil
+		return false, nil
 	}
 
 	return h.mutateByExtendedResources(pod)
 }
 
-func (h *PodMutatingHandler) mutateByExtendedResources(pod *corev1.Pod) error {
+func (h *PodMutatingHandler) mutateByExtendedResources(pod *corev1.Pod) (bool, error) {
 	// dump batch-resource of pod.spec.containers[*].resources.requests/limits into ExtendedResourceSpec{}
 	extendedResourceSpec := &extension.ExtendedResourceSpec{}
 	containersSpec := map[string]extension.ExtendedResourceContainerSpec{}
@@ -63,22 +68,22 @@ func (h *PodMutatingHandler) mutateByExtendedResources(pod *corev1.Pod) error {
 	// compare annotation values
 	spec, err := extension.GetExtendedResourceSpec(pod.Annotations)
 	if err != nil {
-		return fmt.Errorf("failed to get current extended resource spec, err: %v", err)
+		return false, fmt.Errorf("failed to get current extended resource spec, err: %v", err)
 	}
 	if reflect.DeepEqual(extendedResourceSpec, spec) {
 		// if resource requirements not changed, just return
 		klog.V(6).Infof("extended resource spec of pod %s/%s unchanged, skip patch the annotation", pod.Namespace, pod.Name)
-		return nil
+		return false, nil
 	}
 
 	// mutate pod annotation
 	err = extension.SetExtendedResourceSpec(pod, extendedResourceSpec)
 	if err != nil {
-		return fmt.Errorf("failed to set extended resource spec, err: %v", err)
+		return false, fmt.Errorf("failed to set extended resource spec, err: %v", err)
 	}
 
 	klog.V(4).Infof("mutate Pod %s/%s by ExtendedResources", pod.Namespace, pod.Name)
-	return nil
+	return true, nil
 }
 
 func getContainerExtendedResourcesRequirement(container *corev1.Container, resourceNames []corev1.ResourceName) *extension.ExtendedResourceContainerSpec {

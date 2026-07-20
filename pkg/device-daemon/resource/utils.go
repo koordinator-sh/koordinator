@@ -392,12 +392,12 @@ func GetXPUMemory(deviceType string) (string, error) {
 		cmd := exec.Command(ChangeRootCmd, HostRootDir, IXSmiCmd, QueryGPUMemArgs, QuerGPUFormatArgs, QueryGPUIdArgs)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return "0Mi", fmt.Errorf("get gpu memory err: %w, output %v", err, string(output))
+			return "0Mi", fmt.Errorf("get ix memory err: %w, output %v", err, string(output))
 		}
 
 		results := strings.TrimSpace(string(output))
 		results = strings.ReplaceAll(results, " ", "")
-		klog.Infof("GetGPUMemory, end to get ix memory: %s", results)
+		klog.Infof("GetIXMemory, end to get ix memory: %s", results)
 
 		results = strings.ReplaceAll(results, "MiB", "Mi")
 
@@ -422,7 +422,7 @@ func GetXPUMemory(deviceType string) (string, error) {
 			ChangeRootCmd, HostRootDir, MLUCmd, QueryMLUInfoArgs))
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			return "0Mi", fmt.Errorf("get gpu memory err: %w, output %v", err, string(output))
+			return "0Mi", fmt.Errorf("get mlu memory err: %w, output %v", err, string(output))
 		}
 
 		results := strings.Split(string(output), "\n")
@@ -435,7 +435,7 @@ func GetXPUMemory(deviceType string) (string, error) {
 				break
 			}
 		}
-		klog.Infof("GetGPUMemory, end to get ix memory: %s", realResults)
+		klog.Infof("GetMLUMemory, end to get mlu memory: %s", realResults)
 
 		realResults = fmt.Sprintf("%sMi", realResults)
 

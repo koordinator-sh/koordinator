@@ -29,6 +29,7 @@ import (
 	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
@@ -677,7 +678,7 @@ func TestAfterPostFilter_SuggestionPropagation(t *testing.T) {
 				diagnosis.SetSuggestion(tt.suggestion)
 			}
 
-			pgMgr.AfterPostFilter(context.TODO(), cycleState, tt.pod, pgMgr.handle, "coscheduling", nil)
+			pgMgr.AfterPostFilter(context.TODO(), cycleState, tt.pod, pgMgr.handle, "coscheduling", nil, nil)
 			assert.Equal(t, tt.wantSuggestion, tt.gangSchedulingContext.suggestion, "suggestion propagation")
 		})
 	}
@@ -854,4 +855,319 @@ func TestGetGangBindingInfo(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPatchGangPendingPodsCondition(t *testing.T) {
+	gangCreatedTime := time.Now()
+
+	tests := []struct {
+		name                 string
+		currentPod           *corev1.Pod
+		pendingPods          []*corev1.Pod
+		alreadyAttemptedPods sets.Set[string]
+		postFilterStatus     *fwktype.Status
+		wantPatchCount       int
+	}{
+		{
+			name:             "nil postFilterStatus does nothing",
+			currentPod:       st.MakePod().Name("pod1").Namespace("ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			postFilterStatus: nil,
+			wantPatchCount:   0,
+		},
+		{
+			name:       "excludes current pod and already attempted pods",
+			currentPod: st.MakePod().Name("pod1").Namespace("ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			pendingPods: []*corev1.Pod{
+				st.MakePod().Name("pod2").Namespace("ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+				st.MakePod().Name("pod3").Namespace("ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+				st.MakePod().Name("pod4").Namespace("ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			},
+			alreadyAttemptedPods: sets.New[string]("ns/pod1", "ns/pod2"),
+			postFilterStatus:     fwktype.NewStatus(fwktype.Unschedulable, "PostFilter failed"),
+			wantPatchCount:       2, // pod3 + pod4 (current pod excluded, pod2 attempted)
+		},
+		{
+			name:                 "no patches when all others are attempted",
+			currentPod:           st.MakePod().Name("pod1").Namespace("ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			pendingPods:          []*corev1.Pod{},
+			alreadyAttemptedPods: sets.New[string]("ns/pod1"),
+			postFilterStatus:     fwktype.NewStatus(fwktype.Unschedulable, "PostFilter failed"),
+			wantPatchCount:       0, // current pod excluded, no other pending pods
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pg := makePg("gangA", "ns", 4, &gangCreatedTime, nil)
+
+			// Create handle with fake framework
+			handle := NewFakeExtendedFramework(t, []*corev1.Node{
+				st.MakeNode().Name("node1").Obj(),
+			}, nil, nil, nil, nil)
+
+			// Create PodGroupManager
+			args := &config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: 300 * time.Second}}
+			gangCache := NewGangCache(args, nil, nil, nil, handle)
+			pgMgr := &PodGroupManager{
+				handle: handle,
+				cache:  gangCache,
+				args:   args,
+			}
+
+			// Set up gang
+			gangCache.onPodGroupAdd(pg)
+			gang := gangCache.getGangFromCacheByGangId("ns/gangA", false)
+			assert.NotNil(t, gang)
+
+			// Add pending pods to gang
+			for _, pod := range tt.pendingPods {
+				gang.setChild(pod)
+			}
+			gang.setChild(tt.currentPod)
+
+			// Set up gangSchedulingContext
+			gangSchedulingContext := &GangSchedulingContext{
+				gangGroupID:          "ns/gangA",
+				alreadyAttemptedPods: tt.alreadyAttemptedPods,
+				failedMessage:        "test failed message",
+			}
+
+			// Call the function
+			pgMgr.patchGangPendingPodsCondition(context.TODO(), handle, tt.currentPod, gang, gangSchedulingContext, nil, tt.postFilterStatus)
+
+			// Verify patch actions
+			fakeClient := handle.ClientSet().(*clientsetfake.Clientset)
+			patchCount := 0
+			for _, action := range fakeClient.Actions() {
+				if action.GetVerb() == "patch" && action.GetResource().Resource == "pods" {
+					patchAction := action.(k8stesting.PatchAction)
+					assert.Equal(t, "status", patchAction.GetSubresource())
+					patchCount++
+				}
+			}
+			assert.Equal(t, tt.wantPatchCount, patchCount, "unexpected number of patch actions")
+		})
+	}
+}
+
+func TestPostFilter_PreemptionMessageForNonRootCausePod(t *testing.T) {
+	tests := []struct {
+		name                  string
+		pod                   *corev1.Pod
+		isRootCausePod        bool
+		gangSchedulingContext *GangSchedulingContext
+		wantResult            *fwktype.PostFilterResult
+		wantStatus            *fwktype.Status
+	}{
+		{
+			name:           "non-root-cause pod with preemptionMessage returns message",
+			pod:            st.MakePod().Name("pod-follower").UID("pod-follower").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangA").Obj(),
+			isRootCausePod: false,
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID:       "default/gangA",
+				gangGroup:         sets.New[string]("default/gangA"),
+				preemptionMessage: "preemption already attempted by default/pod-leader with no feasible nodes",
+			},
+			wantResult: &fwktype.PostFilterResult{},
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "preemption already attempted by default/pod-leader with no feasible nodes"),
+		},
+		{
+			name:           "non-root-cause pod without preemptionMessage returns plain Unschedulable",
+			pod:            st.MakePod().Name("pod-follower2").UID("pod-follower2").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangB").Obj(),
+			isRootCausePod: false,
+			gangSchedulingContext: &GangSchedulingContext{
+				gangGroupID:       "default/gangB",
+				gangGroup:         sets.New[string]("default/gangB"),
+				preemptionMessage: "",
+			},
+			wantResult: &fwktype.PostFilterResult{},
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable),
+		},
+		{
+			name:                  "root-cause pod does not short-circuit",
+			pod:                   st.MakePod().Name("pod-leader").UID("pod-leader").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangC").Obj(),
+			isRootCausePod:        true,
+			gangSchedulingContext: nil,
+			wantResult:            &fwktype.PostFilterResult{},
+			wantStatus:            fwktype.NewStatus(fwktype.Unschedulable),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgMgr := &PodGroupManager{
+				handle: NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil),
+				holder: GangSchedulingContextHolder{
+					gangSchedulingContext: tt.gangSchedulingContext,
+				},
+				args: &config.CoschedulingArgs{
+					EnablePreemption: ptr.To[bool](false),
+				},
+				cache: NewGangCache(nil, nil, nil, nil, nil),
+			}
+			state := framework.NewCycleState()
+			frameworkext.InitDiagnosis(state, tt.pod)
+			diagnosis := frameworkext.GetDiagnosis(state)
+			diagnosis.IsRootCausePod = tt.isRootCausePod
+
+			got, gotStatus := pgMgr.PostFilter(context.TODO(), state, tt.pod, nil)
+			assert.Equal(t, tt.wantResult, got)
+			assert.Equal(t, tt.wantStatus, gotStatus)
+		})
+	}
+}
+
+func TestAfterPostFilter_PreemptionDiagnosisFailedMessage(t *testing.T) {
+	tests := []struct {
+		name                  string
+		pod                   *corev1.Pod
+		isRootCausePod        bool
+		existingPreemptionMsg string
+		preemptionDiagnosis   *frameworkext.PreemptionDiagnosis
+		wantPreemptionMessage string
+	}{
+		{
+			name:                  "root-cause pod stores FailedMessage when preemptionMessage is empty",
+			pod:                   st.MakePod().Name("pod-root").UID("pod-root").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangD").Obj(),
+			isRootCausePod:        true,
+			existingPreemptionMsg: "",
+			preemptionDiagnosis: &frameworkext.PreemptionDiagnosis{
+				FailedMessage: "0/10 nodes can be preempted: insufficient cpu",
+			},
+			wantPreemptionMessage: "0/10 nodes can be preempted: insufficient cpu",
+		},
+		{
+			name:                  "root-cause pod does NOT overwrite existing preemptionMessage",
+			pod:                   st.MakePod().Name("pod-root2").UID("pod-root2").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangE").Obj(),
+			isRootCausePod:        true,
+			existingPreemptionMsg: "preemption already attempted by default/pod-x with reason",
+			preemptionDiagnosis: &frameworkext.PreemptionDiagnosis{
+				FailedMessage: "new message that should be ignored",
+			},
+			wantPreemptionMessage: "preemption already attempted by default/pod-x with reason",
+		},
+		{
+			name:                  "non-root-cause pod does NOT store FailedMessage",
+			pod:                   st.MakePod().Name("pod-follow").UID("pod-follow").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangF").Obj(),
+			isRootCausePod:        false,
+			existingPreemptionMsg: "",
+			preemptionDiagnosis: &frameworkext.PreemptionDiagnosis{
+				FailedMessage: "should not be stored",
+			},
+			wantPreemptionMessage: "",
+		},
+		{
+			name:                  "root-cause pod with nil PreemptionDiagnosis does nothing",
+			pod:                   st.MakePod().Name("pod-root3").UID("pod-root3").Namespace("default").Label(v1alpha1.PodGroupLabel, "gangG").Obj(),
+			isRootCausePod:        true,
+			existingPreemptionMsg: "",
+			preemptionDiagnosis:   nil,
+			wantPreemptionMessage: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handle := NewFakeExtendedFramework(t, []*corev1.Node{}, nil, nil, nil, nil)
+			gangCache := NewGangCache(nil, nil, nil, nil, handle)
+			gangCache.onPodAdd(tt.pod)
+
+			gangSchedulingContext := &GangSchedulingContext{
+				gangGroupID:          "default/gang",
+				gangGroup:            sets.New[string]("default/gang"),
+				failedMessage:        "gang failed",
+				preemptionMessage:    tt.existingPreemptionMsg,
+				alreadyAttemptedPods: sets.New[string](),
+			}
+
+			pgMgr := &PodGroupManager{
+				handle: handle,
+				holder: GangSchedulingContextHolder{
+					gangSchedulingContext: gangSchedulingContext,
+				},
+				args:  &config.CoschedulingArgs{},
+				cache: gangCache,
+			}
+
+			cycleState := framework.NewCycleState()
+			frameworkext.InitDiagnosis(cycleState, tt.pod)
+			diagnosis := frameworkext.GetDiagnosis(cycleState)
+			diagnosis.IsRootCausePod = tt.isRootCausePod
+			diagnosis.PreemptionDiagnosis = tt.preemptionDiagnosis
+
+			pgMgr.AfterPostFilter(context.TODO(), cycleState, tt.pod, handle, "coscheduling", nil, nil)
+			assert.Equal(t, tt.wantPreemptionMessage, gangSchedulingContext.preemptionMessage)
+		})
+	}
+}
+
+func TestAfterPostFilter_PatchConditionOnlyOnce(t *testing.T) {
+	gangCreatedTime := time.Now()
+	pg := makePg("gangA", "ns", 3, &gangCreatedTime, nil)
+	pg.Annotations = map[string]string{
+		extension.AnnotationGangMode: string(extension.GangModeStrict),
+	}
+
+	// Create handle with fake framework
+	handle := NewFakeExtendedFramework(t, []*corev1.Node{
+		st.MakeNode().Name("node1").Obj(),
+	}, nil, nil, nil, nil)
+
+	// Create PodGroupManager with holder
+	args := &config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: 300 * time.Second}}
+	gangCache := NewGangCache(args, nil, nil, nil, handle)
+	pgMgr := &PodGroupManager{
+		handle: handle,
+		cache:  gangCache,
+		args:   args,
+	}
+
+	// Set up gang
+	gangCache.onPodGroupAdd(pg)
+	gang := gangCache.getGangFromCacheByGangId("ns/gangA", false)
+	assert.NotNil(t, gang)
+
+	pod := st.MakePod().Name("pod1").Namespace("ns").Label(v1alpha1.PodGroupLabel, "gangA").Obj()
+	gang.setChild(pod)
+
+	// Set up gangSchedulingContext with IsRootCausePod=false in diagnosis
+	gangSchedulingContext := &GangSchedulingContext{
+		gangGroupID:          "ns/gangA",
+		gangGroup:            sets.New[string]("ns/gangA"),
+		alreadyAttemptedPods: sets.New[string]("ns/pod1"),
+		failedMessage:        "test failed message",
+	}
+	pgMgr.holder.gangSchedulingContext = gangSchedulingContext
+
+	// Create cycleState with diagnosis where IsRootCausePod=false
+	cycleState := framework.NewCycleState()
+	frameworkext.InitDiagnosis(cycleState, pod)
+	diagnosis := frameworkext.GetDiagnosis(cycleState)
+	diagnosis.IsRootCausePod = false
+
+	postFilterStatus := fwktype.NewStatus(fwktype.Unschedulable, "PostFilter failed")
+
+	// First call: should patch
+	pgMgr.AfterPostFilter(context.TODO(), cycleState, pod, handle, "coscheduling", nil, postFilterStatus)
+	assert.True(t, gangSchedulingContext.pendingPodsConditionPatched, "flag should be set after first call")
+
+	// Count patches from first call
+	fakeClient := handle.ClientSet().(*clientsetfake.Clientset)
+	firstCallPatches := 0
+	for _, action := range fakeClient.Actions() {
+		if action.GetVerb() == "patch" && action.GetResource().Resource == "pods" {
+			firstCallPatches++
+		}
+	}
+
+	// Second call: should NOT patch again (flag already set)
+	gangSchedulingContext.failedMessage = "" // reset to allow re-entry into AfterPostFilter
+	pgMgr.AfterPostFilter(context.TODO(), cycleState, pod, handle, "coscheduling", nil, postFilterStatus)
+
+	// Count total patches - should be same as after first call
+	secondCallPatches := 0
+	for _, action := range fakeClient.Actions() {
+		if action.GetVerb() == "patch" && action.GetResource().Resource == "pods" {
+			secondCallPatches++
+		}
+	}
+	assert.Equal(t, firstCallPatches, secondCallPatches, "no additional patches should be made on second call")
 }

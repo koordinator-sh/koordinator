@@ -211,6 +211,41 @@ type ReservationArgs struct {
 	// PreAllocationConfig defines the configuration for pre-allocation feature.
 	// +optional
 	PreAllocationConfig *PreAllocationConfig `json:"preAllocationConfig,omitempty"`
+	// IgnoredResources is the list of *extended* resources that the reservation fit filter should ignore
+	// during scalar resource checks (e.g. "example.com/gpu"). Native resources (cpu/memory/pods/
+	// ephemeral-storage/hugepages-*) are rejected by config validation.
+	// +optional
+	IgnoredResources []string `json:"ignoredResources,omitempty"`
+	// IgnoredResourceGroups is the list of extended-resource vendor prefixes (DNS subdomains) that
+	// the reservation fit filter should ignore (e.g. ["example.com"] ignores "example.com/*").
+	// A group name can't contain '/', and the reserved "kubernetes.io" namespace is rejected.
+	// +optional
+	IgnoredResourceGroups []string `json:"ignoredResourceGroups,omitempty"`
+	// ReservationSelectorIndex configures the reservationSelector white-list
+	// existence index. When enabled, pods carrying a reservationSelector whose
+	// key matches one of the configured prefixes or exact keys can quickly
+	// enumerate the candidate nodes that hold any matching reservation.
+	// +optional
+	ReservationSelectorIndex *ReservationSelectorIndexArgs `json:"reservationSelectorIndex,omitempty"`
+}
+
+// ReservationSelectorIndexArgs configures the reservationSelector white-list
+// existence index. The index is a key-existence pre-filter only.
+type ReservationSelectorIndexArgs struct {
+	// Enabled toggles the index on/off. Defaults to false.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// KeyPrefixes lists the label key prefixes that participate in the
+	// inverted index. Empty/blank entries are ignored, duplicates are
+	// deduplicated.
+	// +optional
+	KeyPrefixes []string `json:"keyPrefixes,omitempty"`
+	// Keys lists the exact label keys (no prefix match) that participate in
+	// the inverted index. Use this for short, non-namespaced label keys
+	// (e.g. "tenant", "team") where prefix matching would over-match. Empty
+	// /blank entries are ignored, duplicates are deduplicated.
+	// +optional
+	Keys []string `json:"keys,omitempty"`
 }
 
 // PreAllocationConfig defines the configuration for pre-allocation feature.

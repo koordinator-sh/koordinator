@@ -48,17 +48,13 @@ var (
 			Name:      "reservation_status_phase",
 			Help:      `The current number of reservations in each status phase (e.g. Pending, Available, Succeeded, Failed)`,
 		}, []string{"name", "phase"})
-	ReservationResource = utilmetrics.NewGCGaugeVec(
-		"reservation_resource",
-		prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Subsystem: schedulermetrics.SchedulerSubsystem,
-				Name:      "reservation_resource",
-				Help:      "Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.",
-			},
-			[]string{"type", "name", "resource", "unit"},
-		),
-	)
+	ReservationResource = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "reservation_resource",
+			Help:      "Resource metrics for a reservation, including allocatable, allocated, and utilization with unit.",
+		},
+		[]string{"type", "name", "resource", "unit"})
 
 	PodSchedulingEvaluatedNodes = metrics.NewHistogram(
 		&metrics.HistogramOpts{
@@ -141,9 +137,29 @@ var (
 		[]string{"reason", "job_size"},
 	)
 
+	ReservationSelectorIndexQueryTotal = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "reservation_selector_index_query_total",
+			Help:           "Total number of reservationSelector index queries, labeled by index hit/miss result.",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"result"},
+	)
+	ReservationSelectorIndexCandidates = metrics.NewHistogram(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "reservation_selector_index_candidates_count",
+			Help:           "The number of candidate nodes returned by the reservationSelector white-list index for an index-hit query.",
+			Buckets:        metrics.ExponentialBuckets(1, 2, 16),
+			StabilityLevel: metrics.ALPHA,
+		},
+	)
+
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ReservationStatusPhase,
+		ReservationResource,
 		PodSchedulingEvaluatedNodes,
 		PodSchedulingFeasibleNodes,
 		ElasticQuotaProcessLatency,
@@ -152,10 +168,11 @@ var (
 		NextPodDeleteFromQueueLatency,
 		ElasticQuotaHookPluginLatency,
 		GangScheduleCycleDuration,
+		ReservationSelectorIndexQueryTotal,
+		ReservationSelectorIndexCandidates,
 	}
 
 	gcMetricsList = []prometheus.Collector{
-		ReservationResource.GetGaugeVec(),
 		JobPreemptionDuration.GetHistogramVec(),
 	}
 )
@@ -221,6 +238,10 @@ func ResetReservationPhase() {
 	ReservationStatusPhase.Reset()
 }
 
+func ResetReservationResource() {
+	ReservationResource.Reset()
+}
+
 // RecordReservationResourceByTypeWithUnit records the resource record of a reservation as a metric.
 func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, value float64) {
 	labels := prometheus.Labels{
@@ -229,7 +250,7 @@ func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, v
 		reservationResourceKey:     resource,
 		reservationResourceUnitKey: unit,
 	}
-	ReservationResource.WithSet(labels, value)
+	ReservationResource.With(labels).Set(value)
 }
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
