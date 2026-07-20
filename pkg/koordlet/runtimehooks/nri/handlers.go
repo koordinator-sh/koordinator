@@ -113,6 +113,7 @@ func (p *NriServer) UpdateContainer(_ context.Context, pod *api.PodSandbox, cont
 		klog.Errorf("containerCtx nri done failed: %v", err)
 		return nil, nil
 	}
+	update.SetContainerId(container.GetId())
 
 	klog.V(4).Infof("handle NRI UpdateContainer successfully, container %s/%s/%s",
 		pod.GetNamespace(), pod.GetName(), container.GetName())
