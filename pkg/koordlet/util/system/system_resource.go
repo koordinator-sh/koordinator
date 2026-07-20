@@ -24,17 +24,19 @@ import (
 )
 
 const (
-	ProcSysVmRelativePath     = "sys/vm/"
-	SysKernelRelativePath     = "kernel/"
-	ProcSysKernelRelativePath = "sys/kernel/"
-	MemcgReaperRelativePath   = "kernel/mm/memcg_reaper/"
-	KidledRelativePath        = "kernel/mm/kidled/"
-	SchedFeaturesRelativePath = "kernel/debug/"
+	ProcSysVmRelativePath      = "sys/vm/"
+	SysKernelRelativePath      = "kernel/"
+	ProcSysKernelRelativePath  = "sys/kernel/"
+	MemcgReaperRelativePath    = "kernel/mm/memcg_reaper/"
+	PageCacheLimitRelativePath = "kernel/mm/pagecache_limit/"
+	KidledRelativePath         = "kernel/mm/kidled/"
+	SchedFeaturesRelativePath  = "kernel/debug/"
 
 	SchedFeaturesFileName             = "sched_features"
 	MinFreeKbytesFileName             = "min_free_kbytes"
 	WatermarkScaleFactorFileName      = "watermark_scale_factor"
 	MemcgReapBackGroundFileName       = "reap_background"
+	PageCacheLimitEnabledFileName     = "enabled"
 	KidledScanPeriodInSecondsFileName = "scan_period_in_seconds"
 	KidledUseHierarchyFileFileName    = "use_hierarchy"
 	SchedGroupIdentityEnabledFileName = "sched_group_identity_enabled"
@@ -46,6 +48,7 @@ var (
 	MinFreeKbytesValidator             = &RangeValidator{min: 10 * 1024, max: 10 * 1024 * 1024}
 	WatermarkScaleFactorValidator      = &RangeValidator{min: 10, max: 400}
 	MemcgReapBackGroundValidator       = &RangeValidator{min: 0, max: 1}
+	PageCacheLimitEnabledValidator     = &RangeValidator{min: 0, max: 1}
 	KidledScanPeriodInSecondsValidator = &RangeValidator{min: 0, max: math.MaxInt64}
 	KidledUseHierarchyValidator        = &RangeValidator{min: 0, max: 1}
 	SchedGroupIdentityEnabledValidator = &RangeValidator{min: 0, max: 1}
@@ -55,6 +58,7 @@ var (
 	MinFreeKbytes             = NewCommonSystemResource(ProcSysVmRelativePath, MinFreeKbytesFileName, GetProcRootDir).WithValidator(MinFreeKbytesValidator)
 	WatermarkScaleFactor      = NewCommonSystemResource(ProcSysVmRelativePath, WatermarkScaleFactorFileName, GetProcRootDir).WithValidator(WatermarkScaleFactorValidator)
 	MemcgReapBackGround       = NewCommonSystemResource(MemcgReaperRelativePath, MemcgReapBackGroundFileName, GetSysRootDir).WithValidator(MemcgReapBackGroundValidator).WithCheckSupported(SupportedIfFileExists)
+	PageCacheLimitEnabled     = NewCommonSystemResource(PageCacheLimitRelativePath, PageCacheLimitEnabledFileName, GetSysRootDir).WithValidator(PageCacheLimitEnabledValidator).WithCheckSupported(SupportedIfFileExists)
 	KidledScanPeriodInSeconds = NewCommonSystemResource(KidledRelativePath, KidledScanPeriodInSecondsFileName, GetSysRootDir).WithValidator(KidledScanPeriodInSecondsValidator).WithCheckSupported(SupportedIfFileExists)
 	KidledUseHierarchy        = NewCommonSystemResource(KidledRelativePath, KidledUseHierarchyFileFileName, GetSysRootDir).WithValidator(KidledUseHierarchyValidator).WithCheckSupported(SupportedIfFileExists)
 	// SchedFeatures is the system file which shows the enabled features of the kernel scheduling.
