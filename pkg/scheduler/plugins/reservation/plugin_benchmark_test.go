@@ -537,7 +537,8 @@ func Benchmark_filterWithReservations(b *testing.B) {
 					},
 				},
 			},
-			wantStatus: nil,
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable,
+				"Insufficient kubernetes.io/batch-cpu by node"),
 		},
 		{
 			name: "failed to filter restricted reservation due to reserved",
