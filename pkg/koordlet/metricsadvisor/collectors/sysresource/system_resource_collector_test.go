@@ -22,10 +22,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -307,6 +311,121 @@ func testQuery(querier metriccache.Querier, resource metriccache.MetricResource,
 		return nil, err
 	}
 	return aggregateResult, nil
+}
+
+// mockStatesInformer implements statesinformer.StatesInformer for testing.
+type mockStatesInformer struct {
+	nodeMetricSpec *slov1alpha1.NodeMetricSpec
+}
+
+func (m *mockStatesInformer) GetNodeMetricSpec() *slov1alpha1.NodeMetricSpec {
+	return m.nodeMetricSpec
+}
+
+// Other methods of StatesInformer interface — not used in this test.
+func (m *mockStatesInformer) GetAllPods() []*statesinformer.PodMeta                                          { return nil }
+func (m *mockStatesInformer) GetNode() *corev1.Node                                                          { return nil }
+func (m *mockStatesInformer) GetNodeSLO() *slov1alpha1.NodeSLO                                               { return nil }
+func (m *mockStatesInformer) GetNodeMetric() *slov1alpha1.NodeMetric                                         { return nil }
+func (m *mockStatesInformer) GetAllHostApplications() []*slov1alpha1.HostApplicationSpec                         { return nil }
+
+func (m *mockStatesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology { return nil }
+
+func (m *mockStatesInformer) GetVolumeName(string, string) string { return "" }
+func (m *mockStatesInformer) HasSynced() bool                                                                { return false }
+func (m *mockStatesInformer) RegisterCallbacks(kind statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn) {}
+func (m *mockStatesInformer) Run(stopCh <-chan struct{}) error                                               { return nil }
+
+func Test_systemResourceCollector_queryMemoryWithPolicy(t *testing.T) {
+	testNow := time.Now()
+	timeNow = func() time.Time {
+		return testNow
+	}
+
+	tests := []struct {
+		name       string
+		policy     slov1alpha1.NodeMemoryCollectPolicy
+		mockValue  float64   // value to write to metric cache for the policy-aware metric
+		wantNode   float64   // expected node memory return value
+		wantPods   float64   // expected pods memory return value (passthrough)
+		wantHost   float64   // expected host app memory return value (passthrough)
+		wantErrVal bool      // true if we expect the default fallback (no policy-aware query)
+	}{
+		{
+			name:      "UsageWithPageCache returns policy-aware node memory",
+			policy:    slov1alpha1.UsageWithPageCache,
+			mockValue: 2048,
+			wantNode:  2048,
+			wantPods:  512,
+			wantHost:  128,
+		},
+		{
+			name:      "UsageWithHotPageCache returns policy-aware node memory",
+			policy:    slov1alpha1.UsageWithHotPageCache,
+			mockValue: 3072,
+			wantNode:  3072,
+			wantPods:  512,
+			wantHost:  128,
+		},
+		{
+			name:       "nil statesInformer falls back to default node memory",
+			policy:     slov1alpha1.UsageWithPageCache,
+			mockValue:  2048,
+			wantNode:   1024, // default nodeMemory.Value
+			wantPods:   512,
+			wantHost:   128,
+			wantErrVal: true, // nil statesInformer → no policy query
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+				TSDBPath:              t.TempDir(),
+				TSDBEnablePromMetrics: false,
+			})
+			assert.NoError(t, err)
+			defer metricCache.Close()
+
+			// Write a policy-aware node memory sample to the metric cache.
+			if !tt.wantErrVal {
+				metric := metriccache.NodeMemoryUsageWithPageCacheMetric
+				if tt.policy == slov1alpha1.UsageWithHotPageCache {
+					metric = metriccache.NodeMemoryWithHotPageUsageMetric
+				}
+				sample, err := metric.GenerateSample(nil, testNow.Add(-1*time.Second), tt.mockValue)
+				assert.NoError(t, err)
+				appender := metricCache.Appender()
+				err = appender.Append([]metriccache.MetricSample{sample})
+				assert.NoError(t, err)
+				err = appender.Commit()
+				assert.NoError(t, err)
+			}
+
+			// Build the collector.
+			s := &systemResourceCollector{
+				metricCache:      metricCache,
+				outdatedInterval: 10 * time.Second,
+				sharedState:      framework.NewSharedState(),
+			}
+			if !tt.wantErrVal {
+				s.statesInformer = &mockStatesInformer{
+					nodeMetricSpec: &slov1alpha1.NodeMetricSpec{
+						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+							NodeMemoryCollectPolicy: &tt.policy,
+						},
+					},
+				}
+			}
+			// s.statesInformer stays nil for the error case
+
+			nodeInput := &metriccache.Point{Timestamp: testNow, Value: 1024}
+			gotNode, gotPods, gotHost := s.queryMemoryWithPolicy(tt.policy, testNow, nodeInput, 512, &metriccache.Point{Timestamp: testNow, Value: 128})
+			assert.Equal(t, tt.wantNode, gotNode, "node memory should match")
+			assert.Equal(t, tt.wantPods, gotPods, "pods memory should pass through")
+			assert.Equal(t, tt.wantHost, gotHost, "host app memory should pass through")
+		})
+	}
 }
 
 func Test_systemResourceCollector_Enabled(t *testing.T) {
