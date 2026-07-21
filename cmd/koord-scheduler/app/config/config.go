@@ -29,14 +29,14 @@ import (
 // Config has all the context to run a Scheduler
 type Config struct {
 	*schedulerappconfig.Config
-	InsecureServing *apiserver.DeprecatedInsecureServingInfo // nil will disable serving on an insecure port
-	// TracingConfigFile is the path to an OpenTelemetry tracing configuration file.
-	// When empty, distributed tracing stays disabled.
-	TracingConfigFile                   string
+	InsecureServing                     *apiserver.DeprecatedInsecureServingInfo // nil will disable serving on an insecure port
 	ServicesEngine                      *services.Engine
 	KoordinatorClient                   koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory    koordinatorinformers.SharedInformerFactory
 	NodeResourceTopologyInformerFactory nrtinformers.SharedInformerFactory
+	// TracingConfigFile is the path to an OpenTelemetry tracing configuration file.
+	// When empty, distributed tracing stays disabled.
+	TracingConfigFile string
 }
 
 type completedConfig struct {

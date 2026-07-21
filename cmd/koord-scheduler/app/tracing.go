@@ -52,8 +52,16 @@ func setupTracing(ctx context.Context, configFile string) (func(context.Context)
 		return nil, fmt.Errorf("invalid tracing configuration: %v", errs.ToAggregate())
 	}
 
+	attrs := []attribute.KeyValue{
+		attribute.String("service.name", tracingServiceName),
+	}
+	// Attach service.instance.id so operators can tell replicas/shards apart in the
+	// tracing backend. Best-effort: skip it if the hostname cannot be determined.
+	if hostname, err := os.Hostname(); err == nil && hostname != "" {
+		attrs = append(attrs, attribute.String("service.instance.id", hostname))
+	}
 	resourceOpts := []resource.Option{
-		resource.WithAttributes(attribute.String("service.name", tracingServiceName)),
+		resource.WithAttributes(attrs...),
 	}
 	tp, err := tracing.NewProvider(ctx, tracingConfig, nil, resourceOpts)
 	if err != nil {

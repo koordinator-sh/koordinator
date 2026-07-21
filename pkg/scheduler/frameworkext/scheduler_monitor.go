@@ -105,11 +105,16 @@ func (m *SchedulerMonitor) monitor() {
 		state := m.schedulingPods[uid]
 		if shouldSkip, needDelete := isPodUnhandledExceedingTimeout(&state, now, m.unhandledTimeout); shouldSkip {
 			if needDelete {
+				// Only never-started attempts reach this branch (isPodUnhandledExceedingTimeout
+				// requires state.start to be zero), so state.span is always nil here and there
+				// is nothing to end. Started attempts always end their span through Complete.
 				delete(m.schedulingPods, uid)
 				GCMonitor(uid, &state, now)
 			}
 			continue
 		}
+		// A started attempt exceeding the timeout is only logged here; it stays tracked
+		// and its span is ended by the guaranteed Complete call, so it is not leaked.
 		recordIfSchedulingTimeout(uid, &state, now, m.timeout)
 	}
 }
@@ -123,8 +128,14 @@ func (m *SchedulerMonitor) RecordNextPod(podInfo *framework.QueuedPodInfo) {
 	// clean up from the cache when the pod is terminating
 	if pod.DeletionTimestamp != nil {
 		m.lock.Lock()
+		state, ok := m.schedulingPods[pod.UID]
 		delete(m.schedulingPods, pod.UID)
 		m.lock.Unlock()
+		if ok {
+			// The pod is terminating; end its attempt span (if one was started) so it is
+			// not leaked when the attempt is abandoned without ever reaching Complete.
+			endSpan(state.span, codes.Error, "pod deleted during scheduling")
+		}
 		return
 	}
 
@@ -160,6 +171,7 @@ func (m *SchedulerMonitor) StartMonitoring(ctx context.Context, pod *corev1.Pod)
 
 	m.lock.Lock()
 	scheduleState, exists := m.schedulingPods[pod.UID]
+	var supersededSpan oteltrace.Span
 	if !exists {
 		scheduleState = podScheduleState{
 			start:         now,
@@ -168,12 +180,18 @@ func (m *SchedulerMonitor) StartMonitoring(ctx context.Context, pod *corev1.Pod)
 			schedulerName: pod.Spec.SchedulerName,
 		}
 	} else {
+		// A previous attempt for this pod is still tracked and never reached Complete.
+		// Take over its span below and end the stale one outside the lock so it is not
+		// leaked when this attempt supersedes it.
+		supersededSpan = scheduleState.span
 		scheduleState.start = now
 	}
 	scheduleState.span = span
 	StartMonitor(pod, &scheduleState)
 	m.schedulingPods[pod.UID] = scheduleState
 	m.lock.Unlock()
+
+	endSpan(supersededSpan, codes.Error, "scheduling attempt superseded")
 	return ctx
 }
 
@@ -185,14 +203,30 @@ func (m *SchedulerMonitor) Complete(pod *corev1.Pod, status *fwktype.Status) {
 
 	if ok {
 		now := time.Now()
-		if state.span != nil {
-			if status != nil && !status.IsSuccess() {
-				state.span.SetStatus(codes.Error, status.Message())
-			}
-			state.span.End()
+		// End the span after releasing the lock: span.End hands the span off to the
+		// exporter's batch processor (which may allocate/queue), and this runs on the
+		// scheduling hot path, so it must stay outside the critical section.
+		code, msg := codes.Unset, ""
+		if status != nil && !status.IsSuccess() {
+			code, msg = codes.Error, status.Message()
 		}
+		endSpan(state.span, code, msg)
 		CompleteMonitor(pod, &state, now, m.timeout, status)
 	}
+}
+
+// endSpan finishes the OpenTelemetry span owned by a scheduling attempt, if any. It is
+// a no-op when span is nil (tracing disabled or no attempt started). callers must invoke
+// it outside m.lock: span.End hands the span to the exporter's batch processor, which may
+// allocate, and must not run under the scheduling hot-path lock.
+func endSpan(span oteltrace.Span, code codes.Code, msg string) {
+	if span == nil {
+		return
+	}
+	if code != codes.Unset {
+		span.SetStatus(code, msg)
+	}
+	span.End()
 }
 
 func isPodUnhandledExceedingTimeout(state *podScheduleState, now time.Time, timeout time.Duration) (skipped bool, toDelete bool) {
