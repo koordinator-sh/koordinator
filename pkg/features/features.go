@@ -91,6 +91,9 @@ const (
 	// EnableQuotaAdmission enables quota admission.
 	EnableQuotaAdmission featuregate.Feature = "EnableQuotaAdmission"
 
+	// EnableQuotaAdmissionOnUpdate enables quota admission on pod update when quota label changes.
+	EnableQuotaAdmissionOnUpdate featuregate.Feature = "EnableQuotaAdmissionOnUpdate"
+
 	// EnablePodEnhancedValidator enables enhanced validator for pods with configurable rules.
 	EnablePodEnhancedValidator featuregate.Feature = "EnablePodEnhancedValidator"
 
@@ -102,6 +105,16 @@ const (
 
 	// ValidatePodDeviceResource enables validate pod device resource
 	ValidatePodDeviceResource featuregate.Feature = "ValidatePodDeviceResource"
+
+	// DisableExtendedResourceSpec disables the extended resource spec mutating webhook
+	DisableExtendedResourceSpec featuregate.Feature = "DisableExtendedResourceSpec"
+
+	// DisableDeviceResourceSpec disables the device resource spec mutating webhook
+	DisableDeviceResourceSpec featuregate.Feature = "DisableDeviceResourceSpec"
+
+	// BindingAdmissionWebhook enables validating webhook for Pod Binding requests
+	// to restrict which schedulers are allowed to bind pods.
+	BindingAdmissionWebhook featuregate.Feature = "BindingAdmissionWebhook"
 )
 
 var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -124,10 +137,14 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	DisableDefaultQuota:                     {Default: false, PreRelease: featuregate.Alpha},
 	SupportParentQuotaSubmitPod:             {Default: false, PreRelease: featuregate.Alpha},
 	EnableQuotaAdmission:                    {Default: false, PreRelease: featuregate.Alpha},
+	EnableQuotaAdmissionOnUpdate:            {Default: false, PreRelease: featuregate.Alpha},
 	EnableSyncGPUSharedResource:             {Default: false, PreRelease: featuregate.Alpha},
 	ColocationProfileController:             {Default: false, PreRelease: featuregate.Alpha},
 	ValidatePodDeviceResource:               {Default: false, PreRelease: featuregate.Alpha},
 	EnablePodEnhancedValidator:              {Default: false, PreRelease: featuregate.Alpha},
+	DisableExtendedResourceSpec:             {Default: false, PreRelease: featuregate.Alpha},
+	DisableDeviceResourceSpec:               {Default: false, PreRelease: featuregate.Alpha},
+	BindingAdmissionWebhook:                 {Default: false, PreRelease: featuregate.Alpha},
 }
 
 const (

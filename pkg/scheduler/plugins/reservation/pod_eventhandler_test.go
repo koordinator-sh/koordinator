@@ -220,6 +220,260 @@ func TestPodEventHandlerWithOperatingPod(t *testing.T) {
 	assert.Nil(t, rInfo)
 }
 
+func TestPodEventHandlerUnassignedCleanup(t *testing.T) {
+	handler := &podEventHandler{
+		cache:     newReservationCache(nil),
+		nominator: newNominator(nil, nil),
+	}
+	reservationUID := uuid.NewUUID()
+	reservationName := "test-reservation"
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: reservationName,
+			UID:  reservationUID,
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node-1",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("8"),
+			},
+		},
+	}
+	handler.cache.updateReservation(reservation)
+
+	// Step 1: simulate pod being assigned to reservation (Reserve + PreBind + Bind)
+	assignedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "assigned-pod",
+			Namespace: "default",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+			Containers: []corev1.Container{
+				{
+					Name: "main",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+			},
+		},
+	}
+	apiext.SetReservationAllocated(assignedPod, reservation)
+	handler.OnAdd(assignedPod, true)
+
+	rInfo := handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Len(t, rInfo.AssignedPods, 1, "pod should be in AssignedPods after OnAdd")
+	assert.Contains(t, rInfo.AssignedPods, assignedPod.UID)
+
+	// Step 2: simulate unassigned event (NodeName cleared, e.g. informer resync with pod recreated)
+	unassignedPod := assignedPod.DeepCopy()
+	unassignedPod.Spec.NodeName = ""
+	handler.OnUpdate(assignedPod, unassignedPod)
+
+	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Empty(t, rInfo.AssignedPods, "pod should be removed from AssignedPods on unassigned event")
+}
+
+func TestPodEventHandlerUnassignedWithMultiplePods(t *testing.T) {
+	handler := &podEventHandler{
+		cache:     newReservationCache(nil),
+		nominator: newNominator(nil, nil),
+	}
+	reservationUID := uuid.NewUUID()
+	reservationName := "test-reservation"
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: reservationName,
+			UID:  reservationUID,
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node-1",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("16"),
+			},
+		},
+	}
+	handler.cache.updateReservation(reservation)
+
+	// Add two pods to the reservation
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-1",
+			Namespace: "default",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+			Containers: []corev1.Container{
+				{
+					Name: "main",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+			},
+		},
+	}
+	pod2 := pod1.DeepCopy()
+	pod2.Name = "pod-2"
+	pod2.UID = uuid.NewUUID()
+
+	apiext.SetReservationAllocated(pod1, reservation)
+	apiext.SetReservationAllocated(pod2, reservation)
+	handler.OnAdd(pod1, true)
+	handler.OnAdd(pod2, true)
+
+	rInfo := handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Len(t, rInfo.AssignedPods, 2)
+
+	// Unassign pod1 only
+	unassignedPod1 := pod1.DeepCopy()
+	unassignedPod1.Spec.NodeName = ""
+	handler.OnUpdate(pod1, unassignedPod1)
+
+	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Len(t, rInfo.AssignedPods, 1, "only pod1 should be removed")
+	assert.NotContains(t, rInfo.AssignedPods, pod1.UID, "pod1 should be removed")
+	assert.Contains(t, rInfo.AssignedPods, pod2.UID, "pod2 should remain")
+
+	// Unassign pod2 as well
+	unassignedPod2 := pod2.DeepCopy()
+	unassignedPod2.Spec.NodeName = ""
+	handler.OnUpdate(pod2, unassignedPod2)
+
+	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Empty(t, rInfo.AssignedPods, "all pods should be removed")
+}
+
+func TestPodEventHandlerUnassignedNoAnnotation(t *testing.T) {
+	handler := &podEventHandler{
+		cache:     newReservationCache(nil),
+		nominator: newNominator(nil, nil),
+	}
+	reservationUID := uuid.NewUUID()
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+			UID:  reservationUID,
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node-1",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+		},
+	}
+	handler.cache.updateReservation(reservation)
+
+	// Pod with NodeName but NO reservation-allocated annotation
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "no-annotation-pod",
+			Namespace: "default",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+		},
+	}
+	handler.OnAdd(pod, true)
+
+	rInfo := handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Empty(t, rInfo.AssignedPods, "pod without annotation should not be in AssignedPods")
+
+	// Unassign event for pod without annotation should be harmless
+	unassignedPod := pod.DeepCopy()
+	unassignedPod.Spec.NodeName = ""
+	handler.OnUpdate(pod, unassignedPod) // should not panic
+
+	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Empty(t, rInfo.AssignedPods)
+}
+
+func TestPodEventHandlerUnassignedThenOnDelete(t *testing.T) {
+	handler := &podEventHandler{
+		cache:     newReservationCache(nil),
+		nominator: newNominator(nil, nil),
+	}
+	reservationUID := uuid.NewUUID()
+	reservationName := "test-reservation"
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: reservationName,
+			UID:  reservationUID,
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node-1",
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("4"),
+			},
+		},
+	}
+	handler.cache.updateReservation(reservation)
+
+	// Assign pod
+	assignedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       uuid.NewUUID(),
+		},
+		Spec: corev1.PodSpec{
+			NodeName: "test-node-1",
+			Containers: []corev1.Container{
+				{
+					Name: "main",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+			},
+		},
+	}
+	apiext.SetReservationAllocated(assignedPod, reservation)
+	handler.OnAdd(assignedPod, true)
+
+	rInfo := handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Len(t, rInfo.AssignedPods, 1)
+
+	// Unassigned event cleans up
+	unassignedPod := assignedPod.DeepCopy()
+	unassignedPod.Spec.NodeName = ""
+	handler.OnUpdate(assignedPod, unassignedPod)
+
+	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Empty(t, rInfo.AssignedPods, "unassigned event should clean up")
+
+	// Subsequent OnDelete should be a harmless no-op (RemoveAssignedPod is idempotent)
+	handler.OnDelete(assignedPod)
+	rInfo = handler.cache.getReservationInfoByUID(reservationUID)
+	assert.Empty(t, rInfo.AssignedPods, "OnDelete after unassigned cleanup should be no-op")
+}
+
 func TestPodEventHandlerUpdatePodAcrossReservations(t *testing.T) {
 	handler := &podEventHandler{
 		cache:     newReservationCache(nil),

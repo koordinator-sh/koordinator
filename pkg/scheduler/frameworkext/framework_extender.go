@@ -454,16 +454,7 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 	schedulingphase.RecordPhase(state, schedulingphase.PostFilter)
 	defer func() { schedulingphase.RecordPhase(state, "") }()
 	defer func() {
-		for _, transformer := range ext.postFilterTransformersEnabled {
-			startTime := time.Now()
-			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap)
-			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
-		}
 		diagnosis := GetDiagnosis(state)
-		DumpDiagnosis(diagnosis)
-		if diagnosis != nil && diagnosis.IsRootCausePod && diagnosis.AuditType != "" && ext.workloadAuditor != nil {
-			ext.workloadAuditor.RecordDiagnosis(pod, diagnosis.QuestionedKey, diagnosis.AuditType, diagnosis.AuditMessage)
-		}
 		if diagnosis != nil {
 			if suggestion := diagnosis.GetSuggestion(); suggestion != nil {
 				if status == nil {
@@ -471,6 +462,15 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 				}
 				status.AppendReason(fmt.Sprintf("Suggestion: {type: %s, message: %s}", suggestion.Type, suggestion.Message))
 			}
+		}
+		for _, transformer := range ext.postFilterTransformersEnabled {
+			startTime := time.Now()
+			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap, status)
+			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
+		}
+		DumpDiagnosis(diagnosis)
+		if diagnosis != nil && diagnosis.IsRootCausePod && diagnosis.AuditType != "" && ext.workloadAuditor != nil {
+			ext.workloadAuditor.RecordDiagnosis(pod, diagnosis.QuestionedKey, diagnosis.AuditType, diagnosis.AuditMessage)
 		}
 	}()
 

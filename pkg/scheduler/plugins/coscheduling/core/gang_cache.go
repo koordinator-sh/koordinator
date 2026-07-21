@@ -150,7 +150,7 @@ func (gangCache *GangCache) onPodAddInternal(obj interface{}, action string) {
 		gangGroupInfo, created := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
 		gang.SetGangGroupInfo(gangGroupInfo)
 		if created && pod.Spec.NodeName == "" && gangCache.isResponsibleForPod(pod) && gangCache.workloadAuditor != nil {
-			gangCache.workloadAuditor.AddGangGroup(gangGroupId)
+			gangCache.workloadAuditor.AddGangGroup(gangGroupId, gang.MinRequiredNumber)
 		}
 	}
 
@@ -277,7 +277,7 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	if gangCache.workloadAuditor != nil {
 		phase := pg.Status.Phase
 		if isPodGroupPendingPhase(phase) {
-			gangCache.workloadAuditor.AddGangGroup(gang.GangGroupId)
+			gangCache.workloadAuditor.AddGangGroup(gang.GangGroupId, gang.MinRequiredNumber)
 		}
 	}
 	if gang.isGangWorthRequeue() {

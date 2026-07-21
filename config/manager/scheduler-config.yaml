@@ -101,6 +101,7 @@ data:
               - name: LoadAwareScheduling
               - name: NodeNUMAResource
               - name: DeviceShare
+              - name: Reservation
               - name: Coscheduling
               - name: ElasticQuota
           permit:
