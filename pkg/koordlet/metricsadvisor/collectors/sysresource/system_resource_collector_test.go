@@ -374,7 +374,7 @@ func Test_systemResourceCollector_Run(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &systemResourceCollector{
 				collectInterval: time.Second,
-				metricCache:    metricCache,
+				metricCache:     metricCache,
 				sharedState:     framework.NewSharedState(),
 			}
 			s.sharedState.UpdateNodeUsage(metriccache.Point{Timestamp: time.Now(), Value: 1},
