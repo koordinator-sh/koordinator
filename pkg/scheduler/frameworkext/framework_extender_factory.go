@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
@@ -173,6 +174,10 @@ type FrameworkExtenderFactory struct {
 	sharedCaches        map[string]SharedPluginCache
 	sharedCachesOrder   []string
 	sharedCachesStarted bool
+	// startedCaches is the immutable, registration-ordered snapshot of shared caches
+	// published once by StartSharedCaches. The unified dispatcher reads it lock-free on
+	// every pod/node event, avoiding a mutex acquisition and slice allocation per event.
+	startedCaches atomic.Pointer[[]SharedPluginCache]
 }
 
 func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, error) {
@@ -550,11 +555,11 @@ func (f *FrameworkExtenderFactory) getOrRegisterSharedCache(key string, handle E
 // after all profiles are built (all Plugin.New() calls completed) and before
 // informerFactory.Start() so no event is delivered before its handler is registered.
 // Idempotent — subsequent calls after the first are no-ops.
-func (f *FrameworkExtenderFactory) StartSharedCaches(ctx context.Context, informerFactory informers.SharedInformerFactory) {
+func (f *FrameworkExtenderFactory) StartSharedCaches(ctx context.Context, informerFactory informers.SharedInformerFactory) error {
 	f.sharedCachesMu.Lock()
 	if f.sharedCachesStarted {
 		f.sharedCachesMu.Unlock()
-		return
+		return nil
 	}
 	f.sharedCachesStarted = true
 	caches := make([]SharedPluginCache, 0, len(f.sharedCachesOrder))
@@ -564,40 +569,46 @@ func (f *FrameworkExtenderFactory) StartSharedCaches(ctx context.Context, inform
 	f.sharedCachesMu.Unlock()
 
 	if len(caches) == 0 {
-		return
+		return nil
 	}
+
+	// Publish the immutable snapshot before wiring the dispatcher so events (which cannot
+	// arrive until the informer factory is started, after this returns) always read it.
+	f.startedCaches.Store(&caches)
 
 	// Register unified pod/node dispatchers before invoking Start so plugin-specific
 	// CRD handlers registered inside Start observe the same "handlers wired before
-	// factory started" invariant.
+	// factory started" invariant. A registration failure means the dispatcher is not
+	// wired and the caches would never receive pod/node events, so fail fast rather than
+	// starting into a silently broken state.
 	if _, err := informerFactory.Core().V1().Pods().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    f.dispatchPodAdd,
 		UpdateFunc: f.dispatchPodUpdate,
 		DeleteFunc: f.dispatchPodDelete,
 	}); err != nil {
-		klog.ErrorS(err, "failed to register shared cache pod event handler")
+		return fmt.Errorf("failed to register shared cache pod event handler, err: %w", err)
 	}
 	if _, err := informerFactory.Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    f.dispatchNodeAdd,
 		UpdateFunc: f.dispatchNodeUpdate,
 		DeleteFunc: f.dispatchNodeDelete,
 	}); err != nil {
-		klog.ErrorS(err, "failed to register shared cache node event handler")
+		return fmt.Errorf("failed to register shared cache node event handler, err: %w", err)
 	}
 
 	for _, c := range caches {
 		c.Start(ctx)
 	}
+	return nil
 }
 
-func (f *FrameworkExtenderFactory) snapshotCaches() []SharedPluginCache {
-	f.sharedCachesMu.Lock()
-	defer f.sharedCachesMu.Unlock()
-	caches := make([]SharedPluginCache, 0, len(f.sharedCachesOrder))
-	for _, key := range f.sharedCachesOrder {
-		caches = append(caches, f.sharedCaches[key])
+// dispatchCaches returns the immutable snapshot of registered shared caches published by
+// StartSharedCaches. Read lock-free on every event — no mutex, no allocation.
+func (f *FrameworkExtenderFactory) dispatchCaches() []SharedPluginCache {
+	if p := f.startedCaches.Load(); p != nil {
+		return *p
 	}
-	return caches
+	return nil
 }
 
 func (f *FrameworkExtenderFactory) dispatchPodAdd(obj interface{}) {
@@ -605,7 +616,7 @@ func (f *FrameworkExtenderFactory) dispatchPodAdd(obj interface{}) {
 	if !ok {
 		return
 	}
-	for _, c := range f.snapshotCaches() {
+	for _, c := range f.dispatchCaches() {
 		c.OnPodAdd(pod)
 	}
 }
@@ -619,7 +630,7 @@ func (f *FrameworkExtenderFactory) dispatchPodUpdate(oldObj, newObj interface{})
 	if !ok {
 		return
 	}
-	for _, c := range f.snapshotCaches() {
+	for _, c := range f.dispatchCaches() {
 		c.OnPodUpdate(oldPod, newPod)
 	}
 }
@@ -635,7 +646,7 @@ func (f *FrameworkExtenderFactory) dispatchPodDelete(obj interface{}) {
 	if pod == nil {
 		return
 	}
-	for _, c := range f.snapshotCaches() {
+	for _, c := range f.dispatchCaches() {
 		c.OnPodDelete(pod)
 	}
 }
@@ -645,7 +656,7 @@ func (f *FrameworkExtenderFactory) dispatchNodeAdd(obj interface{}) {
 	if !ok {
 		return
 	}
-	for _, c := range f.snapshotCaches() {
+	for _, c := range f.dispatchCaches() {
 		c.OnNodeAdd(node)
 	}
 }
@@ -659,7 +670,7 @@ func (f *FrameworkExtenderFactory) dispatchNodeUpdate(oldObj, newObj interface{}
 	if !ok {
 		return
 	}
-	for _, c := range f.snapshotCaches() {
+	for _, c := range f.dispatchCaches() {
 		c.OnNodeUpdate(oldNode, newNode)
 	}
 }
@@ -675,7 +686,7 @@ func (f *FrameworkExtenderFactory) dispatchNodeDelete(obj interface{}) {
 	if node == nil {
 		return
 	}
-	for _, c := range f.snapshotCaches() {
+	for _, c := range f.dispatchCaches() {
 		c.OnNodeDelete(node)
 	}
 }

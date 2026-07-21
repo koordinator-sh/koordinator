@@ -168,7 +168,7 @@ type pluginTestSuit struct {
 // unit tests that rely on cache population must call it after proxyNew and before starting
 // the shared informer factory, matching the four-phase initialization order.
 func (s *pluginTestSuit) start(ctx context.Context) {
-	s.extenderFactory.StartSharedCaches(ctx, s.Framework.SharedInformerFactory())
+	_ = s.extenderFactory.StartSharedCaches(ctx, s.Framework.SharedInformerFactory())
 }
 
 func newPluginTestSuit(t testing.TB, nodes []*corev1.Node) *pluginTestSuit {
