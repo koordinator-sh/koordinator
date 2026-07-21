@@ -48,6 +48,12 @@ func (r *orderRecorder) snapshot() []string {
 	return append([]string(nil), r.seq...)
 }
 
+func (r *orderRecorder) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.seq = nil
+}
+
 // recordingCache is a mock SharedPluginCache that records how many times Start was called
 // and appends "<key>:<event>" to a shared orderRecorder for every dispatched event.
 type recordingCache struct {
@@ -142,8 +148,8 @@ func Test_StartSharedCaches_StartsEachCacheExactlyOnce(t *testing.T) {
 	informerFactory := newTestInformerFactory()
 	// Called twice to prove idempotency: the second call is a no-op guarded by
 	// sharedCachesStarted, so Start still runs exactly once per cache.
-	factory.StartSharedCaches(context.TODO(), informerFactory)
-	factory.StartSharedCaches(context.TODO(), informerFactory)
+	assert.NoError(t, factory.StartSharedCaches(context.TODO(), informerFactory))
+	assert.NoError(t, factory.StartSharedCaches(context.TODO(), informerFactory))
 
 	assert.Equal(t, 1, a.starts())
 	assert.Equal(t, 1, b.starts())
@@ -153,7 +159,7 @@ func Test_StartSharedCaches_NoCachesIsNoOp(t *testing.T) {
 	factory := newTestFactory(t)
 	// No registered caches — must not panic and must remain a no-op.
 	assert.NotPanics(t, func() {
-		factory.StartSharedCaches(context.TODO(), newTestInformerFactory())
+		assert.NoError(t, factory.StartSharedCaches(context.TODO(), newTestInformerFactory()))
 	})
 }
 
@@ -167,6 +173,10 @@ func Test_dispatch_FanOutInRegistrationOrder(t *testing.T) {
 			return newRecordingCache(k, rec)
 		})
 	}
+	// The dispatcher reads the snapshot published by StartSharedCaches; reset the recorder
+	// afterwards to drop the Start() entries so we assert only the dispatched events.
+	assert.NoError(t, factory.StartSharedCaches(context.TODO(), newTestInformerFactory()))
+	rec.reset()
 
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1"}}
 	newPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p2"}}
@@ -195,6 +205,8 @@ func Test_dispatch_IgnoresUnexpectedTypesAndUnwrapsTombstones(t *testing.T) {
 	rec := &orderRecorder{}
 	c := newRecordingCache("a", rec)
 	factory.getOrRegisterSharedCache("a", nil, func(ExtendedHandle) SharedPluginCache { return c })
+	assert.NoError(t, factory.StartSharedCaches(context.TODO(), newTestInformerFactory()))
+	rec.reset()
 
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1"}}
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "n1"}}
