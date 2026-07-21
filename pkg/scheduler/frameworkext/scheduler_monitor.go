@@ -82,8 +82,9 @@ type podScheduleState struct {
 	// for extensions
 	extensionInfo interface{}
 	// span is the OpenTelemetry root span for the current scheduling attempt. It is
-	// started in StartMonitoring and ended in Complete, and is nil when no attempt is
-	// in flight or no tracer provider is configured.
+	// started in StartMonitoring and ended in Complete, or earlier on the timeout,
+	// superseded re-entry, and pod-deletion paths, and is nil when no attempt is in
+	// flight or no tracer provider is configured.
 	span oteltrace.Span
 }
 
@@ -99,23 +100,36 @@ func NewSchedulerMonitor(period time.Duration, timeout time.Duration) *Scheduler
 
 func (m *SchedulerMonitor) monitor() {
 	now := time.Now()
+	// Spans for attempts that exceeded the timeout are collected under the lock and ended
+	// after it is released: span.End hands the span off to the exporter's batch processor,
+	// which must not run under the scheduling hot-path lock.
+	var timedOutSpans []oteltrace.Span
 	m.lock.Lock()
-	defer m.lock.Unlock()
 	for uid := range m.schedulingPods {
 		state := m.schedulingPods[uid]
 		if shouldSkip, needDelete := isPodUnhandledExceedingTimeout(&state, now, m.unhandledTimeout); shouldSkip {
 			if needDelete {
 				// Only never-started attempts reach this branch (isPodUnhandledExceedingTimeout
 				// requires state.start to be zero), so state.span is always nil here and there
-				// is nothing to end. Started attempts always end their span through Complete.
+				// is nothing to end.
 				delete(m.schedulingPods, uid)
 				GCMonitor(uid, &state, now)
 			}
 			continue
 		}
-		// A started attempt exceeding the timeout is only logged here; it stays tracked
-		// and its span is ended by the guaranteed Complete call, so it is not leaked.
-		recordIfSchedulingTimeout(uid, &state, now, m.timeout)
+		// When a started attempt exceeds the timeout, end its span with an error status so
+		// it is not leaked if the attempt never reaches Complete, and clear the stored span
+		// so Complete does not end it a second time.
+		if recordIfSchedulingTimeout(uid, &state, now, m.timeout) && state.span != nil {
+			timedOutSpans = append(timedOutSpans, state.span)
+			state.span = nil
+			m.schedulingPods[uid] = state
+		}
+	}
+	m.lock.Unlock()
+
+	for _, span := range timedOutSpans {
+		endSpan(span, codes.Error, "scheduling timed out")
 	}
 }
 
@@ -257,13 +271,18 @@ func defaultRecordQueuePodInfo(podInfo *framework.QueuedPodInfo, state *podSched
 func defaultGCMonitor(uid types.UID, state *podScheduleState, end time.Time) {
 }
 
-func recordIfSchedulingTimeout(uid types.UID, state *podScheduleState, now time.Time, timeout time.Duration) {
+// recordIfSchedulingTimeout logs and records the metric when a started attempt has
+// exceeded the timeout, and reports whether the timeout fired so the caller can end the
+// attempt's span.
+func recordIfSchedulingTimeout(uid types.UID, state *podScheduleState, now time.Time, timeout time.Duration) bool {
 	if state.start.IsZero() {
 		klog.V(5).Infof("scheduling pod %s/%s(%s) missing a start %v", state.namespace, state.name, uid, state.start)
-		return
+		return false
 	}
 	if interval := now.Sub(state.start); interval > timeout {
 		logWarningF("!!!CRITICAL TIMEOUT!!! scheduling pod %s/%s(%s) took longer (%s) than the timeout %v", state.namespace, state.name, uid, interval, timeout)
 		metrics.SchedulingTimeout.WithLabelValues(state.schedulerName).Inc()
+		return true
 	}
+	return false
 }
