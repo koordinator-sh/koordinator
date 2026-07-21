@@ -10,9 +10,9 @@ last-updated: 2026-07-01
 status: provisional
 see-also:
   - "https://github.com/koordinator-sh/koordinator/issues/2879"
-  - "docs/proposals/scheduling/20220609-resource-reservation.md"
-  - "docs/proposals/scheduling/20221227-node-resource-reservation.md"
-  - "docs/proposals/koordlet/20220615-qos-manager.md"
+  - "/docs/proposals/scheduling/20220609-resource-reservation.md"
+  - "/docs/proposals/scheduling/20221227-node-resource-reservation.md"
+  - "/docs/proposals/koordlet/20220615-qos-manager.md"
 ---
 
 # Native Support for AI Agent Orchestration and Sandbox Scheduling
@@ -102,12 +102,12 @@ Overall workflow:
           |                                   |
           |                                   v
           |                           accounting-only Reservation
-          |                           sandbox=true label
+          |                           scheduling.koordinator.sh/sandbox=true label
           |                                   |
           +-----------------+-----------------+
                             |
                             v
-             koordinator sandbox scheduling framework
+             Koordinator sandbox scheduling framework
                     (high-throughput path)
                             |
               +-------------+-------------+
@@ -137,7 +137,7 @@ Koordinator can provide three main benefits:
 - Define the conversion protocol from Non-Pod sandboxes to accounting-only Reservations.
 - Complete the minimum loop for sandbox creation, scheduling or resource accounting, startup, exit, and release.
 - Introduce a dedicated sandbox scheduling framework to support efficient sandbox scheduling.
-- Define a reproducible benchmark profile, use sustained bind throughput of 5k sandboxes/s on 1000 fake nodes as the first-stage target, and use later benchmarks to evaluate long-term targets such as 10k+ sandboxes/s or higher.
+- Define a reproducible benchmark profile, use sustained bind throughput of 2k sandboxes/s on 1000 fake nodes as the first-stage target, and use later benchmarks to drive toward a 5k sandboxes/s long-term target.
 
 ### Non-Goals/Future Work
 
@@ -203,7 +203,7 @@ Koordinator MUST provide a dedicated sandbox scheduling framework or pipeline fo
 
 ##### NFR1
 
-High-throughput sandbox scheduling is a primary requirement for production adoption. The implementation SHOULD use explicit benchmark profiles and staged performance targets. The first concrete optimization target is 5k sandboxes/s bind throughput in a 1000 fake-node homogeneous sandbox burst benchmark. Long-term targets such as 10k+ sandboxes/s require separate benchmark evidence and correctness validation.
+High-throughput sandbox scheduling is a primary requirement for production adoption. The implementation SHOULD use explicit benchmark profiles and staged performance targets. The first concrete optimization target is 2k sandboxes/s bind throughput in a 1000 fake-node homogeneous sandbox burst benchmark, so 2k sandboxes/s is the first-stage baseline and 5k sandboxes/s is the long-term target. The 5k target requires separate benchmark evidence and correctness validation.
 
 ##### NFR2
 
@@ -331,6 +331,8 @@ The framework is selected only for workloads explicitly labeled with `scheduling
 
 The framework applies to both Pod-shaped sandbox Pods and accounting-only Reservations created for Non-Pod sandboxes. A Non-Pod sandbox adapter MUST set `scheduling.koordinator.sh/sandbox=true` on the corresponding Reservation so the Reservation also enters the sandbox scheduling framework.
 
+Implementation order for the framework itself: first land a pass-through sandbox framework that behaves identically to the default scheduling path and confirm that ordinary Pods keep their existing behavior, then apply candidate-node reduction and plugin trimming on top of that baseline, and only after these low-risk optimizations run the benchmark breakdown to decide the next optimization. Pruning comes first; deeper performance analysis follows. A framework wrapper by itself does not increase throughput, so it must not be treated as an optimization until the benchmark shows a measurable improvement over the pass-through baseline.
+
 Whether this framework should eventually run as a separate scheduler binary or deployment is still an open question. The answer should be based on benchmark results, fault-isolation requirements, cache / Reservation integration complexity, and operational cost.
 
 ##### High-Throughput Sandbox Scheduling Bottleneck Analysis
@@ -364,12 +366,13 @@ The first concrete performance target is defined for a reproducible fake-cluster
 - Cluster shape: use KubeMark to create 1000 virtual nodes as Hollow Node Pods on dedicated benchmark nodes.
 - Load generator: use [ClusterLoader2](https://github.com/kubernetes/perf-tests/blob/master/clusterloader2/README.md) to create Pod-shaped sandboxes at scale and at controlled rates.
 - Workload shape: homogeneous Pod-shaped sandbox burst, using the same image, resource shape, runtime class, and sandbox label.
-- Target: sustained bind throughput reaches 5k sandboxes/s.
+- First-stage target: sustained bind throughput reaches 2k sandboxes/s.
+- Long-term target: sustained bind throughput reaches 5k sandboxes/s.
 - Required reports: create-to-bound p50 / p95 / p99, Reservation-created-to-Available p50 / p95 / p99, scheduler stage p50 / p95 / p99, binding / Reservation availability p50 / p95 / p99, Pod binding / Reservation write throughput, API write p99, APIServer flow-control rejections, non-2xx API write responses, scheduler CPU / heap pprof, APIServer CPU / heap pprof when API writes dominate, and etcd saturation metrics when available.
 
 Accounting-only Reservations should be tested with the same benchmark approach.
 
-The 5k sandboxes/s target is a stage gate for the sandbox scheduling framework and binding path, not the only success criterion. The result is accepted only if correctness tests pass, non-sandbox Pods are not routed into the sandbox framework, and any APIServer throttling or API write bottleneck is reported with the benchmark environment and required control-plane configuration.
+The 2k sandboxes/s first-stage target and the 5k sandboxes/s long-term target are stage gates for the sandbox scheduling framework and binding path, not the only success criteria. A result is accepted only if correctness tests pass, non-sandbox Pods are not routed into the sandbox framework, and any APIServer throttling or API write bottleneck is reported with the benchmark environment and required control-plane configuration.
 
 ##### Benchmark Metrics and PromQL
 
@@ -403,7 +406,7 @@ Phase 2 builds the basic optimizations for the dedicated sandbox scheduling fram
 - Use the sandbox burst benchmark profile to break down queue, filter / score, reserve, prebind, bind, and APIServer write latency.
 - Compare results with the baseline, confirm optimization benefits, and identify the next bottleneck.
 
-Phase 3 adds pipeline-level optimizations required for the long-term 10k+ sandboxes/s target:
+Phase 3 adds pipeline-level optimizations required for the long-term 5k sandboxes/s target:
 
 - If APIServer writes or bind is the bottleneck, reduce unnecessary patches / status updates first, then evaluate internal binder queue or binding pipeline optimization.
 - If Filter / Score is the bottleneck, define equivalence keys, node-pool dimensions, optimized snapshots, and reusable plugin scopes.
@@ -436,7 +439,7 @@ The problem is that it lacks a per-sandbox lifecycle. In short-lived, high-churn
 
 This approach keeps all sandbox optimization inside ordinary scheduler plugins and the existing koord-scheduler pipeline. It has a smaller first implementation scope and can reuse existing extension points directly.
 
-The limitation is that ordinary out-of-tree plugins cannot fully control queueing, scoring percentage, scheduling-cycle concurrency, snapshot reuse, binding pipeline, or API write behavior. These pipeline-level controls are required for the long-term 10k+ sandboxes/s scheduling target. Therefore, this proposal uses a dedicated sandbox scheduling framework as the target architecture, while still allowing the first implementation to run inside the existing koord-scheduler process for cache and Reservation integration.
+The limitation is that ordinary out-of-tree plugins cannot fully control queueing, scoring percentage, scheduling-cycle concurrency, snapshot reuse, binding pipeline, or API write behavior. These pipeline-level controls are required for the long-term 5k sandboxes/s scheduling target. Therefore, this proposal uses a dedicated sandbox scheduling framework as the target architecture, while still allowing the first implementation to run inside the existing koord-scheduler process for cache and Reservation integration.
 
 ### Run a Separate Sandbox Scheduler
 
