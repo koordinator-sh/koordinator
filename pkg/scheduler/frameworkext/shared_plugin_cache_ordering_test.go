@@ -49,7 +49,7 @@ func Test_StartSharedCaches_NoEventBeforeStartReturns(t *testing.T) {
 	defer cancel()
 
 	// Phase 2: register dispatcher + Start() (records "a:Start"). Informer not started yet.
-	factory.StartSharedCaches(ctx, informerFactory)
+	assert.NoError(t, factory.StartSharedCaches(ctx, informerFactory))
 	// Phase 3: start the informer so the pre-existing pod/node are delivered as Add events.
 	informerFactory.Start(ctx.Done())
 	informerFactory.WaitForCacheSync(ctx.Done())
