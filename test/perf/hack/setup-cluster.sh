@@ -18,6 +18,11 @@ kubectl apply -f "${KWOK_BASE}/stage-fast.yaml"
 echo "==> Installing Koordinator ${KOORDINATOR_VERSION}"
 export MANAGER_IMG="ghcr.io/koordinator-sh/koord-manager:${KOORDINATOR_VERSION}"
 export SCHEDULER_IMG="ghcr.io/koordinator-sh/koord-scheduler:${KOORDINATOR_VERSION}"
+# Extract the minor version so deploy_kind.sh applies the correct feature-gate
+# workarounds. On k8s < 1.34 it disables DRA informers that don't exist yet;
+# without this the scheduler crash-loops on startup.
+export KUBERNETES_VERSION="${KIND_NODE_IMAGE##*:v}"   # e.g. "1.28.0" → strip leading "v"
+export KUBERNETES_VERSION="${KUBERNETES_VERSION%.*}"   # "1.28.0" → "1.28"
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 SCRIPT="${REPO_ROOT}/hack/deploy_kind.sh"
 if [ -f "$SCRIPT" ]; then
