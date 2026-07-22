@@ -55,9 +55,6 @@ kubectl scale deployment/koord-manager    -n koordinator-system --replicas=0
 kubectl scale deployment/koord-descheduler -n koordinator-system --replicas=0
 
 echo "==> Waiting for koord-scheduler to be ready"
-kubectl wait --for=condition=ready pod \
-  -l koord-app=koord-scheduler \
-  -n koordinator-system \
-  --timeout=300s
+kubectl rollout status deployment/koord-scheduler -n koordinator-system --timeout=180s
 
 echo "==> Done. Run: make -C test/perf benchmark"
