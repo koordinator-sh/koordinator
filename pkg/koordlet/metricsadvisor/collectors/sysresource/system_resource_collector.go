@@ -170,10 +170,13 @@ func (s *systemResourceCollector) collectSysResUsed() {
 func (s *systemResourceCollector) queryMemoryWithPolicy(policy slov1alpha1.NodeMemoryCollectPolicy, collectTime time.Time,
 	nodeMemory *metriccache.Point, podsMemory float64, hostAppMemory *metriccache.Point) (float64, float64, float64) {
 	// Query the correct node memory metric from the metric cache based on the policy.
-	// The sharedState only stores the default (UsageWithoutPageCache) memory value.
-	// For pods and host apps, the sharedState values are already the correct policy-aware values
-	// (podresource and hostapplication collectors handle the policy).
-	// We only need to adjust the node memory to match the same policy.
+	// - SharedState nodeMemory is always Usage() (no page cache) from NodeResourceCollector.
+	// - SharedState podsMemory is always Usage() (no page cache) — PodResourceCollector
+	//   does not support NodeMemoryCollectPolicy, which is intentional: pods' page cache
+	//   is not actively used by their processes and is correctly attributed to "system".
+	// - SharedState hostAppMemory is already policy-aware — HostApplicationCollector
+	//   reads the policy and writes the appropriate value.
+	// Therefore we only need to adjust the node memory to match the policy.
 	querier, err := s.metricCache.Querier(collectTime.Add(-s.outdatedInterval), collectTime)
 	if err != nil {
 		klog.Warningf("create querier for policy-aware memory query failed, err %v", err)
