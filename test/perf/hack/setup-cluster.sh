@@ -18,11 +18,6 @@ kubectl apply -f "${KWOK_BASE}/stage-fast.yaml"
 echo "==> Installing Koordinator ${KOORDINATOR_VERSION}"
 export MANAGER_IMG="ghcr.io/koordinator-sh/koord-manager:${KOORDINATOR_VERSION}"
 export SCHEDULER_IMG="ghcr.io/koordinator-sh/koord-scheduler:${KOORDINATOR_VERSION}"
-# Extract the minor version so deploy_kind.sh applies the correct feature-gate
-# workarounds. On k8s < 1.34 it disables DRA informers that don't exist yet;
-# without this the scheduler crash-loops on startup.
-export KUBERNETES_VERSION="${KIND_NODE_IMAGE##*:v}"   # e.g. "1.28.0" → strip leading "v"
-export KUBERNETES_VERSION="${KUBERNETES_VERSION%.*}"   # "1.28.0" → "1.28"
 REPO_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 SCRIPT="${REPO_ROOT}/hack/deploy_kind.sh"
 if [ -f "$SCRIPT" ]; then
@@ -31,6 +26,18 @@ if [ -f "$SCRIPT" ]; then
 else
   echo "Warning: hack/deploy_kind.sh not found. Install Koordinator manually."
 fi
+
+# Workaround: the v1.5.0 manifest renders --feature-gates with a trailing
+# comma, which fails Kubernetes' flag parser and crash-loops both
+# koord-scheduler and koordlet. Strip any trailing comma from every
+# container arg. Safe no-op if a future version fixes this upstream.
+echo "==> Working around trailing-comma feature-gates bug in v${KOORDINATOR_VERSION#v} manifests"
+for target in "deployment/koord-scheduler" "daemonset/koordlet"; do
+  kubectl get "$target" -n koordinator-system -o json \
+    | jq 'del(.metadata.resourceVersion, .metadata.uid, .status)
+          | (.spec.template.spec.containers[].args) |= (if . then map(sub(",$"; "")) else . end)' \
+    | kubectl apply -f -
+done
 
 # Drop webhook configs before waiting for pods. koord-manager handles cert
 # injection and webhook admission, but its own pods cannot be admitted until
@@ -48,7 +55,8 @@ kubectl scale deployment/koord-manager    -n koordinator-system --replicas=0
 kubectl scale deployment/koord-descheduler -n koordinator-system --replicas=0
 
 echo "==> Waiting for koord-scheduler to be ready"
-kubectl rollout status deployment/koord-scheduler \
+kubectl wait --for=condition=ready pod \
+  -l koord-app=koord-scheduler \
   -n koordinator-system \
   --timeout=300s
 
