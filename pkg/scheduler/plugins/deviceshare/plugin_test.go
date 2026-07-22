@@ -174,6 +174,9 @@ func (s *pluginTestSuit) start(ctx context.Context) {
 
 func newPluginTestSuit(t testing.TB, nodes []*corev1.Node) *pluginTestSuit {
 	frameworkexthelper.ResetRegistrations()
+	// suit.start() -> nodeDeviceCache.Start() registers an AfterAllInformersSynced hook in a
+	// package-global registry; reset it per suite so hooks don't accumulate across tests.
+	frameworkexthelper.ResetStartupHooks()
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
