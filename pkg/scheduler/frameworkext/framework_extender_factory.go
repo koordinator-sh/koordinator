@@ -560,40 +560,40 @@ func (f *FrameworkExtenderFactory) StartSharedCaches(ctx context.Context, inform
 		f.sharedCachesMu.Unlock()
 		return nil
 	}
-	f.sharedCachesStarted = true
 	caches := make([]SharedPluginCache, 0, len(f.sharedCachesOrder))
 	for _, key := range f.sharedCachesOrder {
 		caches = append(caches, f.sharedCaches[key])
 	}
 	f.sharedCachesMu.Unlock()
 
-	if len(caches) == 0 {
-		return nil
+	if len(caches) > 0 {
+		// Register the unified pod/node dispatchers before committing any state, so a
+		// registration failure leaves the factory un-started (sharedCachesStarted stays
+		// false, no snapshot published) and returns an error for the caller to fail fast
+		// on, rather than a partially-started state that later calls would skip.
+		if _, err := informerFactory.Core().V1().Pods().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    f.dispatchPodAdd,
+			UpdateFunc: f.dispatchPodUpdate,
+			DeleteFunc: f.dispatchPodDelete,
+		}); err != nil {
+			return fmt.Errorf("failed to register shared cache pod event handler, err: %w", err)
+		}
+		if _, err := informerFactory.Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    f.dispatchNodeAdd,
+			UpdateFunc: f.dispatchNodeUpdate,
+			DeleteFunc: f.dispatchNodeDelete,
+		}); err != nil {
+			return fmt.Errorf("failed to register shared cache node event handler, err: %w", err)
+		}
+		// Publish the immutable snapshot for lock-free dispatch. Events cannot arrive until
+		// the informer factory is started (after this returns), so it is safe to publish
+		// after the handlers are registered.
+		f.startedCaches.Store(&caches)
 	}
 
-	// Publish the immutable snapshot before wiring the dispatcher so events (which cannot
-	// arrive until the informer factory is started, after this returns) always read it.
-	f.startedCaches.Store(&caches)
-
-	// Register unified pod/node dispatchers before invoking Start so plugin-specific
-	// CRD handlers registered inside Start observe the same "handlers wired before
-	// factory started" invariant. A registration failure means the dispatcher is not
-	// wired and the caches would never receive pod/node events, so fail fast rather than
-	// starting into a silently broken state.
-	if _, err := informerFactory.Core().V1().Pods().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    f.dispatchPodAdd,
-		UpdateFunc: f.dispatchPodUpdate,
-		DeleteFunc: f.dispatchPodDelete,
-	}); err != nil {
-		return fmt.Errorf("failed to register shared cache pod event handler, err: %w", err)
-	}
-	if _, err := informerFactory.Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    f.dispatchNodeAdd,
-		UpdateFunc: f.dispatchNodeUpdate,
-		DeleteFunc: f.dispatchNodeDelete,
-	}); err != nil {
-		return fmt.Errorf("failed to register shared cache node event handler, err: %w", err)
-	}
+	f.sharedCachesMu.Lock()
+	f.sharedCachesStarted = true
+	f.sharedCachesMu.Unlock()
 
 	for _, c := range caches {
 		c.Start(ctx)
