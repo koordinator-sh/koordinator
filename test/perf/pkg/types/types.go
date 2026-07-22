@@ -29,6 +29,17 @@ import (
 // the same string and a typo in one place cannot cause a silent mismatch.
 const RunIDLabel = "benchmark.koordinator.sh/run-id"
 
+// PodGroupLabel is the label key the koord-scheduler coscheduling plugin
+// uses to associate a pod with its scheduling.sigs.k8s.io/v1alpha1
+// PodGroup. Defined here (not in pkg/scenarios/gang) so pkg/framework's
+// Watcher can group latencies by gang without importing a scenario package.
+//
+// TODO(gang-scenario): confirm this against whatever scheduler-plugins
+// version is actually vendored in this repo before merging — some versions
+// use "scheduling.x-k8s.io/pod-group" instead. Getting this wrong means
+// pods silently schedule independently rather than forming a gang.
+const PodGroupLabel = "pod-group.scheduling.sigs.k8s.io"
+
 // ScenarioConfig holds all parameters parsed from a configs/scenarios/*.yaml file.
 type ScenarioConfig struct {
 	Name             string                 `yaml:"name"`

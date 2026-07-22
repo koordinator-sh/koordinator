@@ -19,6 +19,8 @@ package framework
 import (
 	"testing"
 	"time"
+
+	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
 func TestComputeLatencyPercentiles_empty(t *testing.T) {
@@ -78,5 +80,60 @@ func TestComputeThroughput_zeroDuration(t *testing.T) {
 	tput := ComputeThroughput(100, 0)
 	if tput != 0 {
 		t.Errorf("expected 0 for zero duration, got %v", tput)
+	}
+}
+
+func TestComputeGangCompletionPercentiles_noGangs(t *testing.T) {
+	_, _, ok := ComputeGangCompletionPercentiles([]types.PodLatency{
+		{PodName: "a", Latency: 1 * time.Second},
+	})
+	if ok {
+		t.Error("expected ok=false when no pod carries a GangID")
+	}
+}
+
+func TestComputeGangCompletionPercentiles_empty(t *testing.T) {
+	_, _, ok := ComputeGangCompletionPercentiles(nil)
+	if ok {
+		t.Error("expected ok=false for nil input")
+	}
+}
+
+func TestComputeGangCompletionPercentiles_takesMaxPerGroup(t *testing.T) {
+	latencies := []types.PodLatency{
+		{PodName: "a1", GangID: "g1", Latency: 1 * time.Second},
+		{PodName: "a2", GangID: "g1", Latency: 3 * time.Second}, // last member of g1
+		{PodName: "b1", GangID: "g2", Latency: 2 * time.Second}, // last member of g2
+	}
+	p50, p99, ok := ComputeGangCompletionPercentiles(latencies)
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	// group completions: g1=3s, g2=2s → sorted [2s, 3s]
+	// P50 index: int(2*0.50)-1 = 0 → 2s
+	if p50 != 2*time.Second {
+		t.Errorf("P50: expected 2s, got %v", p50)
+	}
+	// P99 index: int(2*0.99)-1 = 0 → 2s (clamped)
+	if p99 != 2*time.Second {
+		t.Errorf("P99: expected 2s (clamped), got %v", p99)
+	}
+}
+
+func TestComputeGangCompletionPercentiles_singleGroup(t *testing.T) {
+	latencies := []types.PodLatency{
+		{PodName: "a1", GangID: "g1", Latency: 2 * time.Second},
+		{PodName: "a2", GangID: "g1", Latency: 5 * time.Second},
+	}
+	p50, p99, ok := ComputeGangCompletionPercentiles(latencies)
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	// one group, completion = 5s; both percentiles clamp to index 0
+	if p50 != 5*time.Second {
+		t.Errorf("P50: expected 5s, got %v", p50)
+	}
+	if p99 != 5*time.Second {
+		t.Errorf("P99: expected 5s, got %v", p99)
 	}
 }

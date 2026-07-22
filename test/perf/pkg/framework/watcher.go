@@ -120,6 +120,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 				latency := cond.LastTransitionTime.Time.Sub(pod.CreationTimestamp.Time)
 				w.latencies = append(w.latencies, PodLatency{
 					PodName: pod.Name,
+					GangID:  pod.Labels[types.PodGroupLabel], // empty for non-gang scenarios
 					Latency: latency,
 				})
 				done := len(w.latencies) >= w.podCount
@@ -142,5 +143,15 @@ func (w *Watcher) Latencies() []time.Duration {
 	for i, l := range w.latencies {
 		result[i] = l.Latency
 	}
+	return result
+}
+
+// PodLatencies returns all recorded per-pod latencies including GangID, for
+// scenarios that need to aggregate by group. Call after Start returns.
+func (w *Watcher) PodLatencies() []types.PodLatency {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	result := make([]types.PodLatency, len(w.latencies))
+	copy(result, w.latencies)
 	return result
 }
