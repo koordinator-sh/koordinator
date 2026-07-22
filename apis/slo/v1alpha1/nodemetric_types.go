@@ -120,6 +120,15 @@ type ReclaimableMetric struct {
 	Resource ResourceMap `json:"resource,omitempty"`
 }
 
+// PeakMetric defines the predicted peak metric of resource priority
+type PeakMetric struct {
+	// Resource is the predicted peak resource usage of the prediction.
+	// For the Prod peak, the value includes the usage of the system components, is already scaled
+	// with the prediction safety margin, and conservatively counts the requests of the pods without
+	// valid predictions (e.g. in cold start), so consumers should NOT apply an extra safety margin.
+	Resource ResourceMap `json:"resource,omitempty"`
+}
+
 // NodeMetricStatus defines the observed state of NodeMetric
 type NodeMetricStatus struct {
 	// UpdateTime is the last time this NodeMetric was updated.
@@ -136,6 +145,9 @@ type NodeMetricStatus struct {
 
 	// ProdReclaimableMetric is the indicator statistics of Prod type resources reclaimable
 	ProdReclaimableMetric *ReclaimableMetric `json:"prodReclaimableMetric,omitempty"`
+
+	// ProdPeakMetric is the predicted peak of Prod type resources
+	ProdPeakMetric *PeakMetric `json:"prodPeakMetric,omitempty"`
 }
 
 // +genclient

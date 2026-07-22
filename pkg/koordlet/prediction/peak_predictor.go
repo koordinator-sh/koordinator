@@ -51,6 +51,8 @@ type Predictor interface {
 	GetPredictorName() string
 	AddPod(pod *v1.Pod) error
 	GetResult() (v1.ResourceList, error)
+	// GetPeak returns the predicted peak resource usage for the added pods.
+	GetPeak() (v1.ResourceList, error)
 }
 
 type predictorFactory struct {
@@ -80,6 +82,7 @@ func (f *predictorFactory) New(t PredictorType, context PredictorContext) Predic
 			podFilterFn:         isPodReclaimableForProd,
 			reclaimable:         util.NewZeroResourceList(),
 			unReclaimable:       util.NewZeroResourceList(),
+			unpredicted:         util.NewZeroResourceList(),
 			pods:                make(map[string]bool),
 		}
 		priorityPredictor := &priorityReclaimablePredictor{
@@ -119,6 +122,11 @@ func (p *emptyPredictor) GetResult() (v1.ResourceList, error) {
 	return nil, fmt.Errorf("empty pridictor")
 }
 
+// GetPeak returns an error indicating that the predictor is empty.
+func (p *emptyPredictor) GetPeak() (v1.ResourceList, error) {
+	return nil, fmt.Errorf("empty pridictor")
+}
+
 func NewEmptyPredictorFactory() PredictorFactory {
 	return &emptyPredictorFactory{}
 }
@@ -142,7 +150,11 @@ type podReclaimablePredictor struct {
 	podFilterFn         func(pod *v1.Pod) bool // return true if the pod is reclaimable
 	reclaimable         v1.ResourceList
 	unReclaimable       v1.ResourceList
-	pods                map[string]bool
+	// unpredicted is the sum of the requests of the pods without valid predictions (e.g. in cold start,
+	// or prediction failed). These pods contribute 0 to the reclaimable result conservatively, so their
+	// peak should be counted as the request correspondingly.
+	unpredicted v1.ResourceList
+	pods        map[string]bool
 }
 
 // GetPredictorName is used to obtain the predictor name.
@@ -163,8 +175,9 @@ func (p *podReclaimablePredictor) AddPod(pod *v1.Pod) error {
 	}
 	p.pods[string(pod.UID)] = true
 
-	// Pods in cold start have 0 reclaimable resources
+	// Pods in cold start have 0 reclaimable resources, so count their requests into the peak
 	if time.Since(pod.CreationTimestamp.Time) <= p.coldStartDuration {
+		p.unpredicted = quotav1.Add(p.unpredicted, util.GetPodRequest(pod, v1.ResourceCPU, v1.ResourceMemory))
 		return nil
 	}
 
@@ -178,6 +191,8 @@ func (p *podReclaimablePredictor) AddPod(pod *v1.Pod) error {
 	if err != nil {
 		klog.V(5).Infof("podReclaimablePredictor failed to get prediction for pod %s, err: %s",
 			util.GetPodKey(pod), err)
+		// the pod contributes 0 to the reclaimable result, so count its request into the peak
+		p.unpredicted = quotav1.Add(p.unpredicted, util.GetPodRequest(pod, v1.ResourceCPU, v1.ResourceMemory))
 		return err
 	}
 	// TODO: customize the percentile
@@ -252,6 +267,15 @@ func (p *podReclaimablePredictor) GetResult() (v1.ResourceList, error) {
 	return fixReclaimable, nil
 }
 
+// GetPeak returns the predicted peak resource usage, i.e. the sum of the unReclaimable resources of the
+// added pods, plus the requests of the unpredicted pods (cold start or prediction failure) conservatively.
+func (p *podReclaimablePredictor) GetPeak() (v1.ResourceList, error) {
+	peak := quotav1.Add(p.unReclaimable, p.unpredicted)
+	metrics.RecordNodePredictedResourcePeak(string(v1.ResourceCPU), metrics.UnitCore, p.GetPredictorName(), float64(peak.Cpu().MilliValue())/1000)
+	metrics.RecordNodePredictedResourcePeak(string(v1.ResourceMemory), metrics.UnitByte, p.GetPredictorName(), float64(peak.Memory().Value()))
+	return peak, nil
+}
+
 var _ Predictor = (*priorityReclaimablePredictor)(nil)
 
 // priorityReclaimablePredictor predicts the peak according to historical metrics of the node priority resources.
@@ -301,6 +325,36 @@ func (p *priorityReclaimablePredictor) GetResult() (v1.ResourceList, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get allocatable of node, err=%v", err)
 	}
+	unReclaimable, err := p.getUnReclaimable()
+	if err != nil {
+		return nil, err
+	}
+
+	// reclaimable[P] := max(request[P] - peak[P], 0)
+	reclaimable := quotav1.Max(quotav1.Subtract(p.reclaimRequest, unReclaimable), util.NewZeroResourceList())
+	// fixReclaimable[P] := min(nodeAllocatable[P]-unReclaimable[P],reclaimable[P])
+	fixReclaimable := quotav1.SubtractWithNonNegativeResult(nodeAllocatable, unReclaimable)
+	fixReclaimable = util.MinResourceList(fixReclaimable, reclaimable)
+	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceCPU), metrics.UnitCore, p.GetPredictorName(), float64(fixReclaimable.Cpu().MilliValue())/1000)
+	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceMemory), metrics.UnitByte, p.GetPredictorName(), float64(fixReclaimable.Memory().Value()))
+	return fixReclaimable, nil
+}
+
+// GetPeak returns the predicted peak resource usage, i.e. the unReclaimable resources computed from the
+// system components and the reclaimable priority classes' predictions.
+func (p *priorityReclaimablePredictor) GetPeak() (v1.ResourceList, error) {
+	peak, err := p.getUnReclaimable()
+	if err != nil {
+		return nil, err
+	}
+	metrics.RecordNodePredictedResourcePeak(string(v1.ResourceCPU), metrics.UnitCore, p.GetPredictorName(), float64(peak.Cpu().MilliValue())/1000)
+	metrics.RecordNodePredictedResourcePeak(string(v1.ResourceMemory), metrics.UnitByte, p.GetPredictorName(), float64(peak.Memory().Value()))
+	return peak, nil
+}
+
+// getUnReclaimable computes the predicted peak (unReclaimable) resources of the reclaimable priority classes
+// and the system components, scaled with the safety margin.
+func (p *priorityReclaimablePredictor) getUnReclaimable() (v1.ResourceList, error) {
 	// get sys prediction
 	sysResult, err := p.predictServer.GetPrediction(MetricDesc{UID: getNodeItemUID(SystemItemID)})
 	if err != nil {
@@ -339,15 +393,7 @@ func (p *priorityReclaimablePredictor) GetResult() (v1.ResourceList, error) {
 		v1.ResourceCPU:    util.MultiplyMilliQuant(*unReclaimable.Cpu(), ratioAfterSafetyMargin),
 		v1.ResourceMemory: util.MultiplyQuant(*unReclaimable.Memory(), ratioAfterSafetyMargin),
 	}
-
-	// reclaimable[P] := max(request[P] - peak[P], 0)
-	reclaimable := quotav1.Max(quotav1.Subtract(p.reclaimRequest, unReclaimable), util.NewZeroResourceList())
-	// fixReclaimable[P] := min(nodeAllocatable[P]-unReclaimable[P],reclaimable[P])
-	fixReclaimable := quotav1.SubtractWithNonNegativeResult(nodeAllocatable, unReclaimable)
-	fixReclaimable = util.MinResourceList(fixReclaimable, reclaimable)
-	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceCPU), metrics.UnitCore, p.GetPredictorName(), float64(fixReclaimable.Cpu().MilliValue())/1000)
-	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceMemory), metrics.UnitByte, p.GetPredictorName(), float64(fixReclaimable.Memory().Value()))
-	return fixReclaimable, nil
+	return unReclaimable, nil
 }
 
 var _ Predictor = (*minPredictor)(nil)
@@ -394,6 +440,32 @@ func (m *minPredictor) GetResult() (v1.ResourceList, error) {
 	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceCPU), metrics.UnitCore, m.GetPredictorName(), float64(minimal.Cpu().MilliValue())/1000)
 	metrics.RecordNodePredictedResourceReclaimable(string(v1.ResourceMemory), metrics.UnitByte, m.GetPredictorName(), float64(minimal.Memory().Value()))
 	return minimal, nil
+}
+
+// GetPeak returns the predicted peak resource usage. Since the reclaimable result is the minimal of the
+// sub-predictors' results, the corresponding node peak is the maximal of the sub-predictors' peaks.
+func (m *minPredictor) GetPeak() (v1.ResourceList, error) {
+	if len(m.predictors) <= 0 {
+		return util.NewZeroResourceList(), nil
+	}
+
+	maximal, err := m.predictors[0].GetPeak()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get predictor %s peak, error: %v", m.predictors[0].GetPredictorName(), err)
+	}
+	for i := 1; i < len(m.predictors); i++ {
+		peak, err := m.predictors[i].GetPeak()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get predictor %s peak, error: %v", m.predictors[i].GetPredictorName(), err)
+		}
+
+		maximal = quotav1.Max(maximal, peak)
+	}
+
+	klog.V(6).Infof("minPredictor get peak: %+v", maximal)
+	metrics.RecordNodePredictedResourcePeak(string(v1.ResourceCPU), metrics.UnitCore, m.GetPredictorName(), float64(maximal.Cpu().MilliValue())/1000)
+	metrics.RecordNodePredictedResourcePeak(string(v1.ResourceMemory), metrics.UnitByte, m.GetPredictorName(), float64(maximal.Memory().Value()))
+	return maximal, nil
 }
 
 func isPodReclaimableForProd(pod *v1.Pod) bool {

@@ -260,7 +260,7 @@ func (r *nodeMetricInformer) sync() {
 		return
 	}
 
-	nodeMetricInfo, podMetricInfo, hostAppMetricInfo, prodReclaimableMetric := r.collectMetric()
+	nodeMetricInfo, podMetricInfo, hostAppMetricInfo, prodReclaimableMetric, prodPeakMetric := r.collectMetric()
 	if nodeMetricInfo == nil {
 		klog.Warningf("node metric is not ready, skip this round.")
 		return
@@ -272,6 +272,7 @@ func (r *nodeMetricInformer) sync() {
 		PodsMetric:            podMetricInfo,
 		HostApplicationMetric: hostAppMetricInfo,
 		ProdReclaimableMetric: prodReclaimableMetric,
+		ProdPeakMetric:        prodPeakMetric,
 	}
 	recordNodeMetricPromMetrics(newStatus)
 	retErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
@@ -344,7 +345,7 @@ func (r *nodeMetricInformer) generateQueryDuration() (start time.Time, end time.
 }
 
 func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*slov1alpha1.PodMetricInfo,
-	[]*slov1alpha1.HostApplicationMetricInfo, *slov1alpha1.ReclaimableMetric) {
+	[]*slov1alpha1.HostApplicationMetricInfo, *slov1alpha1.ReclaimableMetric, *slov1alpha1.PeakMetric) {
 	spec := r.getNodeMetricSpec()
 	startTime, endTime := r.generateQueryDuration()
 	nodeMetricInfo := &slov1alpha1.NodeMetricInfo{
@@ -433,7 +434,14 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		metrics.RecordNodeResourcePriorityReclaimableStatus(string(apiext.PriorityProd), 0)
 	}
 
-	return nodeMetricInfo, podsMetricInfo, hostAppMetricInfo, prodReclaimable
+	var prodPeak *slov1alpha1.PeakMetric
+	if p, err := prodPredictor.GetPeak(); err != nil {
+		klog.Errorf("failed to get prediction peak, err %v", err)
+	} else {
+		prodPeak = &slov1alpha1.PeakMetric{Resource: slov1alpha1.ResourceMap{ResourceList: p}}
+	}
+
+	return nodeMetricInfo, podsMetricInfo, hostAppMetricInfo, prodReclaimable, prodPeak
 }
 
 func (r *nodeMetricInformer) queryNodeMetric(start time.Time, end time.Time, aggregateType metriccache.AggregationType,
