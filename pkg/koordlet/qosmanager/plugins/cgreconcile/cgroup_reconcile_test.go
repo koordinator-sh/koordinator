@@ -885,6 +885,80 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirSYS1, "0", false),
 			},
 		},
+		{
+			name:   "pod with page cache limit enabled",
+			fields: fields{opt: &framework.Options{Config: framework.NewDefaultConfig()}},
+			args: args{
+				nodeCfg: &slov1alpha1.ResourceQOSStrategy{
+					LSRClass: &slov1alpha1.ResourceQOS{},
+					LSClass:  &slov1alpha1.ResourceQOS{},
+					BEClass:  &slov1alpha1.ResourceQOS{},
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: map[corev1.ResourceName]resource.Quantity{
+							corev1.ResourceCPU:    resource.MustParse("1"),
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+				podMetas: []*statesinformer.PodMeta{
+					createPodWithMemoryQOS(corev1.PodQOSBurstable, apiext.QoSLS, &slov1alpha1.PodMemoryQOSConfig{
+						Policy: slov1alpha1.PodMemoryQOSPolicyAuto,
+						MemoryQOS: slov1alpha1.MemoryQOS{
+							MinLimitPercent:    ptr.To[int64](0),
+							LowLimitPercent:    ptr.To[int64](0),
+							ThrottlingPercent:  ptr.To[int64](80),
+							WmarkRatio:         ptr.To[int64](95),
+							WmarkScalePermill:  ptr.To[int64](20),
+							WmarkMinAdj:        ptr.To[int64](0),
+							PageCacheLimitSize: ptr.To[int64](testingPodMemRequestLimitBytes * 50 / 100),
+						},
+					}),
+				},
+			},
+			want: []resourceexecutor.ResourceUpdater{
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryMinName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBurstable), "0", true),
+			},
+			want1: []resourceexecutor.ResourceUpdater{
+				createCgroupResourceUpdater(t, system.MemoryMinName, podParentDirLS, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, podParentDirLS, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, podParentDirLS, "95", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, podParentDirLS, "20", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, podParentDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, podParentDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, podParentDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, podParentDirLS, "0", false),
+			},
+			want2: []resourceexecutor.ResourceUpdater{
+				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirLS, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirLS, "0", true),
+				// first container has no limit, use node allocatable (1Gi) * 80% = 858980352
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirLS, strconv.FormatInt(((testingPodMemRequestLimitBytes*80/100)/system.PageSize)*system.PageSize, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirLS, "95", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirLS, "20", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirLS1, "0", true),
+				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirLS1, "0", true),
+				// second container has 1Gi limit, memory.high = (1Gi + 0 * 80%) / pageSize * pageSize = 1Gi
+				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirLS1, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
+				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirLS1, "95", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirLS1, "20", false),
+				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirLS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirLS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirLS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirLS1, "0", false),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1163,6 +1237,50 @@ func Test_makeCgroupResources(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "make pod resources with page cache limit on cgroups v2",
+			fields: fields{
+				useCgroupV2: true,
+			},
+			args: args{
+				parentDir: "pod-pcl",
+				summary: &cgroupResourceSummary{
+					memoryWmarkRatio:             ptr.To[int64](95),
+					memoryPageCacheLimitEnable:   ptr.To[int64](1),
+					memoryPageCacheLimitSize:     ptr.To[int64](testingPodMemRequestLimitBytes * 50 / 100),
+					memoryPageCacheLimitSyncMode: ptr.To[int64](0),
+				},
+			},
+			want: func() []resourceexecutor.ResourceUpdater {
+				return []resourceexecutor.ResourceUpdater{
+					createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, "pod-pcl", "95", false),
+					createCgroupResourceUpdater(t, system.MemoryPageCacheLimitEnableName, "pod-pcl", "1", false),
+					createCgroupResourceUpdater(t, system.MemoryPageCacheLimitSizeName, "pod-pcl", strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), false),
+					createCgroupResourceUpdater(t, system.MemoryPageCacheLimitSyncModeName, "pod-pcl", "0", false),
+				}
+			},
+		},
+		{
+			name: "reset page cache limit on cgroups v2",
+			fields: fields{
+				useCgroupV2: true,
+			},
+			args: args{
+				parentDir: "pod-pcl-reset",
+				summary: &cgroupResourceSummary{
+					memoryWmarkRatio:           ptr.To[int64](95),
+					memoryPageCacheLimitEnable: ptr.To[int64](0),
+					memoryPageCacheLimitSize:   ptr.To[int64](0),
+				},
+			},
+			want: func() []resourceexecutor.ResourceUpdater {
+				return []resourceexecutor.ResourceUpdater{
+					createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, "pod-pcl-reset", "95", false),
+					createCgroupResourceUpdater(t, system.MemoryPageCacheLimitEnableName, "pod-pcl-reset", "0", false),
+					createCgroupResourceUpdater(t, system.MemoryPageCacheLimitSizeName, "pod-pcl-reset", "0", false),
+				}
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1178,6 +1296,145 @@ func Test_makeCgroupResources(t *testing.T) {
 			got := makeCgroupResources(tt.args.parentDir, tt.args.summary)
 			want := tt.want()
 			assertCgroupResourceEqual(t, want, got)
+		})
+	}
+}
+
+func Test_calculatePodResources_PageCacheLimit(t *testing.T) {
+	const podMemLimitBytes = 1024 * 1024 * 1024 // 1Gi
+	newPod := func() *corev1.Pod {
+		q := resource.MustParse("1Gi")
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-pod", UID: "test-uid"},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "c0",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceMemory: q},
+							Limits:   corev1.ResourceList{corev1.ResourceMemory: q},
+						},
+					},
+				},
+			},
+		}
+	}
+	newCfg := func(mq slov1alpha1.MemoryQOS) *slov1alpha1.ResourceQOS {
+		return &slov1alpha1.ResourceQOS{
+			MemoryQOS: &slov1alpha1.MemoryQOSCfg{MemoryQOS: mq},
+		}
+	}
+	tests := []struct {
+		name            string
+		memoryQOS       slov1alpha1.MemoryQOS
+		wantEnable      string
+		wantEnableExist bool
+		wantSize        string
+		wantSizeExist   bool
+	}{
+		{
+			name:            "size only",
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitSize: ptr.To[int64](512 * 1024 * 1024)},
+			wantEnable:      "1",
+			wantEnableExist: true,
+			wantSize:        strconv.FormatInt(512*1024*1024, 10),
+			wantSizeExist:   true,
+		},
+		{
+			name:            "size capped by memory limit",
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitSize: ptr.To[int64](2 * 1024 * 1024 * 1024)},
+			wantEnable:      "1",
+			wantEnableExist: true,
+			wantSize:        strconv.FormatInt(podMemLimitBytes, 10),
+			wantSizeExist:   true,
+		},
+		{
+			name:            "size zero resets",
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitSize: ptr.To[int64](0)},
+			wantEnable:      "0",
+			wantEnableExist: true,
+			wantSize:        "0",
+			wantSizeExist:   true,
+		},
+		{
+			name:      "unset does nothing",
+			memoryQOS: slov1alpha1.MemoryQOS{},
+		},
+		{
+			name: "explicit enable overrides implicit enable, keeps size",
+			memoryQOS: slov1alpha1.MemoryQOS{
+				PageCacheLimitSize: ptr.To[int64](512 * 1024 * 1024),
+				PageCacheEnable:    ptr.To(false),
+			},
+			wantEnable:      "0",
+			wantEnableExist: true,
+			wantSize:        strconv.FormatInt(512*1024*1024, 10),
+			wantSizeExist:   true,
+		},
+		{
+			name:            "explicit enable alone toggles switch",
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheEnable: ptr.To(true)},
+			wantEnable:      "1",
+			wantEnableExist: true,
+			wantSizeExist:   false, // size not written, only enable
+		},
+		{
+			name: "sync reclaim mode",
+			memoryQOS: slov1alpha1.MemoryQOS{
+				PageCacheLimitSize:   ptr.To[int64](512 * 1024 * 1024),
+				PageCacheReclaimSync: ptr.To(true),
+			},
+			wantEnable:      "1",
+			wantEnableExist: true,
+			wantSize:        strconv.FormatInt(512*1024*1024, 10),
+			wantSizeExist:   true,
+		},
+		{
+			name:            "legacy percent field",
+			memoryQOS:       slov1alpha1.MemoryQOS{PageCacheLimitPercent: ptr.To[int64](50)},
+			wantEnable:      "1",
+			wantEnableExist: true,
+			wantSize:        strconv.FormatInt(podMemLimitBytes*50/100, 10),
+			wantSizeExist:   true,
+		},
+		{
+			name: "size takes precedence over percent",
+			memoryQOS: slov1alpha1.MemoryQOS{
+				PageCacheLimitPercent: ptr.To[int64](50),
+				PageCacheLimitSize:    ptr.To[int64](256 * 1024 * 1024),
+			},
+			wantEnable:      "1",
+			wantEnableExist: true,
+			wantSize:        strconv.FormatInt(256*1024*1024, 10),
+			wantSizeExist:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			helper := system.NewFileTestUtil(t)
+			helper.SetCgroupsV2(true)
+			defer helper.Cleanup()
+
+			m := &cgroupResourcesReconcile{}
+			got := m.calculatePodResources(newPod(), "pod-test", newCfg(tt.memoryQOS))
+
+			values := map[system.ResourceType]string{}
+			for _, u := range got {
+				c, ok := u.(*resourceexecutor.CgroupResourceUpdater)
+				assert.True(t, ok)
+				values[c.ResourceType()] = c.Value()
+			}
+
+			enable, enableExist := values[system.ResourceType(system.MemoryPageCacheLimitEnableName)]
+			size, sizeExist := values[system.ResourceType(system.MemoryPageCacheLimitSizeName)]
+			assert.Equal(t, tt.wantEnableExist, enableExist)
+			if tt.wantEnableExist {
+				assert.Equal(t, tt.wantEnable, enable)
+			}
+			assert.Equal(t, tt.wantSizeExist, sizeExist)
+			if tt.wantSizeExist {
+				assert.Equal(t, tt.wantSize, size)
+			}
 		})
 	}
 }
