@@ -17,6 +17,7 @@ limitations under the License.
 package noderesource
 
 import (
+	"strconv"
 	"time"
 
 	"go.uber.org/atomic"
@@ -39,6 +40,12 @@ var (
 	timeNow = time.Now
 )
 
+// perCPUStat records the per-CPU usage ticks of the last collection.
+type perCPUStat struct {
+	cpuTicks  map[int32]uint64
+	timestamp time.Time
+}
+
 // TODO more ut is needed for this plugin
 type nodeResourceCollector struct {
 	collectInterval time.Duration
@@ -46,7 +53,8 @@ type nodeResourceCollector struct {
 	appendableDB    metriccache.Appendable
 	metricDB        metriccache.MetricCache
 
-	lastNodeCPUStat *framework.CPUStat
+	lastNodeCPUStat    *framework.CPUStat
+	lastNodePerCPUStat *perCPUStat
 
 	sharedState      *framework.SharedState
 	deviceCollectors map[string]framework.DeviceCollector
@@ -126,6 +134,10 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 	}
 	nodeMetrics = append(nodeMetrics, cpuUsageMetrics)
 
+	// collect the per-NUMA node usage; failures only skip the NUMA part without blocking the node-level collection
+	numaUsageMetrics, numaCPUUsage, numaMemUsage := n.collectNodeNUMAResUsed(collectTime)
+	nodeMetrics = append(nodeMetrics, numaUsageMetrics...)
+
 	for name, deviceCollector := range n.deviceCollectors {
 		if !deviceCollector.Enabled() {
 			klog.V(6).Infof("skip node metrics from the disabled device collector %s", name)
@@ -155,6 +167,9 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 
 	n.sharedState.UpdateNodeUsage(metriccache.Point{Timestamp: collectTime, Value: cpuUsageValue},
 		metriccache.Point{Timestamp: collectTime, Value: memUsageValue})
+	if len(numaCPUUsage) > 0 || len(numaMemUsage) > 0 {
+		n.sharedState.UpdateNodeNUMAUsage(numaCPUUsage, numaMemUsage)
+	}
 
 	// update collect time
 	n.started.Store(true)
@@ -163,4 +178,102 @@ func (n *nodeResourceCollector) collectNodeResUsed() {
 
 	klog.V(4).Infof("collectNodeResUsed finished, count %v, cpu[%v], mem[%v]",
 		len(nodeMetrics), cpuUsageValue, memUsageValue)
+}
+
+// collectNodeNUMAResUsed collects the per-NUMA node cpu and memory usage.
+// The cpu usage is aggregated from the per-CPU usage ticks by the CPU-to-NUMA topology, and the memory
+// usage is estimated from the per-NUMA meminfo.
+func (n *nodeResourceCollector) collectNodeNUMAResUsed(collectTime time.Time) ([]metriccache.MetricSample, map[int32]metriccache.Point, map[int32]metriccache.Point) {
+	numaMetrics := make([]metriccache.MetricSample, 0)
+
+	// per-NUMA memory usage
+	numaMemUsage := map[int32]metriccache.Point{}
+	nodeNUMAInfo, err := koordletutil.GetNodeNUMAInfo()
+	if err != nil {
+		klog.Warningf("failed to get node NUMA info for NUMA memory usage, err: %s", err)
+	} else {
+		for numaID, memInfo := range nodeNUMAInfo.MemInfoMap {
+			if memInfo == nil {
+				continue
+			}
+			memUsageValue := float64(memInfo.NUMAMemUsageBytes())
+			memUsageMetric, err := metriccache.NodeNUMAMemoryUsageMetric.GenerateSample(
+				metriccache.MetricPropertiesFunc.NUMA(strconv.FormatInt(int64(numaID), 10)), collectTime, memUsageValue)
+			if err != nil {
+				klog.Warningf("generate NUMA %d memory usage metric failed, err %v", numaID, err)
+				continue
+			}
+			numaMetrics = append(numaMetrics, memUsageMetric)
+			numaMemUsage[numaID] = metriccache.Point{Timestamp: collectTime, Value: memUsageValue}
+		}
+	}
+
+	// per-NUMA cpu usage
+	numaCPUUsage := map[int32]metriccache.Point{}
+	currentPerCPUTicks, err := koordletutil.GetPerCPUStatUsageTicks()
+	if err != nil {
+		klog.Warningf("failed to get per-CPU stat usage ticks, err: %s", err)
+		return numaMetrics, numaCPUUsage, numaMemUsage
+	}
+	lastPerCPUStat := n.lastNodePerCPUStat
+	n.lastNodePerCPUStat = &perCPUStat{
+		cpuTicks:  currentPerCPUTicks,
+		timestamp: collectTime,
+	}
+	if lastPerCPUStat == nil {
+		klog.V(6).Infof("ignore the first per-CPU stat collection")
+		return numaMetrics, numaCPUUsage, numaMemUsage
+	}
+	cpuToNUMA := n.getCPUToNUMAMapping()
+	if len(cpuToNUMA) <= 0 {
+		klog.V(4).Infof("skip NUMA cpu usage collection, CPU-to-NUMA topology is not ready")
+		return numaMetrics, numaCPUUsage, numaMemUsage
+	}
+
+	perNUMADeltaTicks := map[int32]uint64{}
+	for cpuID, ticks := range currentPerCPUTicks {
+		numaID, ok := cpuToNUMA[cpuID]
+		if !ok {
+			klog.V(6).Infof("skip cpu %d whose NUMA node is unknown", cpuID)
+			continue
+		}
+		lastTicks, ok := lastPerCPUStat.cpuTicks[cpuID]
+		if !ok || ticks < lastTicks {
+			continue
+		}
+		perNUMADeltaTicks[numaID] += ticks - lastTicks
+	}
+	periodTicks := system.GetPeriodTicks(lastPerCPUStat.timestamp, collectTime)
+	for numaID, deltaTicks := range perNUMADeltaTicks {
+		cpuUsageValue := float64(deltaTicks) / periodTicks
+		cpuUsageMetric, err := metriccache.NodeNUMACPUUsageMetric.GenerateSample(
+			metriccache.MetricPropertiesFunc.NUMA(strconv.FormatInt(int64(numaID), 10)), collectTime, cpuUsageValue)
+		if err != nil {
+			klog.Warningf("generate NUMA %d cpu usage metric failed, err %v", numaID, err)
+			continue
+		}
+		numaMetrics = append(numaMetrics, cpuUsageMetric)
+		numaCPUUsage[numaID] = metriccache.Point{Timestamp: collectTime, Value: cpuUsageValue}
+	}
+
+	klog.V(6).Infof("collect NUMA node usage finished, cpu %+v, memory %+v", numaCPUUsage, numaMemUsage)
+	return numaMetrics, numaCPUUsage, numaMemUsage
+}
+
+// getCPUToNUMAMapping returns the mapping from the logical CPU ID to the NUMA node ID, based on the
+// node CPU info collected by the nodeinfo collector. It returns nil if the CPU info is not ready.
+func (n *nodeResourceCollector) getCPUToNUMAMapping() map[int32]int32 {
+	value, ok := n.metricDB.Get(metriccache.NodeCPUInfoKey)
+	if !ok {
+		return nil
+	}
+	cpuInfo, ok := value.(*metriccache.NodeCPUInfo)
+	if !ok || cpuInfo == nil {
+		return nil
+	}
+	cpuToNUMA := make(map[int32]int32, len(cpuInfo.ProcessorInfos))
+	for _, p := range cpuInfo.ProcessorInfos {
+		cpuToNUMA[p.CPUID] = p.NodeID
+	}
+	return cpuToNUMA
 }

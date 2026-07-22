@@ -67,20 +67,24 @@ type SharedState struct {
 func NewSharedState() *SharedState {
 	return &SharedState{
 		LatestMetric: LatestMetric{
-			podsCPUByCollector:    make(map[string]metriccache.Point),
-			podsMemoryByCollector: make(map[string]metriccache.Point),
+			podsCPUByCollector:        make(map[string]metriccache.Point),
+			podsMemoryByCollector:     make(map[string]metriccache.Point),
+			podsNUMAMemoryByCollector: make(map[string]map[int32]metriccache.Point),
 		},
 	}
 }
 
 type LatestMetric struct {
-	nodeMutex  sync.RWMutex
-	nodeCPU    *metriccache.Point
-	nodeMemory *metriccache.Point
+	nodeMutex      sync.RWMutex
+	nodeCPU        *metriccache.Point
+	nodeMemory     *metriccache.Point
+	nodeNUMACPU    map[int32]metriccache.Point
+	nodeNUMAMemory map[int32]metriccache.Point
 
-	podMutex              sync.RWMutex
-	podsCPUByCollector    map[string]metriccache.Point
-	podsMemoryByCollector map[string]metriccache.Point
+	podMutex                  sync.RWMutex
+	podsCPUByCollector        map[string]metriccache.Point
+	podsMemoryByCollector     map[string]metriccache.Point
+	podsNUMAMemoryByCollector map[string]map[int32]metriccache.Point
 
 	hostAppMutex  sync.RWMutex
 	hostAppCPU    *metriccache.Point
@@ -94,11 +98,26 @@ func (r *SharedState) UpdateNodeUsage(cpu, memory metriccache.Point) {
 	r.nodeMemory = &memory
 }
 
+// UpdateNodeNUMAUsage updates the latest per-NUMA node cpu and memory usage.
+func (r *SharedState) UpdateNodeNUMAUsage(cpu, memory map[int32]metriccache.Point) {
+	r.nodeMutex.Lock()
+	defer r.nodeMutex.Unlock()
+	r.nodeNUMACPU = cpu
+	r.nodeNUMAMemory = memory
+}
+
 func (r *SharedState) UpdatePodUsage(collectorName string, cpu, memory metriccache.Point) {
 	r.podMutex.Lock()
 	defer r.podMutex.Unlock()
 	r.podsCPUByCollector[collectorName] = cpu
 	r.podsMemoryByCollector[collectorName] = memory
+}
+
+// UpdatePodsNUMAMemoryUsage updates the latest per-NUMA memory usage summed over the pods of the collector.
+func (r *SharedState) UpdatePodsNUMAMemoryUsage(collectorName string, memory map[int32]metriccache.Point) {
+	r.podMutex.Lock()
+	defer r.podMutex.Unlock()
+	r.podsNUMAMemoryByCollector[collectorName] = memory
 }
 
 func (r *SharedState) UpdateHostAppUsage(cpu, memory metriccache.Point) {
@@ -112,6 +131,21 @@ func (r *SharedState) GetNodeUsage() (cpu, memory *metriccache.Point) {
 	r.nodeMutex.RLock()
 	defer r.nodeMutex.RUnlock()
 	return r.nodeCPU, r.nodeMemory
+}
+
+// GetNodeNUMAUsage returns the latest per-NUMA node cpu and memory usage.
+func (r *SharedState) GetNodeNUMAUsage() (cpu, memory map[int32]metriccache.Point) {
+	r.nodeMutex.RLock()
+	defer r.nodeMutex.RUnlock()
+	cpu = make(map[int32]metriccache.Point, len(r.nodeNUMACPU))
+	for numaID, val := range r.nodeNUMACPU {
+		cpu[numaID] = val
+	}
+	memory = make(map[int32]metriccache.Point, len(r.nodeNUMAMemory))
+	for numaID, val := range r.nodeNUMAMemory {
+		memory[numaID] = val
+	}
+	return cpu, memory
 }
 
 func (r *SharedState) GetHostAppUsage() (cpu, memory *metriccache.Point) {
@@ -132,4 +166,19 @@ func (r *SharedState) GetPodsUsageByCollector() (cpu, memory map[string]metricca
 		podsMemory[collector] = val
 	}
 	return podsCPU, podsMemory
+}
+
+// GetPodsNUMAMemoryUsage returns the latest per-NUMA memory usage of pods by collector.
+func (r *SharedState) GetPodsNUMAMemoryUsage() map[string]map[int32]metriccache.Point {
+	r.podMutex.RLock()
+	defer r.podMutex.RUnlock()
+	podsNUMAMemory := map[string]map[int32]metriccache.Point{}
+	for collector, numaUsage := range r.podsNUMAMemoryByCollector {
+		usage := make(map[int32]metriccache.Point, len(numaUsage))
+		for numaID, val := range numaUsage {
+			usage[numaID] = val
+		}
+		podsNUMAMemory[collector] = usage
+	}
+	return podsNUMAMemory
 }

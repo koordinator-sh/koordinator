@@ -202,6 +202,81 @@ DirectMap1G:           0 kB`)
 	assert.False(t, c.Started())
 }
 
+func Test_nodeResourceCollector_collectNodeNUMAResUsed(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+		TSDBPath:              t.TempDir(),
+		TSDBEnablePromMetrics: false,
+	})
+	assert.NoError(t, err)
+	defer func() {
+		err = metricCache.Close()
+		assert.NoError(t, err)
+	}()
+
+	testNow := time.Now()
+	testLastTime := testNow.Add(-time.Second)
+	testCPUUsage := 1.0
+	testUserTicks := int(testCPUUsage * float64(time.Second) / system.Jiffies)
+	// format: cpu $user $nice $system $idle $iowait $irq $softirq
+	helper.WriteProcSubFileContents(system.ProcStatName, fmt.Sprintf(`cpu  %v 0 0 0 0 0 0 0 0 0
+cpu0 %v 0 0 0 0 0 0 0 0 0
+cpu1 %v 0 0 0 0 0 0 0 0 0`, 3*testUserTicks, testUserTicks, 2*testUserTicks))
+
+	// NUMA meminfo: usage = MemTotal - (MemFree + Active(file) + Inactive(file) + SReclaimable)
+	numaMemInfo0 := `Node 0 MemTotal:       1048576 kB
+Node 0 MemFree:         262144 kB
+Node 0 Active(file):    131072 kB
+Node 0 Inactive(file):  131072 kB
+Node 0 SReclaimable:     65536 kB
+Node 0 Shmem:            65536 kB`
+	numaMemInfo1 := `Node 1 MemTotal:       1048576 kB
+Node 1 MemFree:         524288 kB
+Node 1 Active(file):     65536 kB
+Node 1 Inactive(file):   65536 kB
+Node 1 SReclaimable:         0 kB
+Node 1 Shmem:                0 kB`
+	helper.WriteFileContents(system.GetNUMAMemInfoPath("node0"), numaMemInfo0)
+	helper.WriteFileContents(system.GetNUMAMemInfoPath("node1"), numaMemInfo1)
+
+	c := &nodeResourceCollector{
+		started:      atomic.NewBool(false),
+		appendableDB: metricCache,
+		metricDB:     metricCache,
+		sharedState:  framework.NewSharedState(),
+	}
+
+	// case 1: cpu info not ready, only memory is collected; the first per-CPU stat is recorded
+	samples, numaCPU, numaMem := c.collectNodeNUMAResUsed(testNow)
+	assert.Equal(t, 2, len(samples), "only memory samples are expected")
+	assert.Equal(t, 0, len(numaCPU))
+	wantMemUsage0 := float64((1048576 - (262144 + 131072 + 131072 + 65536)) * 1024)
+	wantMemUsage1 := float64((1048576 - (524288 + 65536 + 65536 + 0)) * 1024)
+	assert.Equal(t, wantMemUsage0, numaMem[0].Value)
+	assert.Equal(t, wantMemUsage1, numaMem[1].Value)
+	assert.NotNil(t, c.lastNodePerCPUStat)
+
+	// case 2: cpu info ready and last per-CPU stat exists, both cpu and memory are collected
+	metricCache.Set(metriccache.NodeCPUInfoKey, &metriccache.NodeCPUInfo{
+		ProcessorInfos: []util.ProcessorInfo{
+			{CPUID: 0, NodeID: 0},
+			{CPUID: 1, NodeID: 1},
+		},
+	})
+	c.lastNodePerCPUStat = &perCPUStat{
+		cpuTicks:  map[int32]uint64{0: 0, 1: 0},
+		timestamp: testLastTime,
+	}
+	samples, numaCPU, numaMem = c.collectNodeNUMAResUsed(testNow)
+	assert.Equal(t, 4, len(samples))
+	assert.Equal(t, 2, len(numaCPU))
+	assert.InDelta(t, testCPUUsage, numaCPU[0].Value, 0.02)
+	assert.InDelta(t, 2*testCPUUsage, numaCPU[1].Value, 0.02)
+	assert.Equal(t, wantMemUsage0, numaMem[0].Value)
+	assert.Equal(t, wantMemUsage1, numaMem[1].Value)
+}
+
 type fakeDeviceCollector struct {
 	framework.DeviceCollector
 	isEnabled     bool

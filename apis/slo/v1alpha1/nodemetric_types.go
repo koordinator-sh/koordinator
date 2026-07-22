@@ -40,11 +40,28 @@ type NodeMetricInfo struct {
 	NodeUsage ResourceMap `json:"nodeUsage,omitempty"`
 	// AggregatedNodeUsages will report only if there are enough samples
 	AggregatedNodeUsages []AggregatedUsage `json:"aggregatedNodeUsages,omitempty"`
-	// SystemUsage is the resource usage of daemon processes and OS kernel, calculated by `NodeUsage - sum(podUsage)`
+	// SystemUsage is the resource usage of daemon processes and OS kernel, calculated by
+	// `NodeUsage - sum(podUsage) - sum(hostApplicationUsage)`
 	SystemUsage ResourceMap `json:"systemUsage,omitempty"`
 	// AggregatedSystemUsages will report only if there are enough samples
 	// Deleted pods will be excluded during aggregation
 	AggregatedSystemUsages []AggregatedUsage `json:"aggregatedSystemUsages,omitempty"`
+	// NUMAUsages contains the per-NUMA-node resource usage
+	NUMAUsages []NUMAUsage `json:"numaUsages,omitempty"`
+}
+
+// NUMAUsage defines the observed usage of a NUMA node
+type NUMAUsage struct {
+	// NUMANodeID is the ID of the NUMA node
+	NUMANodeID int32 `json:"numaNodeID"`
+	// NodeUsage is the total resource usage of this NUMA node. The memory usage is estimated from
+	// the per-NUMA meminfo which provides no MemAvailable field, so it can slightly differ from the
+	// node-level usage semantics (MemTotal - MemAvailable).
+	NodeUsage ResourceMap `json:"nodeUsage,omitempty"`
+	// SystemUsage is the system resource usage of this NUMA node;
+	// memory is calculated by `NUMA nodeUsage - sum(pod NUMA usage)` where the host application usage
+	// is not excluded, cpu is apportioned from the node-level system usage by the NUMA cpu usage ratio
+	SystemUsage ResourceMap `json:"systemUsage,omitempty"`
 }
 
 type AggregatedUsage struct {

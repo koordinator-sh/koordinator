@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -46,6 +47,7 @@ import (
 	clientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
@@ -271,6 +273,7 @@ func (r *nodeMetricInformer) sync() {
 		HostApplicationMetric: hostAppMetricInfo,
 		ProdReclaimableMetric: prodReclaimableMetric,
 	}
+	recordNodeMetricPromMetrics(newStatus)
 	retErr := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		nodeMetric, err := r.nodeMetricLister.Get(r.nodeName)
 		if errors.IsNotFound(err) {
@@ -349,6 +352,7 @@ func (r *nodeMetricInformer) collectMetric() (*slov1alpha1.NodeMetricInfo, []*sl
 		AggregatedNodeUsages:   r.collectNodeAggregateMetric(endTime, spec.CollectPolicy.NodeAggregatePolicy),
 		SystemUsage:            r.querySystemMetric(startTime, endTime, metriccache.AggregationTypeAVG, false),
 		AggregatedSystemUsages: r.collectSystemAggregateMetric(endTime, spec.CollectPolicy.NodeAggregatePolicy),
+		NUMAUsages:             r.collectNUMAUsages(startTime, endTime, metriccache.AggregationTypeAVG),
 	}
 
 	var gpus koordletutil.GPUDevices
@@ -477,6 +481,126 @@ func (r *nodeMetricInformer) queryNodeMetric(start time.Time, end time.Time, agg
 func metricsInColdStart(queryStart, queryEnd time.Time, duration time.Duration) bool {
 	targetDuration := queryEnd.Sub(queryStart)
 	return duration.Seconds() < targetDuration.Seconds()*validateTimeRangeRatio
+}
+
+// recordNodeMetricPromMetrics records the prometheus metrics for the main info of the NodeMetric status,
+// including the node usage and the system usage (with the NUMA dimension).
+// It is controlled by the koordlet feature-gate NodeMetricPromMetrics.
+func recordNodeMetricPromMetrics(status *slov1alpha1.NodeMetricStatus) {
+	if status == nil || !features.DefaultKoordletFeatureGate.Enabled(features.NodeMetricPromMetrics) {
+		return
+	}
+	// reset all series first and then record the full set of the latest reported values, so the
+	// stale series are cleaned up
+	metrics.ResetNodeMetricUsages()
+	recordResourceList := func(rl corev1.ResourceList, recordFn func(resourceName, unit string, value float64)) {
+		if rl == nil {
+			return
+		}
+		if cpu, ok := rl[corev1.ResourceCPU]; ok {
+			recordFn(string(corev1.ResourceCPU), metrics.UnitCore, float64(cpu.MilliValue())/1000)
+		}
+		if memory, ok := rl[corev1.ResourceMemory]; ok {
+			recordFn(string(corev1.ResourceMemory), metrics.UnitByte, float64(memory.Value()))
+		}
+	}
+	if status.NodeMetric != nil {
+		recordResourceList(status.NodeMetric.NodeUsage.ResourceList, metrics.RecordNodeMetricNodeUsage)
+		recordResourceList(status.NodeMetric.SystemUsage.ResourceList, metrics.RecordNodeMetricSystemUsage)
+		for _, numaUsage := range status.NodeMetric.NUMAUsages {
+			numaNodeID := numaUsage.NUMANodeID
+			recordResourceList(numaUsage.NodeUsage.ResourceList, func(resourceName, unit string, value float64) {
+				metrics.RecordNodeMetricNUMANodeUsage(numaNodeID, resourceName, unit, value)
+			})
+			recordResourceList(numaUsage.SystemUsage.ResourceList, func(resourceName, unit string, value float64) {
+				metrics.RecordNodeMetricNUMASystemUsage(numaNodeID, resourceName, unit, value)
+			})
+		}
+	}
+}
+
+// collectNUMAUsages queries and assembles the per-NUMA node and system usage for the report.
+// A NUMA node whose node usage query fails is skipped with a warning; the system usage is optional.
+func (r *nodeMetricInformer) collectNUMAUsages(start, end time.Time, aggregateType metriccache.AggregationType) []slov1alpha1.NUMAUsage {
+	value, exist := r.metricCache.Get(metriccache.NodeNUMAInfoKey)
+	if !exist {
+		klog.V(5).Infof("got no node NUMA info, skip NUMA usage collection")
+		return nil
+	}
+	numaInfo, ok := value.(*koordletutil.NodeNUMAInfo)
+	if !ok || numaInfo == nil {
+		klog.Errorf("value type error, expect: %T, got %T", &koordletutil.NodeNUMAInfo{}, value)
+		return nil
+	}
+
+	querier, err := r.metricCache.Querier(start, end)
+	if err != nil {
+		klog.Warningf("get NUMA usage querier failed, error %v", err)
+		return nil
+	}
+	defer querier.Close()
+
+	numaUsages := make([]slov1alpha1.NUMAUsage, 0, len(numaInfo.NUMAInfos))
+	for _, numa := range numaInfo.NUMAInfos {
+		properties := metriccache.MetricPropertiesFunc.NUMA(strconv.FormatInt(int64(numa.NUMANodeID), 10))
+		nodeUsage, err := collectNUMAResourceUsage(querier, metriccache.NodeNUMACPUUsageMetric,
+			metriccache.NodeNUMAMemoryUsageMetric, properties, aggregateType)
+		if err != nil {
+			klog.V(4).Infof("query NUMA %d node usage failed, skip this NUMA, err: %v", numa.NUMANodeID, err)
+			continue
+		}
+		numaUsage := slov1alpha1.NUMAUsage{
+			NUMANodeID: numa.NUMANodeID,
+			NodeUsage:  slov1alpha1.ResourceMap{ResourceList: nodeUsage},
+		}
+		systemUsage, err := collectNUMAResourceUsage(querier, metriccache.SystemNUMACPUUsageMetric,
+			metriccache.SystemNUMAMemoryUsageMetric, properties, aggregateType)
+		if err != nil {
+			klog.V(4).Infof("query NUMA %d system usage failed, report the node usage only, err: %v",
+				numa.NUMANodeID, err)
+		} else {
+			numaUsage.SystemUsage = slov1alpha1.ResourceMap{ResourceList: systemUsage}
+		}
+		numaUsages = append(numaUsages, numaUsage)
+	}
+	if len(numaUsages) <= 0 {
+		return nil
+	}
+	sort.Slice(numaUsages, func(i, j int) bool {
+		return numaUsages[i].NUMANodeID < numaUsages[j].NUMANodeID
+	})
+	return numaUsages
+}
+
+// collectNUMAResourceUsage queries the aggregated cpu and memory usage of one NUMA node.
+func collectNUMAResourceUsage(querier metriccache.Querier, cpuMetric, memMetric metriccache.MetricResource,
+	properties map[metriccache.MetricProperty]string, aggregateType metriccache.AggregationType) (corev1.ResourceList, error) {
+	cpuAggregateResult, err := doQuery(querier, cpuMetric, properties)
+	if err != nil {
+		return nil, err
+	}
+	if cpuAggregateResult.Count() == 0 {
+		return nil, fmt.Errorf("no sample for the NUMA cpu usage metric")
+	}
+	cpuUsed, err := cpuAggregateResult.Value(aggregateType)
+	if err != nil {
+		return nil, err
+	}
+	memAggregateResult, err := doQuery(querier, memMetric, properties)
+	if err != nil {
+		return nil, err
+	}
+	if memAggregateResult.Count() == 0 {
+		return nil, fmt.Errorf("no sample for the NUMA memory usage metric")
+	}
+	memUsed, err := memAggregateResult.Value(aggregateType)
+	if err != nil {
+		return nil, err
+	}
+	return corev1.ResourceList{
+		corev1.ResourceCPU:    *resource.NewMilliQuantity(int64(cpuUsed*1000), resource.DecimalSI),
+		corev1.ResourceMemory: *resource.NewQuantity(int64(memUsed), resource.BinarySI),
+	}, nil
 }
 
 func (r *nodeMetricInformer) collectNodeMetric(queryparam metriccache.QueryParam) (corev1.ResourceList, time.Duration, error) {

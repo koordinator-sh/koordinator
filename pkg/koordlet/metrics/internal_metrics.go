@@ -42,6 +42,7 @@ func init() {
 	internalMustRegister(CPUSetCollector...)
 	internalMustRegister(PredictionCollectors...)
 	internalMustRegister(CoreSchedCollector...)
+	internalMustRegister(NodeMetricCollectors...)
 	internalMustRegister(ResourceExecutorCollector...)
 	internalMustRegister(KubeletStubCollector...)
 	internalMustRegister(RuntimeHookCollectors...)
