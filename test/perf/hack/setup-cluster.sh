@@ -27,10 +27,20 @@ else
   echo "Warning: hack/deploy_kind.sh not found. Install Koordinator manually."
 fi
 
-echo "==> Waiting for koord-manager to be ready (provides webhook certs)"
-kubectl rollout status deployment/koord-manager \
-  -n koordinator-system \
-  --timeout=300s
+# Drop webhook configs before waiting for pods. koord-manager handles cert
+# injection and webhook admission, but its own pods cannot be admitted until
+# the webhook endpoint is reachable — a circular deadlock. Benchmarks only
+# require the scheduler, so removing these configs is safe here.
+echo "==> Removing webhook configurations to avoid bootstrap deadlock"
+kubectl delete mutatingwebhookconfiguration \
+  koordinator-mutating-webhook-configuration --ignore-not-found
+kubectl delete validatingwebhookconfiguration \
+  koordinator-validating-webhook-configuration --ignore-not-found
+
+# Scale down components not needed for benchmarks to save CI resources.
+echo "==> Scaling down non-benchmark components"
+kubectl scale deployment/koord-manager    -n koordinator-system --replicas=0
+kubectl scale deployment/koord-descheduler -n koordinator-system --replicas=0
 
 echo "==> Waiting for koord-scheduler to be ready"
 kubectl rollout status deployment/koord-scheduler \
