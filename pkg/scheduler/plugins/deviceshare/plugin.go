@@ -829,11 +829,12 @@ func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktyp
 		return newNodeDeviceCache(h)
 	})
 	deviceCache := sharedCache.(*nodeDeviceCache)
-	// Register the node informer synchronously during New so that the registration
-	// is visible to the framework's WaitForHandlersSync. If we registered it inside
-	// the gcNodeDevice goroutine, the framework might start scheduling before the
-	// handler registration is collected. Using a no-op handler because gcNodeDevice
-	// only reads from the node lister.
+	// Ensure the node informer is instantiated and its initial list is awaited during
+	// startup. Registering it here (per profile, during New) makes it visible to the
+	// framework's WaitForHandlersSync, so the scheduler waits for the node cache to finish
+	// its initial sync before accepting scheduling cycles. A no-op handler suffices:
+	// DeviceShare reads the node lister directly (in gcNodeDevice) rather than reacting to
+	// node events.
 	nodeInformer := handle.SharedInformerFactory().Core().V1().Nodes().Informer()
 	if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), nodeInformer, nil); err != nil {
 		return nil, err
