@@ -25,8 +25,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -323,18 +323,19 @@ func (m *mockStatesInformer) GetNodeMetricSpec() *slov1alpha1.NodeMetricSpec {
 }
 
 // Other methods of StatesInformer interface — not used in this test.
-func (m *mockStatesInformer) GetAllPods() []*statesinformer.PodMeta                                          { return nil }
-func (m *mockStatesInformer) GetNode() *corev1.Node                                                          { return nil }
-func (m *mockStatesInformer) GetNodeSLO() *slov1alpha1.NodeSLO                                               { return nil }
-func (m *mockStatesInformer) GetNodeMetric() *slov1alpha1.NodeMetric                                         { return nil }
-func (m *mockStatesInformer) GetAllHostApplications() []*slov1alpha1.HostApplicationSpec                         { return nil }
+func (m *mockStatesInformer) GetAllPods() []*statesinformer.PodMeta                      { return nil }
+func (m *mockStatesInformer) GetNode() *corev1.Node                                      { return nil }
+func (m *mockStatesInformer) GetNodeSLO() *slov1alpha1.NodeSLO                           { return nil }
+func (m *mockStatesInformer) GetNodeMetric() *slov1alpha1.NodeMetric                     { return nil }
+func (m *mockStatesInformer) GetAllHostApplications() []*slov1alpha1.HostApplicationSpec { return nil }
 
 func (m *mockStatesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology { return nil }
 
 func (m *mockStatesInformer) GetVolumeName(string, string) string { return "" }
-func (m *mockStatesInformer) HasSynced() bool                                                                { return false }
-func (m *mockStatesInformer) RegisterCallbacks(kind statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn) {}
-func (m *mockStatesInformer) Run(stopCh <-chan struct{}) error                                               { return nil }
+func (m *mockStatesInformer) HasSynced() bool                     { return false }
+func (m *mockStatesInformer) RegisterCallbacks(kind statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn) {
+}
+func (m *mockStatesInformer) Run(stopCh <-chan struct{}) error { return nil }
 
 func Test_systemResourceCollector_queryMemoryWithPolicy(t *testing.T) {
 	testNow := time.Now()
@@ -345,11 +346,11 @@ func Test_systemResourceCollector_queryMemoryWithPolicy(t *testing.T) {
 	tests := []struct {
 		name       string
 		policy     slov1alpha1.NodeMemoryCollectPolicy
-		mockValue  float64   // value to write to metric cache for the policy-aware metric
-		wantNode   float64   // expected node memory return value
-		wantPods   float64   // expected pods memory return value (passthrough)
-		wantHost   float64   // expected host app memory return value (passthrough)
-		wantErrVal bool      // true if we expect the default fallback (no policy-aware query)
+		mockValue  float64 // value to write to metric cache for the policy-aware metric
+		wantNode   float64 // expected node memory return value
+		wantPods   float64 // expected pods memory return value (passthrough)
+		wantHost   float64 // expected host app memory return value (passthrough)
+		wantErrVal bool    // true if we expect the default fallback (no policy-aware query)
 	}{
 		{
 			name:      "UsageWithPageCache returns policy-aware node memory",
