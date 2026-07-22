@@ -518,11 +518,20 @@ func newNodeDeviceCache(handle frameworkext.ExtendedHandle) *nodeDeviceCache {
 // instance after all profiles are built and before the shared informer factory starts.
 // Registers Device CRD handlers (plugin-specific, not centrally dispatched) and starts
 // the single GC goroutine.
-func (n *nodeDeviceCache) Start(ctx context.Context) {
+func (n *nodeDeviceCache) Start(context.Context) {
 	registerDeviceEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
 	registerReservationEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
 	n.handle.RegisterForgetPodHandler(n.deletePod)
-	go n.gcNodeDevice(ctx, n.handle.SharedInformerFactory(), defaultGCPeriod)
+	// Launch GC only after all informer factories have started and synced, so its first
+	// tick reads a fully populated node lister. Registering it behind an
+	// AfterAllInformersSynced hook gives an explicit happens-after-sync guarantee that does
+	// not depend on the WaitForHandlersSync guard in gcNodeDevice lining up with the node
+	// handler registration collected in Plugin.New(). The hook's ctx is the scheduler's
+	// run-time context, so GC lives for the scheduler's lifetime.
+	frameworkexthelper.RegisterAfterAllInformersSynced(func(ctx context.Context) error {
+		go n.gcNodeDevice(ctx, n.handle.SharedInformerFactory(), defaultGCPeriod)
+		return nil
+	})
 }
 
 // OnPodAdd implements frameworkext.SharedPluginCache. If the pod was previously assumed,
@@ -766,18 +775,13 @@ func (n *nodeDeviceCache) getAllNodeDeviceSummary() map[string]*NodeDeviceSummar
 }
 
 func (n *nodeDeviceCache) gcNodeDevice(ctx context.Context, informerFactory informers.SharedInformerFactory, period time.Duration) {
-	// Wait for all koord plugin event handlers (pod / device / reservation /
-	// node, etc.) to finish processing their initial list before starting GC.
-	// A bare cache.WaitForCacheSync(nodeInformer.HasSynced) only guarantees the
-	// underlying store is populated; it does NOT guarantee that OnAdd callbacks
-	// (which build nodeDeviceInfos) have run to completion. Without this wait
-	// the first GC tick may operate on a half-populated nodeDeviceInfos map
-	// (or, worse, see a warm nodeDeviceInfos but an empty node lister) and
-	// mistakenly evict entries that are about to be recreated.
-	// WaitForHandlersSync defers on ResourceEventHandlerRegistration.HasSynced
-	// for every registration collected by ForceSyncFromInformer, which is the
-	// same signal the scheduler's Run() waits on before accepting scheduling
-	// cycles -- effectively delaying GC until "after scheduler Run".
+	// gcNodeDevice is launched from an AfterAllInformersSynced hook (see Start), so by the
+	// time it runs all informer factories have already started and their caches and handler
+	// registrations have synced. This WaitForHandlersSync call is therefore a defense-in-depth
+	// secondary guard, not the primary gate: it ensures every koord plugin event handler
+	// (pod / device / reservation / node) has drained its initial list before the first GC
+	// tick, so GC never observes a warm nodeDeviceInfos against a not-yet-populated node
+	// lister and evicts entries that are about to be recreated.
 	if err := frameworkexthelper.WaitForHandlersSync(ctx); err != nil {
 		return
 	}
