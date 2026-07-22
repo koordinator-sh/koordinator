@@ -27,9 +27,14 @@ else
   echo "Warning: hack/deploy_kind.sh not found. Install Koordinator manually."
 fi
 
+echo "==> Waiting for koord-manager to be ready (provides webhook certs)"
+kubectl rollout status deployment/koord-manager \
+  -n koordinator-system \
+  --timeout=300s
+
 echo "==> Waiting for koord-scheduler to be ready"
 kubectl rollout status deployment/koord-scheduler \
   -n koordinator-system \
-  --timeout=120s
+  --timeout=300s
 
 echo "==> Done. Run: make -C test/perf benchmark"
