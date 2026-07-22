@@ -28,8 +28,7 @@ else
 fi
 
 echo "==> Waiting for koord-scheduler to be ready"
-kubectl wait --for=condition=ready pod \
-  -l app=koord-scheduler \
+kubectl rollout status deployment/koord-scheduler \
   -n koordinator-system \
   --timeout=120s
 
