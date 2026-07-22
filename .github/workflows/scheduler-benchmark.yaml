@@ -19,6 +19,15 @@ jobs:
       - name: Set up cluster
         run: make -C test/perf setup
 
+      - name: Debug koordinator-system on failure
+        if: failure()
+        run: |
+          kubectl get pods -n koordinator-system -o wide || true
+          kubectl describe deployment/koord-scheduler -n koordinator-system || true
+          kubectl describe pod -l app=koord-scheduler -n koordinator-system || true
+          kubectl logs -n koordinator-system -l app=koord-scheduler --all-containers --tail=300 || true
+          kubectl get events -n koordinator-system --sort-by=.lastTimestamp | tail -50 || true
+
       - name: Run benchmark
         run: make -C test/perf benchmark BASELINE=baselines/basic-1k.json
 
