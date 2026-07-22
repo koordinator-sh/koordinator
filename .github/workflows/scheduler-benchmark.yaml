@@ -1,0 +1,46 @@
+name: scheduler-benchmark
+
+on:
+  pull_request:
+    paths:
+      - "test/perf/**"
+  workflow_dispatch: {}
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up cluster
+        run: make -C test/perf setup
+
+      - name: Run benchmark
+        run: make -C test/perf benchmark BASELINE=baselines/basic-1k.json
+
+      - name: Fail on regression
+        if: always()
+        run: |
+          if [ -f test/perf/results/result.json ]; then
+            breached=$(jq -r '.thresholdBreached' test/perf/results/result.json)
+            echo "thresholdBreached=$breached"
+            if [ "$breached" = "true" ]; then
+              echo "::error::Benchmark regression detected — see uploaded result.json"
+              exit 1
+            fi
+          fi
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: test/perf/results/result.json
+
+      - name: Teardown cluster
+        if: always()
+        run: make -C test/perf teardown
