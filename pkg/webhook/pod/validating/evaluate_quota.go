@@ -22,6 +22,8 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
+	apiresource "k8s.io/component-helpers/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
@@ -54,7 +56,11 @@ func (h *PodValidatingHandler) evaluateQuota(ctx context.Context, req admission.
 		oldQuotaName := elasticquota.GetQuotaName(oldPod, h.Client)
 		quotaName = elasticquota.GetQuotaName(newPod, h.Client)
 		if oldQuotaName == quotaName {
-			return true, "", nil
+			oldRequests := apiresource.PodRequests(oldPod, apiresource.PodResourcesOptions{})
+			newRequests := apiresource.PodRequests(newPod, apiresource.PodResourcesOptions{})
+			if quotav1.Equals(oldRequests, newRequests) {
+				return true, "", nil
+			}
 		}
 	default:
 		return true, "", nil
