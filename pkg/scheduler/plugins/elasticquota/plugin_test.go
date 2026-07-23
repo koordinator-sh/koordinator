@@ -35,6 +35,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
@@ -43,6 +44,7 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -2497,6 +2499,90 @@ func TestPlugin_updateQuotaSnapshot(t *testing.T) {
 			if gp.groupQuotaManager != nil {
 				assert.True(t, exists, "default quota manager snapshot should exist")
 			}
+		})
+	}
+}
+
+func TestToElasticQuota(t *testing.T) {
+	eq := &v1alpha1.ElasticQuota{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ElasticQuota",
+			APIVersion: "scheduling.x-k8s.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-quota",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				extension.LabelQuotaTreeID: "tree1",
+			},
+		},
+		Spec: v1alpha1.ElasticQuotaSpec{
+			Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+			Min: MakeResourceList().CPU(1).Mem(2).Obj(),
+		},
+	}
+
+	// Build an *unstructured.Unstructured from the typed ElasticQuota.
+	rawMap, err := apiruntime.DefaultUnstructuredConverter.ToUnstructured(eq)
+	assert.NoError(t, err)
+	unstructuredObj := &unstructured.Unstructured{Object: rawMap}
+
+	tests := []struct {
+		name    string
+		obj     interface{}
+		wantNil bool
+	}{
+		{
+			name:    "nil object",
+			obj:     nil,
+			wantNil: true,
+		},
+		{
+			name:    "typed ElasticQuota",
+			obj:     eq,
+			wantNil: false,
+		},
+		{
+			name:    "unstructured ElasticQuota",
+			obj:     unstructuredObj,
+			wantNil: false,
+		},
+		{
+			name: "DeletedFinalStateUnknown wrapping unstructured",
+			obj: cache.DeletedFinalStateUnknown{
+				Key: "test-ns/test-quota",
+				Obj: unstructuredObj,
+			},
+			wantNil: false,
+		},
+		{
+			name: "DeletedFinalStateUnknown wrapping typed ElasticQuota",
+			obj: cache.DeletedFinalStateUnknown{
+				Key: "test-ns/test-quota",
+				Obj: eq,
+			},
+			wantNil: false,
+		},
+		{
+			name:    "unhandled type",
+			obj:     &corev1.Pod{},
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toElasticQuota(tt.obj)
+			if tt.wantNil {
+				assert.Nil(t, got)
+				return
+			}
+			assert.NotNil(t, got)
+			assert.Equal(t, eq.Name, got.Name)
+			assert.Equal(t, eq.Namespace, got.Namespace)
+			assert.Equal(t, "tree1", got.Labels[extension.LabelQuotaTreeID])
+			assert.True(t, quotav1.Equals(eq.Spec.Max, got.Spec.Max))
+			assert.True(t, quotav1.Equals(eq.Spec.Min, got.Spec.Min))
 		})
 	}
 }
