@@ -40,10 +40,15 @@ else
   exit 1
 fi
 
-# Remove webhook configurations before restarting the scheduler. The
-# MutatingWebhookConfiguration routes pod admission through koord-manager, but
-# we scale koord-manager to 0 to free CI resources. If the webhook is present
-# when the scheduler pod is created, admission blocks indefinitely.
+# Remove webhook configurations. The MutatingWebhookConfiguration routes
+# pod admission through koord-manager, which we scale to 0 to free CI
+# resources. Without deleting the webhook, any pod created during the
+# benchmark would block indefinitely waiting for an admission response that
+# never comes.
+#
+# Note: the scheduler pod itself is admitted BEFORE the webhook configuration
+# is created (kustomize applies Deployments before WebhookConfigurations), so
+# the scheduler's own pod is not affected by this deletion.
 echo "==> Removing webhook configurations"
 kubectl delete mutatingwebhookconfiguration \
   koordinator-mutating-webhook-configuration --ignore-not-found
@@ -55,13 +60,13 @@ echo "==> Scaling down non-benchmark components"
 kubectl scale deployment/koord-manager    -n koordinator-system --replicas=0
 kubectl scale deployment/koord-descheduler -n koordinator-system --replicas=0
 
-# Restart the scheduler so the new pod is created after the webhooks are gone.
-# The initial pod from deploy_kind.sh was created while webhooks were present
-# and may have been blocked in admission. With the image already in containerd,
-# the restarted pod starts in seconds.
-echo "==> Restarting scheduler (webhooks now gone, image pre-loaded)"
-kubectl rollout restart deployment/koord-scheduler -n koordinator-system
-
+# Wait for the scheduler pod that deploy_kind.sh already created. We do NOT
+# restart the deployment here: the initial pod was admitted before the webhook
+# was active and starts with the correct ConfigMap. A rollout restart would
+# create a second pod competing for the leader lease — the new pod blocks on
+# leader election, never serves /healthz, and can't become Ready, which in
+# turn prevents Kubernetes from terminating the old pod (maxUnavailable: 0)
+# — a deadlock that exhausts the timeout.
 echo "==> Waiting for koord-scheduler to be ready"
 kubectl rollout status deployment/koord-scheduler \
   -n koordinator-system --timeout=300s
