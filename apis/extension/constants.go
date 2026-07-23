@@ -55,6 +55,12 @@ const (
 	// When this annotation is missing, there are no policy restrictions
 	AnnotationPodEvictPolicy = DomainPrefix + "eviction-policy"
 
+	// AnnotationPodEvictionPriority is the pod-level eviction priority (int32 string, negative allowed).
+	// In the koordlet resource eviction (e.g. MemoryEvict, CPUEvict), pods with lower values are evicted
+	// before pods with higher values, taking precedence over spec.priority and the koordinator.sh/priority
+	// label. Pods without the annotation take the implicit priority 0.
+	AnnotationPodEvictionPriority = DomainPrefix + "eviction-priority"
+
 	// LabelPodSkipEnhancedValidation is the pod label key used to opt out a pod from enhanced validation.
 	LabelPodSkipEnhancedValidation = PodDomainPrefix + "/skip-enhanced-validation"
 

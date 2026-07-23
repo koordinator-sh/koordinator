@@ -16,7 +16,12 @@ limitations under the License.
 
 package extension
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	"fmt"
+	"strconv"
+
+	corev1 "k8s.io/api/core/v1"
+)
 
 func PodEvictEnabled(pod *corev1.Pod) bool {
 	if pod == nil {
@@ -29,4 +34,22 @@ func PodEvictEnabled(pod *corev1.Pod) bool {
 		return false
 	}
 	return true
+}
+
+// GetPodEvictionPriority parses the eviction priority from the pod annotations.
+// It returns the implicit priority 0 when the annotation is missing or invalid.
+func GetPodEvictionPriority(pod *corev1.Pod) (int32, error) {
+	if pod == nil || pod.Annotations == nil {
+		return 0, nil
+	}
+	value, exist := pod.Annotations[AnnotationPodEvictionPriority]
+	if !exist {
+		return 0, nil
+	}
+	i, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		// make sure we default to 0 on error
+		return 0, fmt.Errorf("invalid value %q, err: %w", value, err)
+	}
+	return int32(i), nil
 }

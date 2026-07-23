@@ -57,6 +57,9 @@ type PodEvictInfo struct {
 	// sort helper
 	Priority      int32
 	LabelPriority int64
+	// EvictionPriority is from the annotation koordinator.sh/eviction-priority (implicit 0 when unset).
+	// Pods with lower values are evicted first, taking precedence over Priority and LabelPriority.
+	EvictionPriority int32
 }
 
 type EvictTaskInfo struct {
