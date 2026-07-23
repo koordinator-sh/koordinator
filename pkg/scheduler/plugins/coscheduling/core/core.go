@@ -68,7 +68,7 @@ const (
 // Manager defines the interfaces for PodGroup management.
 type Manager interface {
 	NextPod() *corev1.Pod
-	FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status)
+	FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (*frameworkext.BatchScheduleResult, *fwktype.Status)
 	SucceedGangScheduling()
 	PreEnqueue(context.Context, *corev1.Pod) (err error)
 	BeforePreFilter(context.Context, fwktype.CycleState, *corev1.Pod) (err error)

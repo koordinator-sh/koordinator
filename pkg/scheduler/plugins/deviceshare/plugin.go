@@ -199,6 +199,15 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, p
 	}
 	if !hintForDevice {
 		state.designatedAllocation = nil
+		state.designatedVF = nil
+	}
+	// Inline batch scheduling does not support scheduling to designated devices/VFs: the batch engine
+	// sets the deviceshare scheduling hint for the whole job (so hintForDevice above keeps the pod's
+	// annotation-recorded allocation), but on this path the pod must not be pinned to a specific
+	// card/VF. Clear both so the normal (non-designated) device allocation runs.
+	if k8sfeature.DefaultFeatureGate.Enabled(features.EnableInlineBatchSchedule) && hinter.IsBatchSchedulingCycle(cycleState) {
+		state.designatedAllocation = nil
+		state.designatedVF = nil
 	}
 	cycleState.Write(stateKey, state)
 	if state.skip {
