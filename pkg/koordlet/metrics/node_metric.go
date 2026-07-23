@@ -27,10 +27,11 @@ const (
 	NUMANodeKey = "numa_node_id"
 )
 
-// The metrics below record the main info reported in the NodeMetric status, which are enabled by the
-// koordlet feature-gate NodeMetricPromMetrics. On every NodeMetric sync, they are maintained by
-// resetting all the series first and then recording the full set of the latest reported values, so
-// the stale series (e.g. the NUMA usage is degraded) are cleaned up.
+// The metrics below record the main info reported in the NodeMetric status. The collectors are
+// always registered, while the recording is gated by the koordlet feature-gate
+// NodeMetricPromMetrics. On every NodeMetric sync, they are maintained by resetting all the series
+// first and then recording the full set of the latest reported values, so the stale series
+// (e.g. the NUMA usage is degraded) are cleaned up.
 // NOTE: the predicted peak is NOT recorded here since the prediction module already records it as
 // node_predicted_resource_peak.
 var (

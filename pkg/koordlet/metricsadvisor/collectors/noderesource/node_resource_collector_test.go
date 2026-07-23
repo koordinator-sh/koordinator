@@ -275,6 +275,17 @@ Node 1 Shmem:                0 kB`
 	assert.InDelta(t, 2*testCPUUsage, numaCPU[1].Value, 0.02)
 	assert.Equal(t, wantMemUsage0, numaMem[0].Value)
 	assert.Equal(t, wantMemUsage1, numaMem[1].Value)
+
+	// case 3: the last per-CPU stat has the same timestamp (invalid period), the cpu part is skipped
+	c.lastNodePerCPUStat = &perCPUStat{
+		cpuTicks:  map[int32]uint64{0: 0, 1: 0},
+		timestamp: testNow,
+	}
+	samples, numaCPU, numaMem = c.collectNodeNUMAResUsed(testNow)
+	assert.Equal(t, 2, len(samples), "only memory samples are expected")
+	assert.Equal(t, 0, len(numaCPU))
+	assert.Equal(t, wantMemUsage0, numaMem[0].Value)
+	assert.Equal(t, wantMemUsage1, numaMem[1].Value)
 }
 
 type fakeDeviceCollector struct {

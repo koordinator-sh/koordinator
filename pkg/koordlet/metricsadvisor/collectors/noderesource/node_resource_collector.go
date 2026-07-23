@@ -244,6 +244,12 @@ func (n *nodeResourceCollector) collectNodeNUMAResUsed(collectTime time.Time) ([
 		perNUMADeltaTicks[numaID] += ticks - lastTicks
 	}
 	periodTicks := system.GetPeriodTicks(lastPerCPUStat.timestamp, collectTime)
+	if periodTicks <= 0 {
+		// e.g. the collect timestamps are identical or the clock went backwards
+		klog.V(4).Infof("skip NUMA cpu usage collection, invalid period ticks %v from %v to %v",
+			periodTicks, lastPerCPUStat.timestamp, collectTime)
+		return numaMetrics, numaCPUUsage, numaMemUsage
+	}
 	for numaID, deltaTicks := range perNUMADeltaTicks {
 		cpuUsageValue := float64(deltaTicks) / periodTicks
 		cpuUsageMetric, err := metriccache.NodeNUMACPUUsageMetric.GenerateSample(
