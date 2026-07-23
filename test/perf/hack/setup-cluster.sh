@@ -60,6 +60,11 @@ data:
                     weight: 1
                   - name: memory
                     weight: 1
+          - name: Coscheduling
+            args:
+              apiVersion: kubescheduler.config.k8s.io/v1
+              kind: CoschedulingArgs
+              defaultTimeout: 600s
         plugins:
           preEnqueue:
             enabled:
