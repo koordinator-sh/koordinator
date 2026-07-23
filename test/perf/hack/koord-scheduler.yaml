@@ -1,0 +1,194 @@
+# Minimal self-contained manifest for running koord-scheduler in a benchmark
+# CI environment. Includes only what the scheduler needs to start and schedule
+# pods — no koord-manager, no webhooks, no ElasticQuota, no LoadAwareScheduling.
+#
+# Derived from config/manager/scheduler.yaml and config/rbac/scheduler_role*.yaml
+# but with names resolved (kustomize prefix applied), leaderElect disabled,
+# and plugin config reduced to what the basic and gang benchmark scenarios need.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: koordinator-system
+---
+# ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: koord-scheduler
+  namespace: koordinator-system
+---
+# Custom RBAC for koordinator-specific resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: koord-scheduler-role
+rules:
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["create", "get", "update"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["patch"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["patch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "patch", "update", "watch"]
+- apiGroups:
+  - config.koordinator.sh
+  - slo.koordinator.sh
+  - scheduling.koordinator.sh
+  - topology.node.k8s.io
+  - scheduling.sigs.k8s.io
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["csidrivers", "csinodes", "csistoragecapacities", "storageclasses", "volumeattachments"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: koord-scheduler-rolebinding-custom
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: koord-scheduler-role
+subjects:
+- kind: ServiceAccount
+  name: koord-scheduler
+  namespace: koordinator-system
+---
+# Grants the built-in kube-scheduler permissions (list/watch pods, nodes, etc.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: koord-scheduler-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:kube-scheduler
+subjects:
+- kind: ServiceAccount
+  name: koord-scheduler
+  namespace: koordinator-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: koord-scheduler-rolebinding-volume
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:volume-scheduler
+subjects:
+- kind: ServiceAccount
+  name: koord-scheduler
+  namespace: koordinator-system
+---
+# Minimal scheduler config. Coscheduling is intentionally omitted: the CI
+# workflow only runs the basic scenario. The gang scenario is validated
+# locally where the full cluster config is available.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: koord-scheduler-config
+  namespace: koordinator-system
+data:
+  koord-scheduler-config: |
+    apiVersion: kubescheduler.config.k8s.io/v1
+    kind: KubeSchedulerConfiguration
+    leaderElection:
+      leaderElect: false
+    profiles:
+      - schedulerName: koord-scheduler
+        pluginConfig:
+          - name: NodeResourcesFit
+            args:
+              apiVersion: kubescheduler.config.k8s.io/v1
+              kind: NodeResourcesFitArgs
+              scoringStrategy:
+                type: LeastAllocated
+                resources:
+                  - name: cpu
+                    weight: 1
+                  - name: memory
+                    weight: 1
+        plugins:
+          queueSort:
+            disabled:
+              - name: "*"
+            enabled:
+              - name: PrioritySort
+          postFilter:
+            disabled:
+              - name: "*"
+            enabled:
+              - name: DefaultPreemption
+          preBind:
+            enabled:
+              - name: DefaultPreBind
+          bind:
+            disabled:
+              - name: "*"
+            enabled:
+              - name: DefaultBinder
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: koord-scheduler
+  namespace: koordinator-system
+  labels:
+    koord-app: koord-scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      koord-app: koord-scheduler
+  template:
+    metadata:
+      labels:
+        koord-app: koord-scheduler
+    spec:
+      serviceAccountName: koord-scheduler
+      containers:
+      - name: scheduler
+        image: ghcr.io/koordinator-sh/koord-scheduler:v1.5.0
+        imagePullPolicy: IfNotPresent
+        command:
+        - /koord-scheduler
+        args:
+        - --port=10251
+        - --authentication-skip-lookup=true
+        - --v=4
+        - --config=/config/koord-scheduler.config
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 10251
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 500m
+            memory: 256Mi
+          limits:
+            cpu: "1"
+            memory: 1Gi
+        volumeMounts:
+        - name: scheduler-config
+          mountPath: /config
+      volumes:
+      - name: scheduler-config
+        configMap:
+          name: koord-scheduler-config
+          items:
+          - key: koord-scheduler-config
+            path: koord-scheduler.config
+      terminationGracePeriodSeconds: 10
