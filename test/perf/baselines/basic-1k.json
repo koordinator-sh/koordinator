@@ -1,0 +1,17 @@
+{
+  "name": "basic",
+  "runID": "32d28728-aed5-44af-bcb8-867beb91a33d",
+  "timestamp": "2026-07-07T18:47:55Z",
+  "koordinatorVersion": "e4169896-dirty",
+  "nodeCount": 100,
+  "podCount": 1000,
+  "throughputPodsPerSec": 45.569745065812135,
+  "apiCreationDurationSec": 8.894292111,
+  "totalDurationSec": 21.94438434,
+  "latencyP50Sec": 6,
+  "latencyP90Sec": 12,
+  "latencyP99Sec": 13,
+  "gangCompletionP50Sec": null,
+  "gangCompletionP99Sec": null,
+  "thresholdBreached": false
+}

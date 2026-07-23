@@ -252,12 +252,12 @@ func (h *TestTransformer) FindOneNodePlugin() FindOneNodePlugin {
 	return h
 }
 
-func (h *TestTransformer) FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status) {
+func (h *TestTransformer) FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (*BatchScheduleResult, *fwktype.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations["FindOneNode"] = "FindOneNode"
-	return "", fwktype.NewStatus(fwktype.Skip)
+	return nil, fwktype.NewStatus(fwktype.Skip)
 
 }
 
@@ -663,7 +663,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedPods(t *testing.T) 
 
 			state := framework.NewCycleState()
 			if len(tt.nominatedPodsOfTheSameJob) > 0 {
-				MakeNominatedPodsOfTheSameJob(state, tt.nominatedPodsOfTheSameJob)
+				MakeNominatedPodsOfTheSameJob(state, sets.New[string](tt.nominatedPodsOfTheSameJob...))
 			}
 
 			status := extender.RunFilterPluginsWithNominatedPods(ctx, state, tt.pod, nodeInfo)

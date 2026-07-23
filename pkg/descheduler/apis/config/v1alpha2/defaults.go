@@ -370,9 +370,6 @@ func SetDefaults_ScaleDownBinPackArgs(obj *ScaleDownBinPackArgs) {
 	if obj.Strategy == "" {
 		obj.Strategy = ScaleDownBinPackStrategyCalculateOnly
 	}
-	if obj.MaxPodsToEvict == nil {
-		obj.MaxPodsToEvict = ptr.To[int32](0)
-	}
 	if len(obj.Resources) == 0 {
 		obj.Resources = []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory}
 	}

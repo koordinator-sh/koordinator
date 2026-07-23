@@ -40,6 +40,9 @@ type Handle interface {
 	// EventRecorder returns an event recorder.
 	EventRecorder() events.EventRecorder
 
+	// IsDryRun returns true if the framework is running in dry-run mode.
+	IsDryRun() bool
+
 	Evictor() Evictor
 
 	GetPodsAssignedToNodeFunc() GetPodsAssignedToNodeFunc

@@ -1,0 +1,20 @@
+name: basic
+description: "1,000 plain LS pods on 100 kwok nodes — baseline scenario"
+schedulerName: koord-scheduler
+namespace: benchmark
+nodeCount: 100
+nodeCreationWorkers: 20
+podCount: 1000
+concurrency: 50
+clientQPS: 100
+clientBurst: 200
+qosClass: LS
+resourceRequests:
+  cpu: "500m"
+  memory: "512Mi"
+labels:
+  koordinator.sh/priority: "100"
+timeout: 10m
+thresholds:
+  throughputDropPct: 10
+  p99IncreasePct: 20

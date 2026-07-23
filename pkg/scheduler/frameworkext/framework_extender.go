@@ -42,10 +42,12 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	listerschedulingv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/hinter"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/schedulingphase"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
+	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -86,6 +88,9 @@ type frameworkExtenderImpl struct {
 
 	findOneNodePlugin FindOneNodePlugin
 	preferNodesPlugin PreferNodesPlugin
+	// batchScheduler batch-schedules a whole job when a FindOneNodePlugin returns a placement plan.
+	// It is registered externally (see SetBatchScheduler) to avoid import cycles. Nil disables the inline path.
+	batchScheduler BatchScheduler
 
 	reservationCache                       ReservationCache
 	reservationNominator                   ReservationNominator
@@ -352,11 +357,68 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		klog.Warningf("Pod %s/%s is nominated to node %s, but it is not in the pre-filter result", pod.Namespace, pod.Name, pod.Status.NominatedNodeName)
 	}
 
+	// Skip FindOneNode when we are already inside the inline batch scheduling cycle (the engine marks
+	// the per-pod cycle state via MarkBatchSchedulingCycle). The engine computed the whole-job placement
+	// plan once at the top level and now only drives each member pod's per-node PreFilter here, so
+	// re-running the FindOneNode planner per pod is pure overhead. The framework PreFilter result already
+	// carries the target node (the engine injects it as a PreFilterNodes scheduling hint); an all-nodes
+	// result is equally fine, since the engine filters against the specific node itself.
+	if hinter.IsBatchSchedulingCycle(cycleState) {
+		return result, nil, rejectors
+	}
+
 	// FindOneNode
-	nodeName, status := ext.RunFindOneNodePlugin(ctx, cycleState, pod, result)
+	plan, status := ext.RunFindOneNodePlugin(ctx, cycleState, pod, result)
 	if status.IsSuccess() {
-		klog.V(6).InfoS("FindOneNodePlugin succeeded", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name(), "nodeName", nodeName)
-		return &fwktype.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil, nil
+		nodeName := ""
+		if plan != nil {
+			nodeName = plan.PodToNodeName[pod.Namespace+"/"+pod.Name]
+		}
+		// Recursion guard: when the inline batch scheduler is not registered, the feature gate is off,
+		// or the plugin returned Success without a placement plan (nil plan), fall back to the legacy
+		// single-node behavior instead of the inline batch path below.
+		if plan == nil || ext.batchScheduler == nil ||
+			!k8sfeature.DefaultFeatureGate.Enabled(features.EnableInlineBatchSchedule) {
+			if nodeName == "" {
+				// The plugin reported Success but did not yield a node for this pod (e.g. a nil/empty
+				// plan). Returning an empty node name would restrict scheduling to a node named "",
+				// so surface it as an error instead.
+				errStatus := fwktype.NewStatus(fwktype.Error, fmt.Sprintf("FindOneNodePlugin %q succeeded but produced no node for pod %s/%s", ext.findOneNodePlugin.Name(), pod.Namespace, pod.Name)).WithPlugin(ext.findOneNodePlugin.Name())
+				klog.ErrorS(errStatus.AsError(), "FindOneNodePlugin succeeded without a node", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name(), "plan", fmt.Sprintf("%+v", plan))
+				return nil, errStatus, nil
+			}
+			klog.V(6).InfoS("FindOneNodePlugin succeeded", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name(), "nodeName", nodeName)
+			return &fwktype.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil, nil
+		}
+		// Top-level scheduling cycle: run the inline batch schedule for the whole plan.
+		klog.V(4).InfoS("Starting inline batch schedule", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name(), "pods", len(plan.Pods))
+		batchStart := time.Now()
+		bStatus := ext.batchScheduler.BatchSchedule(ctx, ext, cycleState, pod, plan)
+		batchDuration := time.Since(batchStart)
+		setBatchScheduleState(cycleState, &batchScheduleStateData{handled: true, success: bStatus.IsSuccess()})
+		batchResult := "success"
+		if !bStatus.IsSuccess() {
+			batchResult = "failure"
+		}
+		koordmetrics.InlineBatchScheduleDuration.WithLabelValues(batchResult).Observe(batchDuration.Seconds())
+		if bStatus.IsSuccess() {
+			klog.V(4).InfoS("Inline batch schedule cycle succeeded", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name(), "pods", len(plan.Pods), "duration", batchDuration)
+			// Short-circuit: all pods (including this one) are already reserved, assumed and permitted by
+			// the batch scheduler; their binding cycles proceed asynchronously (one goroutine per pod).
+			return nil, fwktype.NewStatus(fwktype.Unschedulable, BatchScheduledReason), nil
+		}
+		// Inline batch scheduling failed. We never want a batch failure to trigger preemption for the
+		// trigger pod, so upgrade a plain Unschedulable status to UnschedulableAndUnresolvable: the
+		// scheduler stamps the PreFilter status onto all nodes, and preemption only considers nodes
+		// coded Unschedulable, so UnschedulableAndUnresolvable makes preemption find no candidate node.
+		// Build a fresh status to avoid mutating the shared JobStatus* package vars returned by the engine.
+		failCode := bStatus.Code()
+		if failCode == fwktype.Unschedulable {
+			failCode = fwktype.UnschedulableAndUnresolvable
+		}
+		failStatus := fwktype.NewStatus(failCode, bStatus.Message()).WithPlugin(ext.findOneNodePlugin.Name())
+		klog.ErrorS(bStatus.AsError(), "Failed to run inline batch schedule", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name(), "pods", len(plan.Pods), "duration", batchDuration)
+		return nil, failStatus, nil
 	} else if !status.IsSkip() {
 		status = status.WithPlugin(ext.findOneNodePlugin.Name())
 		klog.ErrorS(status.AsError(), "Failed to run FindOneNodePlugin", "pod", klog.KObj(pod), "plugin", ext.findOneNodePlugin.Name())
@@ -364,7 +426,7 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 	} // skip
 
 	// PreferNodes
-	nodeName, status = ext.RunPreferNodesPlugin(ctx, cycleState, pod, result)
+	nodeName, status := ext.RunPreferNodesPlugin(ctx, cycleState, pod, result)
 	if status.IsSuccess() {
 		klog.V(6).InfoS("PreferNodesPlugin succeeded", "pod", klog.KObj(pod), "plugin", ext.preferNodesPlugin.Name(), "nodeName", nodeName)
 		return &fwktype.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil, nil
@@ -377,14 +439,46 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 	return result, nil, rejectors
 }
 
-func (ext *frameworkExtenderImpl) RunFindOneNodePlugin(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status) {
+func (ext *frameworkExtenderImpl) RunFindOneNodePlugin(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (*BatchScheduleResult, *fwktype.Status) {
 	if ext.findOneNodePlugin != nil {
 		startTime := time.Now()
-		nodeName, status := ext.findOneNodePlugin.FindOneNode(ctx, cycleState, pod, result)
+		plan, status := ext.findOneNodePlugin.FindOneNode(ctx, cycleState, pod, result)
 		ext.metricsRecorder.ObservePluginDurationAsync("FindOneNodePlugin", ext.findOneNodePlugin.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
-		return nodeName, status
+		return plan, status
 	}
-	return "", fwktype.NewStatus(fwktype.Skip)
+	return nil, fwktype.NewStatus(fwktype.Skip)
+}
+
+// BatchScheduledReason marks the PreFilter/scheduling status of a pod whose whole job has been
+// batch-scheduled (assumed and bound) inline by the FindOneNode success path.
+const BatchScheduledReason = "PodBatchScheduled"
+
+const batchScheduleStateKey = "koord-batch-schedule-state"
+
+// batchScheduleStateData records the outcome of the inline batch scheduling for the triggering pod
+// so that scheduleOne can short-circuit the scheduling cycle.
+type batchScheduleStateData struct {
+	handled bool
+	success bool
+}
+
+func (s *batchScheduleStateData) Clone() fwktype.StateData {
+	return &batchScheduleStateData{handled: s.handled, success: s.success}
+}
+
+func setBatchScheduleState(cycleState fwktype.CycleState, data *batchScheduleStateData) {
+	cycleState.Write(batchScheduleStateKey, data)
+}
+
+func getBatchScheduleState(cycleState fwktype.CycleState) *batchScheduleStateData {
+	stateData, err := cycleState.Read(batchScheduleStateKey)
+	if err != nil {
+		return nil
+	}
+	if data, ok := stateData.(*batchScheduleStateData); ok {
+		return data
+	}
+	return nil
 }
 
 func (ext *frameworkExtenderImpl) RunPreferNodesPlugin(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status) {
