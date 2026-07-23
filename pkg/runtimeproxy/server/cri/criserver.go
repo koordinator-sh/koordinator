@@ -132,8 +132,6 @@ func (c *RuntimeManagerCriServer) InterceptRuntimeRequest(serviceType RuntimeSer
 	if err != nil {
 		klog.Errorf("fail to parse request %v %v", request, err)
 	}
-	defer resourceExecutor.DeleteCheckpointIfNeed(request)
-
 	switch callHookOperation {
 	case utils.ShouldCallHookPlugin:
 		// TODO deal with the Dispatch response
@@ -170,6 +168,9 @@ func (c *RuntimeManagerCriServer) InterceptRuntimeRequest(serviceType RuntimeSer
 		// store checkpoint info basing request only when response success
 		if err := resourceExecutor.ResourceCheckPoint(res); err != nil {
 			klog.Errorf("fail to checkpoint %v %v", resourceExecutor.GetMetaInfo(), err)
+		}
+		if err := resourceExecutor.DeleteCheckpointIfNeed(request); err != nil {
+			klog.Errorf("fail to delete checkpoint %v %v", resourceExecutor.GetMetaInfo(), err)
 		}
 	} else {
 		klog.Errorf("%v call containerd %v fail %v", resourceExecutor.GetMetaInfo(), string(runtimeHookPath), err)
