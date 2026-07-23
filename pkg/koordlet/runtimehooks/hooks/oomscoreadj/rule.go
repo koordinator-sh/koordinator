@@ -46,7 +46,7 @@ func (p *Plugin) parseForAllPods(e interface{}) (bool, error) {
 	needSync := false
 	p.rule.allPodsSyncOnce.Do(func() {
 		needSync = true
-		klog.V(5).Infof("plugin %s callback the first all pods update", name)
+		klog.V(5).Infof("plugin %s received the first all-pods update callback", name)
 	})
 	return needSync, nil
 }

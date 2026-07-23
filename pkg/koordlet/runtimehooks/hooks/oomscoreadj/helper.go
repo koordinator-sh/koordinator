@@ -75,10 +75,10 @@ func getContainerPIDs(reader resourceexecutor.CgroupReader, cgroupParent string)
 // setOOMScoreAdjForPIDs writes the target oom_score_adj to each PID via the given interface.
 // It returns the count of updated PIDs and the count of PIDs skipped due to read/write errors;
 // PIDs already matching the target are neither updated nor counted as skipped.
-func setOOMScoreAdjForPIDs(ome sysutil.OOMScoreAdjInterface, pids []uint32, target int64) (int, int) {
+func setOOMScoreAdjForPIDs(operator sysutil.OOMScoreAdjInterface, pids []uint32, target int64) (int, int) {
 	var updated, skipped int
 	for _, pid := range pids {
-		current, err := ome.Get(pid)
+		current, err := operator.Get(pid)
 		if err != nil {
 			klog.V(5).Infof("failed to read oom_score_adj for pid %d, skipping: %s", pid, err)
 			skipped++
@@ -87,7 +87,7 @@ func setOOMScoreAdjForPIDs(ome sysutil.OOMScoreAdjInterface, pids []uint32, targ
 		if current == target {
 			continue
 		}
-		if err := ome.Set(pid, target); err != nil {
+		if err := operator.Set(pid, target); err != nil {
 			klog.V(4).Infof("failed to write oom_score_adj=%d for pid %d: %s", target, pid, err)
 			skipped++
 			continue

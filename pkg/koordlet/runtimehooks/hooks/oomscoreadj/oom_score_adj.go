@@ -43,9 +43,9 @@ const (
 type Plugin struct {
 	rule *Rule
 
-	reader   resourceexecutor.CgroupReader
-	executor resourceexecutor.ResourceUpdateExecutor
-	ome      sysutil.OOMScoreAdjInterface
+	reader              resourceexecutor.CgroupReader
+	executor            resourceexecutor.ResourceUpdateExecutor
+	oomScoreAdjOperator sysutil.OOMScoreAdjInterface
 }
 
 var singleton *Plugin
@@ -86,7 +86,7 @@ func (p *Plugin) Register(op hooks.Options) {
 func (p *Plugin) Setup(op hooks.Options) {
 	p.reader = op.Reader
 	p.executor = op.Executor
-	p.ome = sysutil.NewOOMScoreAdj()
+	p.oomScoreAdjOperator = sysutil.NewOOMScoreAdj()
 }
 
 // SetContainerOOMScoreAdj reconciles oom_score_adj for a single container.
@@ -142,7 +142,7 @@ func (p *Plugin) SetContainerOOMScoreAdj(proto protocol.HooksProtocol) error {
 		return nil
 	}
 
-	updated, skipped := setOOMScoreAdjForPIDs(p.ome, pids, *targetVal)
+	updated, skipped := setOOMScoreAdjForPIDs(p.oomScoreAdjOperator, pids, *targetVal)
 	if updated > 0 {
 		klog.V(4).Infof("set oom_score_adj=%d for container %s/%s, updated %d PIDs, skipped %d",
 			*targetVal, containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name, updated, skipped)
@@ -152,7 +152,10 @@ func (p *Plugin) SetContainerOOMScoreAdj(proto protocol.HooksProtocol) error {
 	}
 	// Record the metric on every reconciliation (including the already-matched case) to keep the
 	// GC gauge alive, since the GCGaugeVec expires series which are not refreshed periodically.
-	if skipped < len(pids) { // at least one PID holds the target value
+	// A non-skipped PID was either updated to the target value or already matched it, so the
+	// condition holds iff at least one PID currently holds the target value; when all PIDs fail
+	// to read/write (e.g. the container exited), the series is left to expire.
+	if skipped < len(pids) {
 		metrics.RecordContainerOOMScoreAdj(
 			containerCtx.Request.PodMeta.Namespace,
 			containerCtx.Request.PodMeta.Name,

@@ -36,7 +36,7 @@ func newTestPlugin(fake sysutil.OOMScoreAdjInterface) *Plugin {
 		Reader:   resourceexecutor.NewCgroupReader(),
 		Executor: resourceexecutor.NewTestResourceExecutor(),
 	})
-	p.ome = fake
+	p.oomScoreAdjOperator = fake
 	return p
 }
 
