@@ -396,9 +396,11 @@ func Test_systemResourceCollector_Run(t *testing.T) {
 
 func Test_systemResourceCollector_collectSysNUMAResUsed(t *testing.T) {
 	testNow := time.Now()
+	originalTimeNow := timeNow
 	timeNow = func() time.Time {
 		return testNow
 	}
+	defer func() { timeNow = originalTimeNow }()
 	config := framework.NewDefaultConfig()
 
 	queryNUMASample := func(t *testing.T, metricCache metriccache.MetricCache, metricResource metriccache.MetricResource, numaID string) (float64, int) {
@@ -520,9 +522,11 @@ func Test_systemResourceCollector_collectSysNUMAResUsed(t *testing.T) {
 
 func Test_systemResourceCollector_collectSysNUMAResUsed_cpuOutdated(t *testing.T) {
 	testNow := time.Now()
+	originalTimeNow := timeNow
 	timeNow = func() time.Time {
 		return testNow
 	}
+	defer func() { timeNow = originalTimeNow }()
 	config := framework.NewDefaultConfig()
 
 	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{

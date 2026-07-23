@@ -1590,7 +1590,9 @@ func Test_nodeMetricInformer_collectNUMAUsages(t *testing.T) {
 			},
 		}, true)
 		mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctrl)
+		originalFactory := metriccache.DefaultAggregateResultFactory
 		metriccache.DefaultAggregateResultFactory = mockResultFactory
+		defer func() { metriccache.DefaultAggregateResultFactory = originalFactory }()
 		mockQuerier := mockmetriccache.NewMockQuerier(ctrl)
 		mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
 

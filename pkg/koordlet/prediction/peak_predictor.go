@@ -119,12 +119,12 @@ func (p *emptyPredictor) AddPod(pod *v1.Pod) error {
 
 // GetResult returns an error indicating that the predictor is empty.
 func (p *emptyPredictor) GetResult() (v1.ResourceList, error) {
-	return nil, fmt.Errorf("empty pridictor")
+	return nil, fmt.Errorf("empty predictor")
 }
 
 // GetPeak returns an error indicating that the predictor is empty.
 func (p *emptyPredictor) GetPeak() (v1.ResourceList, error) {
-	return nil, fmt.Errorf("empty pridictor")
+	return nil, fmt.Errorf("empty predictor")
 }
 
 func NewEmptyPredictorFactory() PredictorFactory {

@@ -117,6 +117,12 @@ func (r *SharedState) UpdatePodUsage(collectorName string, cpu, memory metriccac
 func (r *SharedState) UpdatePodsNUMAMemoryUsage(collectorName string, memory map[int32]metriccache.Point) {
 	r.podMutex.Lock()
 	defer r.podMutex.Unlock()
+	// an empty map means the pod NUMA memory data is unavailable for the collector, treat it as
+	// missing so that the system NUMA memory calculation is skipped rather than overestimated
+	if len(memory) == 0 {
+		delete(r.podsNUMAMemoryByCollector, collectorName)
+		return
+	}
 	r.podsNUMAMemoryByCollector[collectorName] = memory
 }
 
