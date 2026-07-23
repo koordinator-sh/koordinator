@@ -460,6 +460,9 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	cc := c.Complete()
 
 	defaultprofile.AppendDefaultPlugins(cc.ComponentConfig.Profiles)
+	if utilfeature.DefaultFeatureGate.Enabled(koordfeatures.SandboxScheduling) {
+		cc.ComponentConfig.Profiles = defaultprofile.AppendSandboxProfile(cc.ComponentConfig.Profiles)
+	}
 
 	informer.SetupCustomInformers(cc.InformerFactory)
 	transformer.SetupTransformers(cc.InformerFactory, cc.KoordinatorSharedInformerFactory, cc.NodeResourceTopologyInformerFactory)

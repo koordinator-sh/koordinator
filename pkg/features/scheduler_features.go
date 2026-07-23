@@ -140,6 +140,12 @@ const (
 	// This provides earlier scheduling failure visibility for pods that haven't been
 	// individually attempted by the scheduler yet.
 	GangPendingPodsConditionPatch featuregate.Feature = "GangPendingPodsConditionPatch"
+
+	// owner: @tan90github
+	// alpha: v1.9
+	//
+	// SandboxScheduling enables the sandbox scheduler profile for sandbox workloads.
+	SandboxScheduling featuregate.Feature = "SandboxScheduling"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -169,6 +175,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	SyncBarrier:                               {Default: false, PreRelease: featuregate.Alpha},
 	CrossSchedulerNomination:                  {Default: false, PreRelease: featuregate.Alpha},
 	GangPendingPodsConditionPatch:             {Default: true, PreRelease: featuregate.Beta},
+	SandboxScheduling:                         {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {

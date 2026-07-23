@@ -246,6 +246,19 @@ func TestGetReservationSchedulerName(t *testing.T) {
 			},
 			want: "test-scheduler",
 		},
+		{
+			name: "sandbox scheduler name is read from template",
+			arg: &schedulingv1alpha1.Reservation{
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							SchedulerName: apiext.SandboxSchedulerName,
+						},
+					},
+				},
+			},
+			want: apiext.SandboxSchedulerName,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

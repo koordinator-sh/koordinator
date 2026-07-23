@@ -19,6 +19,7 @@ package defaultprofile
 import (
 	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/defaultprebind"
 )
 
@@ -51,5 +52,34 @@ func AppendDefaultPlugins(profiles []kubeschedulerconfig.KubeSchedulerProfile) {
 				Name: defaultprebind.Name,
 			})
 		}
+	}
+}
+
+// AppendSandboxProfile adds a score-free profile derived from the first configured profile.
+// A user-defined profile with the sandbox scheduler name takes precedence.
+func AppendSandboxProfile(profiles []kubeschedulerconfig.KubeSchedulerProfile) []kubeschedulerconfig.KubeSchedulerProfile {
+	for _, profile := range profiles {
+		if profile.SchedulerName == apiext.SandboxSchedulerName {
+			return profiles
+		}
+	}
+	if len(profiles) == 0 {
+		return profiles
+	}
+
+	sandboxProfile := profiles[0].DeepCopy()
+	if sandboxProfile.Plugins == nil {
+		sandboxProfile.Plugins = &kubeschedulerconfig.Plugins{}
+	}
+	sandboxProfile.SchedulerName = apiext.SandboxSchedulerName
+	sandboxProfile.Plugins.PreScore = disabledAllPlugin()
+	sandboxProfile.Plugins.Score = disabledAllPlugin()
+
+	return append(profiles, *sandboxProfile)
+}
+
+func disabledAllPlugin() kubeschedulerconfig.PluginSet {
+	return kubeschedulerconfig.PluginSet{
+		Disabled: []kubeschedulerconfig.Plugin{{Name: "*"}},
 	}
 }
