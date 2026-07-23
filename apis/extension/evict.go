@@ -37,7 +37,8 @@ func PodEvictEnabled(pod *corev1.Pod) bool {
 }
 
 // GetPodEvictionPriority parses the eviction priority from the pod annotations.
-// It returns the implicit priority 0 when the annotation is missing or invalid.
+// It returns the implicit priority 0 when the annotation is missing; when the value is invalid,
+// it returns 0 along with a non-nil error.
 func GetPodEvictionPriority(pod *corev1.Pod) (int32, error) {
 	if pod == nil || pod.Annotations == nil {
 		return 0, nil

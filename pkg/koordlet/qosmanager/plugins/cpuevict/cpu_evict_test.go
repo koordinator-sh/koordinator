@@ -1320,6 +1320,58 @@ type podCPUSample struct {
 	}
 }
 
+func Test_getPodEvictInfoAndSortByPriority(t *testing.T) {
+	ctl := gomock.NewController(t)
+	defer ctl.Finish()
+
+	podEvictPriority100 := createCPUEvictTestPodWithLabels("test_evictPriority_100", apiext.QoSBE, 120, map[string]string{apiext.LabelPodEvictEnabled: "true", apiext.LabelPodPriority: "3000"}, corev1.PodRunning)
+	podEvictPriority100.Annotations = map[string]string{apiext.AnnotationPodEvictionPriority: "100"}
+	podEvictPriorityNegative := createCPUEvictTestPodWithLabels("test_evictPriority_negative", apiext.QoSBE, 120, map[string]string{apiext.LabelPodEvictEnabled: "true", apiext.LabelPodPriority: "4000"}, corev1.PodRunning)
+	podEvictPriorityNegative.Annotations = map[string]string{apiext.AnnotationPodEvictionPriority: "-1"}
+	podEvictPriorityUnset := createCPUEvictTestPodWithLabels("test_evictPriority_unset", apiext.QoSBE, 100, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
+	podEvictPriorityInvalid := createCPUEvictTestPodWithLabels("test_evictPriority_invalid", apiext.QoSBE, 120, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
+	podEvictPriorityInvalid.Annotations = map[string]string{apiext.AnnotationPodEvictionPriority: "invalid"}
+	pods := []*corev1.Pod{podEvictPriority100, podEvictPriorityNegative, podEvictPriorityUnset, podEvictPriorityInvalid}
+	podMetrics := []podCPUSample{
+		{UID: "test_evictPriority_100", CpuUsed: resource.MustParse("4")},
+		{UID: "test_evictPriority_negative", CpuUsed: resource.MustParse("1")},
+		{UID: "test_evictPriority_unset", CpuUsed: resource.MustParse("2")},
+		{UID: "test_evictPriority_invalid", CpuUsed: resource.MustParse("3")},
+	}
+
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+	mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+	originalFactory := metriccache.DefaultAggregateResultFactory
+	metriccache.DefaultAggregateResultFactory = mockResultFactory
+	defer func() { metriccache.DefaultAggregateResultFactory = originalFactory }()
+	mockQuerier := mock_metriccache.NewMockQuerier(ctl)
+	mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+	for _, podMetric := range podMetrics {
+		result := mock_metriccache.NewMockAggregateResult(ctl)
+		result.EXPECT().Value(gomock.Any()).Return(float64(podMetric.CpuUsed.Value()), nil).AnyTimes()
+		result.EXPECT().Count().Return(1).AnyTimes()
+		podQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))
+		assert.NoError(t, err)
+		mockResultFactory.EXPECT().New(podQueryMeta).Return(result).AnyTimes()
+		mockQuerier.EXPECT().QueryAndClose(podQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+	}
+
+	c := &cpuEvictor{
+		metricCache:           mockMetricCache,
+		metricCollectInterval: time.Second,
+	}
+	res := c.getPodEvictInfoAndSortByPriority(string(features.CPUEvict), 3000, testutil.GetPodMetas(pods), func(a, b *qosmanagerUtil.PodEvictInfo) bool {
+		return a.MilliCPUUsed > b.MilliCPUUsed
+	})
+	// eviction-priority takes precedence over spec.priority and the priority label:
+	// -1 < 0 (unset, spec.priority 100) < 0 (invalid, spec.priority 120) < 100
+	expectPodEvictNames := []string{"test_evictPriority_negative", "test_evictPriority_unset", "test_evictPriority_invalid", "test_evictPriority_100"}
+	assert.Equal(t, len(expectPodEvictNames), len(res))
+	for k, podEvictInfo := range res {
+		assert.Equal(t, expectPodEvictNames[k], podEvictInfo.Pod.Name)
+	}
+}
+
 func Test_cpuEvict(t *testing.T) {
 	klog.InitFlags(nil)
 	flag.Set("v", "5")
