@@ -160,8 +160,9 @@ func KillAndEvictPods(evictionExecutor EvictionExecutor, node *corev1.Node, task
 		releaseTarget := task.ReleaseTarget
 		podInfos := task.SortedEvictPods
 		releaseReason := task.Reason
-		needToRelease := subReleaseListNoNegative(task.ToReleaseResource, releasedAll[releaseTarget])
-		if len(needToRelease) == 0 || isZeroResourceList(needToRelease) {
+		// releasedAll accumulates across tasks, so the completion check compares the task's
+		// original target against the accumulated release to avoid double subtraction
+		if len(subReleaseListNoNegative(task.ToReleaseResource, releasedAll[releaseTarget])) == 0 {
 			continue
 		}
 		for _, info := range podInfos {
@@ -176,7 +177,7 @@ func KillAndEvictPods(evictionExecutor EvictionExecutor, node *corev1.Node, task
 				evictedPodsMp[podKey] = true
 				addResource(releasedAll, aggregateReleaseFunc(info))
 				klog.V(4).Infof("pod %s was evicted but still present, count as pending release, release reason: %v", podKey, releaseReason)
-				if len(subReleaseListNoNegative(needToRelease, releasedAll[releaseTarget])) == 0 {
+				if len(subReleaseListNoNegative(task.ToReleaseResource, releasedAll[releaseTarget])) == 0 {
 					break
 				}
 				continue
@@ -188,7 +189,7 @@ func KillAndEvictPods(evictionExecutor EvictionExecutor, node *corev1.Node, task
 				newlyEvicted = true
 				resource := aggregateReleaseFunc(info)
 				addResource(releasedAll, resource)
-				if len(subReleaseListNoNegative(needToRelease, releasedAll[releaseTarget])) == 0 {
+				if len(subReleaseListNoNegative(task.ToReleaseResource, releasedAll[releaseTarget])) == 0 {
 					break
 				}
 			} else {

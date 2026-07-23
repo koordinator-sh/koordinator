@@ -1182,8 +1182,8 @@ func Test_KillAndEvictPods_PendingRelease(t *testing.T) {
 		executor.EXPECT().IsPodEvicted(otherPod.Pod).Return(false).AnyTimes()
 		// no Evict expectation: any eviction fails the test
 
-		released, hasReleased := KillAndEvictPods(executor, node, newTasks(2*1024*1024*1024, markedPod, otherPod))
-		assert.False(t, hasReleased, "pending release should not count as a new eviction")
+		released, hasNewlyEvicted := KillAndEvictPods(executor, node, newTasks(2*1024*1024*1024, markedPod, otherPod))
+		assert.False(t, hasNewlyEvicted, "pending release should not count as a new eviction")
 		memoryReleased := released[ReleaseTargetTypeResourceUsed][corev1.ResourceMemory]
 		assert.Equal(t, int64(2*1024*1024*1024), memoryReleased.Value())
 	})
@@ -1198,8 +1198,8 @@ func Test_KillAndEvictPods_PendingRelease(t *testing.T) {
 		executor.EXPECT().IsPodEvicted(otherPod.Pod).Return(false).AnyTimes()
 		executor.EXPECT().Evict(otherPod.Pod, node, gomock.Any(), gomock.Any()).Return(true).Times(1)
 
-		released, hasReleased := KillAndEvictPods(executor, node, newTasks(2*1024*1024*1024, markedPod, otherPod))
-		assert.True(t, hasReleased)
+		released, hasNewlyEvicted := KillAndEvictPods(executor, node, newTasks(2*1024*1024*1024, markedPod, otherPod))
+		assert.True(t, hasNewlyEvicted)
 		memoryReleased := released[ReleaseTargetTypeResourceUsed][corev1.ResourceMemory]
 		assert.Equal(t, int64(3*1024*1024*1024), memoryReleased.Value())
 	})
