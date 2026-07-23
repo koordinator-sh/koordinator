@@ -269,6 +269,14 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	p50, p90, p99 := ComputeLatencyPercentiles(watcher.Latencies())
 	throughput := ComputeThroughput(cfg.PodCount, totalDuration)
 
+	// Gang completion percentiles are only populated when pods carry
+	// types.PodGroupLabel (gang scenario); nil for basic and others.
+	var gangP50Sec, gangP99Sec *float64
+	if gp50, gp99, ok := ComputeGangCompletionPercentiles(watcher.PodLatencies()); ok {
+		v50, v99 := gp50.Seconds(), gp99.Seconds()
+		gangP50Sec, gangP99Sec = &v50, &v99
+	}
+
 	breached, err := CompareToBaseline(types.BenchmarkResult{
 		ThroughputPodsPerSec: throughput,
 		LatencyP99Sec:        p99.Seconds(),
@@ -290,6 +298,8 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 		LatencyP50Sec:          p50.Seconds(),
 		LatencyP90Sec:          p90.Seconds(),
 		LatencyP99Sec:          p99.Seconds(),
+		GangCompletionP50Sec:   gangP50Sec,
+		GangCompletionP99Sec:   gangP99Sec,
 		ThresholdBreached:      breached,
 		SchedulingFailureCount: failureEventCount,
 		SchedulingFailureRate:  schedulingFailureRate(failedPodCount, cfg.PodCount),

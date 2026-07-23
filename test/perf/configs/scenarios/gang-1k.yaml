@@ -1,0 +1,22 @@
+name: gang
+description: "1,000 pods in gangs of 20 (minMember 20) on 100 kwok nodes — coscheduling scenario"
+schedulerName: koord-scheduler
+namespace: benchmark
+nodeCount: 100
+nodeCreationWorkers: 20
+podCount: 1000
+gangSize: 20
+minMember: 20
+concurrency: 50
+clientQPS: 100
+clientBurst: 200
+qosClass: LS
+resourceRequests:
+  cpu: "500m"
+  memory: "512Mi"
+labels:
+  koordinator.sh/priority: "100"
+timeout: 10m
+thresholds:
+  throughputDropPct: 10
+  p99IncreasePct: 20

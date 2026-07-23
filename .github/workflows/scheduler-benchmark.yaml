@@ -1,0 +1,77 @@
+name: scheduler-benchmark
+
+on:
+  pull_request:
+    paths:
+      - "test/perf/**"
+  workflow_dispatch: {}
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up cluster
+        run: make -C test/perf setup
+
+      - name: Run benchmark
+        run: |
+          make -C test/perf benchmark \
+            CONFIG=configs/scenarios/basic-1k.yaml \
+            BASELINE=baselines/basic-1k.json
+
+      - name: Fail on regression
+        if: always()
+        run: |
+          if [ -f test/perf/results/result.json ]; then
+            breached=$(jq -r '.thresholdBreached' test/perf/results/result.json)
+            echo "thresholdBreached=$breached"
+            if [ "$breached" = "true" ]; then
+              echo "::error::Benchmark regression detected — see uploaded result.json"
+              exit 1
+            fi
+          fi
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-result
+          path: test/perf/results/result.json
+
+      # Debug BEFORE teardown — teardown deletes the kind cluster, after which
+      # every kubectl command fails with "connection refused to localhost:8080".
+      - name: Debug on failure
+        if: failure()
+        run: |
+          echo "=== kind clusters ==="
+          kind get clusters || true
+          echo "=== docker containers (exit code reveals OOM-kill vs clean exit) ==="
+          docker ps -a || true
+          echo "=== control-plane container logs (last 100 lines) ==="
+          docker logs koordinator-bench-control-plane --tail=100 2>&1 || true
+          echo "=== disk space ==="
+          df -h || true
+          echo "=== memory ==="
+          free -h || true
+          echo "=== Pods (wide) ==="
+          kubectl get pods -A -o wide || true
+          echo "=== koord-scheduler logs ==="
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --tail=80 || true
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --tail=80 2>/dev/null || true
+          echo "=== koord-scheduler pod describe ==="
+          kubectl describe pods -n koordinator-system -l koord-app=koord-scheduler || true
+          echo "=== cluster events (all namespaces, sorted) ==="
+          kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
+          echo "=== koord-scheduler-config ConfigMap ==="
+          kubectl get configmap koord-scheduler-config -n koordinator-system -o yaml || true
+
+      - name: Teardown cluster
+        if: always()
+        run: make -C test/perf teardown
