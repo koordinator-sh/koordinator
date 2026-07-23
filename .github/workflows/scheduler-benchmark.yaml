@@ -26,6 +26,7 @@ jobs:
           kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --all-containers --tail=300 || true
           kubectl logs -n koordinator-system -l koord-app=koord-scheduler --all-containers --tail=300 || true
           kubectl describe pod -l koord-app=koord-scheduler -n koordinator-system || true
+          kubectl get configmap koord-scheduler-config -n koordinator-system -o jsonpath='{.data.koord-scheduler-config}' || true
 
       - name: Run benchmark
         run: make -C test/perf benchmark BASELINE=baselines/basic-1k.json
