@@ -18,10 +18,6 @@ jobs:
           go-version-file: go.mod
 
       - name: Set up cluster
-        # setup-cluster.sh installs the full Koordinator stack via hack/deploy_kind.sh
-        # and applies two targeted workarounds for pre-existing v1.5.0 bugs:
-        #   A. Trailing comma in --feature-gates (deploy_kind.sh:47 sed leaves ","  at end)
-        #   B. ElasticQuota pluginConfig type mismatch in the shipped ConfigMap
         run: make -C test/perf setup
 
       - name: Run benchmark
@@ -49,23 +45,33 @@ jobs:
           name: benchmark-result
           path: test/perf/results/result.json
 
-      - name: Teardown cluster
-        if: always()
-        run: make -C test/perf teardown
-
+      # Debug BEFORE teardown — teardown deletes the kind cluster, after which
+      # every kubectl command fails with "connection refused to localhost:8080".
       - name: Debug on failure
         if: failure()
         run: |
-          echo "=== Pods ==="
-          kubectl get pods -A || true
+          echo "=== kind clusters ==="
+          kind get clusters || true
+          echo "=== docker containers (exit code reveals OOM-kill vs clean exit) ==="
+          docker ps -a || true
+          echo "=== control-plane container logs (last 100 lines) ==="
+          docker logs koordinator-bench-control-plane --tail=100 2>&1 || true
+          echo "=== disk space ==="
+          df -h || true
+          echo "=== memory ==="
+          free -h || true
+          echo "=== Pods (wide) ==="
+          kubectl get pods -A -o wide || true
           echo "=== koord-scheduler logs ==="
-          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --tail=50 || true
-          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --tail=50 2>/dev/null || true
-          echo "=== koord-scheduler events ==="
-          kubectl get events -n koordinator-system \
-            --field-selector involvedObject.name=koord-scheduler \
-            --sort-by=.lastTimestamp | tail -20 || true
-          echo "=== Recent cluster events ==="
-          kubectl get events --sort-by=.lastTimestamp | tail -30 || true
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --tail=80 || true
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --tail=80 2>/dev/null || true
+          echo "=== koord-scheduler pod describe ==="
+          kubectl describe pods -n koordinator-system -l koord-app=koord-scheduler || true
+          echo "=== cluster events (all namespaces, sorted) ==="
+          kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
           echo "=== koord-scheduler-config ConfigMap ==="
           kubectl get configmap koord-scheduler-config -n koordinator-system -o yaml || true
+
+      - name: Teardown cluster
+        if: always()
+        run: make -C test/perf teardown
