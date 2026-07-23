@@ -72,8 +72,9 @@ func getContainerPIDs(reader resourceexecutor.CgroupReader, cgroupParent string)
 	return pids, nil
 }
 
-// setOOMScoreAdjForPIDs writes the target oom_score_adj to each PID via the given interface,
-// skipping PIDs that already match. Returns (updated, skipped).
+// setOOMScoreAdjForPIDs writes the target oom_score_adj to each PID via the given interface.
+// It returns the count of updated PIDs and the count of PIDs skipped due to read/write errors;
+// PIDs already matching the target are neither updated nor counted as skipped.
 func setOOMScoreAdjForPIDs(ome sysutil.OOMScoreAdjInterface, pids []uint32, target int64) (int, int) {
 	var updated, skipped int
 	for _, pid := range pids {

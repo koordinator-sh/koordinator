@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
@@ -75,9 +76,14 @@ func (p *Plugin) refreshForAllPods(podMetas []*statesinformer.PodMeta) error {
 			continue
 		}
 
-		// regular containers; the sandbox (pause) container is deliberately skipped since its
-		// oom_score_adj is managed by the runtime
-		for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+		// init containers (e.g. running sidecars during Pending) and regular containers;
+		// the sandbox (pause) container is deliberately skipped since its oom_score_adj is
+		// managed by the runtime
+		containerStatuses := make([]corev1.ContainerStatus, 0,
+			len(podMeta.Pod.Status.InitContainerStatuses)+len(podMeta.Pod.Status.ContainerStatuses))
+		containerStatuses = append(containerStatuses, podMeta.Pod.Status.InitContainerStatuses...)
+		containerStatuses = append(containerStatuses, podMeta.Pod.Status.ContainerStatuses...)
+		for _, containerStat := range containerStatuses {
 			containerCtx := &protocol.ContainerContext{}
 			containerCtx.FromReconciler(podMeta, containerStat.Name, false)
 			if err := p.SetContainerOOMScoreAdj(containerCtx); err != nil {
