@@ -44,11 +44,6 @@ data:
             estimatedScalingFactors:
               cpu: 85
               memory: 70
-        - name: ElasticQuota
-          args:
-            apiVersion: kubescheduler.config.k8s.io/v1
-            kind: ElasticQuotaArgs
-            quotaGroupNamespace: koordinator-system
         plugins:
           preEnqueue:
             enabled:
@@ -65,7 +60,6 @@ data:
               - name: NodeNUMAResource
               - name: DeviceShare
               - name: Coscheduling
-              - name: ElasticQuota
           filter:
             enabled:
               - name: LoadAwareScheduling
@@ -78,7 +72,6 @@ data:
             enabled:
               - name: Reservation
               - name: Coscheduling
-              - name: ElasticQuota
               - name: DefaultPreemption
           preScore:
             enabled:
@@ -103,7 +96,6 @@ data:
               - name: DeviceShare
               - name: Reservation
               - name: Coscheduling
-              - name: ElasticQuota
           permit:
             enabled:
               - name: Coscheduling
