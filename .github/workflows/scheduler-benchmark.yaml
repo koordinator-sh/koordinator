@@ -9,6 +9,7 @@ on:
 jobs:
   benchmark:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -17,19 +18,17 @@ jobs:
           go-version-file: go.mod
 
       - name: Set up cluster
+        # setup-cluster.sh installs the full Koordinator stack via hack/deploy_kind.sh
+        # and applies two targeted workarounds for pre-existing v1.5.0 bugs:
+        #   A. Trailing comma in --feature-gates (deploy_kind.sh:47 sed leaves ","  at end)
+        #   B. ElasticQuota pluginConfig type mismatch in the shipped ConfigMap
         run: make -C test/perf setup
 
-      - name: Debug koordinator-system on failure
-        if: failure()
-        run: |
-          kubectl get pods -n koordinator-system -o wide || true
-          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --all-containers --tail=300 || true
-          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --all-containers --tail=300 || true
-          kubectl describe pod -l koord-app=koord-scheduler -n koordinator-system || true
-          kubectl get configmap koord-scheduler-config -n koordinator-system -o jsonpath='{.data.koord-scheduler-config}' || true
-
       - name: Run benchmark
-        run: make -C test/perf benchmark BASELINE=baselines/basic-1k.json
+        run: |
+          make -C test/perf benchmark \
+            CONFIG=configs/scenarios/basic-1k.yaml \
+            BASELINE=baselines/basic-1k.json
 
       - name: Fail on regression
         if: always()
@@ -53,3 +52,20 @@ jobs:
       - name: Teardown cluster
         if: always()
         run: make -C test/perf teardown
+
+      - name: Debug on failure
+        if: failure()
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -A || true
+          echo "=== koord-scheduler logs ==="
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --tail=50 || true
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --tail=50 2>/dev/null || true
+          echo "=== koord-scheduler events ==="
+          kubectl get events -n koordinator-system \
+            --field-selector involvedObject.name=koord-scheduler \
+            --sort-by=.lastTimestamp | tail -20 || true
+          echo "=== Recent cluster events ==="
+          kubectl get events --sort-by=.lastTimestamp | tail -30 || true
+          echo "=== koord-scheduler-config ConfigMap ==="
+          kubectl get configmap koord-scheduler-config -n koordinator-system -o yaml || true
