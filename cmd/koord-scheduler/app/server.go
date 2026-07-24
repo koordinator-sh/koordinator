@@ -550,6 +550,12 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	schedAdapter := frameworkExtenderFactory.Scheduler()
 
 	eventhandlers.AddScheduleEventHandler(sched, schedAdapter, cc.InformerFactory, cc.KoordinatorSharedInformerFactory, crossSchedulerNominator)
+	// StartSharedCaches wires the unified pod/node dispatcher on cc.InformerFactory and
+	// invokes Start on every SharedPluginCache registered by plugins during New(). Must
+	// run before cc.InformerFactory.Start() so no event fires before its handler is wired.
+	if err := frameworkExtenderFactory.StartSharedCaches(ctx, cc.InformerFactory); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	workloadauditor.AddEventHandler(sched, workloadAuditor, cc.InformerFactory, cc.KoordinatorSharedInformerFactory)
 	reservationErrorHandler := eventhandlers.MakeReservationErrorHandler(
 		sched,

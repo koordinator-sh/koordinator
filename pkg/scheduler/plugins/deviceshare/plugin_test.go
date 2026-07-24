@@ -155,13 +155,28 @@ func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 
 type pluginTestSuit struct {
 	framework.Framework
+	t                                testing.TB
 	koordClientSet                   koordclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	proxyNew                         runtime.PluginFactory
+	extenderFactory                  *frameworkext.FrameworkExtenderFactory
+}
+
+// start drives the framework's shared-cache startup path (FrameworkExtenderFactory.
+// StartSharedCaches), which invokes Start(ctx) on each registered SharedPluginCache —
+// registering DeviceShare's Device/Reservation CRD handlers and the GC goroutine. In
+// production this is called by cmd/koord-scheduler after all plugins are built; plugin
+// unit tests that rely on cache population must call it after proxyNew and before starting
+// the shared informer factory, matching the four-phase initialization order.
+func (s *pluginTestSuit) start(ctx context.Context) {
+	assert.NoError(s.t, s.extenderFactory.StartSharedCaches(ctx, s.Framework.SharedInformerFactory()))
 }
 
 func newPluginTestSuit(t testing.TB, nodes []*corev1.Node) *pluginTestSuit {
 	frameworkexthelper.ResetRegistrations()
+	// suit.start() -> nodeDeviceCache.Start() registers an AfterAllInformersSynced hook in a
+	// package-global registry; reset it per suite so hooks don't accumulate across tests.
+	frameworkexthelper.ResetStartupHooks()
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
@@ -206,9 +221,11 @@ func newPluginTestSuit(t testing.TB, nodes []*corev1.Node) *pluginTestSuit {
 	assert.Nil(t, err)
 	return &pluginTestSuit{
 		Framework:                        fh,
+		t:                                t,
 		koordClientSet:                   koordClientSet,
 		koordinatorSharedInformerFactory: koordSharedInformerFactory,
 		proxyNew:                         proxyNew,
+		extenderFactory:                  extenderFactory,
 	}
 }
 
@@ -1200,7 +1217,7 @@ func Test_Plugin_Filter(t *testing.T) {
 		{
 			name:            "error missing nodecache",
 			state:           &preFilterState{skip: false},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			nodeInfo:        testNodeInfo,
 			want:            nil,
 		},
@@ -2662,7 +2679,7 @@ func Test_Plugin_Filter(t *testing.T) {
 					gpuShared: true,
 				},
 			},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			nodeInfo:        testNodeInfo,
 			want:            fwktype.NewStatus(fwktype.Error, "GPUIsolationProviderHAMICore not found on the node"),
 		},
@@ -2674,7 +2691,7 @@ func Test_Plugin_Filter(t *testing.T) {
 					gpuShared: true,
 				},
 			},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			nodeInfo:        testNodeInfoHami,
 			want:            nil,
 		},
@@ -2686,7 +2703,7 @@ func Test_Plugin_Filter(t *testing.T) {
 					gpuShared: true,
 				},
 			},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			nodeInfo:        testHuawei300IDuoNodeInfo,
 			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, `model "Ascend-310P3-300I-DUO" of vendor "huawei" does not support GPU Share`),
 		},
@@ -3427,7 +3444,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 		{
 			name: "error missing node cache",
 			args: args{
-				nodeDeviceCache: newNodeDeviceCache(),
+				nodeDeviceCache: newNodeDeviceCache(nil),
 				pod:             &corev1.Pod{},
 				node:            testNode,
 				state: &preFilterState{
@@ -5248,7 +5265,7 @@ func Test_Plugin_Unreserve(t *testing.T) {
 				state: &preFilterState{
 					skip: false,
 				},
-				nodeDeviceCache: newNodeDeviceCache(),
+				nodeDeviceCache: newNodeDeviceCache(nil),
 			},
 		},
 		{
@@ -5799,6 +5816,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 			pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 
+			suit.start(context.TODO())
 			suit.Framework.SharedInformerFactory().Start(nil)
 			suit.koordinatorSharedInformerFactory.Start(nil)
 			suit.Framework.SharedInformerFactory().WaitForCacheSync(nil)
@@ -5877,6 +5895,7 @@ func Test_Plugin_PreBindReservation(t *testing.T) {
 	pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 
+	suit.start(context.TODO())
 	suit.Framework.SharedInformerFactory().Start(nil)
 	suit.koordinatorSharedInformerFactory.Start(nil)
 	suit.Framework.SharedInformerFactory().WaitForCacheSync(nil)

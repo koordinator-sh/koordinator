@@ -106,6 +106,8 @@ type frameworkExtenderImpl struct {
 	metricsRecorder *metrics.MetricAsyncRecorder
 
 	crossSchedulerNominator *CrossSchedulerPodNominator
+
+	factory *FrameworkExtenderFactory
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -116,6 +118,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 	frameworkExtender := &frameworkExtenderImpl{
 		Framework:                           fw,
 		errorHandlerDispatcher:              f.errorHandlerDispatcher,
+		factory:                             f,
 		schedulerFn:                         schedulerFn,
 		monitor:                             f.monitor,
 		koordinatorClientSet:                f.KoordinatorClientSet(),
@@ -298,6 +301,10 @@ func (ext *frameworkExtenderImpl) GetCrossSchedulerPodNominator() *CrossSchedule
 
 func (ext *frameworkExtenderImpl) GetWorkloadAuditor() workloadauditor.WorkloadAuditor {
 	return ext.workloadAuditor
+}
+
+func (ext *frameworkExtenderImpl) GetOrRegisterSharedCache(key string, create func(handle ExtendedHandle) SharedPluginCache) SharedPluginCache {
+	return ext.factory.getOrRegisterSharedCache(key, ext, create)
 }
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.

@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
@@ -31,6 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
@@ -41,6 +45,7 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
@@ -165,6 +170,15 @@ type FrameworkExtenderFactory struct {
 	pluginInformerFactories []SharedInformerFactory
 
 	metricsRecorder *metrics.MetricAsyncRecorder
+
+	sharedCachesMu      sync.Mutex
+	sharedCaches        map[string]SharedPluginCache
+	sharedCachesOrder   []string
+	sharedCachesStarted bool
+	// startedCaches is the immutable, registration-ordered snapshot of shared caches
+	// published once by StartSharedCaches. The unified dispatcher reads it lock-free on
+	// every pod/node event, avoiding a mutex acquisition and slice allocation per event.
+	startedCaches atomic.Pointer[[]SharedPluginCache]
 }
 
 func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, error) {
@@ -192,6 +206,7 @@ func NewFrameworkExtenderFactory(options ...Option) (*FrameworkExtenderFactory, 
 		crossSchedulerNominator:             handleOptions.crossSchedulerNominator,
 		workloadAuditor:                     handleOptions.workloadAuditor,
 		metricsRecorder:                     metrics.NewMetricsAsyncRecorder(1000, time.Second, wait.NeverStop),
+		sharedCaches:                        map[string]SharedPluginCache{},
 	}, nil
 }
 
@@ -516,5 +531,176 @@ func PluginFactoryProxy(extenderFactory *FrameworkExtenderFactory, factoryFn fra
 		extenderFactory.updatePlugins(plugin, fw.ProfileName())
 		frameworkExtender.(*frameworkExtenderImpl).updatePlugins(plugin)
 		return plugin, nil
+	}
+}
+
+// getOrRegisterSharedCache is the factory-side implementation behind
+// ExtendedHandle.GetOrRegisterSharedCache. First call for a given key invokes create(handle)
+// and stores the result; subsequent calls return the stored instance and do not call
+// create. Registration order is preserved for deterministic event dispatch.
+func (f *FrameworkExtenderFactory) getOrRegisterSharedCache(key string, handle ExtendedHandle, create func(ExtendedHandle) SharedPluginCache) SharedPluginCache {
+	f.sharedCachesMu.Lock()
+	defer f.sharedCachesMu.Unlock()
+	if c, ok := f.sharedCaches[key]; ok {
+		return c
+	}
+	c := create(handle)
+	f.sharedCaches[key] = c
+	f.sharedCachesOrder = append(f.sharedCachesOrder, key)
+	return c
+}
+
+// StartSharedCaches wires up the unified pod/node event dispatcher on informerFactory and
+// invokes Start(ctx) on every registered SharedPluginCache exactly once. Must be called
+// after all profiles are built (all Plugin.New() calls completed) and before
+// informerFactory.Start() so no event is delivered before its handler is registered.
+// Idempotent — subsequent calls after the first are no-ops.
+func (f *FrameworkExtenderFactory) StartSharedCaches(ctx context.Context, informerFactory informers.SharedInformerFactory) error {
+	f.sharedCachesMu.Lock()
+	if f.sharedCachesStarted {
+		f.sharedCachesMu.Unlock()
+		return nil
+	}
+	caches := make([]SharedPluginCache, 0, len(f.sharedCachesOrder))
+	for _, key := range f.sharedCachesOrder {
+		caches = append(caches, f.sharedCaches[key])
+	}
+	f.sharedCachesMu.Unlock()
+
+	if len(caches) > 0 {
+		// Register the unified pod/node dispatchers before committing any state, so a
+		// registration failure leaves the factory un-started (sharedCachesStarted stays
+		// false, no snapshot published) and returns an error for the caller to fail fast
+		// on, rather than a partially-started state that later calls would skip.
+		//
+		// Use ForceSyncFromInformer (not a bare AddEventHandler) so the dispatcher's
+		// registrations are collected into WaitForHandlersSync: the scheduler then waits
+		// for these handlers to drain their initial pod/node list into the shared caches
+		// before the first scheduling cycle, so a shared cache is never read while still
+		// unpopulated. This preserves the sync guarantee the per-plugin handlers had before
+		// they were centralized here.
+		if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), informerFactory,
+			informerFactory.Core().V1().Pods().Informer(), cache.ResourceEventHandlerFuncs{
+				AddFunc:    f.dispatchPodAdd,
+				UpdateFunc: f.dispatchPodUpdate,
+				DeleteFunc: f.dispatchPodDelete,
+			}); err != nil {
+			return fmt.Errorf("failed to register shared cache pod event handler, err: %w", err)
+		}
+		if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), informerFactory,
+			informerFactory.Core().V1().Nodes().Informer(), cache.ResourceEventHandlerFuncs{
+				AddFunc:    f.dispatchNodeAdd,
+				UpdateFunc: f.dispatchNodeUpdate,
+				DeleteFunc: f.dispatchNodeDelete,
+			}); err != nil {
+			return fmt.Errorf("failed to register shared cache node event handler, err: %w", err)
+		}
+		// Publish the immutable snapshot for lock-free dispatch. Events cannot arrive until
+		// the informer factory is started (after this returns), so it is safe to publish
+		// after the handlers are registered.
+		f.startedCaches.Store(&caches)
+	}
+
+	f.sharedCachesMu.Lock()
+	f.sharedCachesStarted = true
+	f.sharedCachesMu.Unlock()
+
+	for _, c := range caches {
+		c.Start(ctx)
+	}
+	return nil
+}
+
+// dispatchCaches returns the immutable snapshot of registered shared caches published by
+// StartSharedCaches. Read lock-free on every event — no mutex, no allocation.
+//
+// TODO: the dispatch* methods below invoke each cache's handler sequentially. The end-state
+// goal is parallel-by-default dispatch with an opt-in serial mode, so the shared dispatcher
+// does not regress event-handling latency compared to the original per-profile handler
+// pattern. Deferred to the unified event-dispatcher phase (PR-3).
+func (f *FrameworkExtenderFactory) dispatchCaches() []SharedPluginCache {
+	if p := f.startedCaches.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+func (f *FrameworkExtenderFactory) dispatchPodAdd(obj interface{}) {
+	pod, ok := obj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	for _, c := range f.dispatchCaches() {
+		c.OnPodAdd(pod)
+	}
+}
+
+func (f *FrameworkExtenderFactory) dispatchPodUpdate(oldObj, newObj interface{}) {
+	oldPod, ok := oldObj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	newPod, ok := newObj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	for _, c := range f.dispatchCaches() {
+		c.OnPodUpdate(oldPod, newPod)
+	}
+}
+
+func (f *FrameworkExtenderFactory) dispatchPodDelete(obj interface{}) {
+	var pod *corev1.Pod
+	switch t := obj.(type) {
+	case *corev1.Pod:
+		pod = t
+	case cache.DeletedFinalStateUnknown:
+		pod, _ = t.Obj.(*corev1.Pod)
+	}
+	if pod == nil {
+		return
+	}
+	for _, c := range f.dispatchCaches() {
+		c.OnPodDelete(pod)
+	}
+}
+
+func (f *FrameworkExtenderFactory) dispatchNodeAdd(obj interface{}) {
+	node, ok := obj.(*corev1.Node)
+	if !ok {
+		return
+	}
+	for _, c := range f.dispatchCaches() {
+		c.OnNodeAdd(node)
+	}
+}
+
+func (f *FrameworkExtenderFactory) dispatchNodeUpdate(oldObj, newObj interface{}) {
+	oldNode, ok := oldObj.(*corev1.Node)
+	if !ok {
+		return
+	}
+	newNode, ok := newObj.(*corev1.Node)
+	if !ok {
+		return
+	}
+	for _, c := range f.dispatchCaches() {
+		c.OnNodeUpdate(oldNode, newNode)
+	}
+}
+
+func (f *FrameworkExtenderFactory) dispatchNodeDelete(obj interface{}) {
+	var node *corev1.Node
+	switch t := obj.(type) {
+	case *corev1.Node:
+		node = t
+	case cache.DeletedFinalStateUnknown:
+		node, _ = t.Obj.(*corev1.Node)
+	}
+	if node == nil {
+		return
+	}
+	for _, c := range f.dispatchCaches() {
+		c.OnNodeDelete(node)
 	}
 }

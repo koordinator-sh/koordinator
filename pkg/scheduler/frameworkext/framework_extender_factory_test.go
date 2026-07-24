@@ -506,3 +506,51 @@ func TestFrameworkExtenderFactory_updatePlugins_NextPodPlugin(t *testing.T) {
 		})
 	}
 }
+
+// TestGetOrRegisterSharedCache_SharedAcrossProfiles simulates two scheduler profiles built
+// from the same FrameworkExtenderFactory, each calling GetOrRegisterSharedCache via its own
+// ExtendedHandle. Both must receive the same cache instance (created exactly once), proving
+// the opt-in cache is shared across profiles rather than duplicated per profile.
+func TestGetOrRegisterSharedCache_SharedAcrossProfiles(t *testing.T) {
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, err := NewFrameworkExtenderFactory(
+		WithKoordinatorClientSet(koordClientSet),
+		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	assert.NoError(t, err)
+
+	fakeClient := kubefake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+	newProfile := func(schedulerName string) FrameworkExtender {
+		fh, err := schedulertesting.NewFramework(
+			context.TODO(),
+			registeredPlugins,
+			schedulerName,
+			frameworkruntime.WithClientSet(fakeClient),
+			frameworkruntime.WithInformerFactory(sharedInformerFactory),
+		)
+		assert.NoError(t, err)
+		return extenderFactory.NewFrameworkExtender(fh)
+	}
+
+	profileA := newProfile("profile-a")
+	profileB := newProfile("profile-b")
+
+	rec := &orderRecorder{}
+	createCalls := 0
+	create := func(ExtendedHandle) SharedPluginCache {
+		createCalls++
+		return newRecordingCache("deviceshare", rec)
+	}
+
+	cacheA := profileA.GetOrRegisterSharedCache("deviceshare", create)
+	cacheB := profileB.GetOrRegisterSharedCache("deviceshare", create)
+
+	assert.Same(t, cacheA, cacheB, "both profiles must share a single cache instance")
+	assert.Equal(t, 1, createCalls, "the cache must be created exactly once across profiles")
+}

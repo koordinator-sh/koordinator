@@ -543,8 +543,11 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 	}
 	logAllocationContext(pod, nodeName, nodeDeviceInfo, state.designatedAllocation, state.allocationResult)
 	nodeDeviceInfo.lock.Lock()
-	defer nodeDeviceInfo.lock.Unlock()
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
+	nodeDeviceInfo.lock.Unlock()
+	if err := p.nodeDeviceCache.AssumePod(pod, nodeName); err != nil {
+		return fwktype.AsStatus(err)
+	}
 	return nil
 }
 
@@ -654,9 +657,9 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState fwktype.CycleState, p
 	}
 
 	nodeDeviceInfo.lock.Lock()
-	defer nodeDeviceInfo.lock.Unlock()
-
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
+	nodeDeviceInfo.lock.Unlock()
+	_ = p.nodeDeviceCache.ForgetPod(pod)
 	state.allocationResult = nil
 }
 
@@ -822,20 +825,23 @@ func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktyp
 		return nil, fmt.Errorf("expect handle to be type frameworkext.ExtendedHandle, got %T", handle)
 	}
 
-	deviceCache := newNodeDeviceCache()
-	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
-	registerPodEventHandler(deviceCache, handle.SharedInformerFactory(), extendedHandle.KoordinatorSharedInformerFactory())
-	extendedHandle.RegisterForgetPodHandler(deviceCache.deletePod)
-	// Register the node informer synchronously during New so that the registration
-	// is visible to the framework's WaitForHandlersSync. If we registered it inside
-	// the gcNodeDevice goroutine, the framework might start scheduling before the
-	// handler registration is collected. Using a no-op handler because gcNodeDevice
-	// only reads from the node lister.
+	sharedCache := extendedHandle.GetOrRegisterSharedCache(Name, func(h frameworkext.ExtendedHandle) frameworkext.SharedPluginCache {
+		return newNodeDeviceCache(h)
+	})
+	deviceCache, ok := sharedCache.(*nodeDeviceCache)
+	if !ok {
+		return nil, fmt.Errorf("unexpected shared cache type %T for key %q, want *nodeDeviceCache", sharedCache, Name)
+	}
+	// Ensure the node informer is instantiated and its initial list is awaited during
+	// startup. Registering it here (per profile, during New) makes it visible to the
+	// framework's WaitForHandlersSync, so the scheduler waits for the node cache to finish
+	// its initial sync before accepting scheduling cycles. A no-op handler suffices:
+	// DeviceShare reads the node lister directly (in gcNodeDevice) rather than reacting to
+	// node events.
 	nodeInformer := handle.SharedInformerFactory().Core().V1().Nodes().Informer()
 	if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), nodeInformer, nil); err != nil {
 		return nil, err
 	}
-	go deviceCache.gcNodeDevice(ctx, handle.SharedInformerFactory(), defaultGCPeriod)
 
 	gpuSharedResourceTemplatesCache := newGPUSharedResourceTemplatesCache()
 	registerGPUSharedResourceTemplatesConfigMapEventHandler(gpuSharedResourceTemplatesCache,
