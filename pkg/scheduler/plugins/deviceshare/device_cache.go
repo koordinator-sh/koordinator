@@ -534,6 +534,15 @@ func (n *nodeDeviceCache) Start(context.Context) {
 	})
 }
 
+// The OnPod* handlers below are invoked serially by the shared pod informer (one event at a
+// time), so they never race one another. They intentionally do not hold a single lock across
+// the whole operation: assumedPods is always accessed under n.lock (AssumePod/ForgetPod/
+// takeAssumed), the node map under n.lock (getNodeDevice/gcNodeDevice), and per-node allocation
+// state under the per-node nodeDevice.lock — the same lock discipline every other caller uses,
+// so a concurrent Reserve/Unreserve (scheduling goroutine), Device event, or GC stays race-free
+// without a global write lock. takeAssumed atomically claims a pod's assumed marker, so exactly
+// one path reconciles it.
+
 // OnPodAdd implements frameworkext.SharedPluginCache. If the pod was previously assumed,
 // reconciles against the authoritative event instead of skipping — see the CacheReserver
 // invariants in the proposal.
