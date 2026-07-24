@@ -376,6 +376,67 @@ func TestEvaluateQuota(t *testing.T) {
 			wantUsed:    corev1.ResourceList{},
 		},
 		{
+			name:      "update with same quota label but increased resources on full quota, denied",
+			operation: admissionv1.Update,
+			oldPod: elasticquota.MakePod("ns1", "pod1").Label("quota.scheduling.koordinator.sh/name", "quota1").
+				Container(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				}).Obj(),
+			newPod: elasticquota.MakePod("ns1", "pod1").Label("quota.scheduling.koordinator.sh/name", "quota1").
+				Container(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				}).Obj(),
+			quota: elasticquota.MakeQuota("quota1").Namespace("kube-system").Max(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("8Gi"),
+			}).ChildRequest(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("8Gi"),
+			}).Obj(),
+			prepareFn: func() func() {
+				return utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate,
+					features.EnableQuotaAdmissionOnUpdate, true)
+			},
+			wantAllowed: false,
+			wantReason:  "exceeded quota: kube-system/quota1, requested: cpu=4,memory=8Gi, used: cpu=4,memory=8Gi, limited: cpu=4,memory=8Gi",
+			wantErr:     true,
+			wantUsed:    corev1.ResourceList{},
+		},
+		{
+			name:      "update with same quota label but increased resources, allowed when quota has capacity",
+			operation: admissionv1.Update,
+			oldPod: elasticquota.MakePod("ns1", "pod1").Label("quota.scheduling.koordinator.sh/name", "quota1").
+				Container(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				}).Obj(),
+			newPod: elasticquota.MakePod("ns1", "pod1").Label("quota.scheduling.koordinator.sh/name", "quota1").
+				Container(corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
+				}).Obj(),
+			quota: elasticquota.MakeQuota("quota1").Namespace("kube-system").Max(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			}).ChildRequest(corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("2"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			}).Obj(),
+			prepareFn: func() func() {
+				return utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate,
+					features.EnableQuotaAdmissionOnUpdate, true)
+			},
+			wantAllowed: true,
+			wantReason:  "",
+			wantErr:     false,
+			wantUsed: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("6"),
+				corev1.ResourceMemory: resource.MustParse("12Gi"),
+			},
+		},
+		{
 			name:      "update quota label to a quota with capacity, allowed",
 			operation: admissionv1.Update,
 			oldPod: elasticquota.MakePod("ns1", "pod1").Label("quota.scheduling.koordinator.sh/name", "quota1").
