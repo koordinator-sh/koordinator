@@ -114,6 +114,21 @@ func (i *MemInfo) MemUsageWithPageCache() uint64 {
 	return (i.MemTotal - i.MemFree) * 1024
 }
 
+// NUMAMemUsageBytes returns the estimated memory usage bytes for a NUMA node's meminfo.
+// NOTE: the NUMA-level meminfo (/sys/devices/system/node/nodeN/meminfo) has no MemAvailable field,
+// so the available memory is estimated by `MemFree + Active(file) + Inactive(file) + SReclaimable`,
+// which approximates the kernel's MemAvailable estimation (si_mem_available) without the per-zone
+// watermark corrections. The shmem pages are NOT subtracted from the file LRU sizes since they
+// reside on the anonymous LRU lists rather than the file LRU lists.
+// It can slightly differ from the node-level usage calculated by `MemTotal - MemAvailable`.
+func (i *MemInfo) NUMAMemUsageBytes() uint64 {
+	available := i.MemFree + i.ActiveFile + i.InactiveFile + i.SReclaimable
+	if i.MemTotal <= available {
+		return 0
+	}
+	return (i.MemTotal - available) * 1024
+}
+
 // readMemInfo reads and parses the meminfo from the given file.
 // If isNUMA=false, it parses each line without a prefix like "Node 0". Otherwise, it parses each line with the NUMA
 // node prefix like "Node 0".

@@ -201,6 +201,19 @@ const (
 	// which may significantly increase the pressure on Prometheus/TSDB/remote-write.
 	// It is recommended to enable it only during small clusters or troubleshooting/capacity assessment.
 	PerCPUMetric featuregate.Feature = "PerCPUMetric"
+
+	// owner: @koordinator
+	// alpha: v1.8
+	//
+	// NodeMetricPromMetrics enables recording prometheus metrics for the main info reported in NodeMetric,
+	// including the node usage and the system usage (with the NUMA dimension):
+	// - koordlet_node_metric_node_usage{node, resource, unit}
+	// - koordlet_node_metric_system_usage{node, resource, unit}
+	// - koordlet_node_metric_numa_node_usage{node, numa_node_id, resource, unit}
+	// - koordlet_node_metric_numa_system_usage{node, numa_node_id, resource, unit}
+	// NOTE: the predicted node peak is already recorded as koordlet_node_predicted_resource_peak by the
+	// prediction module.
+	NodeMetricPromMetrics featuregate.Feature = "NodeMetricPromMetrics"
 )
 
 func init() {
@@ -239,6 +252,7 @@ var (
 		PodResourcesProxy:      {Default: false, PreRelease: featuregate.Alpha},
 		HamiCoreVGPUMonitor:    {Default: false, PreRelease: featuregate.Alpha},
 		PerCPUMetric:           {Default: false, PreRelease: featuregate.Alpha},
+		NodeMetricPromMetrics:  {Default: false, PreRelease: featuregate.Alpha},
 	}
 )
 

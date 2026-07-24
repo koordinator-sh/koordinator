@@ -17,6 +17,7 @@ limitations under the License.
 package prediction
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -280,6 +281,16 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 			expected := util.MinResourceList(tc.expectedPodPredictResult, tc.expectedPriorityPredictResult)
 			assert.Equal(t, expected, result)
 			assert.Equal(t, true, quotav1.Equals(expected, result))
+
+			// the node peak is the maximal of the sub-predictors' peaks
+			gotPodPeak, err := predictor.(*minPredictor).predictors[0].GetPeak()
+			assert.NoError(t, err)
+			gotPriorityPeak, err := predictor.(*minPredictor).predictors[1].GetPeak()
+			assert.NoError(t, err)
+			gotPeak, err := predictor.GetPeak()
+			assert.NoError(t, err)
+			expectedPeak := quotav1.Max(gotPodPeak, gotPriorityPeak)
+			assert.Equal(t, true, quotav1.Equals(expectedPeak, gotPeak))
 		})
 	}
 }
@@ -443,6 +454,102 @@ func TestPodReclaimablePredictor(t *testing.T) {
 			assert.Equal(t, true, quotav1.Equals(tc.expectedReclaimable, result))
 		})
 	}
+}
+
+func TestPodReclaimablePredictor_GetPeak(t *testing.T) {
+	coldStartDuration := time.Hour
+	priority := extension.PriorityProdValueMin
+
+	podColdStart := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:               "pod-cold-start-uid",
+			CreationTimestamp: metav1.Time{Time: time.Now().Add(-time.Minute)},
+		},
+		Spec: v1.PodSpec{
+			Priority: &priority,
+			Containers: []v1.Container{
+				{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(1*1024*1024*1024, resource.BinarySI),
+						},
+					},
+				},
+			},
+		},
+	}
+	podNormal := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:               "pod-normal-uid",
+			CreationTimestamp: metav1.Time{Time: time.Now().Add(-2 * time.Hour)},
+		},
+		Spec: v1.PodSpec{
+			Priority: &priority,
+			Containers: []v1.Container{
+				{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(2000, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+						},
+					},
+				},
+			},
+		},
+	}
+	podPredictFailed := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:               "pod-predict-failed-uid",
+			CreationTimestamp: metav1.Time{Time: time.Now().Add(-2 * time.Hour)},
+		},
+		Spec: v1.PodSpec{
+			Priority: &priority,
+			Containers: []v1.Container{
+				{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	predictServer := &mockPredictServer{
+		ResultMap: map[UIDType]Result{
+			UIDType(podNormal.UID): testPredictionResult,
+		},
+		DefaultErr: fmt.Errorf("prediction not found"),
+	}
+	predictor := &podReclaimablePredictor{
+		predictServer:       predictServer,
+		coldStartDuration:   coldStartDuration,
+		safetyMarginPercent: 10,
+		podFilterFn:         isPodReclaimableForProd,
+		reclaimable:         util.NewZeroResourceList(),
+		unReclaimable:       util.NewZeroResourceList(),
+		unpredicted:         util.NewZeroResourceList(),
+		pods:                make(map[string]bool),
+	}
+
+	assert.NoError(t, predictor.AddPod(podColdStart))
+	assert.NoError(t, predictor.AddPod(podNormal))
+	// prediction failure returns an error but its request should be counted into the peak
+	assert.Error(t, predictor.AddPod(podPredictFailed))
+
+	// peak = predicted peak of podNormal (p95 cpu 500m * 1.1, p98 memory 768Mi * 1.1)
+	//        + requests of podColdStart (1000m, 1Gi) + requests of podPredictFailed (500m, 512Mi)
+	predictedMemoryPeak := 1.1 * 768 * 1024 * 1024
+	expectedPeak := v1.ResourceList{
+		v1.ResourceCPU:    *resource.NewMilliQuantity(550+1000+500, resource.DecimalSI),
+		v1.ResourceMemory: *resource.NewQuantity(int64(predictedMemoryPeak)+1*1024*1024*1024+512*1024*1024, resource.BinarySI),
+	}
+	gotPeak, err := predictor.GetPeak()
+	assert.NoError(t, err)
+	assert.Equal(t, true, quotav1.Equals(expectedPeak, gotPeak), "expect %+v, got %+v", expectedPeak, gotPeak)
 }
 
 func Test_priorityReclaimablePredictor(t *testing.T) {

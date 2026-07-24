@@ -39,28 +39,69 @@ func readTotalCPUStat(statPath string) (uint64, error) {
 	for _, stat := range stats {
 		fieldStat := strings.Fields(stat)
 		if len(fieldStat) > 0 && fieldStat[0] == "cpu" {
-			if len(fieldStat) <= 7 {
-				return 0, fmt.Errorf("%s is illegally formatted", statPath)
-			}
-			var total uint64 = 0
-			// format: cpu $user $nice $system $idle $iowait $irq $softirq
-			for _, i := range []int{1, 2, 3, 6, 7} {
-				v, err := strconv.ParseUint(fieldStat[i], 10, 64)
-				if err != nil {
-					return 0, fmt.Errorf("failed to parse node stat %s, err: %s", stat, err)
-				}
-				total += v
-			}
-			return total, nil
+			return parseCPUStatUsageTicks(fieldStat, statPath)
 		}
 	}
 	return 0, fmt.Errorf("%s is illegally formatted", statPath)
+}
+
+// parseCPUStatUsageTicks parses the usage ticks from the fields of a "cpu"/"cpuN" line in /proc/stat.
+func parseCPUStatUsageTicks(fieldStat []string, statPath string) (uint64, error) {
+	if len(fieldStat) <= 7 {
+		return 0, fmt.Errorf("%s is illegally formatted", statPath)
+	}
+	var total uint64 = 0
+	// format: cpu $user $nice $system $idle $iowait $irq $softirq
+	for _, i := range []int{1, 2, 3, 6, 7} {
+		v, err := strconv.ParseUint(fieldStat[i], 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse node stat %v, err: %s", fieldStat, err)
+		}
+		total += v
+	}
+	return total, nil
+}
+
+// readPerCPUStat parses the per-CPU usage ticks from the "cpuN" lines in /proc/stat.
+func readPerCPUStat(statPath string) (map[int32]uint64, error) {
+	rawStats, err := os.ReadFile(statPath)
+	if err != nil {
+		return nil, err
+	}
+	cpuTicks := map[int32]uint64{}
+	stats := strings.Split(string(rawStats), "\n")
+	for _, stat := range stats {
+		fieldStat := strings.Fields(stat)
+		// skip the summary "cpu" line and non-cpu lines
+		if len(fieldStat) <= 0 || !strings.HasPrefix(fieldStat[0], "cpu") || fieldStat[0] == "cpu" {
+			continue
+		}
+		cpuID, err := strconv.ParseInt(strings.TrimPrefix(fieldStat[0], "cpu"), 10, 32)
+		if err != nil {
+			continue
+		}
+		ticks, err := parseCPUStatUsageTicks(fieldStat, statPath)
+		if err != nil {
+			return nil, err
+		}
+		cpuTicks[int32(cpuID)] = ticks
+	}
+	if len(cpuTicks) <= 0 {
+		return nil, fmt.Errorf("%s has no per-cpu stat line", statPath)
+	}
+	return cpuTicks, nil
 }
 
 // GetCPUStatUsageTicks returns the node's CPU usage ticks
 func GetCPUStatUsageTicks() (uint64, error) {
 	statPath := system.GetProcFilePath(system.ProcStatName)
 	return readTotalCPUStat(statPath)
+}
+
+// GetPerCPUStatUsageTicks returns the CPU usage ticks of each logical CPU, keyed by the CPU ID.
+func GetPerCPUStatUsageTicks() (map[int32]uint64, error) {
+	statPath := system.GetProcFilePath(system.ProcStatName)
+	return readPerCPUStat(statPath)
 }
 
 func GetContainerPerfGroupCollector(podCgroupDir string, c *corev1.ContainerStatus, number int32, events []string) (*perfgroup.PerfGroupCollector, error) {

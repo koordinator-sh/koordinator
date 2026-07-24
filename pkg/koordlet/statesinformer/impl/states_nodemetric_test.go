@@ -41,12 +41,15 @@ import (
 	fakekoordclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	clientsetv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/typed/slo/v1alpha1"
 	listerv1alpha1 "github.com/koordinator-sh/koordinator/pkg/client/listers/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	mockmetriccache "github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache/mockmetriccache"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/prediction"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 var _ listerv1alpha1.NodeMetricLister = &fakeNodeMetricLister{}
@@ -1554,4 +1557,145 @@ func Test_nodeMetricInformer_generateQueryDuration(t *testing.T) {
 			assert.Equalf(t, tt.wantEnd, gotEnd, "generateQueryDuration()")
 		})
 	}
+}
+
+func Test_nodeMetricInformer_collectNUMAUsages(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	testNow := time.Now()
+	testStart := testNow.Add(-60 * time.Second)
+	testEnd := testNow.Add(5 * time.Second)
+	duration := testEnd.Sub(testStart)
+
+	buildNUMAQueryMeta := func(m metriccache.MetricResource, numaID string) metriccache.MetricMeta {
+		queryMeta, err := m.BuildQueryMeta(metriccache.MetricPropertiesFunc.NUMA(numaID))
+		assert.NoError(t, err)
+		return queryMeta
+	}
+
+	t.Run("no NUMA info, return nil", func(t *testing.T) {
+		mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
+		mockMetricCache.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(nil, false)
+		r := &nodeMetricInformer{metricCache: mockMetricCache}
+		assert.Nil(t, r.collectNUMAUsages(testStart, testEnd, metriccache.AggregationTypeAVG))
+	})
+
+	t.Run("collect NUMA usages, system usage of NUMA 1 is missing", func(t *testing.T) {
+		mockMetricCache := mockmetriccache.NewMockMetricCache(ctrl)
+		mockMetricCache.EXPECT().Get(metriccache.NodeNUMAInfoKey).Return(&util.NodeNUMAInfo{
+			NUMAInfos: []util.NUMAInfo{
+				{NUMANodeID: 0},
+				{NUMANodeID: 1},
+			},
+		}, true)
+		mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctrl)
+		originalFactory := metriccache.DefaultAggregateResultFactory
+		metriccache.DefaultAggregateResultFactory = mockResultFactory
+		defer func() { metriccache.DefaultAggregateResultFactory = originalFactory }()
+		mockQuerier := mockmetriccache.NewMockQuerier(ctrl)
+		mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+		buildMockQueryResult(ctrl, mockQuerier, mockResultFactory,
+			buildNUMAQueryMeta(metriccache.NodeNUMACPUUsageMetric, "0"), 1.5, duration)
+		buildMockQueryResult(ctrl, mockQuerier, mockResultFactory,
+			buildNUMAQueryMeta(metriccache.NodeNUMAMemoryUsageMetric, "0"), 1024, duration)
+		buildMockQueryResult(ctrl, mockQuerier, mockResultFactory,
+			buildNUMAQueryMeta(metriccache.SystemNUMACPUUsageMetric, "0"), 0.5, duration)
+		buildMockQueryResult(ctrl, mockQuerier, mockResultFactory,
+			buildNUMAQueryMeta(metriccache.SystemNUMAMemoryUsageMetric, "0"), 512, duration)
+		buildMockQueryResult(ctrl, mockQuerier, mockResultFactory,
+			buildNUMAQueryMeta(metriccache.NodeNUMACPUUsageMetric, "1"), 2.5, duration)
+		buildMockQueryResult(ctrl, mockQuerier, mockResultFactory,
+			buildNUMAQueryMeta(metriccache.NodeNUMAMemoryUsageMetric, "1"), 2048, duration)
+		// the system cpu usage of NUMA 1 has no sample
+		emptyResult := mockmetriccache.NewMockAggregateResult(ctrl)
+		emptyResult.EXPECT().Count().Return(0).AnyTimes()
+		sysCPU1QueryMeta := buildNUMAQueryMeta(metriccache.SystemNUMACPUUsageMetric, "1")
+		mockResultFactory.EXPECT().New(sysCPU1QueryMeta).Return(emptyResult).AnyTimes()
+		mockQuerier.EXPECT().Query(sysCPU1QueryMeta, gomock.Any(), emptyResult).Return(nil).AnyTimes()
+
+		r := &nodeMetricInformer{metricCache: mockMetricCache}
+		got := r.collectNUMAUsages(testStart, testEnd, metriccache.AggregationTypeAVG)
+		assert.Equal(t, 2, len(got))
+		assert.Equal(t, int32(0), got[0].NUMANodeID)
+		assert.Equal(t, *resource.NewMilliQuantity(1500, resource.DecimalSI), got[0].NodeUsage.ResourceList[v1.ResourceCPU])
+		assert.Equal(t, *resource.NewQuantity(1024, resource.BinarySI), got[0].NodeUsage.ResourceList[v1.ResourceMemory])
+		assert.Equal(t, *resource.NewMilliQuantity(500, resource.DecimalSI), got[0].SystemUsage.ResourceList[v1.ResourceCPU])
+		assert.Equal(t, *resource.NewQuantity(512, resource.BinarySI), got[0].SystemUsage.ResourceList[v1.ResourceMemory])
+		assert.Equal(t, int32(1), got[1].NUMANodeID)
+		assert.Equal(t, *resource.NewMilliQuantity(2500, resource.DecimalSI), got[1].NodeUsage.ResourceList[v1.ResourceCPU])
+		assert.Equal(t, *resource.NewQuantity(2048, resource.BinarySI), got[1].NodeUsage.ResourceList[v1.ResourceMemory])
+		// the system usage of NUMA 1 is missing, only the node usage is reported
+		assert.Nil(t, got[1].SystemUsage.ResourceList)
+	})
+}
+
+func Test_recordNodeMetricPromMetrics(t *testing.T) {
+	testStatus := &slov1alpha1.NodeMetricStatus{
+		NodeMetric: &slov1alpha1.NodeMetricInfo{
+			NodeUsage: slov1alpha1.ResourceMap{
+				ResourceList: v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewMilliQuantity(2500, resource.DecimalSI),
+					v1.ResourceMemory: *resource.NewQuantity(10*1024*1024*1024, resource.BinarySI),
+				},
+			},
+			SystemUsage: slov1alpha1.ResourceMap{
+				ResourceList: v1.ResourceList{
+					v1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+					v1.ResourceMemory: *resource.NewQuantity(2*1024*1024*1024, resource.BinarySI),
+				},
+			},
+			NUMAUsages: []slov1alpha1.NUMAUsage{
+				{
+					NUMANodeID: 0,
+					NodeUsage: slov1alpha1.ResourceMap{
+						ResourceList: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(1500, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(5*1024*1024*1024, resource.BinarySI),
+						},
+					},
+					SystemUsage: slov1alpha1.ResourceMap{
+						ResourceList: v1.ResourceList{
+							v1.ResourceCPU:    *resource.NewMilliQuantity(250, resource.DecimalSI),
+							v1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
+						},
+					},
+				},
+			},
+		},
+	}
+	testingNode := &v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+		},
+	}
+
+	t.Run("feature-gate disabled, no metric recorded", func(t *testing.T) {
+		defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.NodeMetricPromMetrics, false)()
+		metrics.Register(testingNode)
+		defer metrics.Register(nil)
+		assert.NotPanics(t, func() {
+			recordNodeMetricPromMetrics(testStatus)
+		})
+	})
+
+	t.Run("feature-gate enabled, metrics recorded", func(t *testing.T) {
+		defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.NodeMetricPromMetrics, true)()
+		metrics.Register(testingNode)
+		defer metrics.Register(nil)
+		assert.NotPanics(t, func() {
+			recordNodeMetricPromMetrics(testStatus)
+			recordNodeMetricPromMetrics(nil) // nil status is a no-op
+		})
+
+		gauge, err := metrics.NodeMetricNodeUsage.GetMetricWithLabelValues(
+			testingNode.Name, string(v1.ResourceCPU), metrics.UnitCore)
+		assert.NoError(t, err)
+		assert.NotNil(t, gauge)
+		gauge, err = metrics.NodeMetricNUMASystemUsage.GetMetricWithLabelValues(
+			testingNode.Name, "0", string(v1.ResourceMemory), metrics.UnitByte)
+		assert.NoError(t, err)
+		assert.NotNil(t, gauge)
+	})
 }

@@ -18,6 +18,7 @@ package podresource
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
@@ -108,6 +109,7 @@ func (p *podResourceCollector) collectPodResUsed() {
 	metrics := make([]metriccache.MetricSample, 0)
 	allCPUUsageCores := metriccache.Point{Timestamp: time.Now(), Value: 0}
 	allMemoryUsage := metriccache.Point{Timestamp: time.Now(), Value: 0}
+	allNUMAMemoryUsage := map[int32]metriccache.Point{}
 	for _, meta := range podMetas {
 		pod := meta.Pod
 		uid := string(pod.UID) // types.UID
@@ -181,6 +183,18 @@ func (p *podResourceCollector) collectPodResUsed() {
 		count++
 		allCPUUsageCores.Value += cpuUsageValue
 		allMemoryUsage.Value += float64(memUsageValue)
+		// sum up the pod's per-NUMA memory usage; a failed pod is just skipped
+		if numaStat, err := p.cgroupReader.ReadMemoryNumaStat(podCgroupDir); err != nil {
+			klog.V(5).Infof("failed to collect pod NUMA memory usage for %s, err: %s", podKey, err)
+		} else {
+			for _, numaPages := range numaStat {
+				numaID := int32(numaPages.NumaId)
+				point := allNUMAMemoryUsage[numaID]
+				point.Timestamp = collectTime
+				point.Value += float64(numaPages.PagesNum) * float64(os.Getpagesize())
+				allNUMAMemoryUsage[numaID] = point
+			}
+		}
 		containerMetrics := p.collectContainerResUsed(meta)
 		metrics = append(metrics, containerMetrics...)
 	}
@@ -197,6 +211,7 @@ func (p *podResourceCollector) collectPodResUsed() {
 	}
 
 	p.sharedState.UpdatePodUsage(CollectorName, allCPUUsageCores, allMemoryUsage)
+	p.sharedState.UpdatePodsNUMAMemoryUsage(CollectorName, allNUMAMemoryUsage)
 
 	// update collect time
 	p.started.Store(true)
