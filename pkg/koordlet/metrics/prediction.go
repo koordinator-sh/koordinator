@@ -25,8 +25,15 @@ var (
 		Help:      "the node reclaimable resources predicted by koordinator",
 	}, []string{NodeKey, PredictorKey, ResourceKey, UnitKey})
 
+	NodePredictedResourcePeak = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Subsystem: KoordletSubsystem,
+		Name:      "node_predicted_resource_peak",
+		Help:      "the node peak resources predicted by koordinator",
+	}, []string{NodeKey, PredictorKey, ResourceKey, UnitKey})
+
 	PredictionCollectors = []prometheus.Collector{
 		NodePredictedResourceReclaimable,
+		NodePredictedResourcePeak,
 	}
 )
 
@@ -39,4 +46,15 @@ func RecordNodePredictedResourceReclaimable(resourceName string, unit string, pr
 	labels[ResourceKey] = resourceName
 	labels[UnitKey] = unit
 	NodePredictedResourceReclaimable.With(labels).Set(value)
+}
+
+func RecordNodePredictedResourcePeak(resourceName string, unit string, predictor string, value float64) {
+	labels := genNodeLabels()
+	if labels == nil {
+		return
+	}
+	labels[PredictorKey] = predictor
+	labels[ResourceKey] = resourceName
+	labels[UnitKey] = unit
+	NodePredictedResourcePeak.With(labels).Set(value)
 }
