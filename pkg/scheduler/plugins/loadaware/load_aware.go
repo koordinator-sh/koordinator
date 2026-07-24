@@ -18,14 +18,17 @@ package loadaware
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	resourceapi "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 
@@ -62,6 +65,7 @@ const (
 
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.SignPlugin        = &Plugin{}
 
 	_ fwktype.PreFilterPlugin = &Plugin{}
 	_ fwktype.FilterPlugin    = &Plugin{}
@@ -134,6 +138,83 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+// SignPod captures the pod-level inputs this plugin reads in Filter and
+// Score that are NOT already signed by an upstream in-tree plugin. Each
+// plugin in the profile contributes its own fragments and the per-pod
+// signature is the union, so inputs already covered by default k8s
+// plugins are skipped here:
+//
+//   - pod resource requests: upstream noderesources/fit.SignPod already
+//     signs pod requests, and DefaultEstimator.EstimatePod reads the
+//     same aggregate via resourceapi.PodRequests; any request-driven
+//     differentiation is therefore already reflected in the overall
+//     pod signature without a duplicate fragment here.
+//
+// The plugin-unique inputs are:
+//
+//   - Priority class chooses between Prod and general usage thresholds
+//     and also translates ResourceCPU/Memory names inside estimation.
+//   - DaemonSet ownership short-circuits Filter (load_aware.go:168), so
+//     a DaemonSet pod and a non-DaemonSet pod with the same priority
+//     would otherwise share a signature but be filtered differently.
+//   - Aggregate pod limits: DefaultEstimator.EstimatePod uses
+//     resourceapi.PodLimits when a container sets a larger limit than
+//     request, and upstream fit.SignPod does not sign limits.
+//   - Custom estimated-scaling-factors annotation: when allowCustomize
+//     is on, GetCustomEstimatedScalingFactors overrides the plugin-level
+//     factors per pod.
+func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	fragments := []fwktype.SignFragment{
+		{
+			Key:   "koord.LoadAware.priorityClass",
+			Value: string(extension.GetPodPriorityClassWithDefault(pod)),
+		},
+		{
+			Key:   "koord.LoadAware.daemonSetOwned",
+			Value: isDaemonSetPod(pod.OwnerReferences),
+		},
+	}
+	limits := resourceapi.PodLimits(pod, resourceapi.PodResourcesOptions{})
+	if len(limits) > 0 {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   "koord.LoadAware.limits",
+			Value: canonicalResourceList(limits),
+		})
+	}
+	// Parse and re-marshal the custom scaling factors so two pods with
+	// semantically equal factors (e.g. different whitespace) share a
+	// signature. Mirror GetCustomEstimatedScalingFactors' leniency: a
+	// malformed annotation silently falls back to plugin defaults inside
+	// EstimatePod, so it must fall back to "no fragment" here too to
+	// match a no-annotation pod's signature.
+	if factors := extension.GetCustomEstimatedScalingFactors(pod); len(factors) > 0 {
+		if b, err := json.Marshal(factors); err == nil {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   "koord.LoadAware.customScalingFactors",
+				Value: string(b),
+			})
+		}
+	}
+	return fragments, nil
+}
+
+// canonicalResourceList serializes a ResourceList into a sorted slice so
+// two pods with equal maps produce identical fragment values regardless
+// of iteration order.
+func canonicalResourceList(rl corev1.ResourceList) []string {
+	names := make([]string, 0, len(rl))
+	for n := range rl {
+		names = append(names, string(n))
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(rl))
+	for _, n := range names {
+		q := rl[corev1.ResourceName(n)]
+		out = append(out, n+"="+q.String())
+	}
+	return out
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
