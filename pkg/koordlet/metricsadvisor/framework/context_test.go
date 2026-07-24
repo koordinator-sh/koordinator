@@ -131,6 +131,31 @@ func TestSharedState_UpdatePodUsage(t *testing.T) {
 	}
 }
 
+func TestSharedState_UpdatePodsNUMAMemoryUsage(t *testing.T) {
+	now := time.Now()
+	r := NewSharedState()
+
+	t.Run("update pods NUMA memory usage", func(t *testing.T) {
+		r.UpdatePodsNUMAMemoryUsage("test-collector", map[int32]metriccache.Point{
+			0: {Timestamp: now, Value: 1024},
+			1: {Timestamp: now, Value: 2048},
+		})
+		got := r.GetPodsNUMAMemoryUsage()
+		assert.Equal(t, map[string]map[int32]metriccache.Point{
+			"test-collector": {
+				0: {Timestamp: now, Value: 1024},
+				1: {Timestamp: now, Value: 2048},
+			},
+		}, got)
+	})
+
+	t.Run("an empty map removes the collector entry", func(t *testing.T) {
+		r.UpdatePodsNUMAMemoryUsage("test-collector", map[int32]metriccache.Point{})
+		got := r.GetPodsNUMAMemoryUsage()
+		assert.Equal(t, map[string]map[int32]metriccache.Point{}, got)
+	})
+}
+
 func TestSharedState_UpdateHostAppUsage(t *testing.T) {
 	now := time.Now()
 	type args struct {

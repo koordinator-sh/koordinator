@@ -848,9 +848,400 @@ spec:
                           pairs.
                         type: object
                     type: object
+                  numaUsages:
+                    description: NUMAUsages contains the per-NUMA-node resource usage
+                    items:
+                      description: NUMAUsage defines the observed usage of a NUMA
+                        node
+                      properties:
+                        nodeUsage:
+                          description: |-
+                            NodeUsage is the total resource usage of this NUMA node. The memory usage is estimated from
+                            the per-NUMA meminfo which provides no MemAvailable field, so it can slightly differ from the
+                            node-level usage semantics (MemTotal - MemAvailable).
+                          properties:
+                            devices:
+                              items:
+                                properties:
+                                  conditions:
+                                    description: Conditions represents current conditions
+                                      of device
+                                    items:
+                                      description: Condition contains details for
+                                        one aspect of the current state of this API
+                                        Resource.
+                                      properties:
+                                        lastTransitionTime:
+                                          description: |-
+                                            lastTransitionTime is the last time the condition transitioned from one status to another.
+                                            This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                                          format: date-time
+                                          type: string
+                                        message:
+                                          description: |-
+                                            message is a human readable message indicating details about the transition.
+                                            This may be an empty string.
+                                          maxLength: 32768
+                                          type: string
+                                        observedGeneration:
+                                          description: |-
+                                            observedGeneration represents the .metadata.generation that the condition was set based upon.
+                                            For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                                            with respect to the current state of the instance.
+                                          format: int64
+                                          minimum: 0
+                                          type: integer
+                                        reason:
+                                          description: |-
+                                            reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                                            Producers of specific condition types may define expected values and meanings for this field,
+                                            and whether the values are considered a guaranteed API.
+                                            The value should be a CamelCase string.
+                                            This field may not be empty.
+                                          maxLength: 1024
+                                          minLength: 1
+                                          pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                                          type: string
+                                        status:
+                                          description: status of the condition, one
+                                            of True, False, Unknown.
+                                          enum:
+                                          - "True"
+                                          - "False"
+                                          - Unknown
+                                          type: string
+                                        type:
+                                          description: type of condition in CamelCase
+                                            or in foo.example.com/CamelCase.
+                                          maxLength: 316
+                                          pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                          type: string
+                                      required:
+                                      - lastTransitionTime
+                                      - message
+                                      - reason
+                                      - status
+                                      - type
+                                      type: object
+                                    type: array
+                                  health:
+                                    default: false
+                                    description: Health indicates whether the device
+                                      is normal
+                                    type: boolean
+                                  id:
+                                    description: UUID represents the UUID of device
+                                    type: string
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    description: Labels represents the device properties
+                                      that can be used to organize and categorize
+                                      (scope and select) objects
+                                    type: object
+                                  minor:
+                                    description: Minor represents the Minor number
+                                      of Device, starting from 0
+                                    format: int32
+                                    type: integer
+                                  moduleID:
+                                    description: ModuleID represents the physical
+                                      id of Device
+                                    format: int32
+                                    type: integer
+                                  resources:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: Resources is a set of (resource name,
+                                      quantity) pairs
+                                    type: object
+                                  topology:
+                                    description: Topology represents the topology
+                                      information about the device
+                                    properties:
+                                      busID:
+                                        description: BusID is the domain:bus:device.function
+                                          formatted identifier of PCI/PCIE device
+                                        type: string
+                                      nodeID:
+                                        description: NodeID is the ID of NUMA Node
+                                          to which the device belongs, it should be
+                                          unique across different CPU Sockets
+                                        format: int32
+                                        type: integer
+                                      pcieID:
+                                        description: PCIEID is the ID of PCIE Switch
+                                          to which the device is connected, it should
+                                          be unique across difference NUMANodes
+                                        type: string
+                                      socketID:
+                                        description: SocketID is the ID of CPU Socket
+                                          to which the device belongs
+                                        format: int32
+                                        type: integer
+                                    required:
+                                    - nodeID
+                                    - pcieID
+                                    - socketID
+                                    type: object
+                                  type:
+                                    description: Type represents the type of device
+                                    type: string
+                                  vfGroups:
+                                    description: VFGroups represents the virtual function
+                                      devices
+                                    items:
+                                      properties:
+                                        labels:
+                                          additionalProperties:
+                                            type: string
+                                          description: Labels represents the Virtual
+                                            Function properties that can be used to
+                                            organize and categorize (scope and select)
+                                            objects
+                                          type: object
+                                        vfs:
+                                          description: VFs are the virtual function
+                                            devices which belong to the group
+                                          items:
+                                            properties:
+                                              busID:
+                                                description: BusID is the domain:bus:device.function
+                                                  formatted identifier of PCI/PCIE
+                                                  virtual function device
+                                                type: string
+                                              minor:
+                                                description: Minor represents the
+                                                  Minor number of VirtualFunction,
+                                                  starting from 0, used to identify
+                                                  virtual function.
+                                                format: int32
+                                                type: integer
+                                            required:
+                                            - minor
+                                            type: object
+                                          type: array
+                                      type: object
+                                    type: array
+                                required:
+                                - health
+                                type: object
+                              type: array
+                            resources:
+                              additionalProperties:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: ResourceList is a set of (resource name,
+                                quantity) pairs.
+                              type: object
+                          type: object
+                        numaNodeID:
+                          description: NUMANodeID is the ID of the NUMA node
+                          format: int32
+                          type: integer
+                        systemUsage:
+                          description: |-
+                            SystemUsage is the system resource usage of this NUMA node;
+                            memory is calculated by `NUMA nodeUsage - sum(pod NUMA usage)` where the host application usage
+                            is not excluded, cpu is apportioned from the node-level system usage by the NUMA cpu usage ratio
+                          properties:
+                            devices:
+                              items:
+                                properties:
+                                  conditions:
+                                    description: Conditions represents current conditions
+                                      of device
+                                    items:
+                                      description: Condition contains details for
+                                        one aspect of the current state of this API
+                                        Resource.
+                                      properties:
+                                        lastTransitionTime:
+                                          description: |-
+                                            lastTransitionTime is the last time the condition transitioned from one status to another.
+                                            This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                                          format: date-time
+                                          type: string
+                                        message:
+                                          description: |-
+                                            message is a human readable message indicating details about the transition.
+                                            This may be an empty string.
+                                          maxLength: 32768
+                                          type: string
+                                        observedGeneration:
+                                          description: |-
+                                            observedGeneration represents the .metadata.generation that the condition was set based upon.
+                                            For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                                            with respect to the current state of the instance.
+                                          format: int64
+                                          minimum: 0
+                                          type: integer
+                                        reason:
+                                          description: |-
+                                            reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                                            Producers of specific condition types may define expected values and meanings for this field,
+                                            and whether the values are considered a guaranteed API.
+                                            The value should be a CamelCase string.
+                                            This field may not be empty.
+                                          maxLength: 1024
+                                          minLength: 1
+                                          pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                                          type: string
+                                        status:
+                                          description: status of the condition, one
+                                            of True, False, Unknown.
+                                          enum:
+                                          - "True"
+                                          - "False"
+                                          - Unknown
+                                          type: string
+                                        type:
+                                          description: type of condition in CamelCase
+                                            or in foo.example.com/CamelCase.
+                                          maxLength: 316
+                                          pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                          type: string
+                                      required:
+                                      - lastTransitionTime
+                                      - message
+                                      - reason
+                                      - status
+                                      - type
+                                      type: object
+                                    type: array
+                                  health:
+                                    default: false
+                                    description: Health indicates whether the device
+                                      is normal
+                                    type: boolean
+                                  id:
+                                    description: UUID represents the UUID of device
+                                    type: string
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    description: Labels represents the device properties
+                                      that can be used to organize and categorize
+                                      (scope and select) objects
+                                    type: object
+                                  minor:
+                                    description: Minor represents the Minor number
+                                      of Device, starting from 0
+                                    format: int32
+                                    type: integer
+                                  moduleID:
+                                    description: ModuleID represents the physical
+                                      id of Device
+                                    format: int32
+                                    type: integer
+                                  resources:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: Resources is a set of (resource name,
+                                      quantity) pairs
+                                    type: object
+                                  topology:
+                                    description: Topology represents the topology
+                                      information about the device
+                                    properties:
+                                      busID:
+                                        description: BusID is the domain:bus:device.function
+                                          formatted identifier of PCI/PCIE device
+                                        type: string
+                                      nodeID:
+                                        description: NodeID is the ID of NUMA Node
+                                          to which the device belongs, it should be
+                                          unique across different CPU Sockets
+                                        format: int32
+                                        type: integer
+                                      pcieID:
+                                        description: PCIEID is the ID of PCIE Switch
+                                          to which the device is connected, it should
+                                          be unique across difference NUMANodes
+                                        type: string
+                                      socketID:
+                                        description: SocketID is the ID of CPU Socket
+                                          to which the device belongs
+                                        format: int32
+                                        type: integer
+                                    required:
+                                    - nodeID
+                                    - pcieID
+                                    - socketID
+                                    type: object
+                                  type:
+                                    description: Type represents the type of device
+                                    type: string
+                                  vfGroups:
+                                    description: VFGroups represents the virtual function
+                                      devices
+                                    items:
+                                      properties:
+                                        labels:
+                                          additionalProperties:
+                                            type: string
+                                          description: Labels represents the Virtual
+                                            Function properties that can be used to
+                                            organize and categorize (scope and select)
+                                            objects
+                                          type: object
+                                        vfs:
+                                          description: VFs are the virtual function
+                                            devices which belong to the group
+                                          items:
+                                            properties:
+                                              busID:
+                                                description: BusID is the domain:bus:device.function
+                                                  formatted identifier of PCI/PCIE
+                                                  virtual function device
+                                                type: string
+                                              minor:
+                                                description: Minor represents the
+                                                  Minor number of VirtualFunction,
+                                                  starting from 0, used to identify
+                                                  virtual function.
+                                                format: int32
+                                                type: integer
+                                            required:
+                                            - minor
+                                            type: object
+                                          type: array
+                                      type: object
+                                    type: array
+                                required:
+                                - health
+                                type: object
+                              type: array
+                            resources:
+                              additionalProperties:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: ResourceList is a set of (resource name,
+                                quantity) pairs.
+                              type: object
+                          type: object
+                      required:
+                      - numaNodeID
+                      type: object
+                    type: array
                   systemUsage:
-                    description: SystemUsage is the resource usage of daemon processes
-                      and OS kernel, calculated by `NodeUsage - sum(podUsage)`
+                    description: |-
+                      SystemUsage is the resource usage of daemon processes and OS kernel, calculated by
+                      `NodeUsage - sum(podUsage) - sum(hostApplicationUsage)`
                     properties:
                       devices:
                         items:
@@ -1234,6 +1625,196 @@ spec:
                       type: string
                   type: object
                 type: array
+              prodPeakMetric:
+                description: ProdPeakMetric is the predicted peak of Prod type resources
+                properties:
+                  resource:
+                    description: |-
+                      Resource is the predicted peak resource usage of the prediction.
+                      For the Prod peak, the value includes the usage of the system components, is already scaled
+                      with the prediction safety margin, and conservatively counts the requests of the pods without
+                      valid predictions (e.g. in cold start), so consumers should NOT apply an extra safety margin.
+                    properties:
+                      devices:
+                        items:
+                          properties:
+                            conditions:
+                              description: Conditions represents current conditions
+                                of device
+                              items:
+                                description: Condition contains details for one aspect
+                                  of the current state of this API Resource.
+                                properties:
+                                  lastTransitionTime:
+                                    description: |-
+                                      lastTransitionTime is the last time the condition transitioned from one status to another.
+                                      This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                                    format: date-time
+                                    type: string
+                                  message:
+                                    description: |-
+                                      message is a human readable message indicating details about the transition.
+                                      This may be an empty string.
+                                    maxLength: 32768
+                                    type: string
+                                  observedGeneration:
+                                    description: |-
+                                      observedGeneration represents the .metadata.generation that the condition was set based upon.
+                                      For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                                      with respect to the current state of the instance.
+                                    format: int64
+                                    minimum: 0
+                                    type: integer
+                                  reason:
+                                    description: |-
+                                      reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                                      Producers of specific condition types may define expected values and meanings for this field,
+                                      and whether the values are considered a guaranteed API.
+                                      The value should be a CamelCase string.
+                                      This field may not be empty.
+                                    maxLength: 1024
+                                    minLength: 1
+                                    pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                                    type: string
+                                  status:
+                                    description: status of the condition, one of True,
+                                      False, Unknown.
+                                    enum:
+                                    - "True"
+                                    - "False"
+                                    - Unknown
+                                    type: string
+                                  type:
+                                    description: type of condition in CamelCase or
+                                      in foo.example.com/CamelCase.
+                                    maxLength: 316
+                                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                    type: string
+                                required:
+                                - lastTransitionTime
+                                - message
+                                - reason
+                                - status
+                                - type
+                                type: object
+                              type: array
+                            health:
+                              default: false
+                              description: Health indicates whether the device is
+                                normal
+                              type: boolean
+                            id:
+                              description: UUID represents the UUID of device
+                              type: string
+                            labels:
+                              additionalProperties:
+                                type: string
+                              description: Labels represents the device properties
+                                that can be used to organize and categorize (scope
+                                and select) objects
+                              type: object
+                            minor:
+                              description: Minor represents the Minor number of Device,
+                                starting from 0
+                              format: int32
+                              type: integer
+                            moduleID:
+                              description: ModuleID represents the physical id of
+                                Device
+                              format: int32
+                              type: integer
+                            resources:
+                              additionalProperties:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              description: Resources is a set of (resource name, quantity)
+                                pairs
+                              type: object
+                            topology:
+                              description: Topology represents the topology information
+                                about the device
+                              properties:
+                                busID:
+                                  description: BusID is the domain:bus:device.function
+                                    formatted identifier of PCI/PCIE device
+                                  type: string
+                                nodeID:
+                                  description: NodeID is the ID of NUMA Node to which
+                                    the device belongs, it should be unique across
+                                    different CPU Sockets
+                                  format: int32
+                                  type: integer
+                                pcieID:
+                                  description: PCIEID is the ID of PCIE Switch to
+                                    which the device is connected, it should be unique
+                                    across difference NUMANodes
+                                  type: string
+                                socketID:
+                                  description: SocketID is the ID of CPU Socket to
+                                    which the device belongs
+                                  format: int32
+                                  type: integer
+                              required:
+                              - nodeID
+                              - pcieID
+                              - socketID
+                              type: object
+                            type:
+                              description: Type represents the type of device
+                              type: string
+                            vfGroups:
+                              description: VFGroups represents the virtual function
+                                devices
+                              items:
+                                properties:
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    description: Labels represents the Virtual Function
+                                      properties that can be used to organize and
+                                      categorize (scope and select) objects
+                                    type: object
+                                  vfs:
+                                    description: VFs are the virtual function devices
+                                      which belong to the group
+                                    items:
+                                      properties:
+                                        busID:
+                                          description: BusID is the domain:bus:device.function
+                                            formatted identifier of PCI/PCIE virtual
+                                            function device
+                                          type: string
+                                        minor:
+                                          description: Minor represents the Minor
+                                            number of VirtualFunction, starting from
+                                            0, used to identify virtual function.
+                                          format: int32
+                                          type: integer
+                                      required:
+                                      - minor
+                                      type: object
+                                    type: array
+                                type: object
+                              type: array
+                          required:
+                          - health
+                          type: object
+                        type: array
+                      resources:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: ResourceList is a set of (resource name, quantity)
+                          pairs.
+                        type: object
+                    type: object
+                type: object
               prodReclaimableMetric:
                 description: ProdReclaimableMetric is the indicator statistics of
                   Prod type resources reclaimable
