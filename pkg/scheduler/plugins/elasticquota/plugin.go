@@ -23,6 +23,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
@@ -356,34 +357,78 @@ func (g *Plugin) getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod *corev1.Pod) 
 	}
 	return extension.DefaultQuotaName, ""
 }
+func toElasticQuota(obj interface{}) *apiv1alpha1.ElasticQuota {
+	if obj == nil {
+		return nil
+	}
+
+	var unstructuredObj *unstructured.Unstructured
+	switch t := obj.(type) {
+	case *apiv1alpha1.ElasticQuota:
+		return t
+	case *unstructured.Unstructured:
+		unstructuredObj = t
+	case cache.DeletedFinalStateUnknown:
+		switch inner := t.Obj.(type) {
+		case *apiv1alpha1.ElasticQuota:
+			return inner
+		case *unstructured.Unstructured:
+			unstructuredObj = inner
+		default:
+			klog.Errorf("Unable to handle quota object wrapped in DeletedFinalStateUnknown, type %T", t.Obj)
+			return nil
+		}
+	default:
+		klog.Errorf("Unable to handle quota object in %T", obj)
+		return nil
+	}
+
+	if unstructuredObj == nil || unstructuredObj.Object == nil {
+		klog.Errorf("Fail to convert quota object, unstructured object or its content is nil")
+		return nil
+	}
+
+	quota := &apiv1alpha1.ElasticQuota{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObj.Object, quota); err != nil {
+		klog.Errorf("Fail to convert unstructured object %v to ElasticQuota: %v", obj, err)
+		return nil
+	}
+	return quota
+}
 
 // isSchedulableAfterQuotaChanged determines if a pod becomes schedulable after quota is updated.
 // QueueAfterBackoff is default queueingHintFn behavior.
 func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	originalQuota, modifiedQuota, err := schedutil.As[*apiv1alpha1.ElasticQuota](oldObj, newObj)
-	if err != nil {
-		logger.Error(err, "Failed to convert oldObj or newObj to ElasticQuota", "oldObj", oldObj, "newObj", newObj)
-		return fwktype.Queue, nil
-	}
+	originalQuota := toElasticQuota(oldObj)
+	modifiedQuota := toElasticQuota(newObj)
 
 	if originalQuota == nil || modifiedQuota == nil {
+		logger.V(5).Info("ElasticQuota QueueHint: Queue, originalQuota or modifiedQuota is nil",
+			"pod", klog.KObj(pod))
 		return fwktype.Queue, nil
 	}
 
 	// Use snapshot to get pod quota name and tree ID without locking
 	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod)
 	if podQuotaName == "" {
+		logger.V(5).Info("ElasticQuota QueueHint: QueueSkip, pod has no associated quota",
+			"pod", klog.KObj(pod), "modifiedQuota", modifiedQuota.Name)
 		return fwktype.QueueSkip, nil
 	}
 
 	// Check if modified quota is in the same tree as the pod
 	modifiedQuotaTreeID := extension.GetQuotaTreeID(modifiedQuota)
 	if modifiedQuotaTreeID != podTreeID {
+		logger.V(5).Info("ElasticQuota QueueHint: QueueSkip, modified quota is in a different tree",
+			"pod", klog.KObj(pod), "podQuota", podQuotaName, "podTreeID", podTreeID,
+			"modifiedQuota", modifiedQuota.Name, "modifiedQuotaTreeID", modifiedQuotaTreeID)
 		return fwktype.QueueSkip, nil
 	}
 
 	mgr := g.GetGroupQuotaManagerForTree(podTreeID)
 	if mgr == nil {
+		logger.V(5).Info("ElasticQuota QueueHint: QueueSkip, no GroupQuotaManager for tree",
+			"pod", klog.KObj(pod), "podQuota", podQuotaName, "podTreeID", podTreeID)
 		return fwktype.QueueSkip, nil
 	}
 
@@ -393,12 +438,16 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 
 	hasChanged := oldQuotaInfo.IsQuotaChange(newQuotaInfo) || mgr.IsQuotaUpdated(oldQuotaInfo, newQuotaInfo, modifiedQuota)
 	if !hasChanged {
+		logger.V(5).Info("ElasticQuota QueueHint: QueueSkip, modified quota has no meaningful change",
+			"pod", klog.KObj(pod), "podQuota", podQuotaName, "modifiedQuota", modifiedQuota.Name)
 		return fwktype.QueueSkip, nil
 	}
 
 	// Quota has changed, check if modified quota is in the pod's path to root
 	if modifiedQuota.Name == podQuotaName {
 		// Modified quota is the pod's quota, allow queueing
+		logger.V(5).Info("ElasticQuota QueueHint: Queue, modified quota is the pod's quota",
+			"pod", klog.KObj(pod), "podQuota", podQuotaName)
 		return fwktype.Queue, nil
 	}
 
@@ -407,6 +456,9 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 		snapshot, exists := g.getQuotaSnapshot(podTreeID)
 
 		if !exists || snapshot == nil {
+			logger.V(5).Info("ElasticQuota QueueHint: Queue, quota snapshot not found for tree",
+				"pod", klog.KObj(pod), "podQuota", podQuotaName, "podTreeID", podTreeID,
+				"modifiedQuota", modifiedQuota.Name)
 			return fwktype.Queue, nil
 		}
 
@@ -414,12 +466,18 @@ func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.
 		parentPath := snapshot.GetQuotaPathToRoot(podQuotaName)
 		for _, quotaNameInPath := range parentPath {
 			if quotaNameInPath == modifiedQuota.Name {
+				logger.V(5).Info("ElasticQuota QueueHint: Queue, modified quota is on the pod's path to root",
+					"pod", klog.KObj(pod), "podQuota", podQuotaName, "modifiedQuota", modifiedQuota.Name,
+					"parentPath", parentPath)
 				return fwktype.Queue, nil
 			}
 		}
 	}
 
 	// Modified quota is not in the pod's path to root, skip
+	logger.V(5).Info("ElasticQuota QueueHint: QueueSkip, modified quota is not on the pod's path to root",
+		"pod", klog.KObj(pod), "podQuota", podQuotaName, "modifiedQuota", modifiedQuota.Name,
+		"enableCheckParentQuota", g.pluginArgs.EnableCheckParentQuota)
 	return fwktype.QueueSkip, nil
 }
 
@@ -433,38 +491,52 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 	}
 
 	if deletedPod == nil {
+		logger.V(5).Info("isSchedulableAfterPodDeletion: Queue, deletedPod is nil", "pod", klog.KObj(pod))
 		return fwktype.Queue, nil
 	}
 
 	// Use snapshot to get quota names and tree IDs without locking
 	deletedPodQuotaName, deletedPodTreeID := g.getPodAssociateQuotaNameAndTreeIDFromSnapshot(deletedPod)
 	if deletedPodQuotaName == "" {
+		logger.V(5).Info("isSchedulableAfterPodDeletion: QueueSkip, deleted pod has no associated quota",
+			"pod", klog.KObj(pod), "deletedPod", klog.KObj(deletedPod))
 		return fwktype.QueueSkip, nil
 	}
 
 	podQuotaName, podTreeID := g.getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod)
 	if podQuotaName == "" {
+		logger.V(5).Info("isSchedulableAfterPodDeletion: QueueSkip, unschedulable pod has no associated quota",
+			"pod", klog.KObj(pod), "deletedPod", klog.KObj(deletedPod))
 		return fwktype.QueueSkip, nil
 	}
 
 	// Check if deleted pod and unschedulable pod are in the same tree
 	if deletedPodTreeID != podTreeID {
+		logger.V(5).Info("isSchedulableAfterPodDeletion: QueueSkip, deleted pod is in a different tree",
+			"pod", klog.KObj(pod), "podQuota", podQuotaName, "podTreeID", podTreeID,
+			"deletedPod", klog.KObj(deletedPod), "deletedPodQuota", deletedPodQuotaName, "deletedPodTreeID", deletedPodTreeID)
 		return fwktype.QueueSkip, nil
 	}
 
 	snapshot, exists := g.getQuotaSnapshot(podTreeID)
 	if !exists || snapshot == nil {
+		logger.V(5).Info("isSchedulableAfterPodDeletion: Queue, quota snapshot not found for tree",
+			"pod", klog.KObj(pod), "podTreeID", podTreeID)
 		return fwktype.Queue, nil
 	}
 
 	// Get quota info from snapshot and check if pod is assigned
 	quotaInfo := snapshot.GetQuotaInfoByName(deletedPodQuotaName)
 	if quotaInfo != nil && !quotaInfo.CheckPodIsAssigned(deletedPod) {
+		logger.V(5).Info("isSchedulableAfterPodDeletion: QueueSkip, deleted pod was not assigned to quota (no resource released)",
+			"pod", klog.KObj(pod), "deletedPod", klog.KObj(deletedPod), "deletedPodQuota", deletedPodQuotaName)
 		return fwktype.QueueSkip, nil
 	}
 
 	if deletedPodQuotaName == podQuotaName {
 		// Deleted pod is in the same quota as the unschedulable pod, allow queueing
+		logger.V(5).Info("isSchedulableAfterPodDeletion: Queue, deleted pod shares the same quota",
+			"pod", klog.KObj(pod), "podQuota", podQuotaName, "deletedPod", klog.KObj(deletedPod))
 		return fwktype.Queue, nil
 	}
 
@@ -475,12 +547,18 @@ func (g *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.P
 		for _, quotaNameInPath := range parentPath {
 			if quotaNameInPath == deletedPodQuotaName {
 				// Deleted pod's quota is in the path to root, allow queueing
+				logger.V(5).Info("isSchedulableAfterPodDeletion: Queue, deleted pod's quota is on the pod's path to root",
+					"pod", klog.KObj(pod), "podQuota", podQuotaName, "deletedPod", klog.KObj(deletedPod),
+					"deletedPodQuota", deletedPodQuotaName, "parentPath", parentPath)
 				return fwktype.Queue, nil
 			}
 		}
 	}
 
 	// Deleted pod's quota is not in the unschedulable pod's path to root, skip
+	logger.V(5).Info("isSchedulableAfterPodDeletion: QueueSkip, deleted pod's quota is not on the pod's path to root",
+		"pod", klog.KObj(pod), "podQuota", podQuotaName, "deletedPod", klog.KObj(deletedPod),
+		"deletedPodQuota", deletedPodQuotaName, "enableCheckParentQuota", g.pluginArgs.EnableCheckParentQuota)
 	return fwktype.QueueSkip, nil
 }
 
