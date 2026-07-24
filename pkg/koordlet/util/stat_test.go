@@ -94,6 +94,78 @@ func Test_GetCPUStatUsageTicks(t *testing.T) {
 	t.Log("get cpu stat usage ticks ", cpuStatUsage)
 }
 
+func Test_readPerCPUStat(t *testing.T) {
+	tempDir := t.TempDir()
+	tempInvalidStatPath := filepath.Join(tempDir, "no_stat")
+	tempStatPath := filepath.Join(tempDir, "stat")
+	statContentStr := "cpu  514003 37519 593580 1706155242 5134 45033 38832 0 0 0\n" +
+		"cpu0 9755 845 15540 26635869 3021 2312 9724 0 0 0\n" +
+		"cpu1 10075 664 10790 26653871 214 973 1163 0 0 0\n" +
+		"intr 574218032 193 0 0 0 4209 0 0 225 131056 131080 130910 130673 130935 130681 130682 130949 131048\n" +
+		"ctxt 701110258\n"
+	err := os.WriteFile(tempStatPath, []byte(statContentStr), 0666)
+	if err != nil {
+		t.Error(err)
+	}
+	tempNoPerCPUStatPath := filepath.Join(tempDir, "stat_no_percpu")
+	err = os.WriteFile(tempNoPerCPUStatPath, []byte("cpu  514003 37519 593580 1706155242 5134 45033 38832 0 0 0\nctxt 701110258\n"), 0666)
+	if err != nil {
+		t.Error(err)
+	}
+	tempBadStatPath := filepath.Join(tempDir, "stat_bad")
+	err = os.WriteFile(tempBadStatPath, []byte("cpu0 9755 845 bad 26635869 3021 2312 9724 0 0 0\n"), 0666)
+	if err != nil {
+		t.Error(err)
+	}
+
+	tests := []struct {
+		name     string
+		statPath string
+		want     map[int32]uint64
+		wantErr  bool
+	}{
+		{
+			name:     "read illegal stat",
+			statPath: tempInvalidStatPath,
+			want:     nil,
+			wantErr:  true,
+		},
+		{
+			name:     "read per-cpu stat",
+			statPath: tempStatPath,
+			want: map[int32]uint64{
+				// user + nice + system + irq + softirq
+				0: 9755 + 845 + 15540 + 2312 + 9724,
+				1: 10075 + 664 + 10790 + 973 + 1163,
+			},
+			wantErr: false,
+		},
+		{
+			name:     "no per-cpu line",
+			statPath: tempNoPerCPUStatPath,
+			want:     nil,
+			wantErr:  true,
+		},
+		{
+			name:     "bad per-cpu line",
+			statPath: tempBadStatPath,
+			want:     nil,
+			wantErr:  true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := readPerCPUStat(tt.statPath)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("readPerCPUStat wantErr %v but got err %v", tt.wantErr, err)
+			}
+			if !tt.wantErr {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
 func Test_GetContainerPerfCollector(t *testing.T) {
 	tempDir := t.TempDir()
 	containerStatus := &corev1.ContainerStatus{

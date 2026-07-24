@@ -26,11 +26,15 @@ var (
 	NodeGPUCoreUsageMetric             = defaultMetricFactory.New(NodeMetricGPUCoreUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 	NodeGPUMemUsageMetric              = defaultMetricFactory.New(NodeMetricGPUMemUsage).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
 	NodeGPUMemTotalMetric              = defaultMetricFactory.New(NodeMetricGPUMemTotal).withPropertySchema(MetricPropertyGPUMinor, MetricPropertyGPUDeviceUUID)
+	NodeNUMACPUUsageMetric             = defaultMetricFactory.New(NodeMetricNUMACPUUsage).withPropertySchema(MetricPropertyNUMANodeID)
+	NodeNUMAMemoryUsageMetric          = defaultMetricFactory.New(NodeMetricNUMAMemoryUsage).withPropertySchema(MetricPropertyNUMANodeID)
 
 	// define system resource usage as independent metric, although this can be calculate by node-sum(pod), but the time series are
 	// unaligned across different type of metric, which makes it hard to aggregate.
-	SystemCPUUsageMetric    = defaultMetricFactory.New(SysMetricCPUUsage)
-	SystemMemoryUsageMetric = defaultMetricFactory.New(SysMetricMemoryUsage)
+	SystemCPUUsageMetric        = defaultMetricFactory.New(SysMetricCPUUsage)
+	SystemMemoryUsageMetric     = defaultMetricFactory.New(SysMetricMemoryUsage)
+	SystemNUMACPUUsageMetric    = defaultMetricFactory.New(SysMetricNUMACPUUsage).withPropertySchema(MetricPropertyNUMANodeID)
+	SystemNUMAMemoryUsageMetric = defaultMetricFactory.New(SysMetricNUMAMemoryUsage).withPropertySchema(MetricPropertyNUMANodeID)
 
 	PodCPUUsageMetric                 = defaultMetricFactory.New(PodMetricCPUUsage).withPropertySchema(MetricPropertyPodUID)
 	PodMemUsageMetric                 = defaultMetricFactory.New(PodMetricMemoryUsage).withPropertySchema(MetricPropertyPodUID)
