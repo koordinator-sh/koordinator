@@ -45,6 +45,7 @@ import (
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/features"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/indexer"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/networktopology"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
@@ -571,18 +572,27 @@ func (f *FrameworkExtenderFactory) StartSharedCaches(ctx context.Context, inform
 		// registration failure leaves the factory un-started (sharedCachesStarted stays
 		// false, no snapshot published) and returns an error for the caller to fail fast
 		// on, rather than a partially-started state that later calls would skip.
-		if _, err := informerFactory.Core().V1().Pods().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    f.dispatchPodAdd,
-			UpdateFunc: f.dispatchPodUpdate,
-			DeleteFunc: f.dispatchPodDelete,
-		}); err != nil {
+		//
+		// Use ForceSyncFromInformer (not a bare AddEventHandler) so the dispatcher's
+		// registrations are collected into WaitForHandlersSync: the scheduler then waits
+		// for these handlers to drain their initial pod/node list into the shared caches
+		// before the first scheduling cycle, so a shared cache is never read while still
+		// unpopulated. This preserves the sync guarantee the per-plugin handlers had before
+		// they were centralized here.
+		if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), informerFactory,
+			informerFactory.Core().V1().Pods().Informer(), cache.ResourceEventHandlerFuncs{
+				AddFunc:    f.dispatchPodAdd,
+				UpdateFunc: f.dispatchPodUpdate,
+				DeleteFunc: f.dispatchPodDelete,
+			}); err != nil {
 			return fmt.Errorf("failed to register shared cache pod event handler, err: %w", err)
 		}
-		if _, err := informerFactory.Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    f.dispatchNodeAdd,
-			UpdateFunc: f.dispatchNodeUpdate,
-			DeleteFunc: f.dispatchNodeDelete,
-		}); err != nil {
+		if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), informerFactory,
+			informerFactory.Core().V1().Nodes().Informer(), cache.ResourceEventHandlerFuncs{
+				AddFunc:    f.dispatchNodeAdd,
+				UpdateFunc: f.dispatchNodeUpdate,
+				DeleteFunc: f.dispatchNodeDelete,
+			}); err != nil {
 			return fmt.Errorf("failed to register shared cache node event handler, err: %w", err)
 		}
 		// Publish the immutable snapshot for lock-free dispatch. Events cannot arrive until
@@ -603,6 +613,11 @@ func (f *FrameworkExtenderFactory) StartSharedCaches(ctx context.Context, inform
 
 // dispatchCaches returns the immutable snapshot of registered shared caches published by
 // StartSharedCaches. Read lock-free on every event — no mutex, no allocation.
+//
+// TODO: the dispatch* methods below invoke each cache's handler sequentially. The end-state
+// goal is parallel-by-default dispatch with an opt-in serial mode, so the shared dispatcher
+// does not regress event-handling latency compared to the original per-profile handler
+// pattern. Deferred to the unified event-dispatcher phase (PR-3).
 func (f *FrameworkExtenderFactory) dispatchCaches() []SharedPluginCache {
 	if p := f.startedCaches.Load(); p != nil {
 		return *p
