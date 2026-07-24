@@ -49,6 +49,10 @@ var podPool = &sync.Pool{
 type Scheduler interface {
 	GetCache() SchedulerCache
 	GetSchedulingQueue() SchedulingQueue
+	// StopEverything returns the scheduler's shutdown channel (Scheduler.StopEverything), closed when
+	// the scheduler shuts down. It has the same lifecycle as the context passed to Scheduler.Run and is
+	// used to scope asynchronous work such as the inline batch binding cycle to the scheduler's lifetime.
+	StopEverything() <-chan struct{}
 }
 
 type SchedulerCache interface {
@@ -89,6 +93,10 @@ func (s *SchedulerAdapter) GetCache() SchedulerCache {
 
 func (s *SchedulerAdapter) GetSchedulingQueue() SchedulingQueue {
 	return &queueAdapter{s.Scheduler}
+}
+
+func (s *SchedulerAdapter) StopEverything() <-chan struct{} {
+	return s.Scheduler.StopEverything
 }
 
 func (s *SchedulerAdapter) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event fwktype.ClusterEvent, oldObj, newObj interface{}, preCheck PreEnqueueCheck) {
@@ -207,6 +215,7 @@ type FakeScheduler struct {
 	Queue      *FakeQueue
 	lock       sync.Mutex
 	NodeInfos  map[string]*framework.NodeInfo
+	StopCh     <-chan struct{}
 }
 
 func NewFakeScheduler() *FakeScheduler {
@@ -246,6 +255,10 @@ func (f *FakeScheduler) GetCache() SchedulerCache {
 
 func (f *FakeScheduler) GetSchedulingQueue() SchedulingQueue {
 	return f.Queue
+}
+
+func (f *FakeScheduler) StopEverything() <-chan struct{} {
+	return f.StopCh
 }
 
 func (f *FakeScheduler) AddPod(logger klog.Logger, pod *corev1.Pod) error {

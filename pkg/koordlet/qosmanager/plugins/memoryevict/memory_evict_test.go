@@ -991,6 +991,13 @@ func Test_getPodEvictInfoAndSortByPriority(t *testing.T) {
 	pod5 := createMemoryEvictTestPodWithLabels("test_podPriority_120_4000", apiext.QoSBE, 120, map[string]string{apiext.LabelPodEvictEnabled: "true", apiext.LabelPodPriority: "4000"}, corev1.PodRunning)
 	pod6 := createMemoryEvictTestPodWithLabels("test_podPriority_100_9999", apiext.QoSBE, 100, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
 	pod7 := createMemoryEvictTestPodWithLabels("test_podPriority_100_9999_1", apiext.QoSBE, 100, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
+	podEvictPriority100 := createMemoryEvictTestPodWithLabels("test_evictPriority_100", apiext.QoSBE, 120, map[string]string{apiext.LabelPodEvictEnabled: "true", apiext.LabelPodPriority: "3000"}, corev1.PodRunning)
+	podEvictPriority100.Annotations = map[string]string{apiext.AnnotationPodEvictionPriority: "100"}
+	podEvictPriorityNegative := createMemoryEvictTestPodWithLabels("test_evictPriority_negative", apiext.QoSBE, 120, map[string]string{apiext.LabelPodEvictEnabled: "true", apiext.LabelPodPriority: "4000"}, corev1.PodRunning)
+	podEvictPriorityNegative.Annotations = map[string]string{apiext.AnnotationPodEvictionPriority: "-1"}
+	podEvictPriorityUnset := createMemoryEvictTestPodWithLabels("test_evictPriority_unset", apiext.QoSBE, 100, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
+	podEvictPriorityInvalid := createMemoryEvictTestPodWithLabels("test_evictPriority_invalid", apiext.QoSBE, 120, map[string]string{apiext.LabelPodEvictEnabled: "true"}, corev1.PodRunning)
+	podEvictPriorityInvalid.Annotations = map[string]string{apiext.AnnotationPodEvictionPriority: "invalid"}
 	tests := []struct {
 		name                string
 		pods                []*corev1.Pod
@@ -1022,6 +1029,28 @@ func Test_getPodEvictInfoAndSortByPriority(t *testing.T) {
 				EvictEnabledPriorityThreshold: ptr.To[int32](3000),
 			}, // >91.2G
 			expectPodEvictNames: []string{"test_podPriority_100_9999_1", "test_podPriority_100_9999", "test_podPriority_120_2000", "test_podPriority_120_3000", "test_podPriority_120_4000"},
+		},
+		{
+			name: "test_memoryevict_sort_by_eviction_priority_annotation",
+			node: testutil.MockTestNode("80", "120G"),
+			pods: []*corev1.Pod{
+				podEvictPriority100, podEvictPriorityNegative, podEvictPriorityUnset, podEvictPriorityInvalid,
+			},
+			nodeMemUsed: resource.MustParse("115G"),
+			podMetrics: []podMemSample{
+				{UID: "test_evictPriority_100", MemUsed: resource.MustParse("40G")},
+				{UID: "test_evictPriority_negative", MemUsed: resource.MustParse("5G")},
+				{UID: "test_evictPriority_unset", MemUsed: resource.MustParse("10G")},
+				{UID: "test_evictPriority_invalid", MemUsed: resource.MustParse("20G")},
+			},
+			thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
+				Enable:                        ptr.To[bool](true),
+				MemoryEvictThresholdPercent:   ptr.To[int64](80),
+				EvictEnabledPriorityThreshold: ptr.To[int32](3000),
+			},
+			// eviction-priority takes precedence over spec.priority and the priority label:
+			// -1 < 0 (unset, spec.priority 100) < 0 (invalid, spec.priority 120) < 100
+			expectPodEvictNames: []string{"test_evictPriority_negative", "test_evictPriority_unset", "test_evictPriority_invalid", "test_evictPriority_100"},
 		},
 	}
 	for _, tt := range tests {

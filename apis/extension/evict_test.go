@@ -96,3 +96,70 @@ func Test_PodEvictDisabled(t *testing.T) {
 		})
 	}
 }
+
+func Test_GetPodEvictionPriority(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		expected int32
+		wantErr  bool
+	}{
+		{
+			name:     "nil pod",
+			pod:      nil,
+			expected: 0,
+		},
+		{
+			name: "no annotation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"xxx": "xxx",
+					},
+				},
+			},
+			expected: 0,
+		},
+		{
+			name: "invalid value",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationPodEvictionPriority: "xxx",
+					},
+				},
+			},
+			expected: 0,
+			wantErr:  true,
+		},
+		{
+			name: "positive value",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationPodEvictionPriority: "100",
+					},
+				},
+			},
+			expected: 100,
+		},
+		{
+			name: "negative value",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationPodEvictionPriority: "-10",
+					},
+				},
+			},
+			expected: -10,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, gotErr := GetPodEvictionPriority(tt.pod)
+			assert.Equal(t, tt.expected, got)
+			assert.Equal(t, tt.wantErr, gotErr != nil)
+		})
+	}
+}

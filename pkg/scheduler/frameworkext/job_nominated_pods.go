@@ -43,9 +43,9 @@ func (s *NominatedPodsOfTheSameJob) Clone() fwktype.StateData {
 	return s
 }
 
-func MakeNominatedPodsOfTheSameJob(cycleState fwktype.CycleState, uids []string) {
+func MakeNominatedPodsOfTheSameJob(cycleState fwktype.CycleState, uids sets.Set[string]) {
 	cycleState.Write(nominatedPodsOfTheSameJob, &NominatedPodsOfTheSameJob{
-		UIDs: sets.New[string](uids...),
+		UIDs: uids,
 	})
 }
 

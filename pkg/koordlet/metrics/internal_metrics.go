@@ -43,6 +43,7 @@ func init() {
 	internalMustRegister(PredictionCollectors...)
 	internalMustRegister(CoreSchedCollector...)
 	internalMustRegister(NodeMetricCollectors...)
+	internalMustRegister(OOMScoreAdjCollector...)
 	internalMustRegister(ResourceExecutorCollector...)
 	internalMustRegister(KubeletStubCollector...)
 	internalMustRegister(RuntimeHookCollectors...)

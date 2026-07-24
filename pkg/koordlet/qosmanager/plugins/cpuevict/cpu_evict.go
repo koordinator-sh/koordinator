@@ -529,7 +529,12 @@ func (c *cpuEvictor) getPodEvictInfoAndSortByPriority(evictionPolicy string, pri
 		if !apiext.PodEvictEnabled(pod) {
 			continue
 		}
-		// 3. sort :  koordinator.sh/priority
+		// 3. sort :  koordinator.sh/eviction-priority > spec.priority > koordinator.sh/priority
+		evictionPriority, err := apiext.GetPodEvictionPriority(pod)
+		if err != nil {
+			klog.Warningf("failed to parse eviction priority of pod %s/%s, use the default 0, err: %v", pod.Namespace, pod.Name, err)
+		}
+		podInfo.EvictionPriority = evictionPriority
 		podPriority := qosmanagerUtil.GetPodPriorityLabel(pod, int64(podInfo.Priority))
 		podInfo.LabelPriority = podPriority
 		// 4. filter no metrics
@@ -550,6 +555,9 @@ func (c *cpuEvictor) getPodEvictInfoAndSortByPriority(evictionPolicy string, pri
 	}
 
 	sort.Slice(podsInfos, func(i, j int) bool {
+		if podsInfos[i].EvictionPriority != podsInfos[j].EvictionPriority {
+			return podsInfos[i].EvictionPriority < podsInfos[j].EvictionPriority
+		}
 		if podsInfos[i].Priority != podsInfos[j].Priority {
 			return podsInfos[i].Priority < podsInfos[j].Priority
 		}

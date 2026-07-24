@@ -141,7 +141,7 @@ func (cs *Coscheduling) FindOneNodePlugin() frameworkext.FindOneNodePlugin {
 	return nil
 }
 
-func (cs *Coscheduling) FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *v1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status) {
+func (cs *Coscheduling) FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *v1.Pod, result *fwktype.PreFilterResult) (*frameworkext.BatchScheduleResult, *fwktype.Status) {
 	return cs.pgMgr.FindOneNode(ctx, cycleState, pod, result)
 }
 
