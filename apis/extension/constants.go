@@ -71,6 +71,19 @@ const (
 	// AnnotationPodPreAllocatablePriority is the annotation key used to prioritize pre-allocatable pods in cluster mode.
 	// The value should be a numeric string. Higher values indicate higher priority for pre-allocation.
 	AnnotationPodPreAllocatablePriority = PodDomainPrefix + "/pre-allocatable-priority"
+
+	// AnnotationOOMScoreAdj is the pod-level default oom_score_adj value (int64 string, range [-1000, 1000]).
+	// The koordlet periodically reconciles the value to /proc/<pid>/oom_score_adj of all processes of the
+	// pod's containers (including init/sidecar containers), so it supports hot-updating without restarting
+	// the containers, with a latency up to the reconcile interval. Note that:
+	// 1. The sandbox (pause) container is not affected since its oom_score_adj is managed by the runtime.
+	// 2. Removing the annotation does NOT revert the processes to the runtime default values.
+	AnnotationOOMScoreAdj = DomainPrefix + "oom-score-adj"
+
+	// AnnotationOOMScoreAdjSpec is the container-level oom_score_adj spec in JSON format.
+	// Example: {"container-a": -500, "container-b": 200}
+	// Containers not listed here fall back to AnnotationOOMScoreAdj; if neither is set, no intervention is made.
+	AnnotationOOMScoreAdjSpec = DomainPrefix + "oom-score-adj-spec"
 )
 
 type AggregationType string
