@@ -330,6 +330,8 @@ func TestPredictorCollectors(t *testing.T) {
 		defer Register(nil)
 		RecordNodePredictedResourceReclaimable(string(corev1.ResourceCPU), UnitCore, "testPredictor", float64(testNodeReclaimable.Cpu().MilliValue())/1000)
 		RecordNodePredictedResourceReclaimable(string(corev1.ResourceMemory), UnitByte, "testPredictor", float64(testNodeReclaimable.Memory().Value()))
+		RecordNodePredictedResourcePeak(string(corev1.ResourceCPU), UnitCore, "testPredictor", float64(testNodeReclaimable.Cpu().MilliValue())/1000)
+		RecordNodePredictedResourcePeak(string(corev1.ResourceMemory), UnitByte, "testPredictor", float64(testNodeReclaimable.Memory().Value()))
 	})
 }
 
