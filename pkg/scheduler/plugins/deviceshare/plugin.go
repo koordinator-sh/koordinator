@@ -828,7 +828,10 @@ func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktyp
 	sharedCache := extendedHandle.GetOrRegisterSharedCache(Name, func(h frameworkext.ExtendedHandle) frameworkext.SharedPluginCache {
 		return newNodeDeviceCache(h)
 	})
-	deviceCache := sharedCache.(*nodeDeviceCache)
+	deviceCache, ok := sharedCache.(*nodeDeviceCache)
+	if !ok {
+		return nil, fmt.Errorf("unexpected shared cache type %T for key %q, want *nodeDeviceCache", sharedCache, Name)
+	}
 	// Ensure the node informer is instantiated and its initial list is awaited during
 	// startup. Registering it here (per profile, during New) makes it visible to the
 	// framework's WaitForHandlersSync, so the scheduler waits for the node cache to finish
