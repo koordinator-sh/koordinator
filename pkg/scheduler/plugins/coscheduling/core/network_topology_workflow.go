@@ -67,31 +67,31 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, state fwktype.Cycle
 	return nil, nil
 }
 
-func (pgMgr *PodGroupManager) FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, preRes *fwktype.PreFilterResult) (string, *fwktype.Status) {
+func (pgMgr *PodGroupManager) FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, preRes *fwktype.PreFilterResult) (*frameworkext.BatchScheduleResult, *fwktype.Status) {
 	gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
 	if gangSchedulingContext == nil ||
 		gangSchedulingContext.failedMessage != "" ||
 		gangSchedulingContext.networkTopologySpec == nil {
-		return "", fwktype.NewStatus(fwktype.Skip)
+		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
 
 	if len(gangSchedulingContext.alreadyAttemptedPods) > 1 {
 		if len(gangSchedulingContext.networkTopologyPlannedNodes) == 0 {
 			// this shouldn't happen. If happens, return err to exposing problems
-			return "", fwktype.NewStatus(fwktype.Error, ErrorNoPlannedNodes)
+			return nil, fwktype.NewStatus(fwktype.Error, ErrorNoPlannedNodes)
 		}
 		// not first pod, the PreFilter will take care of it
-		return "", fwktype.NewStatus(fwktype.Skip)
+		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
 
 	allPendingPods := pgMgr.cache.getPendingPods(gangSchedulingContext.gangGroup.UnsortedList())
 	if len(allPendingPods) == 0 {
-		return "", fwktype.NewStatus(fwktype.Error, ErrorNoPendingPods)
+		return nil, fwktype.NewStatus(fwktype.Error, ErrorNoPendingPods)
 	}
 	extension.SortPodsByIndex(allPendingPods)
-	var allPendingPodUIDs []string
+	allPendingPodUIDs := sets.New[string]()
 	for _, pendingPod := range allPendingPods {
-		allPendingPodUIDs = append(allPendingPodUIDs, string(pendingPod.UID))
+		allPendingPodUIDs.Insert(string(pendingPod.UID))
 	}
 	frameworkext.MakeNominatedPodsOfTheSameJob(cycleState, allPendingPodUIDs)
 
@@ -101,14 +101,14 @@ func (pgMgr *PodGroupManager) FindOneNode(ctx context.Context, cycleState fwktyp
 		for n := range preRes.NodeNames {
 			nInfo, err := pgMgr.handle.SnapshotSharedLister().NodeInfos().Get(n)
 			if err != nil {
-				return "", fwktype.AsStatus(err)
+				return nil, fwktype.AsStatus(err)
 			}
 			nodes = append(nodes, nInfo.Snapshot())
 		}
 	} else {
 		nInfos, err := pgMgr.handle.SnapshotSharedLister().NodeInfos().List()
 		if err != nil {
-			return "", fwktype.AsStatus(err)
+			return nil, fwktype.AsStatus(err)
 		}
 		for _, nInfo := range nInfos {
 			nodes = append(nodes, nInfo.Snapshot())
@@ -158,11 +158,13 @@ func (pgMgr *PodGroupManager) FindOneNode(ctx context.Context, cycleState fwktyp
 		nil,
 	)
 	if !status.IsSuccess() {
-		return "", status
+		return nil, status
 	}
 	gangSchedulingContext.networkTopologyPlannedNodes = plannedNodes
-	podKey := framework.GetNamespacedName(pod.Namespace, pod.Name)
-	return plannedNodes[podKey], nil
+	return &frameworkext.BatchScheduleResult{
+		Pods:          allPendingPods,
+		PodToNodeName: plannedNodes,
+	}, nil
 }
 
 func (ev *preemptionEvaluatorImpl) PlanNodes(

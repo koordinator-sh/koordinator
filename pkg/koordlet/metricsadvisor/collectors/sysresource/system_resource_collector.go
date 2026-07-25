@@ -18,6 +18,7 @@ package sysresource
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"go.uber.org/atomic"
@@ -41,12 +42,13 @@ var (
 )
 
 type systemResourceCollector struct {
-	collectInterval  time.Duration
-	outdatedInterval time.Duration
-	started          *atomic.Bool
-	metricCache      metriccache.MetricCache
-	sharedState      *framework.SharedState
-	statesInformer   statesinformer.StatesInformer
+	collectInterval            time.Duration
+	outdatedInterval           time.Duration
+	started                    *atomic.Bool
+	metricCache                metriccache.MetricCache
+	sharedState                *framework.SharedState
+	statesInformer             statesinformer.StatesInformer
+	pageCacheCollectorEnabled  bool
 }
 
 func New(opt *framework.Options) framework.Collector {
@@ -65,6 +67,10 @@ func (s *systemResourceCollector) Enabled() bool {
 
 func (s *systemResourceCollector) Setup(c *framework.Context) {
 	s.sharedState = c.State
+	// ponytail: log once at setup, not every collect cycle
+	if _, ok := c.Collectors["PageCacheCollector"]; ok {
+		s.pageCacheCollectorEnabled = true
+	}
 }
 
 func (s *systemResourceCollector) Run(stopCh <-chan struct{}) {
@@ -133,6 +139,9 @@ func (s *systemResourceCollector) collectSysResUsed() {
 		if nodeMetricSpec != nil && nodeMetricSpec.CollectPolicy != nil && nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy != nil {
 			policy := *nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy
 			if policy == slov1alpha1.UsageWithPageCache || policy == slov1alpha1.UsageWithHotPageCache {
+				if !s.pageCacheCollectorEnabled {
+					klog.Warning("NodeMemoryCollectPolicy is set to UsageWithPageCache or UsageWithHotPageCache but page-cache collector is not enabled, policy will have no effect")
+				}
 				nodeMemoryValue, podsMemoryValue, hostAppMemoryValue = s.queryMemoryWithPolicy(policy, collectTime, nodeMemory, podsMemoryUsage, hostAppMemory)
 			}
 		}
@@ -162,6 +171,9 @@ func (s *systemResourceCollector) collectSysResUsed() {
 		klog.ErrorS(err, "commit system metrics error")
 		return
 	}
+
+	// collect the per-NUMA system usage; failures only skip the NUMA part
+	s.collectSysNUMAResUsed(collectTime, systemCPUUsage)
 
 	klog.V(4).Infof("collect system resource usage finished, cpu %v, memory %v", systemCPUUsage, systemMemoryUsage)
 	s.started.Store(true)
@@ -210,6 +222,99 @@ func (s *systemResourceCollector) queryMemoryWithPolicy(policy slov1alpha1.NodeM
 	}
 
 	return nodeMemVal, podsMemory, hostAppMemory.Value
+}
+
+// collectSysNUMAResUsed calculates and commits the per-NUMA system usage.
+// The memory usage is calculated by `node NUMA usage - sum(pod NUMA usage)` precisely; since there is no
+// pod-level per-NUMA CPU accounting interface (especially on cgroups-v2), the cpu usage is apportioned from
+// the node-level system cpu usage by the NUMA cpu usage ratio.
+// NOTE: the host application usage is not excluded from the NUMA memory usage since its per-NUMA usage is
+// not collected, which is an approximation different from the node-level system usage.
+func (s *systemResourceCollector) collectSysNUMAResUsed(collectTime time.Time, systemCPUUsage float64) {
+	validTime := timeNow().Add(-s.outdatedInterval)
+	nodeNUMACPU, nodeNUMAMemory := s.sharedState.GetNodeNUMAUsage()
+	if len(nodeNUMACPU) == 0 && len(nodeNUMAMemory) == 0 {
+		klog.V(5).Infof("skip collecting system NUMA usage, node NUMA usage is empty")
+		return
+	}
+
+	numaMetrics := make([]metriccache.MetricSample, 0)
+
+	// memory: nodeNUMAMem - sum(pods NUMA memory), clamped to be non-negative
+	podsNUMAMemoryByCollector := s.sharedState.GetPodsNUMAMemoryUsage()
+	podsNUMAMemory := map[int32]float64{}
+	podsNUMAMemoryValid := true
+	for collector, numaUsage := range podsNUMAMemoryByCollector {
+		for numaID, point := range numaUsage {
+			if point.Timestamp.Before(validTime) {
+				klog.V(4).Infof("pod collector %v NUMA memory metric is timeout, valid time %v, metric time is %v",
+					collector, validTime.String(), point.Timestamp.String())
+				podsNUMAMemoryValid = false
+				break
+			}
+			podsNUMAMemory[numaID] += point.Value
+		}
+	}
+	if podsNUMAMemoryValid && len(podsNUMAMemoryByCollector) > 0 {
+		for numaID, nodeMem := range nodeNUMAMemory {
+			if nodeMem.Timestamp.Before(validTime) {
+				klog.V(4).Infof("node NUMA %d memory metric is timeout, valid time %v, metric time is %v",
+					numaID, validTime.String(), nodeMem.Timestamp.String())
+				continue
+			}
+			systemNUMAMemory := util.MaxFloat64(nodeMem.Value-podsNUMAMemory[numaID], 0)
+			memMetric, err := metriccache.SystemNUMAMemoryUsageMetric.GenerateSample(
+				metriccache.MetricPropertiesFunc.NUMA(strconv.FormatInt(int64(numaID), 10)), collectTime, systemNUMAMemory)
+			if err != nil {
+				klog.Warningf("generate system NUMA %d memory metric failed, err %v", numaID, err)
+				continue
+			}
+			numaMetrics = append(numaMetrics, memMetric)
+		}
+	}
+
+	// cpu: apportion the node-level system cpu usage by the NUMA cpu usage ratio;
+	// if any node NUMA cpu metric is outdated, only the cpu part is skipped
+	totalNUMACPU := float64(0)
+	nodeNUMACPUValid := true
+	for numaID, nodeCPU := range nodeNUMACPU {
+		if nodeCPU.Timestamp.Before(validTime) {
+			klog.V(4).Infof("node NUMA %d cpu metric is timeout, valid time %v, metric time is %v",
+				numaID, validTime.String(), nodeCPU.Timestamp.String())
+			nodeNUMACPUValid = false
+			break
+		}
+		totalNUMACPU += nodeCPU.Value
+	}
+	if nodeNUMACPUValid {
+		for numaID, nodeCPU := range nodeNUMACPU {
+			systemNUMACPU := float64(0)
+			if totalNUMACPU > 0 {
+				systemNUMACPU = systemCPUUsage * nodeCPU.Value / totalNUMACPU
+			}
+			cpuMetric, err := metriccache.SystemNUMACPUUsageMetric.GenerateSample(
+				metriccache.MetricPropertiesFunc.NUMA(strconv.FormatInt(int64(numaID), 10)), collectTime, systemNUMACPU)
+			if err != nil {
+				klog.Warningf("generate system NUMA %d cpu metric failed, err %v", numaID, err)
+				continue
+			}
+			numaMetrics = append(numaMetrics, cpuMetric)
+		}
+	}
+
+	if len(numaMetrics) <= 0 {
+		return
+	}
+	appender := s.metricCache.Appender()
+	if err := appender.Append(numaMetrics); err != nil {
+		klog.ErrorS(err, "append system NUMA metrics error")
+		return
+	}
+	if err := appender.Commit(); err != nil {
+		klog.ErrorS(err, "commit system NUMA metrics error")
+		return
+	}
+	klog.V(6).Infof("collect system NUMA resource usage finished, metrics num %v", len(numaMetrics))
 }
 
 func (s *systemResourceCollector) getAllPodsResourceUsage() (cpuCore float64, memory float64, err error) {

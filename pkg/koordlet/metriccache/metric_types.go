@@ -43,9 +43,13 @@ const (
 	NodeMetricGPUCoreUsage       MetricKind = "node_gpu_core_usage"
 	NodeMetricGPUMemUsage        MetricKind = "node_gpu_memory_usage"
 	NodeMetricGPUMemTotal        MetricKind = "node_gpu_memory_total"
+	NodeMetricNUMACPUUsage       MetricKind = "node_numa_cpu_usage"
+	NodeMetricNUMAMemoryUsage    MetricKind = "node_numa_memory_usage"
 
-	SysMetricCPUUsage    MetricKind = "sys_cpu_usage"
-	SysMetricMemoryUsage MetricKind = "sys_memory_usage"
+	SysMetricCPUUsage        MetricKind = "sys_cpu_usage"
+	SysMetricMemoryUsage     MetricKind = "sys_memory_usage"
+	SysMetricNUMACPUUsage    MetricKind = "sys_numa_cpu_usage"
+	SysMetricNUMAMemoryUsage MetricKind = "sys_numa_memory_usage"
 
 	// NodeBE
 	NodeMetricBE MetricKind = "node_be"
@@ -121,6 +125,8 @@ const (
 	MetricPropertyBEAllocation MetricProperty = "be_allocation"
 
 	MetricPropertyHostAppName MetricProperty = "host_app_name"
+
+	MetricPropertyNUMANodeID MetricProperty = "numa_node_id"
 )
 
 // MetricPropertyValue is the property value
@@ -163,6 +169,7 @@ var MetricPropertiesFunc = struct {
 	ContainerGPU        func(string, string, string) map[MetricProperty]string
 	NodeBE              func(string, string) map[MetricProperty]string
 	HostApplication     func(string) map[MetricProperty]string
+	NUMA                func(string) map[MetricProperty]string
 }{
 	Pod: func(podUID string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyPodUID: podUID}
@@ -211,6 +218,9 @@ var MetricPropertiesFunc = struct {
 	},
 	HostApplication: func(appName string) map[MetricProperty]string {
 		return map[MetricProperty]string{MetricPropertyHostAppName: appName}
+	},
+	NUMA: func(numaNodeID string) map[MetricProperty]string {
+		return map[MetricProperty]string{MetricPropertyNUMANodeID: numaNodeID}
 	},
 }
 
