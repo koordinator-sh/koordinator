@@ -42,13 +42,13 @@ var (
 )
 
 type systemResourceCollector struct {
-	collectInterval            time.Duration
-	outdatedInterval           time.Duration
-	started                    *atomic.Bool
-	metricCache                metriccache.MetricCache
-	sharedState                *framework.SharedState
-	statesInformer             statesinformer.StatesInformer
-	pageCacheCollectorEnabled  bool
+	collectInterval           time.Duration
+	outdatedInterval          time.Duration
+	started                   *atomic.Bool
+	metricCache               metriccache.MetricCache
+	sharedState               *framework.SharedState
+	statesInformer            statesinformer.StatesInformer
+	pageCacheCollectorEnabled bool
 }
 
 func New(opt *framework.Options) framework.Collector {
