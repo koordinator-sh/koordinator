@@ -168,6 +168,19 @@ var (
 		[]string{"result"},
 	)
 
+	// SharedCacheAssumedPods tracks the size of a shared plugin cache's assumed-allocation
+	// ledger (assumedPods), labeled by cache name so every opt-in shared cache — DeviceShare
+	// now, NodeNUMAResource / Reservation in follow-ups — reports on the same metric without
+	// redesign. A steadily climbing value signals an assume/forget leak.
+	SharedCacheAssumedPods = metrics.NewGaugeVec(
+		&metrics.GaugeOpts{
+			Subsystem: schedulermetrics.SchedulerSubsystem,
+			Name:      "shared_cache_assumed_pods",
+			Help:      "The number of pods currently held in a shared plugin cache's assumed-allocation ledger, labeled by cache name.",
+		},
+		[]string{sharedCacheNameKey},
+	)
+
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ReservationStatusPhase,
@@ -183,6 +196,7 @@ var (
 		ReservationSelectorIndexQueryTotal,
 		ReservationSelectorIndexCandidates,
 		InlineBatchScheduleDuration,
+		SharedCacheAssumedPods,
 	}
 
 	gcMetricsList = []prometheus.Collector{
@@ -196,6 +210,7 @@ const (
 	reservationResourceKey     = "resource"
 	reservationResourceTypeKey = "type"
 	reservationResourceUnitKey = "unit"
+	sharedCacheNameKey         = "cache"
 )
 
 const (
@@ -268,6 +283,16 @@ func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, v
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
 	ElasticQuotaProcessLatency.WithLabelValues(operation).Observe(latency.Seconds())
+}
+
+// RecordSharedCacheAssumedPods sets the assumed-allocation ledger size for the named shared
+// plugin cache. Reused across shared caches via the cache label.
+func RecordSharedCacheAssumedPods(cache string, size int) {
+	if SharedCacheAssumedPods.MetricVec == nil {
+		// only for UT
+		return
+	}
+	SharedCacheAssumedPods.WithLabelValues(cache).Set(float64(size))
 }
 
 func RecordSecondaryDeviceNotWellPlanned(nodeName string, notWellPlanned bool) {

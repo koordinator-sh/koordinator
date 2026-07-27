@@ -607,8 +607,34 @@ func (n *nodeDeviceCache) AssumePod(pod *corev1.Pod, nodeName string) error {
 		n.assumedPods = make(map[types.UID]*assumedAllocation)
 	}
 	n.assumedPods[pod.UID] = &assumedAllocation{nodeName: nodeName, allocations: allocations}
+	n.recordAssumedPodsSizeLocked()
 	n.lock.Unlock()
 	return nil
+}
+
+// recordAssumedPodsSizeLocked publishes the current assumedPods ledger size to the shared-cache
+// metric so a leak is observable. Caller must hold n.lock.
+func (n *nodeDeviceCache) recordAssumedPodsSizeLocked() {
+	metrics.RecordSharedCacheAssumedPods(Name, len(n.assumedPods))
+}
+
+// AssumedAllocationSummary is the JSON-serializable view of one assumed-allocation ledger
+// entry, exposed by the DeviceShare debug service for live inspection.
+type AssumedAllocationSummary struct {
+	NodeName    string                   `json:"nodeName"`
+	Allocations apiext.DeviceAllocations `json:"allocations"`
+}
+
+// getAssumedAllocationsSummary returns a point-in-time snapshot of the assumedPods ledger,
+// keyed by pod UID, for the debug endpoint.
+func (n *nodeDeviceCache) getAssumedAllocationsSummary() map[string]*AssumedAllocationSummary {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
+	out := make(map[string]*AssumedAllocationSummary, len(n.assumedPods))
+	for uid, a := range n.assumedPods {
+		out[string(uid)] = &AssumedAllocationSummary{NodeName: a.nodeName, Allocations: a.allocations}
+	}
+	return out
 }
 
 // ForgetPod implements frameworkext.CacheReserver. Called by Plugin.Unreserve. Idempotent
@@ -619,6 +645,7 @@ func (n *nodeDeviceCache) ForgetPod(pod *corev1.Pod) error {
 	n.lock.Lock()
 	defer n.lock.Unlock()
 	delete(n.assumedPods, pod.UID)
+	n.recordAssumedPodsSizeLocked()
 	return nil
 }
 
@@ -630,6 +657,7 @@ func (n *nodeDeviceCache) takeAssumed(uid types.UID) (*assumedAllocation, bool) 
 		return nil, false
 	}
 	delete(n.assumedPods, uid)
+	n.recordAssumedPodsSizeLocked()
 	return assumed, true
 }
 
