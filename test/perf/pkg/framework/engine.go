@@ -261,8 +261,8 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	// Stop the failure watcher and collect its results.
 	failureCancel()
 	if err := <-failureWatcherErrCh; err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
- 		klog.ErrorS(err, "failure watcher failed", "runID", runID)
- 	}
+		klog.ErrorS(err, "failure watcher failed", "runID", runID)
+	}
 	failedPodCount, failureEventCount := failureWatcher.Stats()
 
 	// Steps 9-10: compute percentiles and throughput.
