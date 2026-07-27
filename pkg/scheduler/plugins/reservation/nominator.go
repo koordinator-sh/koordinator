@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/types"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
@@ -46,7 +47,91 @@ type nominator struct {
 	// nominatedReservePod is map keyed by nodeName to the nominated reservation's PodInfo for preemption.
 	nominatedReservePod       map[string][]*framework.PodInfo
 	nominatedReservePodToNode map[types.UID]string
-	lock                      sync.RWMutex
+	// nominatedReserveIdentity records what the stored PodInfo was built from,
+	// so a read can tell whether it still describes the current reservation.
+	nominatedReserveIdentity map[types.UID]reserveIdentity
+	lock                     sync.RWMutex
+}
+
+// reserveIdentity captures everything NewReservePod derives from a Reservation:
+// the spec through metadata.generation (the CRD has the status subresource, so
+// the generation bumps exactly on spec updates) plus the labels and annotations
+// it copies onto the reserve pod. An unchanged identity therefore means a
+// rebuilt reserve pod would be identical to the stored one, and a changed one
+// means the nomination describes a reservation that no longer exists in that
+// shape - which is also when reservationEventHandler.OnUpdate deletes it.
+//
+// resourceVersion is deliberately not part of this: it advances on every write,
+// including the Unschedulable status this scheduler records after each failed
+// attempt, so it would report a change on updates that cannot invalidate a
+// nomination.
+type reserveIdentity struct {
+	generation  int64
+	labels      map[string]string
+	annotations map[string]string
+}
+
+func identityOf(r *schedulingv1alpha1.Reservation) reserveIdentity {
+	return reserveIdentity{
+		generation:  r.Generation,
+		labels:      r.Labels,
+		annotations: r.Annotations,
+	}
+}
+
+func (id reserveIdentity) matches(other reserveIdentity) bool {
+	return id.generation == other.generation &&
+		apiequality.Semantic.DeepEqual(id.labels, other.labels) &&
+		apiequality.Semantic.DeepEqual(id.annotations, other.annotations)
+}
+
+// isReservationWaitingForScheduling reports whether a reservation is still
+// waiting for a node, which is the only state a reserve pod nomination is
+// meaningful in.
+//
+// The phase is checked as an allowlist rather than by excluding the terminal
+// ones, so an unknown or partially written phase fails closed. Excluding via
+// IsReservationActive would also let Available or Waiting through whenever
+// status.nodeName happened to be empty, since that predicate requires both.
+//
+// A reservation that already carries status.nodeName while still Pending does
+// count as waiting, deliberately: between the node being chosen and the reserve
+// pod being assumed into the scheduler cache, this nomination is the only thing
+// accounting for it. The read path narrows that to the node it is going to.
+//
+// A terminating reservation is excluded even while it lingers behind a
+// finalizer: ReservationInfo.IsUnschedulable already treats it that way, and its
+// reserve pod will never be scheduled.
+func isReservationWaitingForScheduling(r *schedulingv1alpha1.Reservation) bool {
+	if r == nil || !r.DeletionTimestamp.IsZero() {
+		return false
+	}
+	phase := r.Status.Phase
+	return phase == "" || phase == schedulingv1alpha1.ReservationPending
+}
+
+// sameSchedulingShape reports whether two reserve pods would be scheduled
+// identically. It compares what NewReservePod derives from a Reservation, and
+// deliberately ignores status, which the framework mutates on the copy it
+// carries through a scheduling cycle.
+// sameSchedulingShape reports whether two reserve pods describe the same
+// scheduling problem.
+//
+// It can only compare what NewReservePod puts into the synthetic pod: the
+// template spec, and the reservation's labels and annotations. A reserve pod
+// cycle also reads fields straight off the Reservation that never reach the
+// pod - Spec.Owners and PreAllocationPolicy select the pre-allocatable
+// candidates, whose nodes narrow the feasible set. A cycle spanning an update
+// that touched only those fields is therefore indistinguishable here and its
+// node is accepted. That gap predates this nominator - the previous code
+// accepted every late node decision unconditionally - and closing it needs the
+// generation the cycle actually used to travel with it, which is tracked in
+// #3158.
+func sameSchedulingShape(a, b *corev1.Pod) bool {
+	return a.Namespace == b.Namespace &&
+		apiequality.Semantic.DeepEqual(a.Spec, b.Spec) &&
+		apiequality.Semantic.DeepEqual(a.Labels, b.Labels) &&
+		apiequality.Semantic.DeepEqual(a.Annotations, b.Annotations)
 }
 
 func newNominator(podLister corelisters.PodLister, rLister listerschedulingv1alpha1.ReservationLister) *nominator {
@@ -57,6 +142,7 @@ func newNominator(podLister corelisters.PodLister, rLister listerschedulingv1alp
 		nominatedPreAllocatable:   map[types.UID]map[string][]*corev1.Pod{},
 		nominatedReservePod:       map[string][]*framework.PodInfo{},
 		nominatedReservePodToNode: map[types.UID]string{},
+		nominatedReserveIdentity:  map[types.UID]reserveIdentity{},
 	}
 }
 
@@ -108,10 +194,6 @@ func (nm *nominator) AddNominatedReservePod(pi *framework.PodInfo, nodeName stri
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
-	// Always delete the reservation if it already exists, to ensure we never store more than
-	// one instance of the reservation.
-	nm.deleteReservePod(pi.Pod)
-
 	rName := reservationutil.GetReservationNameFromReservePod(pi.Pod)
 	if len(rName) <= 0 { // not a reserve pod
 		klog.V(4).InfoS("reservation nominator aborts nominating pod which is not a reserve pod",
@@ -121,32 +203,68 @@ func (nm *nominator) AddNominatedReservePod(pi *framework.PodInfo, nodeName stri
 	if nodeName == "" {
 		klog.V(4).InfoS("reservation nominated node is removed",
 			"pod", klog.KObj(pi.Pod), "reservation", rName, "nominatedNodeName", nodeName)
+		nm.deleteReservePod(pi.Pod)
 		return
 	}
 
+	// Nothing is removed until the nomination has been accepted. The caller can
+	// be an older scheduling cycle finishing late - addNominatedReservation
+	// reuses the NominatedNodeName from the cycle that failed - so a rejected
+	// call must leave a newer cycle's nomination alone.
+	stored, identity := pi, reserveIdentity{}
 	if nm.rLister != nil {
-		// If a reservation is just deleted or scheduled, don't nominate it.
 		r, err := nm.rLister.Get(rName)
 		if err != nil {
 			klog.V(4).InfoS("reservation doesn't exist in rLister, aborted adding it to the nominator",
 				"pod", klog.KObj(pi.Pod), "reservation", rName)
+			nm.deleteReservePod(pi.Pod)
 			return
 		}
-		if reservationutil.IsReservationActive(r) {
-			klog.V(4).InfoS("reservation is already scheduled to a node and become active, aborted to adding it to the nominator",
+		if r.UID != pi.Pod.UID {
+			// The reservation was replaced by a same-named one. Drop what the
+			// replaced one held; the new one nominates on its own cycle.
+			klog.V(4).InfoS("reservation was replaced, aborted adding the stale reserve pod to the nominator",
+				"pod", klog.KObj(pi.Pod), "reservation", rName, "currentUID", r.UID)
+			nm.deleteReservePod(pi.Pod)
+			return
+		}
+		if !isReservationWaitingForScheduling(r) {
+			klog.V(4).InfoS("reservation is no longer waiting to be scheduled, aborted adding it to the nominator",
+				"pod", klog.KObj(pi.Pod), "reservation", rName, "phase", r.Status.Phase)
+			nm.deleteReservePod(pi.Pod)
+			return
+		}
+		currentReservePod := reservationutil.NewReservePod(r)
+		if !sameSchedulingShape(pi.Pod, currentReservePod) {
+			// The node was chosen for a shape the reservation no longer has, so
+			// it says nothing about where the current one belongs. Keep whatever
+			// is stored: it may come from a cycle that ran on the current shape.
+			klog.V(4).InfoS("reserve pod was scheduled against an older revision, aborted nominating its node",
+				"pod", klog.KObj(pi.Pod), "reservation", rName, "nominatedNodeName", nodeName)
+			return
+		}
+		// Store the reserve pod built from the object the identity is taken
+		// from, so the two can never describe different revisions.
+		fresh, err := framework.NewPodInfo(currentReservePod)
+		if err != nil {
+			klog.ErrorS(err, "failed to build the reserve pod info, aborted nominating it",
 				"pod", klog.KObj(pi.Pod), "reservation", rName)
 			return
 		}
+		stored, identity = fresh, identityOf(r)
 	}
 
+	// Accepted: replace any entry this reservation already had. deleteReservePod
+	// is keyed by reservation UID, so this only ever touches its own.
+	nm.deleteReservePod(pi.Pod)
 	nm.nominatedReservePodToNode[pi.Pod.UID] = nodeName
-	for _, npi := range nm.nominatedReservePod[nodeName] {
-		if npi.Pod.UID == pi.Pod.UID {
-			klog.V(4).InfoS("reservation already exists in the nominator", "pod", klog.KObj(npi.Pod), "reservation", rName)
-			return
-		}
+	if nm.rLister != nil {
+		// Recorded only when a lister established which revision this is. With
+		// no lister there is no provenance to compare against later, and the
+		// read path cannot validate either, so the entry is left unlabelled.
+		nm.nominatedReserveIdentity[pi.Pod.UID] = identity
 	}
-	nm.nominatedReservePod[nodeName] = append(nm.nominatedReservePod[nodeName], pi)
+	nm.nominatedReservePod[nodeName] = append(nm.nominatedReservePod[nodeName], stored)
 }
 
 func (nm *nominator) AddNominatedPreAllocation(rInfo *frameworkext.ReservationInfo, nodeName string, pod *corev1.Pod) {
@@ -199,14 +317,130 @@ func (nm *nominator) AddNominatedPreAllocation(rInfo *frameworkext.ReservationIn
 }
 
 func (nm *nominator) NominatedReservePodForNode(nodeName string) []*framework.PodInfo {
-	nm.lock.RLock()
-	defer nm.lock.RUnlock()
-	// Make a copy of the nominated Pods so the caller can mutate safely.
-	reservePods := make([]*framework.PodInfo, len(nm.nominatedReservePod[nodeName]))
-	for i := 0; i < len(reservePods); i++ {
-		reservePods[i] = nm.nominatedReservePod[nodeName][i].DeepCopy()
+	type nomination struct {
+		podInfo  *framework.PodInfo
+		identity reserveIdentity
+	}
+	stored := func() []nomination {
+		nm.lock.RLock()
+		defer nm.lock.RUnlock()
+		nominations := make([]nomination, 0, len(nm.nominatedReservePod[nodeName]))
+		for _, pi := range nm.nominatedReservePod[nodeName] {
+			nominations = append(nominations, nomination{
+				podInfo:  pi,
+				identity: nm.nominatedReserveIdentity[pi.Pod.UID],
+			})
+		}
+		return nominations
+	}()
+	// The critical section above is only a slice clone: revalidating a
+	// nomination reads the lister, and BeforeFilter calls this once per pod per
+	// node, so holding the read lock across that work would stall concurrent
+	// nominator writes (and a blocked writer also blocks later readers).
+	//
+	// Entries are revalidated against the reservation's current state instead of
+	// returned blindly from the snapshot. The informer store is updated before
+	// any event handler runs, so this read-through keeps a waiter requeued by a
+	// Reservation event from being blocked by a nomination the store already
+	// invalidated, even when the listener that maintains this nominator has not
+	// processed the same event yet. The caller may mutate the results.
+	reservePods := make([]*framework.PodInfo, 0, len(stored))
+	for _, n := range stored {
+		if podInfo, ok := nm.revalidateNominatedPodInfo(n.podInfo, n.identity, nodeName); ok {
+			reservePods = append(reservePods, podInfo)
+		}
 	}
 	return reservePods
+}
+
+// revalidateNominatedPodInfo reports whether a stored nomination still stands.
+// It is dropped once the lister shows that the reservation is gone, was
+// replaced by a same-named object, is no longer waiting to be scheduled
+// (assigned, terminated, or terminating behind a finalizer), or no longer has
+// the shape the nomination was built from. Keeping any of those would let a phantom reserve pod occupy the node
+// until this nominator's own listener catches up, which is exactly the window
+// in which a requeued waiter re-evaluates.
+//
+// The last case is why the identity is compared field by field. A spec, label or
+// annotation change can move the reserve pod's placement constraints, its
+// requests, its priority or even its schedulerName, so the nominated node need
+// not be a valid choice for it any more - reservationEventHandler.OnUpdate
+// deletes the nomination for exactly these changes, and this read converges on
+// the same answer rather than re-applying the new shape to the old node. When
+// the identity does hold, the stored PodInfo is by construction what a rebuild
+// would produce, so nothing is rebuilt on this per-pod-per-node path.
+//
+// rLister is immutable after construction, so no lock is needed here.
+func (nm *nominator) revalidateNominatedPodInfo(pi *framework.PodInfo, identity reserveIdentity, nodeName string) (*framework.PodInfo, bool) {
+	if nm.rLister == nil {
+		return pi.DeepCopy(), true
+	}
+	r, err := nm.rLister.Get(reservationutil.GetReservationNameFromReservePod(pi.Pod))
+	if err != nil || r.UID != pi.Pod.UID ||
+		!isReservationWaitingForScheduling(r) ||
+		!identityOf(r).matches(identity) {
+		return nil, false
+	}
+	// A nomination holds a candidate node. isReservationWaitingForScheduling
+	// deliberately still accepts a reservation that already carries
+	// status.nodeName but has not become active yet, because the nomination is
+	// the only accounting for it during that window - but only on the node it
+	// is actually going to. Any other node it was holding is stale.
+	if assigned := reservationutil.GetReservationNodeName(r); assigned != "" && assigned != nodeName {
+		return nil, false
+	}
+	return pi.DeepCopy(), true
+}
+
+// DeleteReservePodIfStale applies the read path's validity test now instead of
+// waiting for the next read, so a node stops being held as soon as the update
+// that invalidated it is processed.
+//
+// It reconciles against the informer store rather than against the old object
+// of the event that triggered it. Those differ: this handler and the scheduling
+// cycle run on goroutines with no ordering between them, so by the time an
+// update is handled here the store may be further ahead, and a cycle may
+// already have recorded a nomination for what the store holds now. Comparing
+// with the event's old identity would delete that nomination whenever the two
+// happen to be equal - and they can be, because a CRD with the status
+// subresource does not advance metadata.generation for metadata-only writes, so
+// labels or annotations going A -> B -> A produce two identical identities.
+//
+// Deleting too much is the failure that matters here: NominatedReservePodForNode
+// validates the entries it finds, it never recreates a missing one.
+//
+// Pre-allocation nominations are deliberately left alone. They carry no
+// identity to judge them by (AddNominatedPreAllocation records only the
+// candidate), and a cycle in progress writes them before reading them back, so
+// clearing them here would take state from a cycle this update says nothing
+// about. Their staleness is tracked in #3158.
+func (nm *nominator) DeleteReservePodIfStale(pod *corev1.Pod) {
+	// The lister read below is deliberately inside the lock, unlike the one in
+	// NominatedReservePodForNode. What matters here is that no concurrent Add
+	// can record a newer nomination between reading the stored identity and
+	// deleting it - reading the store first and locking afterwards would bring
+	// back exactly the race this function exists to avoid. The store itself can
+	// move either way; that is what makes the read path the backstop. A lister
+	// Get is an indexer map lookup, and this is not the per-pod-per-node path.
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	if _, nominated := nm.nominatedReservePodToNode[pod.UID]; !nominated {
+		return
+	}
+	if nm.rLister == nil {
+		// Nothing can establish what the entry was built from, and the read path
+		// cannot validate it either, so this is its only cleanup.
+		nm.deleteNominatedReservePodOnly(pod)
+		return
+	}
+	stored, ok := nm.nominatedReserveIdentity[pod.UID]
+	r, err := nm.rLister.Get(reservationutil.GetReservationNameFromReservePod(pod))
+	if !ok || err != nil || r.UID != pod.UID ||
+		!isReservationWaitingForScheduling(r) ||
+		!identityOf(r).matches(stored) {
+		nm.deleteNominatedReservePodOnly(pod)
+	}
 }
 
 func (nm *nominator) DeleteReservePod(pod *corev1.Pod) {
@@ -219,6 +453,14 @@ func (nm *nominator) DeleteReservePod(pod *corev1.Pod) {
 func (nm *nominator) deleteReservePod(pod *corev1.Pod) {
 	// delete pre-allocation for the reservation if exists
 	delete(nm.nominatedPreAllocatable, pod.UID)
+	nm.deleteNominatedReservePodOnly(pod)
+}
+
+// deleteNominatedReservePodOnly drops the reserve pod's own nomination and
+// leaves the reservation's pre-allocation candidates in place, for callers that
+// have judged the former stale and have no basis to judge the latter.
+func (nm *nominator) deleteNominatedReservePodOnly(pod *corev1.Pod) {
+	delete(nm.nominatedReserveIdentity, pod.UID)
 
 	nnn, ok := nm.nominatedReservePodToNode[pod.UID]
 	if !ok {
@@ -429,7 +671,23 @@ func (pl *Plugin) RemoveNominatedReservations(pod *corev1.Pod) {
 }
 
 func (pl *Plugin) AddNominatedReservePod(pod *corev1.Pod, nodeName string) {
-	podInfo, _ := framework.NewPodInfo(pod)
+	if nodeName == "" {
+		// An empty node means the reserve pod lost its nomination, which has to
+		// be honored even when the pod cannot be parsed - otherwise a reserve
+		// pod whose affinity became invalid keeps holding the node it was
+		// nominated to before that change.
+		pl.nominator.DeleteReservePod(pod)
+		return
+	}
+	podInfo, err := framework.NewPodInfo(pod)
+	if err != nil {
+		// A partially parsed PodInfo would understate the reserve pod's
+		// constraints for every pod that later reads this nomination, so skip
+		// it rather than nominate something incomplete.
+		klog.ErrorS(err, "Failed to build the reserve pod info, skipped nominating it",
+			"pod", klog.KObj(pod), "node", nodeName)
+		return
+	}
 	pl.nominator.AddNominatedReservePod(podInfo, nodeName)
 }
 

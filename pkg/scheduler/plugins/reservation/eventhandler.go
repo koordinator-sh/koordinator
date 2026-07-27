@@ -19,6 +19,7 @@ package reservation
 import (
 	"context"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
@@ -65,6 +66,15 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 		return
 	}
 
+	if oldR.UID != newR.UID {
+		// A delete followed by a same-named create can reach handlers as a
+		// single update. The nominator keys reserve pods by reservation UID,
+		// so the cleanups below - which all build the reserve pod from newR -
+		// would leave the replaced reservation's nomination occupying its old
+		// node forever.
+		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(oldR))
+	}
+
 	if reservationutil.IsReservationActive(newR) {
 		h.cache.updateReservation(newR)
 		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(newR))
@@ -79,6 +89,36 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 		klog.V(4).InfoS("update reservation into terminated so only update cache if exists",
 			"reservation", klog.KObj(newR), "node", reservationutil.GetReservationNodeName(newR))
 		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(newR))
+	} else if !newR.DeletionTimestamp.IsZero() {
+		// A reservation that entered deletion will never have its reserve pod
+		// scheduled, even while a finalizer keeps the object around, so no
+		// revision of it may keep holding a node.
+		h.rrNominator.DeleteReservePod(reservationutil.NewReservePod(newR))
+		klog.V(4).InfoS("delete nominated reserve pod for terminating reservation",
+			"reservation", klog.KObj(newR), "uid", newR.UID)
+	} else if oldR.Generation != newR.Generation ||
+		!apiequality.Semantic.DeepEqual(oldR.Labels, newR.Labels) ||
+		!apiequality.Semantic.DeepEqual(oldR.Annotations, newR.Annotations) {
+		// A scheduling-relevant update of a still-unscheduled reservation can
+		// invalidate its nomination: placement constraints (nodeSelector,
+		// affinities, tolerations, ...) or even the schedulerName may have
+		// changed, and on a schedulerName handover the framework handler only
+		// removes the reserve pod from the scheduling queue, never from this
+		// nominator. Dropping it is the conservative choice - if the
+		// reservation still belongs to this scheduler, its reserve pod
+		// re-nominates on its next cycle.
+		//
+		// Only if it is actually stale, judged against the informer store rather
+		// than against this event. This handler and the scheduling cycle run on
+		// goroutines with no ordering between them, so by the time this runs a
+		// cycle may already have recorded a nomination for a revision newer than
+		// newR, and discarding that one would be worse than keeping a stale
+		// entry: the read path drops what no longer matches the store, but
+		// nothing recreates an entry that was deleted. This handler only makes
+		// the node available sooner - the read path is the guarantee.
+		h.rrNominator.DeleteReservePodIfStale(reservationutil.NewReservePod(newR))
+		klog.V(4).InfoS("reconciled the nominated reserve pod of an updated unscheduled reservation",
+			"reservation", klog.KObj(newR), "uid", newR.UID)
 	}
 }
 
