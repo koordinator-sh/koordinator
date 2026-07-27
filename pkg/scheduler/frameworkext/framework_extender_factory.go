@@ -611,6 +611,15 @@ func (f *FrameworkExtenderFactory) StartSharedCaches(ctx context.Context, inform
 	return nil
 }
 
+// SharedCachesStarted reports whether StartSharedCaches has already run. Used by the
+// scheduler startup pipeline to assert that the shared caches (and their pod/node dispatcher)
+// are wired before the main informer factory is started.
+func (f *FrameworkExtenderFactory) SharedCachesStarted() bool {
+	f.sharedCachesMu.Lock()
+	defer f.sharedCachesMu.Unlock()
+	return f.sharedCachesStarted
+}
+
 // dispatchCaches returns the immutable snapshot of registered shared caches published by
 // StartSharedCaches. Read lock-free on every event — no mutex, no allocation.
 //
