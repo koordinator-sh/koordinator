@@ -1,21 +1,45 @@
 name: scheduler-benchmark
 
 on:
-  pull_request:
-    paths:
-      - "test/perf/**"
+  # Not a required PR gate yet — runtime + kind/kwok/Koordinator flakiness
+  # makes it unsuitable as a blocking check on every PR. Run on demand and
+  # nightly until the benchmark is stable enough to promote to a PR gate.
   workflow_dispatch: {}
+  schedule:
+    - cron: "0 3 * * *"   # nightly at 03:00 UTC
 
 jobs:
   benchmark:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      # Free up ~14 GB of pre-installed tooling the benchmark doesn't need
+      # (Android SDK, .NET, Haskell). Without this, building three Docker
+      # images + running a kind cluster exhausts the runner's 14 GB disk.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          swap-storage: false
+          large-packages: false
+          docker-images: false
+          android: true
+          dotnet: true
+          haskell: true
+
+      # Install the kind CLI only — setup-cluster.sh creates the cluster
+      # itself so only one place owns cluster lifecycle.
+      - name: Install kind
+        uses: helm/kind-action@v1.9.0
+        with:
+          install_only: true
+          version: "v0.22.0"
 
       - name: Set up cluster
         run: make -C test/perf setup
