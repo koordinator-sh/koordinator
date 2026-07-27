@@ -393,3 +393,190 @@ func Test_systemResourceCollector_Run(t *testing.T) {
 		})
 	}
 }
+
+func Test_systemResourceCollector_collectSysNUMAResUsed(t *testing.T) {
+	testNow := time.Now()
+	originalTimeNow := timeNow
+	timeNow = func() time.Time {
+		return testNow
+	}
+	defer func() { timeNow = originalTimeNow }()
+	config := framework.NewDefaultConfig()
+
+	queryNUMASample := func(t *testing.T, metricCache metriccache.MetricCache, metricResource metriccache.MetricResource, numaID string) (float64, int) {
+		querier, err := metricCache.Querier(testNow.Add(-5*time.Second), testNow.Add(5*time.Second))
+		assert.NoError(t, err)
+		defer querier.Close()
+		queryMeta, err := metricResource.BuildQueryMeta(metriccache.MetricPropertiesFunc.NUMA(numaID))
+		assert.NoError(t, err)
+		aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+		err = querier.Query(queryMeta, nil, aggregateResult)
+		assert.NoError(t, err)
+		if aggregateResult.Count() == 0 {
+			return 0, 0
+		}
+		v, err := aggregateResult.Value(metriccache.AggregationTypeAVG)
+		assert.NoError(t, err)
+		return v, aggregateResult.Count()
+	}
+
+	t.Run("node NUMA usage empty, skip", func(t *testing.T) {
+		metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+			TSDBPath:              t.TempDir(),
+			TSDBEnablePromMetrics: false,
+		})
+		assert.NoError(t, err)
+		defer func() { assert.NoError(t, metricCache.Close()) }()
+		s := &systemResourceCollector{
+			collectInterval:  time.Second,
+			outdatedInterval: config.CollectSysMetricOutdatedInterval,
+			appendableDB:     metricCache,
+			sharedState:      framework.NewSharedState(),
+		}
+		assert.NotPanics(t, func() {
+			s.collectSysNUMAResUsed(testNow, 0.5)
+		})
+		_, count := queryNUMASample(t, metricCache, metriccache.SystemNUMACPUUsageMetric, "0")
+		assert.Equal(t, 0, count)
+	})
+
+	t.Run("memory subtracted precisely and cpu apportioned", func(t *testing.T) {
+		metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+			TSDBPath:              t.TempDir(),
+			TSDBEnablePromMetrics: false,
+		})
+		assert.NoError(t, err)
+		defer func() { assert.NoError(t, metricCache.Close()) }()
+		s := &systemResourceCollector{
+			collectInterval:  time.Second,
+			outdatedInterval: config.CollectSysMetricOutdatedInterval,
+			appendableDB:     metricCache,
+			sharedState:      framework.NewSharedState(),
+		}
+		s.sharedState.UpdateNodeNUMAUsage(
+			map[int32]metriccache.Point{
+				0: {Timestamp: testNow, Value: 1.0},
+				1: {Timestamp: testNow, Value: 3.0},
+			},
+			map[int32]metriccache.Point{
+				0: {Timestamp: testNow, Value: 1024},
+				1: {Timestamp: testNow, Value: 2048},
+			})
+		s.sharedState.UpdatePodsNUMAMemoryUsage("pod-collector", map[int32]metriccache.Point{
+			0: {Timestamp: testNow, Value: 512},
+			1: {Timestamp: testNow, Value: 4096}, // larger than the node NUMA usage, clamped to 0
+		})
+
+		assert.NotPanics(t, func() {
+			s.collectSysNUMAResUsed(testNow, 0.8)
+		})
+
+		// memory: node NUMA - pods NUMA, clamp >= 0
+		gotMem0, count := queryNUMASample(t, metricCache, metriccache.SystemNUMAMemoryUsageMetric, "0")
+		assert.Equal(t, 1, count)
+		assert.Equal(t, float64(1024-512), gotMem0)
+		gotMem1, count := queryNUMASample(t, metricCache, metriccache.SystemNUMAMemoryUsageMetric, "1")
+		assert.Equal(t, 1, count)
+		assert.Equal(t, float64(0), gotMem1)
+
+		// cpu: apportioned by the NUMA cpu usage ratio
+		gotCPU0, count := queryNUMASample(t, metricCache, metriccache.SystemNUMACPUUsageMetric, "0")
+		assert.Equal(t, 1, count)
+		assert.InDelta(t, 0.8*1.0/4.0, gotCPU0, 1e-9)
+		gotCPU1, count := queryNUMASample(t, metricCache, metriccache.SystemNUMACPUUsageMetric, "1")
+		assert.Equal(t, 1, count)
+		assert.InDelta(t, 0.8*3.0/4.0, gotCPU1, 1e-9)
+	})
+
+	t.Run("pods NUMA memory missing, only cpu is reported", func(t *testing.T) {
+		metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+			TSDBPath:              t.TempDir(),
+			TSDBEnablePromMetrics: false,
+		})
+		assert.NoError(t, err)
+		defer func() { assert.NoError(t, metricCache.Close()) }()
+		s := &systemResourceCollector{
+			collectInterval:  time.Second,
+			outdatedInterval: config.CollectSysMetricOutdatedInterval,
+			appendableDB:     metricCache,
+			sharedState:      framework.NewSharedState(),
+		}
+		s.sharedState.UpdateNodeNUMAUsage(
+			map[int32]metriccache.Point{
+				0: {Timestamp: testNow, Value: 2.0},
+			},
+			map[int32]metriccache.Point{
+				0: {Timestamp: testNow, Value: 1024},
+			})
+
+		assert.NotPanics(t, func() {
+			s.collectSysNUMAResUsed(testNow, 0.5)
+		})
+		_, count := queryNUMASample(t, metricCache, metriccache.SystemNUMAMemoryUsageMetric, "0")
+		assert.Equal(t, 0, count)
+		gotCPU0, count := queryNUMASample(t, metricCache, metriccache.SystemNUMACPUUsageMetric, "0")
+		assert.Equal(t, 1, count)
+		assert.InDelta(t, 0.5, gotCPU0, 1e-9)
+	})
+}
+
+func Test_systemResourceCollector_collectSysNUMAResUsed_cpuOutdated(t *testing.T) {
+	testNow := time.Now()
+	originalTimeNow := timeNow
+	timeNow = func() time.Time {
+		return testNow
+	}
+	defer func() { timeNow = originalTimeNow }()
+	config := framework.NewDefaultConfig()
+
+	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+		TSDBPath:              t.TempDir(),
+		TSDBEnablePromMetrics: false,
+	})
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, metricCache.Close()) }()
+	s := &systemResourceCollector{
+		collectInterval:  time.Second,
+		outdatedInterval: config.CollectSysMetricOutdatedInterval,
+		appendableDB:     metricCache,
+		sharedState:      framework.NewSharedState(),
+	}
+	s.sharedState.UpdateNodeNUMAUsage(
+		map[int32]metriccache.Point{
+			0: {Timestamp: testNow.Add(-config.CollectSysMetricOutdatedInterval * 2), Value: 2.0},
+		},
+		map[int32]metriccache.Point{
+			0: {Timestamp: testNow, Value: 1024},
+		})
+	s.sharedState.UpdatePodsNUMAMemoryUsage("pod-collector", map[int32]metriccache.Point{
+		0: {Timestamp: testNow, Value: 512},
+	})
+
+	assert.NotPanics(t, func() {
+		s.collectSysNUMAResUsed(testNow, 0.5)
+	})
+
+	querier, err := metricCache.Querier(testNow.Add(-5*time.Second), testNow.Add(5*time.Second))
+	assert.NoError(t, err)
+	defer querier.Close()
+	queryNUMASample := func(metricResource metriccache.MetricResource) (float64, int) {
+		queryMeta, err := metricResource.BuildQueryMeta(metriccache.MetricPropertiesFunc.NUMA("0"))
+		assert.NoError(t, err)
+		aggregateResult := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+		assert.NoError(t, querier.Query(queryMeta, nil, aggregateResult))
+		if aggregateResult.Count() == 0 {
+			return 0, 0
+		}
+		v, err := aggregateResult.Value(metriccache.AggregationTypeAVG)
+		assert.NoError(t, err)
+		return v, aggregateResult.Count()
+	}
+
+	// the cpu part is skipped since the node NUMA cpu metric is outdated,
+	// while the memory part is still committed
+	_, count := queryNUMASample(metriccache.SystemNUMACPUUsageMetric)
+	assert.Equal(t, 0, count)
+	gotMem, count := queryNUMASample(metriccache.SystemNUMAMemoryUsageMetric)
+	assert.Equal(t, 1, count)
+	assert.Equal(t, float64(1024-512), gotMem)
+}

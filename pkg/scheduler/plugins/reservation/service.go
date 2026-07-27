@@ -101,4 +101,18 @@ func (pl *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, resp)
 	})
+
+	// /reservationSelectorIndex returns a snapshot of the reservationSelector
+	// inverted index for online troubleshooting. The endpoint is always
+	// registered; when the index is disabled it simply reports {enabled:false}.
+	//
+	// By default the response only contains aggregated counts (size bounded by
+	// the number of configured prefixes), which is safe to serve in production.
+	// Pass ?detail=true to include the per-prefix per-node UID lists; the
+	// payload then grows linearly with the number of indexed reservations and
+	// should only be used for ad-hoc debugging on small/medium clusters.
+	group.GET("/reservationSelectorIndex", func(c *gin.Context) {
+		detail := c.Query("detail") == "true"
+		c.JSON(http.StatusOK, pl.reservationCache.DumpReservationSelectorIndex(detail))
+	})
 }

@@ -137,6 +137,37 @@ var (
 		[]string{"reason", "job_size"},
 	)
 
+	ReservationSelectorIndexQueryTotal = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "reservation_selector_index_query_total",
+			Help:           "Total number of reservationSelector index queries, labeled by index hit/miss result.",
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"result"},
+	)
+
+	ReservationSelectorIndexCandidates = metrics.NewHistogram(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "reservation_selector_index_candidates_count",
+			Help:           "The number of candidate nodes returned by the reservationSelector white-list index for an index-hit query.",
+			Buckets:        metrics.ExponentialBuckets(1, 2, 16),
+			StabilityLevel: metrics.ALPHA,
+		},
+	)
+
+	InlineBatchScheduleDuration = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "inline_batch_schedule_duration_seconds",
+			Help:           "Duration of an inline batch schedule (whole-job PreFilter/Filter/Reserve/Assume + Bind) triggered by a FindOneNode plan, labeled by result (success/failure).",
+			Buckets:        metrics.ExponentialBuckets(0.001, 2, 15),
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"result"},
+	)
+
 	metricsList = []metrics.Registerable{
 		SchedulingTimeout,
 		ReservationStatusPhase,
@@ -149,6 +180,9 @@ var (
 		NextPodDeleteFromQueueLatency,
 		ElasticQuotaHookPluginLatency,
 		GangScheduleCycleDuration,
+		ReservationSelectorIndexQueryTotal,
+		ReservationSelectorIndexCandidates,
+		InlineBatchScheduleDuration,
 	}
 
 	gcMetricsList = []prometheus.Collector{

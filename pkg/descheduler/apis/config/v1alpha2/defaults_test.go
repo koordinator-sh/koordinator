@@ -465,10 +465,10 @@ func TestSetDefaults_ScaleDownBinPackArgs(t *testing.T) {
 			name: "empty args",
 			args: &ScaleDownBinPackArgs{},
 			expected: &ScaleDownBinPackArgs{
-				Paused:         ptr.To[bool](false),
-				Strategy:       ScaleDownBinPackStrategyCalculateOnly,
-				MaxPodsToEvict: ptr.To[int32](0),
-				Resources:      []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				Paused: ptr.To[bool](false),
+
+				Strategy:  ScaleDownBinPackStrategyCalculateOnly,
+				Resources: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
 				ResourceWeights: map[corev1.ResourceName]float64{
 					corev1.ResourceCPU:    1.0,
 					corev1.ResourceMemory: 1.0,
@@ -486,10 +486,10 @@ func TestSetDefaults_ScaleDownBinPackArgs(t *testing.T) {
 				},
 			},
 			expected: &ScaleDownBinPackArgs{
-				Paused:         ptr.To[bool](true),
-				Strategy:       ScaleDownBinPackStrategyEvictDirectly,
-				MaxPodsToEvict: ptr.To[int32](0),
-				Resources:      []corev1.ResourceName{corev1.ResourceCPU},
+				Paused: ptr.To[bool](true),
+
+				Strategy:  ScaleDownBinPackStrategyEvictDirectly,
+				Resources: []corev1.ResourceName{corev1.ResourceCPU},
 				ResourceWeights: map[corev1.ResourceName]float64{
 					corev1.ResourceCPU: 2.5,
 				},
@@ -504,10 +504,10 @@ func TestSetDefaults_ScaleDownBinPackArgs(t *testing.T) {
 				},
 			},
 			expected: &ScaleDownBinPackArgs{
-				Paused:         ptr.To[bool](false),
-				Strategy:       ScaleDownBinPackStrategyCalculateOnly,
-				MaxPodsToEvict: ptr.To[int32](0),
-				Resources:      []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
+				Paused: ptr.To[bool](false),
+
+				Strategy:  ScaleDownBinPackStrategyCalculateOnly,
+				Resources: []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory},
 				ResourceWeights: map[corev1.ResourceName]float64{
 					corev1.ResourceCPU:    2.5,
 					corev1.ResourceMemory: 1.0,

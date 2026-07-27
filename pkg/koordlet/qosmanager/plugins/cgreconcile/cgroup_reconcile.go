@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	resourcehelper "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
@@ -64,6 +65,10 @@ type cgroupResourceSummary struct {
 	memoryUsePriorityOom   *int64
 	memoryPriority         *int64
 	memoryOomKillGroup     *int64
+	// Alinux memcg page cache limit
+	memoryPageCacheLimitEnable   *int64
+	memoryPageCacheLimitSize     *int64
+	memoryPageCacheLimitSyncMode *int64
 }
 
 type cgroupResourceUpdaterMeta struct {
@@ -274,6 +279,58 @@ func (m *cgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 			*summary.memoryLow = *summary.memoryMin
 			klog.V(5).Infof("correct calculated memory.low for pod since it is lower than memory.min, "+
 				"pod %s, current value %v", util.GetPodKey(pod), summary.memoryLow)
+		}
+		// Alinux memcg page cache limit
+		// page cache limit is set at pod level. PageCacheLimitSize (absolute bytes) takes precedence
+		// over PageCacheLimitPercent when set; percent is calculated from pod memory limit.
+		var podMemLimit int64
+		if apiext.GetPodQoSClassRaw(pod) != apiext.QoSBE {
+			podLimits := resourcehelper.PodLimits(pod, resourcehelper.PodResourcesOptions{})
+			if memLimit, ok := podLimits[corev1.ResourceMemory]; ok {
+				podMemLimit = memLimit.Value()
+			} else {
+				podMemLimit = -1 // unlimited
+			}
+		} else {
+			podMemLimit = util.GetPodBEMemoryByteLimit(pod)
+		}
+		var pageCacheLimitSize *int64
+		if podCfg.MemoryQOS.PageCacheLimitSize != nil {
+			size := *podCfg.MemoryQOS.PageCacheLimitSize
+			// kernel requires size within [0, memory.limit_in_bytes]
+			if podMemLimit > 0 && size > podMemLimit {
+				size = podMemLimit
+			}
+			pageCacheLimitSize = ptr.To[int64](size)
+		} else if podCfg.MemoryQOS.PageCacheLimitPercent != nil && podMemLimit > 0 {
+			pageCacheLimitSize = ptr.To[int64](podMemLimit * (*podCfg.MemoryQOS.PageCacheLimitPercent) / 100)
+		}
+		if pageCacheLimitSize != nil {
+			if *pageCacheLimitSize > 0 {
+				summary.memoryPageCacheLimitSize = pageCacheLimitSize
+				summary.memoryPageCacheLimitEnable = ptr.To[int64](1)
+				if podCfg.MemoryQOS.PageCacheReclaimSync != nil {
+					if *podCfg.MemoryQOS.PageCacheReclaimSync {
+						summary.memoryPageCacheLimitSyncMode = ptr.To[int64](1)
+					} else {
+						summary.memoryPageCacheLimitSyncMode = ptr.To[int64](0)
+					}
+				} else {
+					summary.memoryPageCacheLimitSyncMode = ptr.To[int64](0) // async mode by default
+				}
+			} else {
+				// Explicit 0: reset to disabled state
+				summary.memoryPageCacheLimitEnable = ptr.To[int64](0)
+				summary.memoryPageCacheLimitSize = ptr.To[int64](0)
+			}
+		}
+		// explicit PageCacheEnable overrides the enable value derived from size/percent
+		if podCfg.MemoryQOS.PageCacheEnable != nil {
+			if *podCfg.MemoryQOS.PageCacheEnable {
+				summary.memoryPageCacheLimitEnable = ptr.To[int64](1)
+			} else {
+				summary.memoryPageCacheLimitEnable = ptr.To[int64](0)
+			}
 		}
 	}
 
@@ -520,6 +577,19 @@ func makeCgroupResources(parentDir string, summary *cgroupResourceSummary) []res
 		{
 			resourceType: system.MemoryOomGroupName,
 			value:        summary.memoryOomKillGroup,
+		},
+		// Alinux memcg page cache limit
+		{
+			resourceType: system.MemoryPageCacheLimitEnableName,
+			value:        summary.memoryPageCacheLimitEnable,
+		},
+		{
+			resourceType: system.MemoryPageCacheLimitSizeName,
+			value:        summary.memoryPageCacheLimitSize,
+		},
+		{
+			resourceType: system.MemoryPageCacheLimitSyncModeName,
+			value:        summary.memoryPageCacheLimitSyncMode,
 		},
 	} {
 		if t.value == nil {

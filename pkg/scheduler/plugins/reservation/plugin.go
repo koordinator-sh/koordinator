@@ -132,6 +132,7 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 	reservationLister := koordSharedInformerFactory.Scheduling().V1alpha1().Reservations().Lister()
 	cache := newReservationCache(reservationLister)
 	cache.setPreAllocationConfig(pluginArgs.PreAllocationConfig)
+	cache.setReservationSelectorIndexConfig(pluginArgs.ReservationSelectorIndex)
 	nm := newNominator(podLister, reservationLister)
 	registerReservationEventHandler(cache, koordSharedInformerFactory, nm)
 	registerPodEventHandler(extendedHandle, cache, nm, sharedInformerFactory)

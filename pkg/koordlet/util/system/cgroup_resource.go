@@ -163,6 +163,10 @@ const (
 	MemoryUsePriorityOomName   = "memory.use_priority_oom"
 	MemoryOomGroupName         = "memory.oom.group"
 	MemoryIdlePageStatsName    = "memory.idle_page_stats"
+	// Anolis OS memcg page cache limit interfaces (kernel >= 5.10.134-14)
+	MemoryPageCacheLimitEnableName   = "memory.pagecache_limit.enable"
+	MemoryPageCacheLimitSizeName     = "memory.pagecache_limit.size"
+	MemoryPageCacheLimitSyncModeName = "memory.pagecache_limit.sync"
 
 	BlkioTRIopsName   = "blkio.throttle.read_iops_device"
 	BlkioTRBpsName    = "blkio.throttle.read_bps_device"
@@ -190,13 +194,16 @@ var (
 	MemoryUsePriorityOomValidator           = &RangeValidator{min: 0, max: 1}
 	MemoryWmarkMinAdjValidator              = &RangeValidator{min: -25, max: 50}
 	MemoryWmarkScaleFactorFileNameValidator = &RangeValidator{min: 1, max: 1000}
-	BlkioTRIopsValidator                    = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTRIopsName}
-	BlkioTRBpsValidator                     = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTRBpsName}
-	BlkioTWIopsValidator                    = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTWIopsName}
-	BlkioTWBpsValidator                     = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTWBpsName}
-	BlkioIOWeightValidator                  = &BlkIORangeValidator{min: 1, max: 100, resource: BlkioIOWeightName}
-	BlkioIOQoSValidator                     = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioIOQoSName}
-	BlkioIOModelValidator                   = &BlkIORangeValidator{min: 1, max: math.MaxInt64, resource: BlkioIOModelName}
+	// Alinux page cache limit validators
+	MemoryPageCacheLimitEnableValidator = &RangeValidator{min: 0, max: 1}
+	MemoryPageCacheLimitSyncValidator   = &RangeValidator{min: 0, max: 1}
+	BlkioTRIopsValidator                = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTRIopsName}
+	BlkioTRBpsValidator                 = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTRBpsName}
+	BlkioTWIopsValidator                = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTWIopsName}
+	BlkioTWBpsValidator                 = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioTWBpsName}
+	BlkioIOWeightValidator              = &BlkIORangeValidator{min: 1, max: 100, resource: BlkioIOWeightName}
+	BlkioIOQoSValidator                 = &BlkIORangeValidator{min: 0, max: math.MaxInt64, resource: BlkioIOQoSName}
+	BlkioIOModelValidator               = &BlkIORangeValidator{min: 1, max: math.MaxInt64, resource: BlkioIOModelName}
 
 	NetClsClassIdValidator = &NetClsRangeValidator{resource: NetClsClassIdName}
 
@@ -239,14 +246,13 @@ var (
 	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryIdlePageStats    = DefaultFactory.New(MemoryIdlePageStatsName, CgroupMemDir).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
-
-	BlkioReadIops  = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(BlkioTRIopsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
-	BlkioReadBps   = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(BlkioTRBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
-	BlkioWriteIops = DefaultFactory.New(BlkioTWIopsName, CgroupBlkioDir).WithValidator(BlkioTWIopsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
-	BlkioWriteBps  = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir).WithValidator(BlkioTWBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
-	BlkioIOWeight  = DefaultFactory.New(BlkioIOWeightName, CgroupBlkioDir).WithValidator(BlkioIOWeightValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
-	BlkioIOQoS     = DefaultFactory.New(BlkioIOQoSName, CgroupBlkioDir).WithValidator(BlkioIOQoSValidator).WithSupported(SupportedIfFileExistsInRootCgroup(BlkioIOQoSName, CgroupBlkioDir))
-	BlkioIOModel   = DefaultFactory.New(BlkioIOModelName, CgroupBlkioDir).WithValidator(BlkioIOModelValidator).WithSupported(SupportedIfFileExistsInRootCgroup(BlkioIOModelName, CgroupBlkioDir))
+	BlkioReadIops          = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(BlkioTRIopsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	BlkioReadBps           = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(BlkioTRBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	BlkioWriteIops         = DefaultFactory.New(BlkioTWIopsName, CgroupBlkioDir).WithValidator(BlkioTWIopsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	BlkioWriteBps          = DefaultFactory.New(BlkioTWBpsName, CgroupBlkioDir).WithValidator(BlkioTWBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	BlkioIOWeight          = DefaultFactory.New(BlkioIOWeightName, CgroupBlkioDir).WithValidator(BlkioIOWeightValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	BlkioIOQoS             = DefaultFactory.New(BlkioIOQoSName, CgroupBlkioDir).WithValidator(BlkioIOQoSValidator).WithSupported(SupportedIfFileExistsInRootCgroup(BlkioIOQoSName, CgroupBlkioDir))
+	BlkioIOModel           = DefaultFactory.New(BlkioIOModelName, CgroupBlkioDir).WithValidator(BlkioIOModelValidator).WithSupported(SupportedIfFileExistsInRootCgroup(BlkioIOModelName, CgroupBlkioDir))
 
 	NetClsClassId = DefaultFactory.New(NetClsClassIdName, CgroupNetClsDir).WithValidator(NetClsClassIdValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 
@@ -321,6 +327,10 @@ var (
 	MemoryPriorityV2         = DefaultFactory.NewV2(MemoryPriorityName, MemoryPriorityName).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryUsePriorityOomV2   = DefaultFactory.NewV2(MemoryUsePriorityOomName, MemoryUsePriorityOomName).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryOomGroupV2         = DefaultFactory.NewV2(MemoryOomGroupName, MemoryOomGroupName).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExists)
+	// Alinux memcg page cache limit resources (v2, same filename as v1 since it's a kernel extension interface)
+	MemoryPageCacheLimitEnableV2   = DefaultFactory.NewV2(MemoryPageCacheLimitEnableName, MemoryPageCacheLimitEnableName).WithValidator(MemoryPageCacheLimitEnableValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryPageCacheLimitSizeV2     = DefaultFactory.NewV2(MemoryPageCacheLimitSizeName, MemoryPageCacheLimitSizeName).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExists)
+	MemoryPageCacheLimitSyncModeV2 = DefaultFactory.NewV2(MemoryPageCacheLimitSyncModeName, MemoryPageCacheLimitSyncModeName).WithValidator(MemoryPageCacheLimitSyncValidator).WithCheckSupported(SupportedIfFileExists)
 
 	knownCgroupV2Resources = []Resource{
 		CPUCFSQuotaV2,
@@ -352,6 +362,10 @@ var (
 		MemoryPriorityV2,
 		MemoryUsePriorityOomV2,
 		MemoryOomGroupV2,
+		// Alinux memcg page cache limit
+		MemoryPageCacheLimitEnableV2,
+		MemoryPageCacheLimitSizeV2,
+		MemoryPageCacheLimitSyncModeV2,
 		// TODO: register BlkioIOWeight, BlkioIOQoS and BlkioIOModel
 
 		NetClsClassId,

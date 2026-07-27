@@ -35,6 +35,10 @@ func makeNode(name string, cpu, mem string) *corev1.Node {
 				corev1.ResourceCPU:    resource.MustParse(cpu),
 				corev1.ResourceMemory: resource.MustParse(mem),
 			},
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(cpu),
+				corev1.ResourceMemory: resource.MustParse(mem),
+			},
 		},
 	}
 }
@@ -221,4 +225,40 @@ func TestRankPods_ZeroRequestTargetPod(t *testing.T) {
 
 	// Validate the Infinity trap worked
 	assert.True(t, math.IsInf(ranked[2].EvacuationScore, 1), "Expected +Inf score for zero-request target on a taxed node")
+}
+
+func TestRankPods_ResourceDomination(t *testing.T) {
+	now := time.Now()
+
+	// A node with 4 CPU and 8Gi Memory.
+	node := makeNode("node1", "4", "8Gi")
+
+	// CPU heavy pod: 2 CPU, 100Mi Memory
+	// CPU usage: 2 / 4 = 0.5
+	// Mem usage: 100Mi / 8Gi = 100 * 2^20 / (8 * 2^30) = 100 / 8192 = 0.012
+	// Normalized size = 0.5 + 0.012 = 0.512
+	pCpuHeavy := makePod("default", "p-cpu-heavy", "node1", "2", "100Mi", now)
+
+	// Memory heavy pod: 100m CPU, 3Gi Memory
+	// CPU usage: 0.1 / 4 = 0.025
+	// Mem usage: 3Gi / 8Gi = 0.375
+	// Normalized size = 0.025 + 0.375 = 0.4
+	pMemHeavy := makePod("default", "p-mem-heavy", "node1", "100m", "3Gi", now)
+
+	nodes := []*corev1.Node{node}
+	targetPods := []*corev1.Pod{pCpuHeavy, pMemHeavy}
+
+	weights := map[corev1.ResourceName]float64{
+		corev1.ResourceCPU:    1.0,
+		corev1.ResourceMemory: 1.0,
+	}
+
+	ranked := RankPods(nodes, targetPods, nil, nil, weights)
+
+	assert.Equal(t, 2, len(ranked))
+
+	// cpu-heavy normalized size (0.512) > mem-heavy normalized size (0.4)
+	// So cpu-heavy pod should be ranked first (largest size first).
+	assert.Equal(t, "p-cpu-heavy", ranked[0].Pod.Name)
+	assert.Equal(t, "p-mem-heavy", ranked[1].Pod.Name)
 }
