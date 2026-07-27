@@ -60,12 +60,35 @@ kubectl delete validatingwebhookconfiguration \
   koordinator-validating-webhook-configuration --ignore-not-found
 
 # Scale down components not needed for benchmarks to free CI resources.
+# koord-manager and koord-descheduler are Deployments; koordlet is a
+# DaemonSet and uses a nodeSelector patch to achieve the same effect.
+# koordlet on a kind node would CrashLoopBackOff anyway (it needs a real
+# kubelet's /var/lib/kubelet and cgroup hierarchy), and the benchmark only
+# measures scheduler throughput — NodeMetric data from koordlet is not
+# required (filterExpiredNodeMetrics=false means absent metrics are safe).
 echo "==> Scaling down non-benchmark components"
-kubectl scale deployment/koord-manager    -n koordinator-system --replicas=0
+kubectl scale deployment/koord-manager     -n koordinator-system --replicas=0
 kubectl scale deployment/koord-descheduler -n koordinator-system --replicas=0
+kubectl patch daemonset koordlet -n koordinator-system \
+  -p '{"spec":{"template":{"spec":{"nodeSelector":{"koordinator-benchmark/skip":"true"}}}}}'
 
 echo "==> Waiting for koord-scheduler to be ready"
 kubectl rollout status deployment/koord-scheduler \
   -n koordinator-system --timeout=300s
+
+echo "==> Verifying full koordinator-system namespace pod state"
+kubectl get pods -n koordinator-system -o wide
+# Fail if any pod (other than the intentionally-suppressed ones) is not Running/Completed.
+# koordlet pods should be 0 (patched away); koord-manager and koord-descheduler
+# should have 0 ready replicas but 0 pods (scaled to 0). Only koord-scheduler
+# should be Running.
+NOT_RUNNING=$(kubectl get pods -n koordinator-system \
+  --field-selector='status.phase!=Running,status.phase!=Succeeded' \
+  -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
+if [[ -n "$NOT_RUNNING" ]]; then
+  echo "ERROR: these pods in koordinator-system are not Running: $NOT_RUNNING" >&2
+  kubectl describe pods -n koordinator-system || true
+  exit 1
+fi
 
 echo "==> Done. Run: make -C test/perf benchmark"

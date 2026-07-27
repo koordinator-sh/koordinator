@@ -91,6 +91,11 @@ jobs:
           kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --tail=80 2>/dev/null || true
           echo "=== koord-scheduler pod describe ==="
           kubectl describe pods -n koordinator-system -l koord-app=koord-scheduler || true
+          echo "=== koordlet logs (crash detection) ==="
+          kubectl logs -n koordinator-system -l koord-app=koordlet --tail=50 2>/dev/null || true
+          kubectl logs -n koordinator-system -l koord-app=koordlet --previous --tail=50 2>/dev/null || true
+          echo "=== koordlet pod describe ==="
+          kubectl describe pods -n koordinator-system -l koord-app=koordlet 2>/dev/null || true
           echo "=== cluster events (all namespaces, sorted) ==="
           kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
           echo "=== koord-scheduler-config ConfigMap ==="
