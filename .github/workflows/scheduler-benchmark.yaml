@@ -44,11 +44,19 @@ jobs:
       - name: Set up cluster
         run: make -C test/perf setup
 
-      - name: Run benchmark
+      - name: Run benchmark (basic)
         run: |
           make -C test/perf benchmark \
             CONFIG=configs/scenarios/basic-1k.yaml \
             BASELINE=baselines/basic-1k.json
+
+      # Gang scenario: no baseline yet — run for smoke-test only (confirms
+      # scenario completes without crashing). Once a stable baseline is
+      # captured from a green run, add BASELINE=baselines/gang-1k.json.
+      - name: Run benchmark (gang)
+        run: |
+          make -C test/perf benchmark \
+            CONFIG=configs/scenarios/gang-1k.yaml
 
       - name: Fail on regression
         if: always()
