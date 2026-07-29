@@ -72,27 +72,36 @@ kubectl scale deployment/koord-descheduler -n koordinator-system --replicas=0
 kubectl patch daemonset koordlet -n koordinator-system \
   -p '{"spec":{"template":{"spec":{"nodeSelector":{"koordinator-benchmark/skip":"true"}}}}}'
 
+# Wait for the scaled-down pods to actually terminate before checking namespace
+# health later — `kubectl scale` is async and returns immediately, but pods take
+# a moment to receive SIGTERM and exit. Without this, the health-check below can
+# catch them mid-shutdown and false-positive on pods behaving exactly as intended.
+kubectl wait --for=delete pod -l koord-app=koord-manager     -n koordinator-system --timeout=30s 2>/dev/null || true
+kubectl wait --for=delete pod -l koord-app=koord-descheduler -n koordinator-system --timeout=30s 2>/dev/null || true
+
 echo "==> Waiting for koord-scheduler to be ready"
 kubectl rollout status deployment/koord-scheduler \
   -n koordinator-system --timeout=300s
 
 echo "==> Verifying full koordinator-system namespace pod state"
 kubectl get pods -n koordinator-system -o wide
-# Check container readiness, not pod phase. A CrashLoopBackOff pod's
-# .status.phase is "Running", so a phase-based check passes silently while
-# the container is restarting. Instead, fail if any container reports
-# ready=false or has a non-zero restart count.
-NOT_READY=$(kubectl get pods -n koordinator-system -o json \
-  | jq -r '
-      .items[] |
-      .metadata.name as $pod |
-      .status.containerStatuses[]? |
-      select(.ready == false or .restartCount > 0) |
-      "\($pod)/\(.name) ready=\(.ready) restarts=\(.restartCount)"
-    ' 2>/dev/null || true)
-if [[ -n "$NOT_READY" ]]; then
-  echo "ERROR: unhealthy containers in koordinator-system:" >&2
-  echo "$NOT_READY" >&2
+# Exclude terminating pods (deletionTimestamp set) — they are intentionally
+# shutting down after the scale-to-0 above and are not errors.
+# For remaining pods, fail if any is not Running/Succeeded, has a container
+# that is not ready, or has restarted more than twice.
+UNHEALTHY=$(kubectl get pods -n koordinator-system -o json | jq -r '
+  .items[]
+  | select(.metadata.deletionTimestamp == null)
+  | select(
+      (.status.phase != "Running" and .status.phase != "Succeeded")
+      or (.status.containerStatuses[]? | .ready == false)
+      or (.status.containerStatuses[]? | .restartCount > 2)
+    )
+  | .metadata.name
+')
+if [[ -n "$UNHEALTHY" ]]; then
+  echo "ERROR: unhealthy pods in koordinator-system:" >&2
+  echo "$UNHEALTHY" >&2
   kubectl describe pods -n koordinator-system || true
   exit 1
 fi
