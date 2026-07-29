@@ -94,6 +94,8 @@ var (
 	}
 
 	defaultMaxHintNodes = ptr.To[int32](100)
+
+	defaultEnablePrefixMatch = ptr.To(false)
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -285,5 +287,12 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 func SetDefaults_SchedulingHintArgs(obj *SchedulingHintArgs) {
 	if obj.MaxHintNodes == nil {
 		obj.MaxHintNodes = defaultMaxHintNodes
+	}
+}
+
+// SetDefaults_ScheduleAdmissionArgs sets the default parameters for ScheduleAdmission plugin.
+func SetDefaults_ScheduleAdmissionArgs(obj *ScheduleAdmissionArgs) {
+	if obj.EnablePrefixMatch == nil {
+		obj.EnablePrefixMatch = defaultEnablePrefixMatch
 	}
 }

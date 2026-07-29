@@ -23,34 +23,70 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
 func TestNew(t *testing.T) {
-	plugin, err := New(context.Background(), nil, nil)
-	assert.NoError(t, err)
-	assert.NotNil(t, plugin)
-	assert.Equal(t, Name, plugin.Name())
+	tests := []struct {
+		name                  string
+		args                  runtime.Object
+		wantErr               bool
+		wantEnablePrefixMatch bool
+	}{
+		{
+			name:                  "nil args defaults to exact-match",
+			args:                  nil,
+			wantEnablePrefixMatch: false,
+		},
+		{
+			name:                  "args with prefix match disabled",
+			args:                  &config.ScheduleAdmissionArgs{EnablePrefixMatch: false},
+			wantEnablePrefixMatch: false,
+		},
+		{
+			name:                  "args with prefix match enabled",
+			args:                  &config.ScheduleAdmissionArgs{EnablePrefixMatch: true},
+			wantEnablePrefixMatch: true,
+		},
+		{
+			name:    "wrong args type",
+			args:    &config.SchedulingHintArgs{},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plugin, err := New(context.Background(), tt.args, nil)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.NotNil(t, plugin)
+			assert.Equal(t, Name, plugin.Name())
+			assert.Equal(t, tt.wantEnablePrefixMatch, plugin.(*Plugin).enablePrefixMatch)
+		})
+	}
 }
 
 func TestPreEnqueue(t *testing.T) {
-	pl := &Plugin{}
-
 	tests := []struct {
-		name       string
-		pod        *corev1.Pod
-		wantStatus fwktype.Code
+		name              string
+		enablePrefixMatch bool
+		pod               *corev1.Pod
+		wantStatus        fwktype.Code
 	}{
 		{
 			name: "pod with no labels",
 			pod: &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-pod",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
 			},
 			wantStatus: fwktype.Success,
 		},
@@ -58,28 +94,57 @@ func TestPreEnqueue(t *testing.T) {
 			name: "pod with unrelated labels",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-pod",
-					Labels: map[string]string{
-						"app": "test",
-					},
+					Name:   "test-pod",
+					Labels: map[string]string{"app": "test"},
 				},
 			},
 			wantStatus: fwktype.Success,
 		},
 		{
-			name: "pod with one schedule-admission label",
+			name: "exact-match mode: fixed label gates the pod",
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-pod",
-					Labels: map[string]string{
-						extension.LabelScheduleAdmissionPrefix + "quota-check": "true",
-					},
+					Name:   "test-pod",
+					Labels: map[string]string{extension.LabelScheduleAdmission: "true"},
 				},
 			},
 			wantStatus: fwktype.UnschedulableAndUnresolvable,
 		},
 		{
-			name: "pod with multiple schedule-admission labels",
+			name: "exact-match mode: prefixed label does not gate the pod",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-pod",
+					Labels: map[string]string{extension.LabelScheduleAdmissionPrefix + "quota-check": "true"},
+				},
+			},
+			wantStatus: fwktype.Success,
+		},
+		{
+			name:              "prefix mode: fixed label gates the pod",
+			enablePrefixMatch: true,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-pod",
+					Labels: map[string]string{extension.LabelScheduleAdmission: "true"},
+				},
+			},
+			wantStatus: fwktype.UnschedulableAndUnresolvable,
+		},
+		{
+			name:              "prefix mode: one prefixed label gates the pod",
+			enablePrefixMatch: true,
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-pod",
+					Labels: map[string]string{extension.LabelScheduleAdmissionPrefix + "quota-check": "true"},
+				},
+			},
+			wantStatus: fwktype.UnschedulableAndUnresolvable,
+		},
+		{
+			name:              "prefix mode: multiple prefixed labels gate the pod",
+			enablePrefixMatch: true,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-pod",
@@ -92,7 +157,8 @@ func TestPreEnqueue(t *testing.T) {
 			wantStatus: fwktype.UnschedulableAndUnresolvable,
 		},
 		{
-			name: "pod with mixed labels including schedule-admission",
+			name:              "prefix mode: mixed labels including schedule-admission",
+			enablePrefixMatch: true,
 			pod: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-pod",
@@ -108,6 +174,7 @@ func TestPreEnqueue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pl := &Plugin{enablePrefixMatch: tt.enablePrefixMatch}
 			status := pl.PreEnqueue(context.Background(), tt.pod)
 			assert.Equal(t, tt.wantStatus, status.Code())
 		})
@@ -125,7 +192,6 @@ func TestEventsToRegister(t *testing.T) {
 }
 
 func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
-	pl := &Plugin{}
 	logger := klog.Background()
 	podUID := types.UID("test-uid")
 
@@ -137,14 +203,16 @@ func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		oldObj   any
-		newObj   any
-		wantHint fwktype.QueueingHint
-		wantErr  bool
+		name              string
+		enablePrefixMatch bool
+		oldObj            any
+		newObj            any
+		wantHint          fwktype.QueueingHint
+		wantErr           bool
 	}{
 		{
-			name: "different pod updated",
+			name:              "different pod updated",
+			enablePrefixMatch: true,
 			oldObj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "other-pod",
@@ -163,14 +231,12 @@ func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
 			wantHint: fwktype.QueueSkip,
 		},
 		{
-			name: "schedule-admission label removed",
+			name: "exact-match mode: fixed label removed",
 			oldObj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "gated-pod",
-					UID:  podUID,
-					Labels: map[string]string{
-						extension.LabelScheduleAdmissionPrefix + "quota-check": "true",
-					},
+					Name:   "gated-pod",
+					UID:    podUID,
+					Labels: map[string]string{extension.LabelScheduleAdmission: "true"},
 				},
 			},
 			newObj: &corev1.Pod{
@@ -182,7 +248,43 @@ func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
 			wantHint: fwktype.Queue,
 		},
 		{
-			name: "unrelated label changed, schedule-admission unchanged",
+			name: "exact-match mode: prefixed label removed is ignored",
+			oldObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "gated-pod",
+					UID:    podUID,
+					Labels: map[string]string{extension.LabelScheduleAdmissionPrefix + "quota-check": "true"},
+				},
+			},
+			newObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "gated-pod",
+					UID:  podUID,
+				},
+			},
+			wantHint: fwktype.QueueSkip,
+		},
+		{
+			name:              "prefix mode: schedule-admission label removed",
+			enablePrefixMatch: true,
+			oldObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "gated-pod",
+					UID:    podUID,
+					Labels: map[string]string{extension.LabelScheduleAdmissionPrefix + "quota-check": "true"},
+				},
+			},
+			newObj: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "gated-pod",
+					UID:  podUID,
+				},
+			},
+			wantHint: fwktype.Queue,
+		},
+		{
+			name:              "prefix mode: unrelated label changed, schedule-admission unchanged",
+			enablePrefixMatch: true,
 			oldObj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "gated-pod",
@@ -206,7 +308,8 @@ func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
 			wantHint: fwktype.QueueSkip,
 		},
 		{
-			name: "schedule-admission label added, not removed",
+			name:              "prefix mode: schedule-admission label added, not removed",
+			enablePrefixMatch: true,
 			oldObj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "gated-pod",
@@ -215,17 +318,16 @@ func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
 			},
 			newObj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "gated-pod",
-					UID:  podUID,
-					Labels: map[string]string{
-						extension.LabelScheduleAdmissionPrefix + "quota-check": "true",
-					},
+					Name:   "gated-pod",
+					UID:    podUID,
+					Labels: map[string]string{extension.LabelScheduleAdmissionPrefix + "quota-check": "true"},
 				},
 			},
 			wantHint: fwktype.QueueSkip,
 		},
 		{
-			name: "one of multiple gates removed, still gated",
+			name:              "prefix mode: one of multiple gates removed, still gated",
+			enablePrefixMatch: true,
 			oldObj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "gated-pod",
@@ -238,17 +340,16 @@ func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
 			},
 			newObj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "gated-pod",
-					UID:  podUID,
-					Labels: map[string]string{
-						extension.LabelScheduleAdmissionPrefix + "resource-ready": "true",
-					},
+					Name:   "gated-pod",
+					UID:    podUID,
+					Labels: map[string]string{extension.LabelScheduleAdmissionPrefix + "resource-ready": "true"},
 				},
 			},
 			wantHint: fwktype.QueueSkip,
 		},
 		{
-			name: "all gates removed",
+			name:              "prefix mode: all gates removed",
+			enablePrefixMatch: true,
 			oldObj: &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "gated-pod",
@@ -279,6 +380,7 @@ func TestIsScheduleAdmissionLabelRemoved(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			pl := &Plugin{enablePrefixMatch: tt.enablePrefixMatch}
 			hint, err := pl.isScheduleAdmissionLabelRemoved(logger, pod, tt.oldObj, tt.newObj)
 			assert.Equal(t, tt.wantHint, hint)
 			if tt.wantErr {

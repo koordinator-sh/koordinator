@@ -53,7 +53,7 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	defaultprebind.Name:          defaultprebind.New,
 	noderesourcesfitplus.Name:    noderesourcesfitplus.New,
 	scarceresourceavoidance.Name: scarceresourceavoidance.New,
-	scheduleadmission.Name:      scheduleadmission.New,
+	scheduleadmission.Name:       scheduleadmission.New,
 	schedulinghint.Name:          schedulinghint.New,
 }
 

@@ -27,6 +27,7 @@ import (
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
 
 const (
@@ -34,14 +35,30 @@ const (
 )
 
 var (
-	_ fwktype.PreEnqueuePlugin = &Plugin{}
+	_ fwktype.PreEnqueuePlugin  = &Plugin{}
 	_ fwktype.EnqueueExtensions = &Plugin{}
 )
 
-type Plugin struct{}
+type Plugin struct {
+	// enablePrefixMatch reports whether all labels with the schedule-admission prefix gate the pod.
+	// When false, only the fixed schedule-admission label is checked (fast path).
+	enablePrefixMatch bool
+}
 
-func New(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
-	return &Plugin{}, nil
+func New(_ context.Context, args runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
+	// args may be nil when the plugin is enabled without an explicit pluginConfig entry,
+	// in which case the default (exact-match only) behavior applies.
+	enablePrefixMatch := false
+	if args != nil {
+		pluginArgs, ok := args.(*config.ScheduleAdmissionArgs)
+		if !ok {
+			return nil, fmt.Errorf("want args to be of type ScheduleAdmissionArgs, got %T", args)
+		}
+		enablePrefixMatch = pluginArgs.EnablePrefixMatch
+	}
+	return &Plugin{
+		enablePrefixMatch: enablePrefixMatch,
+	}, nil
 }
 
 func (pl *Plugin) Name() string {
@@ -49,8 +66,8 @@ func (pl *Plugin) Name() string {
 }
 
 func (pl *Plugin) PreEnqueue(ctx context.Context, pod *corev1.Pod) *fwktype.Status {
-	if extension.HasScheduleAdmissionLabels(pod) {
-		gates := extension.GetScheduleAdmissionGates(pod)
+	if extension.HasScheduleAdmissionLabels(pod, pl.enablePrefixMatch) {
+		gates := extension.GetScheduleAdmissionGates(pod, pl.enablePrefixMatch)
 		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
 			fmt.Sprintf("pod has schedule-admission gates: %v", gates))
 	}
@@ -82,7 +99,7 @@ func (pl *Plugin) isScheduleAdmissionLabelRemoved(logger klog.Logger, pod *corev
 
 	// Only re-enqueue when ALL schedule-admission labels have been removed.
 	// If any remain, PreEnqueue will reject the pod again, so skip.
-	if extension.HasScheduleAdmissionLabels(oldPod) && !extension.HasScheduleAdmissionLabels(newPod) {
+	if extension.HasScheduleAdmissionLabels(oldPod, pl.enablePrefixMatch) && !extension.HasScheduleAdmissionLabels(newPod, pl.enablePrefixMatch) {
 		logger.V(5).Info("All schedule-admission labels removed, re-enqueuing pod",
 			"pod", klog.KObj(pod))
 		return fwktype.Queue, nil
