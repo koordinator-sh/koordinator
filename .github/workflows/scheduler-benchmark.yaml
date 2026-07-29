@@ -94,9 +94,9 @@ jobs:
           free -h || true
           echo "=== Pods (wide) ==="
           kubectl get pods -A -o wide || true
-          echo "=== koord-scheduler logs ==="
-          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --tail=80 || true
-          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --tail=80 2>/dev/null || true
+          echo "=== koord-scheduler logs (last 12 min — covers full benchmark window) ==="
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --since=12m || true
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --tail=200 2>/dev/null || true
           echo "=== koord-scheduler pod describe ==="
           kubectl describe pods -n koordinator-system -l koord-app=koord-scheduler || true
           echo "=== koordlet logs (crash detection) ==="
@@ -105,7 +105,12 @@ jobs:
           echo "=== koordlet pod describe ==="
           kubectl describe pods -n koordinator-system -l koord-app=koordlet 2>/dev/null || true
           echo "=== cluster events (all namespaces, sorted) ==="
-          kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -80 || true
+          echo "=== FailedScheduling events (all namespaces) ==="
+          kubectl get events -A --field-selector=reason=FailedScheduling --sort-by=.lastTimestamp | tail -40 || true
+          echo "=== benchmark namespace pods and events ==="
+          kubectl get pods -n benchmark -o wide 2>/dev/null || true
+          kubectl get events -n benchmark --sort-by=.lastTimestamp 2>/dev/null | tail -40 || true
           echo "=== koord-scheduler-config ConfigMap ==="
           kubectl get configmap koord-scheduler-config -n koordinator-system -o yaml || true
 

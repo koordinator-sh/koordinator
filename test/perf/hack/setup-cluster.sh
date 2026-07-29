@@ -106,4 +106,27 @@ if [[ -n "$UNHEALTHY" ]]; then
   exit 1
 fi
 
+# Pre-create the benchmark namespace and a permissive ElasticQuota for it.
+# The ElasticQuota plugin assigns any pod in a namespace without a quota to the
+# system-wide "koordinator-default-quota", but a namespace-scoped quota is
+# simpler and avoids any ambiguity in quota lookup. The max values are set to
+# effectively unlimited so quota enforcement never becomes a scheduling gate
+# during the benchmark.
+echo "==> Pre-creating benchmark namespace and ElasticQuota"
+kubectl create namespace benchmark --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f - <<'EOF'
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: benchmark
+  namespace: benchmark
+spec:
+  max:
+    cpu: "10000"
+    memory: 100Ti
+  min:
+    cpu: "0"
+    memory: "0"
+EOF
+
 echo "==> Done. Run: make -C test/perf benchmark"
