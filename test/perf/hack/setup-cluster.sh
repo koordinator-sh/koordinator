@@ -78,15 +78,21 @@ kubectl rollout status deployment/koord-scheduler \
 
 echo "==> Verifying full koordinator-system namespace pod state"
 kubectl get pods -n koordinator-system -o wide
-# Fail if any pod (other than the intentionally-suppressed ones) is not Running/Completed.
-# koordlet pods should be 0 (patched away); koord-manager and koord-descheduler
-# should have 0 ready replicas but 0 pods (scaled to 0). Only koord-scheduler
-# should be Running.
-NOT_RUNNING=$(kubectl get pods -n koordinator-system \
-  --field-selector='status.phase!=Running,status.phase!=Succeeded' \
-  -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
-if [[ -n "$NOT_RUNNING" ]]; then
-  echo "ERROR: these pods in koordinator-system are not Running: $NOT_RUNNING" >&2
+# Check container readiness, not pod phase. A CrashLoopBackOff pod's
+# .status.phase is "Running", so a phase-based check passes silently while
+# the container is restarting. Instead, fail if any container reports
+# ready=false or has a non-zero restart count.
+NOT_READY=$(kubectl get pods -n koordinator-system -o json \
+  | jq -r '
+      .items[] |
+      .metadata.name as $pod |
+      .status.containerStatuses[]? |
+      select(.ready == false or .restartCount > 0) |
+      "\($pod)/\(.name) ready=\(.ready) restarts=\(.restartCount)"
+    ' 2>/dev/null || true)
+if [[ -n "$NOT_READY" ]]; then
+  echo "ERROR: unhealthy containers in koordinator-system:" >&2
+  echo "$NOT_READY" >&2
   kubectl describe pods -n koordinator-system || true
   exit 1
 fi
