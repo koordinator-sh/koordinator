@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -28,6 +29,7 @@ import (
 	pluginNames "k8s.io/kubernetes/pkg/scheduler/framework/plugins/names"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	kubeschedmetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/defaultprebind"
@@ -142,7 +144,8 @@ func TestAppendDefaultPlugins(t *testing.T) {
 
 func TestAppendSandboxProfile(t *testing.T) {
 	base := kubeschedulerconfig.KubeSchedulerProfile{
-		SchedulerName: "koord-scheduler",
+		SchedulerName:            "koord-scheduler",
+		PercentageOfNodesToScore: ptr.To[int32](20),
 		Plugins: &kubeschedulerconfig.Plugins{
 			MultiPoint: kubeschedulerconfig.PluginSet{
 				Enabled: []kubeschedulerconfig.Plugin{
@@ -177,7 +180,17 @@ func TestAppendSandboxProfile(t *testing.T) {
 			},
 		},
 		PluginConfig: []kubeschedulerconfig.PluginConfig{
-			{Name: "NodeResourcesFit"},
+			{
+				Name: pluginNames.NodeResourcesFit,
+				Args: &kubeschedulerconfig.NodeResourcesFitArgs{
+					ScoringStrategy: &kubeschedulerconfig.ScoringStrategy{
+						Type: kubeschedulerconfig.MostAllocated,
+						Resources: []kubeschedulerconfig.ResourceSpec{
+							{Name: string(corev1.ResourceCPU), Weight: 10},
+						},
+					},
+				},
+			},
 			{Name: "Reservation"},
 		},
 	}
@@ -190,15 +203,17 @@ func TestAppendSandboxProfile(t *testing.T) {
 
 	sandbox := profiles[1]
 	assert.Equal(t, apiext.SandboxSchedulerName, sandbox.SchedulerName)
+	assert.Equal(t, ptr.To(defaultSandboxPercentageOfNodesToScore), sandbox.PercentageOfNodesToScore)
 	assert.Equal(t, original.Plugins.MultiPoint, sandbox.Plugins.MultiPoint)
 	assert.Equal(t, original.Plugins.PreFilter, sandbox.Plugins.PreFilter)
 	assert.Equal(t, original.Plugins.Filter, sandbox.Plugins.Filter)
 	assert.Equal(t, original.Plugins.Reserve, sandbox.Plugins.Reserve)
-	assert.Empty(t, sandbox.Plugins.PreScore.Enabled)
+	assert.Equal(t, []kubeschedulerconfig.Plugin{{Name: pluginNames.NodeResourcesFit}}, sandbox.Plugins.PreScore.Enabled)
 	assert.Equal(t, []kubeschedulerconfig.Plugin{{Name: "*"}}, sandbox.Plugins.PreScore.Disabled)
-	assert.Empty(t, sandbox.Plugins.Score.Enabled)
+	assert.Equal(t, []kubeschedulerconfig.Plugin{{Name: pluginNames.NodeResourcesFit, Weight: 1}}, sandbox.Plugins.Score.Enabled)
 	assert.Equal(t, []kubeschedulerconfig.Plugin{{Name: "*"}}, sandbox.Plugins.Score.Disabled)
-	assert.Equal(t, original.PluginConfig, sandbox.PluginConfig)
+	assert.Equal(t, original.PluginConfig[1], sandbox.PluginConfig[1])
+	assertSandboxNodeResourcesFitConfig(t, sandbox.PluginConfig)
 }
 
 func TestAppendSandboxProfileWithoutExplicitPlugins(t *testing.T) {
@@ -208,33 +223,83 @@ func TestAppendSandboxProfileWithoutExplicitPlugins(t *testing.T) {
 
 	assert.Len(t, profiles, 2)
 	assert.Equal(t, apiext.SandboxSchedulerName, profiles[1].SchedulerName)
+	assert.Equal(t, ptr.To(defaultSandboxPercentageOfNodesToScore), profiles[1].PercentageOfNodesToScore)
 	assert.NotNil(t, profiles[1].Plugins)
 	assert.Empty(t, profiles[1].Plugins.MultiPoint.Enabled)
 	assert.Empty(t, profiles[1].Plugins.PreFilter.Enabled)
 	assert.Empty(t, profiles[1].Plugins.PreFilter.Disabled)
 	assert.Empty(t, profiles[1].Plugins.Filter.Enabled)
 	assert.Empty(t, profiles[1].Plugins.Filter.Disabled)
+	assert.Equal(t, []kubeschedulerconfig.Plugin{{Name: pluginNames.NodeResourcesFit}}, profiles[1].Plugins.PreScore.Enabled)
 	assert.Equal(t, []kubeschedulerconfig.Plugin{{Name: "*"}}, profiles[1].Plugins.PreScore.Disabled)
+	assert.Equal(t, []kubeschedulerconfig.Plugin{{Name: pluginNames.NodeResourcesFit, Weight: 1}}, profiles[1].Plugins.Score.Enabled)
 	assert.Equal(t, []kubeschedulerconfig.Plugin{{Name: "*"}}, profiles[1].Plugins.Score.Disabled)
+	assertSandboxNodeResourcesFitConfig(t, profiles[1].PluginConfig)
 }
 
 func TestAppendSandboxProfileDoesNotDuplicateExplicitProfile(t *testing.T) {
+	customNodeResourcesFitArgs := &kubeschedulerconfig.NodeResourcesFitArgs{
+		ScoringStrategy: &kubeschedulerconfig.ScoringStrategy{
+			Type: kubeschedulerconfig.MostAllocated,
+			Resources: []kubeschedulerconfig.ResourceSpec{
+				{Name: string(corev1.ResourceCPU), Weight: 5},
+			},
+		},
+	}
 	profiles := []kubeschedulerconfig.KubeSchedulerProfile{
 		{
 			SchedulerName: "koord-scheduler",
 			Plugins:       &kubeschedulerconfig.Plugins{},
 		},
 		{
-			SchedulerName: apiext.SandboxSchedulerName,
-			Plugins:       &kubeschedulerconfig.Plugins{},
+			SchedulerName:            apiext.SandboxSchedulerName,
+			PercentageOfNodesToScore: ptr.To[int32](30),
+			Plugins:                  &kubeschedulerconfig.Plugins{},
+			PluginConfig: []kubeschedulerconfig.PluginConfig{
+				{Name: pluginNames.NodeResourcesFit, Args: customNodeResourcesFitArgs},
+			},
 		},
 	}
+	originalSandboxProfile := profiles[1].DeepCopy()
 
 	got := AppendSandboxProfile(profiles)
 
 	assert.Len(t, got, 2)
 	assert.Same(t, &profiles[0], &got[0])
 	assert.Same(t, &profiles[1], &got[1])
+	assert.Equal(t, ptr.To[int32](30), got[1].PercentageOfNodesToScore)
+	assert.Equal(t, originalSandboxProfile, &got[1])
+}
+
+func assertSandboxNodeResourcesFitConfig(t *testing.T, pluginConfigs []kubeschedulerconfig.PluginConfig) {
+	t.Helper()
+
+	var got *kubeschedulerconfig.NodeResourcesFitArgs
+	count := 0
+	for _, pluginConfig := range pluginConfigs {
+		if pluginConfig.Name != pluginNames.NodeResourcesFit {
+			continue
+		}
+		count++
+		var ok bool
+		got, ok = pluginConfig.Args.(*kubeschedulerconfig.NodeResourcesFitArgs)
+		require.True(t, ok)
+	}
+
+	require.Equal(t, 1, count)
+	assert.Equal(t, &kubeschedulerconfig.NodeResourcesFitArgs{
+		ScoringStrategy: &kubeschedulerconfig.ScoringStrategy{
+			Type: kubeschedulerconfig.LeastAllocated,
+			Resources: []kubeschedulerconfig.ResourceSpec{
+				{Name: string(corev1.ResourceCPU), Weight: 1},
+				{Name: string(corev1.ResourceMemory), Weight: 1},
+				{Name: string(apiext.BatchCPU), Weight: 1},
+				{Name: string(apiext.BatchMemory), Weight: 1},
+				{Name: string(apiext.MidCPU), Weight: 1},
+				{Name: string(apiext.MidMemory), Weight: 1},
+			},
+		},
+	}, got)
 }
 
 type testSandboxProfilePlugin struct{}
@@ -336,6 +401,10 @@ func TestAppendSandboxProfilePreservesFilterPluginsInFramework(t *testing.T) {
 		"test-sandbox-filter-plugin": func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
 			return &testSandboxFilterPlugin{name: "test-sandbox-filter-plugin"}, nil
 		},
+		pluginNames.NodeResourcesFit: func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
+			factoryCalls[pluginNames.NodeResourcesFit]++
+			return &testSandboxFilterPlugin{name: pluginNames.NodeResourcesFit}, nil
+		},
 	}
 	for _, name := range []string{pluginNames.PodTopologySpread, pluginNames.InterPodAffinity} {
 		name := name
@@ -355,15 +424,16 @@ func TestAppendSandboxProfilePreservesFilterPluginsInFramework(t *testing.T) {
 	assert.NoError(t, err)
 
 	assert.True(t, baseFramework.HasScorePlugins())
-	assert.False(t, sandboxFramework.HasScorePlugins())
+	assert.True(t, sandboxFramework.HasScorePlugins())
 	assert.Contains(t, sandboxFramework.ListPlugins().PreFilter.Enabled, kubeschedulerconfig.Plugin{Name: "test-sandbox-filter-plugin"})
 	assert.Contains(t, sandboxFramework.ListPlugins().Filter.Enabled, kubeschedulerconfig.Plugin{Name: "test-sandbox-filter-plugin"})
 	assert.Contains(t, sandboxFramework.ListPlugins().PreFilter.Enabled, kubeschedulerconfig.Plugin{Name: pluginNames.PodTopologySpread})
 	assert.Contains(t, sandboxFramework.ListPlugins().Filter.Enabled, kubeschedulerconfig.Plugin{Name: pluginNames.InterPodAffinity})
-	assert.Empty(t, sandboxFramework.ListPlugins().PreScore.Enabled)
-	assert.Empty(t, sandboxFramework.ListPlugins().Score.Enabled)
+	assert.Contains(t, sandboxFramework.ListPlugins().PreScore.Enabled, kubeschedulerconfig.Plugin{Name: pluginNames.NodeResourcesFit})
+	assert.Contains(t, sandboxFramework.ListPlugins().Score.Enabled, kubeschedulerconfig.Plugin{Name: pluginNames.NodeResourcesFit, Weight: 1})
 	assert.Equal(t, map[string]int{
 		pluginNames.PodTopologySpread: 1,
 		pluginNames.InterPodAffinity:  1,
+		pluginNames.NodeResourcesFit:  1,
 	}, factoryCalls)
 }

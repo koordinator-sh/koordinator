@@ -17,11 +17,16 @@ limitations under the License.
 package defaultprofile
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
+	pluginNames "k8s.io/kubernetes/pkg/scheduler/framework/plugins/names"
+	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/defaultprebind"
 )
+
+const defaultSandboxPercentageOfNodesToScore int32 = 5
 
 func AppendDefaultPlugins(profiles []kubeschedulerconfig.KubeSchedulerProfile) {
 	for i := range profiles {
@@ -55,7 +60,7 @@ func AppendDefaultPlugins(profiles []kubeschedulerconfig.KubeSchedulerProfile) {
 	}
 }
 
-// AppendSandboxProfile adds a score-free profile derived from the first configured profile.
+// AppendSandboxProfile adds a lightweight scoring profile derived from the first configured profile.
 // A user-defined profile with the sandbox scheduler name takes precedence.
 func AppendSandboxProfile(profiles []kubeschedulerconfig.KubeSchedulerProfile) []kubeschedulerconfig.KubeSchedulerProfile {
 	for _, profile := range profiles {
@@ -72,14 +77,51 @@ func AppendSandboxProfile(profiles []kubeschedulerconfig.KubeSchedulerProfile) [
 		sandboxProfile.Plugins = &kubeschedulerconfig.Plugins{}
 	}
 	sandboxProfile.SchedulerName = apiext.SandboxSchedulerName
-	sandboxProfile.Plugins.PreScore = disabledAllPlugin()
-	sandboxProfile.Plugins.Score = disabledAllPlugin()
+	sandboxProfile.PercentageOfNodesToScore = ptr.To(defaultSandboxPercentageOfNodesToScore)
+	sandboxProfile.Plugins.PreScore = kubeschedulerconfig.PluginSet{
+		Enabled:  []kubeschedulerconfig.Plugin{{Name: pluginNames.NodeResourcesFit}},
+		Disabled: []kubeschedulerconfig.Plugin{{Name: "*"}},
+	}
+	sandboxProfile.Plugins.Score = kubeschedulerconfig.PluginSet{
+		Enabled:  []kubeschedulerconfig.Plugin{{Name: pluginNames.NodeResourcesFit, Weight: 1}},
+		Disabled: []kubeschedulerconfig.Plugin{{Name: "*"}},
+	}
+	sandboxProfile.PluginConfig = withSandboxNodeResourcesFitConfig(sandboxProfile.PluginConfig)
 
 	return append(profiles, *sandboxProfile)
 }
 
-func disabledAllPlugin() kubeschedulerconfig.PluginSet {
-	return kubeschedulerconfig.PluginSet{
-		Disabled: []kubeschedulerconfig.Plugin{{Name: "*"}},
+func withSandboxNodeResourcesFitConfig(pluginConfigs []kubeschedulerconfig.PluginConfig) []kubeschedulerconfig.PluginConfig {
+	sandboxPluginConfig := kubeschedulerconfig.PluginConfig{
+		Name: pluginNames.NodeResourcesFit,
+		Args: &kubeschedulerconfig.NodeResourcesFitArgs{
+			ScoringStrategy: &kubeschedulerconfig.ScoringStrategy{
+				Type: kubeschedulerconfig.LeastAllocated,
+				Resources: []kubeschedulerconfig.ResourceSpec{
+					{Name: string(corev1.ResourceCPU), Weight: 1},
+					{Name: string(corev1.ResourceMemory), Weight: 1},
+					{Name: string(apiext.BatchCPU), Weight: 1},
+					{Name: string(apiext.BatchMemory), Weight: 1},
+					{Name: string(apiext.MidCPU), Weight: 1},
+					{Name: string(apiext.MidMemory), Weight: 1},
+				},
+			},
+		},
 	}
+	result := make([]kubeschedulerconfig.PluginConfig, 0, len(pluginConfigs)+1)
+	replaced := false
+	for _, pluginConfig := range pluginConfigs {
+		if pluginConfig.Name != pluginNames.NodeResourcesFit {
+			result = append(result, pluginConfig)
+			continue
+		}
+		if !replaced {
+			result = append(result, sandboxPluginConfig)
+			replaced = true
+		}
+	}
+	if !replaced {
+		result = append(result, sandboxPluginConfig)
+	}
+	return result
 }
