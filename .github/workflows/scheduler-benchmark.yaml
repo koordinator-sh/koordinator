@@ -48,7 +48,8 @@ jobs:
         run: |
           make -C test/perf benchmark \
             CONFIG=configs/scenarios/basic-1k.yaml \
-            BASELINE=baselines/basic-1k.json
+            BASELINE=baselines/basic-1k.json \
+            OUTPUT=results/basic-result.json
 
       # Gang scenario: no baseline yet — run for smoke-test only (confirms
       # scenario completes without crashing). Once a stable baseline is
@@ -56,26 +57,31 @@ jobs:
       - name: Run benchmark (gang)
         run: |
           make -C test/perf benchmark \
-            CONFIG=configs/scenarios/gang-1k.yaml
+            CONFIG=configs/scenarios/gang-1k.yaml \
+            OUTPUT=results/gang-result.json
 
       - name: Fail on regression
         if: always()
         run: |
-          if [ -f test/perf/results/result.json ]; then
-            breached=$(jq -r '.thresholdBreached' test/perf/results/result.json)
-            echo "thresholdBreached=$breached"
-            if [ "$breached" = "true" ]; then
-              echo "::error::Benchmark regression detected — see uploaded result.json"
-              exit 1
+          failed=false
+          for result in test/perf/results/basic-result.json test/perf/results/gang-result.json; do
+            if [ -f "$result" ]; then
+              breached=$(jq -r '.thresholdBreached' "$result")
+              echo "$(basename $result): thresholdBreached=$breached"
+              if [ "$breached" = "true" ]; then
+                echo "::error::Benchmark regression detected in $(basename $result) — see uploaded results"
+                failed=true
+              fi
             fi
-          fi
+          done
+          [ "$failed" = "true" ] && exit 1 || true
 
-      - name: Upload result
+      - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-result
-          path: test/perf/results/result.json
+          name: benchmark-results
+          path: test/perf/results/*.json
 
       # Debug BEFORE teardown — teardown deletes the kind cluster, after which
       # every kubectl command fails with "connection refused to localhost:8080".
