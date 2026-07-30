@@ -546,21 +546,35 @@ func (n *nodeDeviceCache) Start(context.Context) {
 // OnPodAdd implements frameworkext.SharedPluginCache. If the pod was previously assumed,
 // reconciles against the authoritative event instead of skipping — see the CacheReserver
 // invariants in the proposal.
+//
+// The assumed marker is only reconciled once the pod is actually bound (Spec.NodeName set).
+// A pod's binding cycle emits an earlier informer event when DeviceShare's PreBind patches
+// the allocation annotation, and at that point the pod is not yet bound (NodeName==""):
+// consuming the marker there would roll back Reserve's write before the pod is bound, leaving
+// the node under-counted until the Bind event lands, and racing Unreserve on a failed bind.
+// While unbound, the assumed write already reflects reality, so the marker is left in place —
+// it is cleared by the bound event here, by Unreserve→ForgetPod on a failed/rejected bind, or
+// by OnPodDelete on deletion.
 func (n *nodeDeviceCache) OnPodAdd(pod *corev1.Pod) {
-	if assumed, ok := n.takeAssumed(pod.UID); ok {
-		n.reconcileAssumed(assumed, pod)
-		return
+	if pod.Spec.NodeName != "" {
+		if assumed, ok := n.takeAssumed(pod.UID); ok {
+			n.reconcileAssumed(assumed, pod)
+			return
+		}
 	}
 	n.updatePod(nil, pod)
 }
 
-// OnPodUpdate implements frameworkext.SharedPluginCache.
+// OnPodUpdate implements frameworkext.SharedPluginCache. Only reconciles the assumed marker
+// once the pod is bound — see OnPodAdd for why pre-bind (NodeName=="") events are skipped.
 func (n *nodeDeviceCache) OnPodUpdate(oldPod, newPod *corev1.Pod) {
-	if assumed, ok := n.takeAssumed(newPod.UID); ok {
-		// Prior cache state is Reserve's assumed write, not oldPod's annotations, so
-		// reconcile against the assumed snapshot rather than treating oldPod as truth.
-		n.reconcileAssumed(assumed, newPod)
-		return
+	if newPod.Spec.NodeName != "" {
+		if assumed, ok := n.takeAssumed(newPod.UID); ok {
+			// Prior cache state is Reserve's assumed write, not oldPod's annotations, so
+			// reconcile against the assumed snapshot rather than treating oldPod as truth.
+			n.reconcileAssumed(assumed, newPod)
+			return
+		}
 	}
 	n.updatePod(oldPod, newPod)
 }
@@ -650,10 +664,21 @@ func (n *nodeDeviceCache) ForgetPod(pod *corev1.Pod) error {
 }
 
 func (n *nodeDeviceCache) takeAssumed(uid types.UID) (*assumedAllocation, bool) {
+	// Fast path: the vast majority of pod events are for pods that were never assumed, so
+	// peek under a read lock and avoid taking the write lock (which blocks all readers) on
+	// the common miss.
+	n.lock.RLock()
+	_, present := n.assumedPods[uid]
+	n.lock.RUnlock()
+	if !present {
+		return nil, false
+	}
+
 	n.lock.Lock()
 	defer n.lock.Unlock()
 	assumed, ok := n.assumedPods[uid]
 	if !ok {
+		// Another goroutine claimed it between the RUnlock and the Lock.
 		return nil, false
 	}
 	delete(n.assumedPods, uid)
@@ -661,13 +686,40 @@ func (n *nodeDeviceCache) takeAssumed(uid types.UID) (*assumedAllocation, bool) 
 	return assumed, true
 }
 
-// reconcileAssumed rolls back what AssumePod recorded on assumed.nodeName, then applies
-// the informer event's authoritative state from pod.Spec.NodeName / pod.Annotations. When
-// the event agrees with Reserve this is a net-zero operation; when it diverges the cache
-// converges on the event's state.
+// reconcileAssumed removes what AssumePod recorded on assumed.nodeName and applies the
+// informer event's authoritative state. The caller guarantees pod.Spec.NodeName != "".
+//
+// When the event stays on the assumed node (the common case), the subtract of Reserve's
+// write and the add of the event's allocation run under a SINGLE hold of the per-node lock,
+// so no concurrent Filter/Score observes the intermediate under-counted state (which would
+// let it over-allocate). When the pod diverged to a different node, the event's node is
+// credited first (a transient over-count is safe; an under-count is not) and the phantom is
+// then removed from the assumed node.
 func (n *nodeDeviceCache) reconcileAssumed(assumed *assumedAllocation, pod *corev1.Pod) {
-	n.rollbackAssumed(assumed, pod)
-	n.updatePod(nil, pod)
+	if assumed.nodeName != pod.Spec.NodeName {
+		n.updatePod(nil, pod)
+		n.rollbackAssumed(assumed, pod)
+		return
+	}
+
+	info := n.getNodeDevice(pod.Spec.NodeName, true)
+	info.lock.Lock()
+	defer info.lock.Unlock()
+	if len(assumed.allocations) > 0 {
+		info.updateCacheUsed(assumed.allocations, pod, false)
+	}
+	if util.IsPodTerminated(pod) {
+		// A bound pod that has already terminated holds no allocations; only roll back.
+		return
+	}
+	newAllocations, err := apiext.GetDeviceAllocations(pod.Annotations)
+	if err != nil {
+		klog.ErrorS(err, "failed to get device allocations while reconciling assumed pod", "pod", klog.KObj(pod))
+		return
+	}
+	if len(newAllocations) > 0 {
+		info.updateCacheUsed(newAllocations, pod, true)
+	}
 }
 
 // rollbackAssumed subtracts the assumed allocation from assumed.nodeName. Extracted so

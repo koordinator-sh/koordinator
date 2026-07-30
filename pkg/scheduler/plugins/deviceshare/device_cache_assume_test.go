@@ -86,6 +86,92 @@ func reserveInto(cache *nodeDeviceCache, node string, pod *corev1.Pod, alloc api
 	nd.lock.Unlock()
 }
 
+// unboundPod builds a pod that is assumed/reserved but not yet bound (Spec.NodeName == ""),
+// matching the pod object as it exists through Reserve and the PreBind annotation patch.
+func unboundPod(uid string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       types.UID(uid),
+			Namespace: "default",
+			Name:      "pod-" + uid,
+		},
+	}
+}
+
+func Test_nodeDeviceCache_PreBindPatchEvent_KeepsAssumedMarker(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := unboundPod("1")
+	alloc := gpuAllocations(0, 100)
+	reserveInto(cache, "node-1", pod, alloc)
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	// PreBind patches the allocation annotation while the pod is still unbound (NodeName=="").
+	prebindPod := pod.DeepCopy()
+	assert.NoError(t, apiext.SetDeviceAllocations(prebindPod, alloc))
+	cache.OnPodUpdate(pod, prebindPod)
+
+	// The marker must be preserved and the node must stay credited — no premature rollback.
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.True(t, ok, "PreBind (unbound) event must not consume the assumed marker")
+	nd := cache.getNodeDevice("node-1", false)
+	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, pod.Namespace, pod.Name), "node stays credited while assumed")
+
+	// The authoritative bound event reconciles and clears the marker; the node stays credited.
+	boundPod := prebindPod.DeepCopy()
+	boundPod.Spec.NodeName = "node-1"
+	cache.OnPodUpdate(prebindPod, boundPod)
+	_, ok = assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "bound event must consume the assumed marker")
+	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, pod.Namespace, pod.Name))
+}
+
+func Test_nodeDeviceCache_UnreserveAfterPreBind_NoDoubleCount(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := unboundPod("1")
+	alloc := gpuAllocations(0, 100)
+	reserveInto(cache, "node-1", pod, alloc)
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	// PreBind patch (unbound): marker preserved, pod still in the ledger.
+	prebindPod := pod.DeepCopy()
+	assert.NoError(t, apiext.SetDeviceAllocations(prebindPod, alloc))
+	cache.OnPodUpdate(pod, prebindPod)
+
+	// Bind fails → Unreserve: updateCacheUsed(..., false) then ForgetPod (what Plugin.Unreserve does).
+	nd := cache.getNodeDevice("node-1", false)
+	nd.lock.Lock()
+	nd.updateCacheUsed(alloc, pod, false)
+	nd.lock.Unlock()
+	assert.NoError(t, cache.ForgetPod(pod))
+
+	// Exactly one subtract: node freed, marker cleared, no negative/leaked accounting.
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name))
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok)
+}
+
+func Test_nodeDeviceCache_ReconcileAssumed_TerminatedAtBind_NotCredited(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := unboundPod("1")
+	alloc := gpuAllocations(0, 100)
+	reserveInto(cache, "node-1", pod, alloc)
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	// The bound event arrives for a pod that has already terminated (fast-failing pod). The
+	// atomic same-node reconcile must roll back Reserve's write and NOT re-credit the pod —
+	// a terminated pod holds no allocations. Mirrors updatePod's IsPodTerminated handling.
+	boundTerminated := pod.DeepCopy()
+	boundTerminated.Spec.NodeName = "node-1"
+	assert.NoError(t, apiext.SetDeviceAllocations(boundTerminated, alloc))
+	boundTerminated.Status.Phase = corev1.PodFailed
+	cache.OnPodUpdate(pod, boundTerminated)
+
+	nd := cache.getNodeDevice("node-1", false)
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "terminated pod must not be credited at reconcile")
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "marker must be consumed on the bound event")
+}
+
 func assumedEntry(cache *nodeDeviceCache, uid types.UID) (*assumedAllocation, bool) {
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
