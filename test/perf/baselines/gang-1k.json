@@ -1,11 +1,11 @@
 {
-  "name": "basic",
+  "name": "gang",
   "runID": "ci-run-v5",
   "timestamp": "2026-07-30T17:40:21Z",
   "koordinatorVersion": "d55cb1d",
   "nodeCount": 100,
   "podCount": 1000,
-  "throughputPodsPerSec": 26.22,
+  "throughputPodsPerSec": 17.04,
   "apiCreationDurationSec": 0,
   "totalDurationSec": 0,
   "latencyP50Sec": 0,

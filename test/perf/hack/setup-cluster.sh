@@ -111,13 +111,33 @@ if [[ -n "$UNHEALTHY" ]]; then
   exit 1
 fi
 
-# Pre-create the benchmark namespace and a permissive ElasticQuota for it.
-# The ElasticQuota plugin assigns any pod in a namespace without a quota to the
-# system-wide "koordinator-default-quota", but a namespace-scoped quota is
-# simpler and avoids any ambiguity in quota lookup. The max values are set to
-# effectively unlimited so quota enforcement never becomes a scheduling gate
-# during the benchmark.
-echo "==> Pre-creating benchmark namespace and ElasticQuota"
+# Pre-create the ElasticQuota tree root and a benchmark child quota.
+#
+# koord-manager normally creates "koordinator-default-quota" in koordinator-system
+# (the tree root that child quotas borrow slack from), but we scale koord-manager
+# to 0 above before it has time to do that.  Without the root, the GroupQuotaManager
+# has no parent to allocate guaranteed capacity from, so the benchmark quota's
+# runtime tracks used instead of min — causing quota-throttle FailedScheduling
+# events even when min is set generously.
+#
+# The benchmark child quota sets min=max so the full 10,000-CPU block is
+# guaranteed (no borrowing needed) and can never be exceeded.  1,000 pods ×
+# 500m = 500 CPU, well within the limit.
+echo "==> Pre-creating ElasticQuota root and benchmark quota"
+kubectl apply -f - <<'EOF'
+apiVersion: scheduling.sigs.k8s.io/v1alpha1
+kind: ElasticQuota
+metadata:
+  name: koordinator-default-quota
+  namespace: koordinator-system
+spec:
+  max:
+    cpu: "1000000"
+    memory: 1000Ti
+  min:
+    cpu: "0"
+    memory: "0"
+EOF
 kubectl create namespace benchmark --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f - <<'EOF'
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
@@ -131,7 +151,7 @@ spec:
     memory: 100Ti
   min:
     cpu: "10000"
-    memory: "100Ti"
+    memory: 100Ti
 EOF
 
 echo "==> Done. Run: make -C test/perf benchmark"
