@@ -40,6 +40,11 @@ kind load docker-image "${KOORDLET_IMG}"  --name "${CLUSTER_NAME}"
 
 echo "==> Installing Koordinator (full stack via deploy_kind.sh)"
 export MANAGER_IMG SCHEDULER_IMG KOORDLET_IMG
+# Tell deploy_kind.sh which Kubernetes version the cluster is running so it
+# can disable DRA informers (resource.k8s.io/v1beta1 and v1) that don't exist
+# on clusters older than 1.34.  Without this, WaitForCacheSync in the
+# scheduler never returns and the scheduling loop never starts.
+export KUBERNETES_VERSION="1.28"
 DEPLOY_SCRIPT="${REPO_ROOT}/hack/deploy_kind.sh"
 if [ ! -f "${DEPLOY_SCRIPT}" ]; then
   echo "ERROR: hack/deploy_kind.sh not found at ${DEPLOY_SCRIPT}" >&2
