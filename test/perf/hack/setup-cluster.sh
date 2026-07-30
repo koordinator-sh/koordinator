@@ -130,8 +130,8 @@ spec:
     cpu: "10000"
     memory: 100Ti
   min:
-    cpu: "0"
-    memory: "0"
+    cpu: "10000"
+    memory: "100Ti"
 EOF
 
 echo "==> Done. Run: make -C test/perf benchmark"
