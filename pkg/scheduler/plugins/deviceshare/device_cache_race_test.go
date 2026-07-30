@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 )
 
 // Test_nodeDeviceCache_ConcurrentReserveAndEvents stresses the assume/forget/reconcile paths
@@ -44,8 +46,14 @@ func Test_nodeDeviceCache_ConcurrentReserveAndEvents(t *testing.T) {
 		// Reserve writes the allocation to the per-node cache before AssumePod snapshots it.
 		reserveInto(cache, node, pod, alloc)
 
-		wg.Add(3)
+		// PreBind patch event: same pod, allocation annotation set, but NOT yet bound.
+		prebindPod := pod.DeepCopy()
+		prebindPod.Spec.NodeName = ""
+		_ = apiext.SetDeviceAllocations(prebindPod, alloc)
+
+		wg.Add(4)
 		go func() { defer wg.Done(); _ = cache.AssumePod(pod, node) }()
+		go func() { defer wg.Done(); cache.OnPodUpdate(pod, prebindPod) }()
 		go func() { defer wg.Done(); cache.OnPodAdd(eventPodFrom(pod, node, alloc)) }()
 		go func() {
 			defer wg.Done()
