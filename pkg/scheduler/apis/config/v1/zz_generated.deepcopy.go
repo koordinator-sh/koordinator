@@ -370,6 +370,7 @@ func (in *LoadAwareSchedulingArgs) DeepCopyInto(out *LoadAwareSchedulingArgs) {
 		*out = make([]corev1.ResourceName, len(*in))
 		copy(*out, *in)
 	}
+	out.ProfileAggregatedDuration = in.ProfileAggregatedDuration
 	return
 }
 

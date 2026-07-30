@@ -501,6 +501,10 @@ func autoConvert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in
 		out.Aggregated = nil
 	}
 	out.SupportedResources = *(*[]corev1.ResourceName)(unsafe.Pointer(&in.SupportedResources))
+	out.NodeUsageSource = in.NodeUsageSource
+	out.ProfileAggregationType = extension.AggregationType(in.ProfileAggregationType)
+	out.ProfileAggregatedDuration = in.ProfileAggregatedDuration
+	out.ProfileFilterEnabled = in.ProfileFilterEnabled
 	return nil
 }
 
@@ -536,6 +540,10 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1_LoadAwareSchedulingArgs(in
 		out.Aggregated = nil
 	}
 	out.SupportedResources = *(*[]corev1.ResourceName)(unsafe.Pointer(&in.SupportedResources))
+	out.NodeUsageSource = in.NodeUsageSource
+	out.ProfileAggregationType = extension.AggregationType(in.ProfileAggregationType)
+	out.ProfileAggregatedDuration = in.ProfileAggregatedDuration
+	out.ProfileFilterEnabled = in.ProfileFilterEnabled
 	return nil
 }
 
