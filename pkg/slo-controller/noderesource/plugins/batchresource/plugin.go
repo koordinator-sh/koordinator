@@ -234,6 +234,7 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 
 	nodeMetric := resourceMetrics.NodeMetric
 	podMetricMap := make(map[string]*slov1alpha1.PodMetricInfo)
+	podBatchRequest := util.NewZeroResourceList()
 	podMetricDanglingMap := make(map[string]*slov1alpha1.PodMetricInfo)
 	for _, podMetric := range nodeMetric.Status.PodsMetric {
 		podKey := util.GetPodMetricKey(podMetric)
@@ -259,9 +260,13 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 
 		// count the high-priority usage
 		podRequest := util.GetPodRequest(pod, corev1.ResourceCPU, corev1.ResourceMemory)
-		if priority := extension.GetPodPriorityClassWithDefault(pod); priority == extension.PriorityBatch ||
-			priority == extension.PriorityFree { // ignore LP pods
+		priority := extension.GetPodPriorityClassWithDefault(pod)
+		if priority == extension.PriorityFree { // ignore LP pods
 			continue
+		}
+		if priority == extension.PriorityBatch {
+			batchReuqest := util.GetPodRequest(pod, extension.BatchCPU, extension.BatchMemory)
+			podBatchRequest = quotav1.Add(podBatchRequest, batchReuqest)
 		}
 
 		podsHPRequest = quotav1.Add(podsHPRequest, podRequest)
@@ -309,6 +314,7 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 
 	batchAllocatable, cpuMsg, memMsg := resutil.CalculateBatchResourceByPolicy(strategy, nodeCapacity, nodeSafetyMargin, nodeReserved,
 		systemUsed, podsHPRequest, podsHPUsed, podsHPMaxUsedReq)
+	batchAllocatable = quotav1.Subtract(batchAllocatable, podBatchRequest)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchCPU), metrics.UnitInteger, float64(batchAllocatable.Cpu().MilliValue())/1000)
 	metrics.RecordNodeExtendedResourceAllocatableInternal(node, string(extension.BatchMemory), metrics.UnitByte, float64(batchAllocatable.Memory().Value()))
 	klog.V(6).InfoS("calculate batch resource for node", "node", node.Name, "batch resource",

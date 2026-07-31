@@ -170,7 +170,7 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 	}
 
 	isCFSQuotaEnabled, scaleRatio := p.rule.GetCFSQuotaScaleRatio()
-
+	klog.Infof("isCFSQuotaEnabled: %v  scaleRatio: %v", isCFSQuotaEnabled, scaleRatio)
 	// if cfs quota is disabled, set as -1
 	if !isCFSQuotaEnabled {
 		podCtx.Response.Resources.CFSQuota = pointer.Int64(-1)
@@ -186,15 +186,19 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 			milliCPULimit = -1
 			break
 		}
+		klog.Infof("GetBatchMilliCPUFromResourceList for container: %s/%s", podCtx.Request.PodMeta.Name, podCtx.Request.PodMeta.Namespace)
 		containerLimit := util.GetBatchMilliCPUFromResourceList(c.Limits)
 		if containerLimit <= 0 { // pod unlimited once a container is unlimited
 			milliCPULimit = -1
 			break
 		}
 		milliCPULimit += containerLimit
+
+		klog.Infof("GetBatchMilliCPUFromResourceList for Pod: %s/%s container limits: %v  milliCPUlimits %v ", podCtx.Request.PodMeta.Name, podCtx.Request.PodMeta.Namespace, containerLimit, milliCPULimit)
 	}
 
 	cfsQuota := sysutil.MilliCPUToQuota(milliCPULimit)
+	klog.Infof("cfsQuota %v  scaleRation for Pod %s/%s", cfsQuota, scaleRatio, podCtx.Request.PodMeta.Name, podCtx.Request.PodMeta.Namespace)
 	if cfsQuota > 0 && scaleRatio > 1.0 { // no support ratio in (0, 1) yet
 		originalCFSQuota := cfsQuota
 		cfsQuota = int64(math.Ceil(float64(originalCFSQuota) / scaleRatio))
@@ -202,6 +206,7 @@ func (p *plugin) SetPodCFSQuota(proto protocol.HooksProtocol) error {
 			name, podCtx.Request.PodMeta.Namespace, podCtx.Request.PodMeta.Name, originalCFSQuota, cfsQuota)
 	}
 
+	klog.Infof("cfsQuota %v for Pod %s/%s", cfsQuota, podCtx.Request.PodMeta.Name, podCtx.Request.PodMeta.Namespace)
 	podCtx.Response.Resources.CFSQuota = pointer.Int64(cfsQuota)
 	return nil
 }

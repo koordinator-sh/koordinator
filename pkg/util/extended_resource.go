@@ -32,7 +32,7 @@ var ExtendedResourceNames = []corev1.ResourceName{
 func GetBatchMilliCPUFromResourceList(r corev1.ResourceList) int64 {
 	// assert r != nil
 	if milliCPU, ok := r[extension.BatchCPU]; ok {
-		return milliCPU.Value()
+		return milliCPU.MilliValue()
 	}
 	return -1
 }

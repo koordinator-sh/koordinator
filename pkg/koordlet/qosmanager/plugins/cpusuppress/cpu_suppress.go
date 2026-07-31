@@ -17,6 +17,7 @@ limitations under the License.
 package cpusuppress
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -298,6 +299,8 @@ func (r *CPUSuppress) suppressBECPU() {
 		klog.Warningf("query node cpu metrics failed, error: %v", err)
 		return
 	}
+	klog.Infof("node %s usage: %v", node.Name, nodeCPUUsage)
+
 	hostAppMetrics := helpers.CollectAllHostAppMetricsLast(nodeSLO.Spec.HostApplications, r.metricCache,
 		metriccache.HostAppCPUUsageMetric, r.metricCollectInterval)
 
@@ -305,6 +308,8 @@ func (r *CPUSuppress) suppressBECPU() {
 		nodeSLO.Spec.HostApplications, hostAppMetrics,
 		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent,
 		nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressMinPercent)
+
+	klog.Info(suppressCPUQuantity)
 
 	// Step 2.
 	nodeCPUInfoRaw, exist := r.metricCache.Get(metriccache.NodeCPUInfoKey)
@@ -316,19 +321,26 @@ func (r *CPUSuppress) suppressBECPU() {
 	if !ok {
 		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
 	}
+	nodeCPUINfoByte, err := json.Marshal(nodeCPUInfo)
+	klog.Info(err)
+	klog.Info(string(nodeCPUINfoByte))
 	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == slov1alpha1.CPUCfsQuotaPolicy {
 		r.adjustByCfsQuota(suppressCPUQuantity, node)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
 		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
 	} else {
+		// adjustByCPUset bf
+		klog.Info("adjustByCPUSet")
 		r.adjustByCPUSet(suppressCPUQuantity, nodeCPUInfo)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
+		klog.Info(r.suppressPolicyStatuses)
 		r.recoverCFSQuotaIfNeed()
 	}
 }
 
 func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
 	rootCgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	klog.Info(rootCgroupParentDir)
 	oldCPUS, err := r.cgroupReader.ReadCPUSet(rootCgroupParentDir)
 	if err != nil {
 		klog.Warningf("applyBESuppressPolicy failed to get current best-effort cgroup cpuset, err: %s", err)
@@ -348,6 +360,7 @@ func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUI
 			continue
 		}
 		set, err := cpuset.Parse(alloc.CPUSet)
+
 		if err != nil {
 			klog.Errorf("failed to parse cpuset info of pod %s, err: %v", podMeta.Pod.Name, err)
 			continue

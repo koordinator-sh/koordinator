@@ -1,0 +1,128 @@
+[project]
+name = "psbc-project"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+     "aiofiles>=25.1.0",
+     "celery>=5.6.2",
+     "dotenv>=0.9.9",
+     "fastapi>=0.128.0",
+     "matplotlib>=3.10.8",
+     "numpy>=2.4.1",
+     "pandas>=3.0.0",
+     "pika>=1.3.2",
+     "py7zr>=1.0.0",
+     "pydantic>=2.0.0",
+     "pydantic-settings>=2.13.1",
+     "python-multipart>=0.0.22",
+     "redis>=7.3.0",
+     "scikit-learn>=1.8.0",
+     "toml>=0.10.2",
+     "torch>=2.11.0",
+     "torchvision>=0.26.0",
+     "tqdm>=4.67.3",
+     "uvicorn>=0.40.0",
+]
+
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[dependency-groups]
+# 测试环境
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-xdist",
+    "ruff>=0.12.2,<0.13.0",
+    "mypy>=1.18.1,<1.19.0",
+    "pytest-asyncio>=1.3.0",
+]
+# 开发环境
+dev = [
+    "ruff>=0.12.2,<0.13.0",
+    "alembic>=1.13.1",
+    "mypy>=1.18.1,<1.19.0",
+    "pre-commit>=3.5.0",
+    "faker>=20.1.0",
+]
+
+[tool.uv.pip]
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+# 配置代码规范
+[tool.ruff]
+line-length = 150
+# 排除文件
+exclude = [
+    ".git",
+    ".github",       # Git 相关
+    ".mypy_cache",   # MyPy 缓存
+    ".pytest_cache", # Pytest 缓存
+    ".ruff_cache",   # Ruff 缓存
+    ".venv",         # 虚拟环境
+    "__pycache__",   # Python 缓存
+    "build",
+    "dist",          # 构建产物
+    "migrations",    # 数据库迁移文件
+    "algorithm"      # 不对算法文件进行修改
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle 错误
+    "W",   # pycodestyle 警告
+    "F",   # pyflakes（未使用的导入等）
+    "I",   # isort（导入排序）
+    "TID", # flake8-tidy-imports
+]
+
+extend-select = ["ASYNC", "ASYNC1"] # 异步代码检查
+ignore = ["E402", "F401", "F403"]   # 忽略某些规则
+
+# ============================================================================
+# isort 配置（控制导入排序）
+# ============================================================================
+[tool.ruff.lint.isort]
+
+known-local-folder = ["app", "tests"] # 本地模块
+
+# 导入分组顺序：
+section-order = [
+    "future",           # from __future__ import ...
+    "standard-library", # Python 标准库
+    "third-party",      # 第三方库
+    "first-party",      # 你的项目模块
+    "local-folder",     # 本地相对导入
+]
+
+lines-after-imports = 2           # 导入块后空 2 行
+force-single-line = false         # 不强制单行导入
+force-sort-within-sections = true # 在每个分组内排序
+
+
+[tool.ruff.format]
+quote-style = "double"       # 使用双引号
+indent-style = "space"       # 使用空格缩进
+docstring-code-format = true # 格式化 docstring 中的代码
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true # 保留运行时类型注解
+
+[tool.ruff.lint.flake8-annotations]
+allow-star-arg-any = true # 允许 *args 使用 Any 类型
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"        # 使用 Google 风格的文档字符串
+ignore-var-parameters = true # 忽略变量参数的文档
