@@ -39,6 +39,23 @@ type Config struct {
 	TSDBMinBlockDuration          time.Duration
 	TSDBMaxBlockDuration          time.Duration
 	TSDBHeadChunksWriteBufferSize int
+
+	// TSDBWALRotationThresholdBytes is the soft threshold for runtime WAL rotation.
+	// When the WAL size exceeds this value during runtime, a head compaction is
+	// triggered to create a WAL checkpoint (keeping only active series and recent
+	// samples) and truncate old WAL segments. This preserves recent metric data
+	// while bounding the WAL size to prevent OOM on restart.
+	// The check runs every MetricGCIntervalSeconds. Set to 0 to disable.
+	TSDBWALRotationThresholdBytes int64
+
+	// TSDBMaxWALSizeBytes is the hard threshold checked only at startup before
+	// opening the TSDB. If the WAL directory exceeds this size (e.g., the runtime
+	// rotation never ran because the container was OOM-killed before the first
+	// compaction), the entire WAL and WBL directories are removed to break the
+	// OOM crash loop. This is a last-resort guard for pre-existing abnormal states;
+	// buffered metric data is lost but re-collected within seconds.
+	// Set to 0 to disable.
+	TSDBMaxWALSizeBytes int64
 }
 
 func NewDefaultConfig() *Config {
@@ -57,6 +74,9 @@ func NewDefaultConfig() *Config {
 		TSDBMinBlockDuration:          10 * time.Minute, // 10 minutes
 		TSDBMaxBlockDuration:          10 * time.Minute, // 10 minutes
 		TSDBHeadChunksWriteBufferSize: 1024 * 1024,      // 1 MB
+
+		TSDBWALRotationThresholdBytes: 32 * 1024 * 1024, // 32 MB
+		TSDBMaxWALSizeBytes:           64 * 1024 * 1024, // 64 MB
 	}
 }
 
@@ -75,5 +95,6 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&c.TSDBMinBlockDuration, "tsdb-min-block-duration", c.TSDBMinBlockDuration, "The timestamp range of head blocks after which they get persisted, recommend >= 1h or this will cause chunks_head leak")
 	fs.DurationVar(&c.TSDBMaxBlockDuration, "tsdb-max-block-duration", c.TSDBMaxBlockDuration, "The maximum timestamp range of compacted blocks, recommend >= 1h or this will cause chunks_head leak.")
 	fs.IntVar(&c.TSDBHeadChunksWriteBufferSize, "tsdb-head-chunks-write-buffer-size", c.TSDBHeadChunksWriteBufferSize, "Write buffer size used by the head chunks mapper.")
-
+	fs.Int64Var(&c.TSDBWALRotationThresholdBytes, "tsdb-wal-rotation-threshold-bytes", c.TSDBWALRotationThresholdBytes, "Soft threshold in bytes for runtime WAL rotation. Triggers compaction to checkpoint and truncate WAL when exceeded. Set 0 to disable.")
+	fs.Int64Var(&c.TSDBMaxWALSizeBytes, "tsdb-max-wal-size-bytes", c.TSDBMaxWALSizeBytes, "Hard threshold in bytes checked at startup. Removes entire WAL if exceeded to break OOM crash loop. Set 0 to disable.")
 }
