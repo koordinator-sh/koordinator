@@ -17,7 +17,10 @@ limitations under the License.
 package metriccache
 
 import (
+	"sync"
 	"time"
+
+	"k8s.io/klog/v2"
 )
 
 type InterferenceMetricName string
@@ -59,6 +62,14 @@ type MetricCache interface {
 	KVStorage
 }
 
+// WALCompactor is optionally implemented by TSDBStorage to support runtime WAL rotation.
+type WALCompactor interface {
+	// Compact triggers head compaction and WAL truncation.
+	Compact() error
+	// WALSize returns the current total size of the WAL directory in bytes.
+	WALSize() (int64, error)
+}
+
 type metricCache struct {
 	config *Config
 	TSDBStorage
@@ -79,7 +90,63 @@ func NewMetricCache(cfg *Config) (MetricCache, error) {
 }
 
 func (m *metricCache) Run(stopCh <-chan struct{}) error {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		m.runWALRotation(stopCh)
+	}()
 	<-stopCh
+	wg.Wait()
 	m.Close()
 	return nil
+}
+
+// runWALRotation periodically checks the WAL size and triggers compaction
+// when it exceeds TSDBWALRotationThresholdBytes (soft threshold).
+// Compaction creates a checkpoint (keeping only active series and recent samples)
+// and truncates old WAL segments, preventing unbounded WAL growth that could
+// cause OOM on restart.
+func (m *metricCache) runWALRotation(stopCh <-chan struct{}) {
+	softThreshold := m.config.TSDBWALRotationThresholdBytes
+	if softThreshold <= 0 {
+		return
+	}
+	wc, ok := m.TSDBStorage.(WALCompactor)
+	if !ok {
+		return
+	}
+
+	interval := time.Duration(m.config.MetricGCIntervalSeconds) * time.Second
+	if interval <= 0 {
+		interval = 5 * time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			walSize, err := wc.WALSize()
+			if err != nil {
+				klog.V(4).Infof("failed to get WAL size: %v", err)
+				continue
+			}
+			if walSize <= softThreshold {
+				continue
+			}
+			klog.Infof("WAL size %d bytes exceeds soft threshold %d bytes, triggering compaction to rotate WAL",
+				walSize, softThreshold)
+			if err := wc.Compact(); err != nil {
+				klog.Warningf("failed to compact TSDB for WAL rotation: %v", err)
+				continue
+			}
+			newSize, err := wc.WALSize()
+			if err == nil {
+				klog.Infof("WAL rotation complete: %d -> %d bytes", walSize, newSize)
+			}
+		}
+	}
 }
