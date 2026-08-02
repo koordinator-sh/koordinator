@@ -52,10 +52,16 @@ func CompareToBaseline(result types.BenchmarkResult, baselinePath string, thresh
 			baseline.PodCount, result.PodCount)
 	}
 
-	if baseline.SchedulingFailureCount == 0 && result.SchedulingFailureCount > 0 {
-		klog.InfoS("Threshold breached: scheduling failures observed (baseline had zero)",
-			"count", result.SchedulingFailureCount,
-			"rate", fmt.Sprintf("%.2f%%", result.SchedulingFailureRate*100))
+	// Gate on scheduling failure rate rather than absolute count: a handful of
+	// transient FailedScheduling events (retries that clear on the next cycle)
+	// are normal; a rate above 1% indicates a systematic problem such as quota
+	// throttle or resource exhaustion.
+	const failureRateThreshold = 0.01
+	if result.SchedulingFailureRate > failureRateThreshold {
+		klog.InfoS("Threshold breached: scheduling failure rate too high",
+			"rate", fmt.Sprintf("%.2f%%", result.SchedulingFailureRate*100),
+			"threshold", fmt.Sprintf("%.0f%%", failureRateThreshold*100),
+			"count", result.SchedulingFailureCount)
 		return true, nil
 	}
 

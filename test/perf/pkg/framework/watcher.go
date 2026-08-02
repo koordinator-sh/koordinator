@@ -146,3 +146,12 @@ func (w *Watcher) Latencies() []time.Duration {
 	}
 	return result
 }
+
+// PodLatencies returns the full PodLatency slice including GangID. Call after Start returns.
+func (w *Watcher) PodLatencies() []types.PodLatency {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	result := make([]types.PodLatency, len(w.latencies))
+	copy(result, w.latencies)
+	return result
+}
