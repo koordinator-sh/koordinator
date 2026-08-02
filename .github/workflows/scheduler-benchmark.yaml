@@ -45,13 +45,25 @@ jobs:
         run: make -C test/perf setup
 
       - name: Run benchmark (basic)
+        id: basic
         run: |
           make -C test/perf benchmark \
             CONFIG=configs/scenarios/basic-1k.yaml \
             BASELINE=baselines/basic-1k.json \
             OUTPUT=results/basic-result.json
 
+      - name: Drain benchmark namespace
+        if: always()
+        run: |
+          # Wait for all pods from the basic run to terminate before starting
+          # gang — terminating pods still count against node allocatable in the
+          # scheduler cache and inflate gang latency if not drained first.
+          kubectl delete pods -n benchmark --all --timeout=120s 2>/dev/null || true
+          kubectl wait pod --for=delete -n benchmark --all --timeout=120s 2>/dev/null || true
+
       - name: Run benchmark (gang)
+        if: always()
+        id: gang
         run: |
           make -C test/perf benchmark \
             CONFIG=configs/scenarios/gang-1k.yaml \
@@ -62,8 +74,10 @@ jobs:
         if: always()
         run: |
           failed=false
+          found=false
           for result in test/perf/results/basic-result.json test/perf/results/gang-result.json; do
             if [ -f "$result" ]; then
+              found=true
               breached=$(jq -r '.thresholdBreached' "$result")
               echo "$(basename $result): thresholdBreached=$breached"
               if [ "$breached" = "true" ]; then
@@ -72,7 +86,13 @@ jobs:
               fi
             fi
           done
-          [ "$failed" = "true" ] && exit 1 || true
+          if [ "$found" = "false" ]; then
+            echo "::error::No result files produced — benchmark did not run"
+            exit 1
+          fi
+          if [ "$failed" = "true" ]; then
+            exit 1
+          fi
 
       - name: Upload results
         if: always()
@@ -83,15 +103,18 @@ jobs:
 
       # Debug BEFORE teardown — teardown deletes the kind cluster, after which
       # every kubectl command fails with "connection refused to localhost:8080".
+      # Scoped to infrastructure failures (setup or benchmark step failed), not
+      # pure threshold breaches — a regression is already reported by the result
+      # JSON and uploading 30+ kubectl commands on every slow run adds noise.
       - name: Debug on failure
-        if: failure()
+        if: steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure'
         run: |
           echo "=== kind clusters ==="
           kind get clusters || true
           echo "=== docker containers (exit code reveals OOM-kill vs clean exit) ==="
           docker ps -a || true
           echo "=== control-plane container logs (last 100 lines) ==="
-          docker logs koordinator-bench-control-plane --tail=100 2>&1 || true
+          docker logs "${CLUSTER_NAME:-koordinator-bench}-control-plane" --tail=100 2>&1 || true
           echo "=== disk space ==="
           df -h || true
           echo "=== memory ==="

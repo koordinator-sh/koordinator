@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 
+	v1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
@@ -120,6 +121,7 @@ func (w *Watcher) Start(ctx context.Context) error {
 				latency := cond.LastTransitionTime.Time.Sub(pod.CreationTimestamp.Time)
 				w.latencies = append(w.latencies, PodLatency{
 					PodName: pod.Name,
+					GangID:  pod.Labels[v1alpha1.PodGroupLabel], // empty for non-gang scenarios
 					Latency: latency,
 				})
 				done := len(w.latencies) >= w.podCount

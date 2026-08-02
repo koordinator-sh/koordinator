@@ -43,6 +43,22 @@ func CompareToBaseline(result types.BenchmarkResult, baselinePath string, thresh
 		return false, fmt.Errorf("parsing baseline %q: %w", baselinePath, err)
 	}
 
+	if baseline.NodeCount > 0 && baseline.NodeCount != result.NodeCount {
+		return false, fmt.Errorf("baseline nodeCount %d != run nodeCount %d; re-capture the baseline against the correct config",
+			baseline.NodeCount, result.NodeCount)
+	}
+	if baseline.PodCount > 0 && baseline.PodCount != result.PodCount {
+		return false, fmt.Errorf("baseline podCount %d != run podCount %d; re-capture the baseline against the correct config",
+			baseline.PodCount, result.PodCount)
+	}
+
+	if baseline.SchedulingFailureCount == 0 && result.SchedulingFailureCount > 0 {
+		klog.InfoS("Threshold breached: scheduling failures observed (baseline had zero)",
+			"count", result.SchedulingFailureCount,
+			"rate", fmt.Sprintf("%.2f%%", result.SchedulingFailureRate*100))
+		return true, nil
+	}
+
 	if baseline.ThroughputPodsPerSec > 0 {
 		drop := (baseline.ThroughputPodsPerSec - result.ThroughputPodsPerSec) /
 			baseline.ThroughputPodsPerSec * 100

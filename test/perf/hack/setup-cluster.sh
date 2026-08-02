@@ -4,6 +4,12 @@ set -euo pipefail
 CLUSTER_NAME="${CLUSTER_NAME:-koordinator-bench}"
 KWOK_VERSION="${KWOK_VERSION:-v0.6.0}"
 KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.28.7}"
+# Derive the minor version string used by deploy_kind.sh from KIND_NODE_IMAGE
+# so the two don't drift when the image tag is bumped (e.g. v1.29.x → "1.29").
+KUBERNETES_VERSION="${KUBERNETES_VERSION:-$(echo "${KIND_NODE_IMAGE##*:v}" | cut -d. -f1,2)}"
+# Namespace shared by both scenario configs and the ElasticQuota in this script.
+# Change BENCHMARK_NS if you rename the namespace in configs/scenarios/*.yaml.
+BENCHMARK_NS="${BENCHMARK_NS:-benchmark}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
@@ -11,10 +17,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 # Use the run ID as the image tag so that the binary and config always come
 # from the same commit — version skew between a released binary and HEAD
 # config is the primary source of plugin-args type-mismatch crashes.
+#
+# Only the scheduler image is built from source: koord-manager is scaled to 0
+# immediately after deployment, and koordlet is patched onto a nodeSelector
+# that matches no node, so neither image is ever pulled. Skipping their builds
+# saves two full Go compile + Docker build cycles from the CI budget.
 IMG_TAG="bench-${GITHUB_RUN_ID:-local}"
-MANAGER_IMG="koordinator-sh/koord-manager:${IMG_TAG}"
 SCHEDULER_IMG="koordinator-sh/koord-scheduler:${IMG_TAG}"
-KOORDLET_IMG="koordinator-sh/koordlet:${IMG_TAG}"
 
 echo "==> Creating kind cluster: ${CLUSTER_NAME}"
 kind create cluster --name "${CLUSTER_NAME}" --image "${KIND_NODE_IMAGE}"
@@ -24,27 +33,15 @@ KWOK_BASE="https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERS
 kubectl apply -f "${KWOK_BASE}/kwok.yaml"
 kubectl apply -f "${KWOK_BASE}/stage-fast.yaml"
 
-# Build all three images from the current checkout. This guarantees the binary
-# and the config/manifests come from the same commit, matching the pattern
-# used by the project's e2e workflows.
-echo "==> Building Koordinator images from source (tag: ${IMG_TAG})"
+echo "==> Building koord-scheduler image from source (tag: ${IMG_TAG})"
 (cd "${REPO_ROOT}" && \
-  docker build --pull . -t "${MANAGER_IMG}"   -f docker/koord-manager.dockerfile && \
-  docker build        . -t "${SCHEDULER_IMG}" -f docker/koord-scheduler.dockerfile && \
-  docker build        . -t "${KOORDLET_IMG}"  -f docker/koordlet.dockerfile)
+  docker build . -t "${SCHEDULER_IMG}" -f docker/koord-scheduler.dockerfile)
 
-echo "==> Loading images into kind node"
-kind load docker-image "${MANAGER_IMG}"   --name "${CLUSTER_NAME}"
+echo "==> Loading koord-scheduler image into kind node"
 kind load docker-image "${SCHEDULER_IMG}" --name "${CLUSTER_NAME}"
-kind load docker-image "${KOORDLET_IMG}"  --name "${CLUSTER_NAME}"
 
 echo "==> Installing Koordinator (full stack via deploy_kind.sh)"
-export MANAGER_IMG SCHEDULER_IMG KOORDLET_IMG
-# Tell deploy_kind.sh which Kubernetes version the cluster is running so it
-# can disable DRA informers (resource.k8s.io/v1beta1 and v1) that don't exist
-# on clusters older than 1.34.  Without this, WaitForCacheSync in the
-# scheduler never returns and the scheduling loop never starts.
-export KUBERNETES_VERSION="1.28"
+export SCHEDULER_IMG KUBERNETES_VERSION
 DEPLOY_SCRIPT="${REPO_ROOT}/hack/deploy_kind.sh"
 if [ ! -f "${DEPLOY_SCRIPT}" ]; then
   echo "ERROR: hack/deploy_kind.sh not found at ${DEPLOY_SCRIPT}" >&2
@@ -83,6 +80,9 @@ kubectl patch daemonset koordlet -n koordinator-system \
 # catch them mid-shutdown and false-positive on pods behaving exactly as intended.
 kubectl wait --for=delete pod -l koord-app=koord-manager     -n koordinator-system --timeout=30s 2>/dev/null || true
 kubectl wait --for=delete pod -l koord-app=koord-descheduler -n koordinator-system --timeout=30s 2>/dev/null || true
+# koordlet DaemonSet pods start terminating once the nodeSelector patch (above)
+# propagates; wait for them to be gone before the health check below.
+kubectl wait --for=delete pod -l koord-app=koordlet          -n koordinator-system --timeout=30s 2>/dev/null || true
 
 echo "==> Waiting for koord-scheduler to be ready"
 kubectl rollout status deployment/koord-scheduler \
@@ -99,8 +99,10 @@ UNHEALTHY=$(kubectl get pods -n koordinator-system -o json | jq -r '
   | select(.metadata.deletionTimestamp == null)
   | select(
       (.status.phase != "Running" and .status.phase != "Succeeded")
-      or (.status.containerStatuses[]? | .ready == false)
-      or (.status.containerStatuses[]? | .restartCount > 2)
+      or (.status.phase == "Running" and (
+            ([.status.containerStatuses[]? | select(.ready == false)] | length) > 0
+            or ([.status.containerStatuses[]? | select(.restartCount > 2)] | length) > 0
+          ))
     )
   | .metadata.name
 ')
@@ -111,19 +113,22 @@ if [[ -n "$UNHEALTHY" ]]; then
   exit 1
 fi
 
-# Pre-create the ElasticQuota tree root and a benchmark child quota.
+# Pre-create the koordinator-default-quota and a benchmark child quota.
 #
-# koord-manager normally creates "koordinator-default-quota" in koordinator-system
-# (the tree root that child quotas borrow slack from), but we scale koord-manager
-# to 0 above before it has time to do that.  Without the root, the GroupQuotaManager
-# has no parent to allocate guaranteed capacity from, so the benchmark quota's
-# runtime tracks used instead of min — causing quota-throttle FailedScheduling
-# events even when min is set generously.
+# "koordinator-default-quota" (extension.DefaultQuotaName) is the fallback quota
+# that koord-manager normally creates in koordinator-system — pods that don't
+# match any explicitly named quota are placed here.  We scale koord-manager to 0
+# above before it has a chance to create it.  Empirically, without this object
+# the ElasticQuota plugin produces FailedScheduling events even when the
+# benchmark quota's min/max are set generously.  The exact causal path through
+# GroupQuotaManager has not been verified; treat this as empirically required.
 #
-# The benchmark child quota sets min=max so the full 10,000-CPU block is
-# guaranteed (no borrowing needed) and can never be exceeded.  1,000 pods ×
-# 500m = 500 CPU, well within the limit.
-echo "==> Pre-creating ElasticQuota root and benchmark quota"
+# The benchmark quota sets min=max=2000 CPU.  Actual demand is 1,000 × 500m =
+# 500 CPU, so the limit is never reached and quota is never the bottleneck.
+# 2,000 is within the cluster's total allocatable (100 nodes), unlike the
+# previous 10,000 which exceeded it and made the "quota is never the bottleneck"
+# claim unverifiable.
+echo "==> Pre-creating koordinator-default-quota and benchmark ElasticQuota"
 kubectl apply -f - <<'EOF'
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
 kind: ElasticQuota
@@ -138,20 +143,20 @@ spec:
     cpu: "0"
     memory: "0"
 EOF
-kubectl create namespace benchmark --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -f - <<'EOF'
+kubectl create namespace "${BENCHMARK_NS}" --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f - <<EOF
 apiVersion: scheduling.sigs.k8s.io/v1alpha1
 kind: ElasticQuota
 metadata:
-  name: benchmark
-  namespace: benchmark
+  name: ${BENCHMARK_NS}
+  namespace: ${BENCHMARK_NS}
 spec:
   max:
-    cpu: "10000"
-    memory: 100Ti
+    cpu: "2000"
+    memory: 20Ti
   min:
-    cpu: "10000"
-    memory: 100Ti
+    cpu: "2000"
+    memory: 20Ti
 EOF
 
-echo "==> Done. Run: make -C test/perf benchmark"
+echo "==> Done — cluster is ready. Run: make -C test/perf benchmark"

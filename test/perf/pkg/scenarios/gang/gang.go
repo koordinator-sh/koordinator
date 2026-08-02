@@ -16,15 +16,14 @@ limitations under the License.
 
 // Package gang implements the coscheduling (Gang) benchmark scenario.
 //
-// Design decisions taken here that should be confirmed with mentors
-// (see Week 5 plan §3/§5) rather than treated as settled:
+// Design:
 //   - cfg.PodCount is split into ceil(PodCount/GangSize) separate PodGroups
 //     scheduled concurrently, rather than one PodGroup for the whole run.
-//     This is the "many gangs competing for nodes at once" shape and is what
-//     makes GangCompletionP50Sec/P99Sec meaningful as percentiles across groups.
-//   - The PodGroup label key (types.PodGroupLabel) is
-//     "pod-group.scheduling.sigs.k8s.io". NOT YET CONFIRMED against the
-//     scheduler-plugins version vendored in this repo.
+//     This "many gangs competing for nodes at once" shape makes
+//     GangCompletionP50Sec/P99Sec meaningful as percentiles across groups.
+//   - The PodGroup label key is v1alpha1.PodGroupLabel from the vendored
+//     scheduler-plugins package ("pod-group.scheduling.sigs.k8s.io"),
+//     which is what koord-scheduler's coscheduling plugin reads.
 package gang
 
 import (
@@ -40,6 +39,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
+	v1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
@@ -133,7 +133,7 @@ func (s *GangScenario) Setup(
 }
 
 // Pods returns cfg.PodCount pods split evenly across the PodGroups created
-// in Setup. Each pod carries types.PodGroupLabel so both koord-scheduler's
+// in Setup. Each pod carries v1alpha1.PodGroupLabel so both koord-scheduler's
 // coscheduling plugin and framework.Watcher can associate it with its gang.
 func (s *GangScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.Pod, error) {
 	ns := s.namespace
@@ -173,7 +173,7 @@ func (s *GangScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.P
 
 		labels := map[string]string{
 			types.RunIDLabel:    runID,
-			types.PodGroupLabel: groupName,
+			v1alpha1.PodGroupLabel: groupName,
 			"app":               "kwok-bench-gang",
 		}
 		for k, v := range cfg.Labels {
