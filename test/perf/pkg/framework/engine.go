@@ -270,8 +270,11 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	throughput := ComputeThroughput(cfg.PodCount, totalDuration)
 
 	breached, err := CompareToBaseline(types.BenchmarkResult{
-		ThroughputPodsPerSec: throughput,
-		LatencyP99Sec:        p99.Seconds(),
+		NodeCount:              cfg.NodeCount,
+		PodCount:               cfg.PodCount,
+		ThroughputPodsPerSec:   throughput,
+		LatencyP99Sec:          p99.Seconds(),
+		SchedulingFailureCount: failedPodCount,
 	}, baselinePath, cfg.Thresholds)
 	if err != nil {
 		klog.ErrorS(err, "baseline comparison failed — ThresholdBreached will be false")
