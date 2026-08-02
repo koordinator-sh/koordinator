@@ -272,7 +272,8 @@ func (pgMgr *PodGroupManager) basicGangRequirementsCheck(gang *Gang, pod *corev1
 			continue
 		}
 		if memberGang.getChildrenNum() < memberGang.getGangMinNum() {
-			gangsOfMinNumUnSatisfied = append(gangsOfMinNumUnSatisfied, gangID)
+			gangsOfMinNumUnSatisfied = append(gangsOfMinNumUnSatisfied,
+				fmt.Sprintf("%s(collected %d/%d children)", gangID, memberGang.getChildrenNum(), memberGang.getGangMinNum()))
 			continue
 		}
 	}
@@ -284,7 +285,7 @@ func (pgMgr *PodGroupManager) basicGangRequirementsCheck(gang *Gang, pod *corev1
 		failedMsg = append(failedMsg, fmt.Sprintf("memberGangs %+v has not init", gangsOfGangNotInit))
 	}
 	if len(gangsOfMinNumUnSatisfied) > 0 {
-		failedMsg = append(failedMsg, fmt.Sprintf("memberGangs %+v child pod not collect enough", gangGroup))
+		failedMsg = append(failedMsg, fmt.Sprintf("memberGangs %+v child pod not collect enough", gangsOfMinNumUnSatisfied))
 	}
 	if len(failedMsg) > 0 {
 		return fmt.Errorf("gangGroup %v basic check: %s, current gang: %s, podName: %v",

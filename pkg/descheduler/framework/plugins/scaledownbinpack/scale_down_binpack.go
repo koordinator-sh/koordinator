@@ -122,7 +122,7 @@ func (pl *ScaleDownBinPack) Balance(ctx context.Context, nodes []*corev1.Node) *
 	)
 
 	for _, node := range selectedNodes {
-		allPods, err := getPodsFunc(node.Name, nil)
+		allPods, err := getPodsFunc(node.Name, func(*corev1.Pod) bool { return true })
 		if err != nil {
 			klog.ErrorS(err, "Failed to get pods for node", "node", node.Name)
 			continue

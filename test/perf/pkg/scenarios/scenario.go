@@ -40,11 +40,11 @@ type Scenario interface {
 	// Setup creates prerequisites before the pod burst starts.
 	// For basic scenarios this is a no-op beyond namespace creation.
 	Setup(
-		ctx       context.Context,
-		client    kubernetes.Interface,
+		ctx context.Context,
+		client kubernetes.Interface,
 		dynClient dynamic.Interface,
-		cfg       types.ScenarioConfig,
-		runID     string,
+		cfg types.ScenarioConfig,
+		runID string,
 	) error
 
 	// Pods returns the pod specs to submit, or an error if cfg contains
@@ -55,9 +55,9 @@ type Scenario interface {
 	// Teardown removes all objects created by Setup and the pod burst.
 	// Always called — even if the benchmark failed.
 	Teardown(
-		ctx       context.Context,
-		client    kubernetes.Interface,
+		ctx context.Context,
+		client kubernetes.Interface,
 		dynClient dynamic.Interface,
-		runID     string,
+		runID string,
 	) error
 }
