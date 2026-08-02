@@ -811,3 +811,62 @@ func Test_systemResourceCollector_collectSysResUsed_withPolicy(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1536.0, memValue, "system memory should use policy-aware node memory (2048) minus pods (512)")
 }
+
+// Test_systemResourceCollector_collectSysResUsed_policyButPageCacheDisabled covers the warning
+// path when NodeMemoryCollectPolicy is set but pageCacheCollectorEnabled is false (lines 142-144).
+func Test_systemResourceCollector_collectSysResUsed_policyButPageCacheDisabled(t *testing.T) {
+	testNow := time.Now()
+	originalTimeNow := timeNow
+	timeNow = func() time.Time { return testNow }
+	defer func() { timeNow = originalTimeNow }()
+	config := framework.NewDefaultConfig()
+
+	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+		TSDBPath:              t.TempDir(),
+		TSDBEnablePromMetrics: false,
+	})
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, metricCache.Close()) }()
+
+	s := &systemResourceCollector{
+		collectInterval:           config.CollectResUsedInterval,
+		outdatedInterval:          config.CollectSysMetricOutdatedInterval,
+		started:                   atomic.NewBool(false),
+		metricCache:               metricCache,
+		sharedState:               framework.NewSharedState(),
+		pageCacheCollectorEnabled: false, // policy set but collector disabled → warning path
+		statesInformer: &mockStatesInformer{
+			nodeMetricSpec: &slov1alpha1.NodeMetricSpec{
+				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+					NodeMemoryCollectPolicy: ptr.To(slov1alpha1.UsageWithPageCache),
+				},
+			},
+		},
+	}
+	s.sharedState.UpdateNodeUsage(
+		metriccache.Point{Timestamp: testNow, Value: 1},
+		metriccache.Point{Timestamp: testNow, Value: 1024},
+	)
+	s.sharedState.UpdatePodUsage("test-collector",
+		metriccache.Point{Timestamp: testNow, Value: 0.5},
+		metriccache.Point{Timestamp: testNow, Value: 512},
+	)
+	s.sharedState.UpdateHostAppUsage(
+		metriccache.Point{Timestamp: testNow, Value: 0},
+		metriccache.Point{Timestamp: testNow, Value: 0},
+	)
+
+	s.collectSysResUsed()
+
+	// With no page-cache data in cache, queryMemoryWithPolicy falls back to raw nodeMemory (1024).
+	// systemMemory = 1024 - 512 - 0 = 512
+	querier, err := metricCache.Querier(testNow.Add(-s.outdatedInterval), testNow)
+	assert.NoError(t, err)
+	defer querier.Close()
+	memResult, err := testQuery(querier, metriccache.SystemMemoryUsageMetric, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, memResult.Count(), "system memory metric should be collected")
+	memValue, err := memResult.Value(metriccache.AggregationTypeLast)
+	assert.NoError(t, err)
+	assert.Equal(t, 512.0, memValue, "system memory should fall back to raw node memory when page-cache collector is disabled")
+}
