@@ -261,17 +261,30 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	// Stop the failure watcher and collect its results.
 	failureCancel()
 	if err := <-failureWatcherErrCh; err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-		klog.ErrorS(err, "failure watcher failed", "runID", runID)
-	}
+ 		klog.ErrorS(err, "failure watcher failed", "runID", runID)
+ 	}
 	failedPodCount, failureEventCount := failureWatcher.Stats()
 
 	// Steps 9-10: compute percentiles and throughput.
 	p50, p90, p99 := ComputeLatencyPercentiles(watcher.Latencies())
 	throughput := ComputeThroughput(cfg.PodCount, totalDuration)
 
+	// Gang completion percentiles are only populated when pods carry
+	// types.PodGroupLabel (gang scenario); nil for basic and others.
+	var gangP50Sec, gangP99Sec *float64
+	if gp50, gp99, ok := ComputeGangCompletionPercentiles(watcher.PodLatencies()); ok {
+		v50, v99 := gp50.Seconds(), gp99.Seconds()
+		gangP50Sec, gangP99Sec = &v50, &v99
+	}
+
+	failureRate := schedulingFailureRate(failedPodCount, cfg.PodCount)
 	breached, err := CompareToBaseline(types.BenchmarkResult{
-		ThroughputPodsPerSec: throughput,
-		LatencyP99Sec:        p99.Seconds(),
+		NodeCount:              cfg.NodeCount,
+		PodCount:               cfg.PodCount,
+		ThroughputPodsPerSec:   throughput,
+		LatencyP99Sec:          p99.Seconds(),
+		SchedulingFailureCount: failedPodCount,
+		SchedulingFailureRate:  failureRate,
 	}, baselinePath, cfg.Thresholds)
 	if err != nil {
 		klog.ErrorS(err, "baseline comparison failed — ThresholdBreached will be false")
@@ -290,9 +303,11 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 		LatencyP50Sec:          p50.Seconds(),
 		LatencyP90Sec:          p90.Seconds(),
 		LatencyP99Sec:          p99.Seconds(),
+		GangCompletionP50Sec:   gangP50Sec,
+		GangCompletionP99Sec:   gangP99Sec,
 		ThresholdBreached:      breached,
 		SchedulingFailureCount: failureEventCount,
-		SchedulingFailureRate:  schedulingFailureRate(failedPodCount, cfg.PodCount),
+		SchedulingFailureRate:  failureRate,
 	}
 
 	// Step 13: write JSON report. Steps 11-12 run via defer after this returns.

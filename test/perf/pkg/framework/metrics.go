@@ -19,6 +19,8 @@ package framework
 import (
 	"sort"
 	"time"
+
+	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
 // ComputeLatencyPercentiles sorts latencies and returns P50, P90, P99.
@@ -57,4 +59,31 @@ func ComputeThroughput(podCount int, total time.Duration) float64 {
 		return 0
 	}
 	return float64(podCount) / total.Seconds()
+}
+
+// ComputeGangCompletionPercentiles groups pods by GangID and computes the
+// latency of the last pod scheduled in each gang (gang completion time), then
+// returns P50 and P99 over all gangs. Returns ok=false when no gang pods exist.
+func ComputeGangCompletionPercentiles(podLatencies []types.PodLatency) (p50, p99 time.Duration, ok bool) {
+	gangMax := map[string]time.Duration{}
+	for _, pl := range podLatencies {
+		if pl.GangID == "" {
+			continue
+		}
+		if pl.Latency > gangMax[pl.GangID] {
+			gangMax[pl.GangID] = pl.Latency
+		}
+	}
+	if len(gangMax) == 0 {
+		return 0, 0, false
+	}
+	completions := make([]time.Duration, 0, len(gangMax))
+	for _, d := range gangMax {
+		completions = append(completions, d)
+	}
+	sort.Slice(completions, func(i, j int) bool { return completions[i] < completions[j] })
+	n := len(completions)
+	p50 = completions[clampIdx(int(float64(n)*0.50)-1, n)]
+	p99 = completions[clampIdx(int(float64(n)*0.99)-1, n)]
+	return p50, p99, true
 }

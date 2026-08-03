@@ -106,7 +106,7 @@ func (s *BasicScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.
 
 	labels := map[string]string{
 		types.RunIDLabel: runID,
-		"app":            "kwok-bench",
+		"app":      "kwok-bench",
 	}
 	for k, v := range cfg.Labels {
 		labels[k] = v
