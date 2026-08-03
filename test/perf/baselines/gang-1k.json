@@ -2,7 +2,7 @@
   "name": "gang",
   "runID": "79742604-9a16-4eb1-a7e0-32441edc73ca",
   "timestamp": "2026-08-03T15:31:56Z",
-  "koordinatorVersion": "d0274708-dirty",
+  "koordinatorVersion": "879d921e",
   "nodeCount": 100,
   "podCount": 1000,
   "throughputPodsPerSec": 17.210823095731858,

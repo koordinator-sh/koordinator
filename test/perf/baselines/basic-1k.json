@@ -2,7 +2,7 @@
   "name": "basic",
   "runID": "6c7054ec-f099-45e3-b046-549d30a6093a",
   "timestamp": "2026-08-03T15:29:08Z",
-  "koordinatorVersion": "d0274708-dirty",
+  "koordinatorVersion": "879d921e",
   "nodeCount": 100,
   "podCount": 1000,
   "throughputPodsPerSec": 26.256552601546307,
