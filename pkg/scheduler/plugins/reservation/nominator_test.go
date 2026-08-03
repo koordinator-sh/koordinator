@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	apiresource "k8s.io/component-helpers/resource"
@@ -778,7 +779,7 @@ func TestReservationsNominator(t *testing.T) {
 
 		// Mark gangPod0 as a same-job pod (gang-mate of gangPod1).
 		gangState := framework.NewCycleState()
-		frameworkext.MakeNominatedPodsOfTheSameJob(gangState, []string{string(gangPod0.UID)})
+		frameworkext.MakeNominatedPodsOfTheSameJob(gangState, sets.New[string](string(gangPod0.UID)))
 
 		// Scheduling gangPod1: gangPod0 (same-job) should be excluded;
 		// gangPod1 itself is excluded by UID check (rInfo.Pod.UID != pod.UID).
@@ -801,7 +802,7 @@ func TestReservationsNominator(t *testing.T) {
 		// pods[2] is scheduling; pods[0] is same-job; pods[1] is not.
 		// Result: pods[1] included, pods[0] excluded.
 		mixedState := framework.NewCycleState()
-		frameworkext.MakeNominatedPodsOfTheSameJob(mixedState, []string{string(gangPod0.UID)})
+		frameworkext.MakeNominatedPodsOfTheSameJob(mixedState, sets.New[string](string(gangPod0.UID)))
 		_, nodeInfoOut3, update3, status3 := pl.BeforeFilter(ctx, mixedState, pods[2], nodeInfo)
 		assert.True(t, update3)
 		assert.True(t, status3.IsSuccess())

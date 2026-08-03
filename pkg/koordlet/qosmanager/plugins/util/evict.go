@@ -57,6 +57,9 @@ type PodEvictInfo struct {
 	// sort helper
 	Priority      int32
 	LabelPriority int64
+	// EvictionPriority is from the annotation koordinator.sh/eviction-priority (implicit 0 when unset).
+	// Pods with lower values are evicted first, taking precedence over Priority and LabelPriority.
+	EvictionPriority int32
 }
 
 type EvictTaskInfo struct {
@@ -116,6 +119,7 @@ func InitializeEvictionExecutor(evictor *Evictor, onlyEvictByAPI bool) EvictionE
 func KillAndEvictPods(evictionExecutor EvictionExecutor, node *corev1.Node, tasks []*EvictTaskInfo) (ReleaseList, bool) {
 	releasedAll := make(ReleaseList)
 	evictedPodsMp := make(map[string]bool)
+	newlyEvicted := false
 	releaseTypes := make(map[ReleaseTargetType][]corev1.ResourceName)
 	var getPodResourceFuncs []func(*PodEvictInfo) ReleaseList
 	for _, task := range tasks {
@@ -159,25 +163,36 @@ func KillAndEvictPods(evictionExecutor EvictionExecutor, node *corev1.Node, task
 		releaseTarget := task.ReleaseTarget
 		podInfos := task.SortedEvictPods
 		releaseReason := task.Reason
-		needToRelease := subReleaseListNoNegative(task.ToReleaseResource, releasedAll[releaseTarget])
-		if len(needToRelease) == 0 || isZeroResourceList(needToRelease) {
+		// releasedAll accumulates across tasks, so the completion check compares the task's
+		// original target against the accumulated release to avoid double subtraction
+		if len(subReleaseListNoNegative(task.ToReleaseResource, releasedAll[releaseTarget])) == 0 {
 			continue
 		}
 		for _, info := range podInfos {
-			if evictionExecutor.IsPodEvicted(info.Pod) {
-				continue
-			}
 			podKey := util.GetPodKey(info.Pod)
 			if evictedPodsMp[podKey] {
+				continue
+			}
+			if evictionExecutor.IsPodEvicted(info.Pod) {
+				// The pod was evicted in a previous round but is still present, e.g. terminating
+				// or waiting for an external evictor. Count its resource as pending release so
+				// that extra victims are not picked for the same pressure.
+				evictedPodsMp[podKey] = true
+				addResource(releasedAll, aggregateReleaseFunc(info))
+				klog.V(4).Infof("pod %s was evicted but still present, count as pending release, release reason: %v", podKey, releaseReason)
+				if len(subReleaseListNoNegative(task.ToReleaseResource, releasedAll[releaseTarget])) == 0 {
+					break
+				}
 				continue
 			}
 			successEvict := evictionExecutor.Evict(info.Pod, node, EvictedStr, fmt.Sprintf("%v, kill pod: %v", releaseReason, info.Pod.Name))
 			if successEvict {
 				klog.V(4).Infof("successfully picked pod %s to evict, release reason: %v", podKey, releaseReason)
 				evictedPodsMp[podKey] = true
+				newlyEvicted = true
 				resource := aggregateReleaseFunc(info)
 				addResource(releasedAll, resource)
-				if len(subReleaseListNoNegative(needToRelease, releasedAll[releaseTarget])) == 0 {
+				if len(subReleaseListNoNegative(task.ToReleaseResource, releasedAll[releaseTarget])) == 0 {
 					break
 				}
 			} else {
@@ -185,7 +200,7 @@ func KillAndEvictPods(evictionExecutor EvictionExecutor, node *corev1.Node, task
 			}
 		}
 	}
-	return releasedAll, len(evictedPodsMp) > 0
+	return releasedAll, newlyEvicted
 }
 
 func IsEvictionPolicyAllowed(policy string, pod *corev1.Pod) bool {

@@ -90,6 +90,7 @@ func (h *fakeHandle) GetPodsAssignedToNodeFunc() framework.GetPodsAssignedToNode
 func (h *fakeHandle) ClientSet() clientset.Interface                         { return nil }
 func (h *fakeHandle) KubeConfig() *restclient.Config                         { return nil }
 func (h *fakeHandle) EventRecorder() events.EventRecorder                    { return nil }
+func (h *fakeHandle) IsDryRun() bool                                         { return false }
 func (h *fakeHandle) SharedInformerFactory() informers.SharedInformerFactory { return nil }
 func (h *fakeHandle) NodeSelector() *metav1.LabelSelector                    { return nil }
 func (h *fakeHandle) RunDeschedulePlugins(ctx context.Context, nodes []*corev1.Node) *framework.Status {

@@ -68,7 +68,7 @@ const (
 // Manager defines the interfaces for PodGroup management.
 type Manager interface {
 	NextPod() *corev1.Pod
-	FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status)
+	FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (*frameworkext.BatchScheduleResult, *fwktype.Status)
 	SucceedGangScheduling()
 	PreEnqueue(context.Context, *corev1.Pod) (err error)
 	BeforePreFilter(context.Context, fwktype.CycleState, *corev1.Pod) (err error)
@@ -272,7 +272,8 @@ func (pgMgr *PodGroupManager) basicGangRequirementsCheck(gang *Gang, pod *corev1
 			continue
 		}
 		if memberGang.getChildrenNum() < memberGang.getGangMinNum() {
-			gangsOfMinNumUnSatisfied = append(gangsOfMinNumUnSatisfied, gangID)
+			gangsOfMinNumUnSatisfied = append(gangsOfMinNumUnSatisfied,
+				fmt.Sprintf("%s(collected %d/%d children)", gangID, memberGang.getChildrenNum(), memberGang.getGangMinNum()))
 			continue
 		}
 	}
@@ -284,7 +285,7 @@ func (pgMgr *PodGroupManager) basicGangRequirementsCheck(gang *Gang, pod *corev1
 		failedMsg = append(failedMsg, fmt.Sprintf("memberGangs %+v has not init", gangsOfGangNotInit))
 	}
 	if len(gangsOfMinNumUnSatisfied) > 0 {
-		failedMsg = append(failedMsg, fmt.Sprintf("memberGangs %+v child pod not collect enough", gangGroup))
+		failedMsg = append(failedMsg, fmt.Sprintf("memberGangs %+v child pod not collect enough", gangsOfMinNumUnSatisfied))
 	}
 	if len(failedMsg) > 0 {
 		return fmt.Errorf("gangGroup %v basic check: %s, current gang: %s, podName: %v",

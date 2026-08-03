@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
@@ -1130,6 +1131,78 @@ func Test_KillAndEvictPods(t *testing.T) {
 		assert.True(t, cpuReleased.Value() >= 1500, "BatchCPU should be released at least 1200m")
 		assert.True(t, cpuReleased.Value() == 2000)
 	}
+}
+
+func Test_KillAndEvictPods_PendingRelease(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node-3",
+		},
+	}
+	newBEPodInfo := func(name string, memUsed int64) *PodEvictInfo {
+		return &PodEvictInfo{
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: "default",
+					UID:       types.UID(name + "-uid"),
+					Labels: map[string]string{
+						apiext.LabelPodQoS: string(apiext.QoSBE),
+					},
+				},
+			},
+			MemoryUsed: memUsed,
+		}
+	}
+	newTasks := func(toRelease int64, pods ...*PodEvictInfo) []*EvictTaskInfo {
+		return []*EvictTaskInfo{
+			{
+				Reason:        "evict-by-memory-usage",
+				ReleaseTarget: ReleaseTargetTypeResourceUsed,
+				ToReleaseResource: corev1.ResourceList{
+					corev1.ResourceMemory: *resource.NewQuantity(toRelease, resource.BinarySI),
+				},
+				SortedEvictPods: pods,
+				GetPodResourceFunc: func(podInfo *PodEvictInfo) corev1.ResourceList {
+					return corev1.ResourceList{
+						corev1.ResourceMemory: *resource.NewQuantity(podInfo.MemoryUsed, resource.BinarySI),
+					}
+				},
+			},
+		}
+	}
+
+	t.Run("pending release satisfies the target, no new victim picked", func(t *testing.T) {
+		ctl := gomock.NewController(t)
+		defer ctl.Finish()
+		markedPod := newBEPodInfo("marked-pod", 2*1024*1024*1024)
+		otherPod := newBEPodInfo("other-pod", 1024*1024*1024)
+		executor := NewMockEvictionExecutor(ctl)
+		executor.EXPECT().IsPodEvicted(markedPod.Pod).Return(true).AnyTimes()
+		executor.EXPECT().IsPodEvicted(otherPod.Pod).Return(false).AnyTimes()
+		// no Evict expectation: any eviction fails the test
+
+		released, hasNewlyEvicted := KillAndEvictPods(executor, node, newTasks(2*1024*1024*1024, markedPod, otherPod))
+		assert.False(t, hasNewlyEvicted, "pending release should not count as a new eviction")
+		memoryReleased := released[ReleaseTargetTypeResourceUsed][corev1.ResourceMemory]
+		assert.Equal(t, int64(2*1024*1024*1024), memoryReleased.Value())
+	})
+
+	t.Run("pending release insufficient, evict the next victim", func(t *testing.T) {
+		ctl := gomock.NewController(t)
+		defer ctl.Finish()
+		markedPod := newBEPodInfo("marked-pod", 1024*1024*1024)
+		otherPod := newBEPodInfo("other-pod", 2*1024*1024*1024)
+		executor := NewMockEvictionExecutor(ctl)
+		executor.EXPECT().IsPodEvicted(markedPod.Pod).Return(true).AnyTimes()
+		executor.EXPECT().IsPodEvicted(otherPod.Pod).Return(false).AnyTimes()
+		executor.EXPECT().Evict(otherPod.Pod, node, gomock.Any(), gomock.Any()).Return(true).Times(1)
+
+		released, hasNewlyEvicted := KillAndEvictPods(executor, node, newTasks(2*1024*1024*1024, markedPod, otherPod))
+		assert.True(t, hasNewlyEvicted)
+		memoryReleased := released[ReleaseTargetTypeResourceUsed][corev1.ResourceMemory]
+		assert.Equal(t, int64(3*1024*1024*1024), memoryReleased.Value())
+	})
 }
 
 func Test_mergeResourceListByMax(t *testing.T) {

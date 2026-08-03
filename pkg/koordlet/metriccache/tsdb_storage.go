@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-kit/log"
@@ -27,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	promstorage "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
@@ -112,7 +114,31 @@ func (t *tsdbStorage) Close() error {
 	return t.db.Close()
 }
 
+// Compact triggers a head compaction which persists the head block to disk,
+// creates a WAL checkpoint (dropping obsolete series and old samples),
+// and truncates old WAL segments.
+func (t *tsdbStorage) Compact() error {
+	return t.db.Compact()
+}
+
+// WALSize returns the total size in bytes of the WAL directory.
+func (t *tsdbStorage) WALSize() (int64, error) {
+	walDir := filepath.Join(t.db.Dir(), "wal")
+	size, err := fileutil.DirSize(walDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return size, nil
+}
+
 func NewTSDBStorage(conf *Config) (TSDBStorage, error) {
+	if err := maybeRemoveWAL(conf); err != nil {
+		klog.Warningf("failed to check/remove WAL: %v", err)
+	}
+
 	tsdbOpt := tsdb.DefaultOptions()
 	tsdbOpt.RetentionDuration = int64(conf.TSDBRetentionDuration / time.Millisecond)
 	tsdbOpt.StripeSize = conf.TSDBStripeSize
@@ -217,4 +243,42 @@ func (t *tsdbQuerier) Close() {
 	if err := t.querier.Close(); err != nil {
 		klog.Warningf("close querier error %v", err)
 	}
+}
+
+// maybeRemoveWAL checks the total size of the WAL directory and removes it
+// if it exceeds the configured threshold. This prevents OOM crash loops caused
+// by replaying an oversized WAL after container restart (emptyDir persists).
+func maybeRemoveWAL(conf *Config) error {
+	if conf.TSDBMaxWALSizeBytes <= 0 {
+		return nil
+	}
+
+	walDir := filepath.Join(conf.TSDBPath, "wal")
+	walSize, err := fileutil.DirSize(walDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("get WAL dir size: %w", err)
+	}
+
+	if walSize <= conf.TSDBMaxWALSizeBytes {
+		klog.V(4).Infof("WAL size %d bytes is within limit %d bytes", walSize, conf.TSDBMaxWALSizeBytes)
+		return nil
+	}
+
+	klog.Warningf("WAL size %d bytes exceeds limit %d bytes, removing WAL and WBL directories to prevent OOM on replay",
+		walSize, conf.TSDBMaxWALSizeBytes)
+
+	if err := os.RemoveAll(walDir); err != nil {
+		return fmt.Errorf("remove WAL dir: %w", err)
+	}
+
+	// Also remove the out-of-order WBL directory since it is replayed together with WAL.
+	wblDir := filepath.Join(conf.TSDBPath, "wbl")
+	if err := os.RemoveAll(wblDir); err != nil {
+		return fmt.Errorf("remove WBL dir: %w", err)
+	}
+
+	return nil
 }

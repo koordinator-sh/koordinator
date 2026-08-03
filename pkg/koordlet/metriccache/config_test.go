@@ -41,6 +41,9 @@ func Test_NewDefaultConfig(t *testing.T) {
 		TSDBMinBlockDuration:          10 * time.Minute,
 		TSDBMaxBlockDuration:          10 * time.Minute,
 		TSDBHeadChunksWriteBufferSize: 1024 * 1024,
+
+		TSDBWALRotationThresholdBytes: 32 * 1024 * 1024, // 32 MB
+		TSDBMaxWALSizeBytes:           64 * 1024 * 1024, // 64 MB
 	}
 	defaultConfig := NewDefaultConfig()
 	assert.Equal(t, expectConfig, defaultConfig)
@@ -63,6 +66,8 @@ func Test_InitFlags(t *testing.T) {
 		"--tsdb-min-block-duration=10m",
 		"--tsdb-max-block-duration=20m",
 		"--tsdb-head-chunks-write-buffer-size=512",
+		"--tsdb-wal-rotation-threshold-bytes=33554432",
+		"--tsdb-max-wal-size-bytes=104857600",
 	}
 	fs := flag.NewFlagSet(cmdArgs[0], flag.ExitOnError)
 
@@ -81,6 +86,9 @@ func Test_InitFlags(t *testing.T) {
 		TSDBMinBlockDuration          time.Duration
 		TSDBMaxBlockDuration          time.Duration
 		TSDBHeadChunksWriteBufferSize int
+
+		TSDBWALRotationThresholdBytes int64
+		TSDBMaxWALSizeBytes           int64
 	}
 	type args struct {
 		fs *flag.FlagSet
@@ -105,6 +113,8 @@ func Test_InitFlags(t *testing.T) {
 				TSDBMinBlockDuration:          10 * time.Minute,
 				TSDBMaxBlockDuration:          20 * time.Minute,
 				TSDBHeadChunksWriteBufferSize: 512,
+				TSDBWALRotationThresholdBytes: 33554432,
+				TSDBMaxWALSizeBytes:           104857600,
 			},
 			args: args{fs: fs},
 		},
@@ -126,6 +136,9 @@ func Test_InitFlags(t *testing.T) {
 				TSDBMinBlockDuration:          tt.fields.TSDBMinBlockDuration,
 				TSDBMaxBlockDuration:          tt.fields.TSDBMaxBlockDuration,
 				TSDBHeadChunksWriteBufferSize: tt.fields.TSDBHeadChunksWriteBufferSize,
+
+				TSDBWALRotationThresholdBytes: tt.fields.TSDBWALRotationThresholdBytes,
+				TSDBMaxWALSizeBytes:           tt.fields.TSDBMaxWALSizeBytes,
 			}
 			c := NewDefaultConfig()
 			c.InitFlags(tt.args.fs)
