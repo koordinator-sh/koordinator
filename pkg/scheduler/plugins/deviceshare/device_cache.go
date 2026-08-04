@@ -521,7 +521,7 @@ func newNodeDeviceCache(handle frameworkext.ExtendedHandle) *nodeDeviceCache {
 func (n *nodeDeviceCache) Start(context.Context) {
 	registerDeviceEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
 	registerReservationEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
-	n.handle.RegisterForgetPodHandler(n.deletePod)
+	n.handle.RegisterForgetPodHandler(n.forgetPod)
 	// Launch GC only after all informer factories have started and synced, so its first
 	// tick reads a fully populated node lister. Registering it behind an
 	// AfterAllInformersSynced hook gives an explicit happens-after-sync guarantee that does
@@ -537,58 +537,72 @@ func (n *nodeDeviceCache) Start(context.Context) {
 // The OnPod* handlers below are invoked serially by the shared pod informer (one event at a
 // time), so they never race one another. They intentionally do not hold a single lock across
 // the whole operation: assumedPods is always accessed under n.lock (AssumePod/ForgetPod/
-// takeAssumed), the node map under n.lock (getNodeDevice/gcNodeDevice), and per-node allocation
-// state under the per-node nodeDevice.lock — the same lock discipline every other caller uses,
-// so a concurrent Reserve/Unreserve (scheduling goroutine), Device event, or GC stays race-free
-// without a global write lock. takeAssumed atomically claims a pod's assumed marker, so exactly
-// one path reconciles it.
-
-// OnPodAdd implements frameworkext.SharedPluginCache. If the pod was previously assumed,
-// reconciles against the authoritative event instead of skipping — see the CacheReserver
-// invariants in the proposal.
+// takeAssumed/isAssumed), the node map under n.lock (getNodeDevice/gcNodeDevice), and per-node
+// allocation state under the per-node nodeDevice.lock — the same lock discipline every other
+// caller uses, so a concurrent Reserve/Unreserve (scheduling goroutine), Device event, GC, or
+// framework ForgetPod stays race-free without a global write lock.
 //
-// The assumed marker is only reconciled once the pod is actually bound (Spec.NodeName set).
-// A pod's binding cycle emits an earlier informer event when DeviceShare's PreBind patches
-// the allocation annotation, and at that point the pod is not yet bound (NodeName==""):
-// consuming the marker there would roll back Reserve's write before the pod is bound, leaving
-// the node under-counted until the Bind event lands, and racing Unreserve on a failed bind.
-// While unbound, the assumed write already reflects reality, so the marker is left in place —
-// it is cleared by the bound event here, by Unreserve→ForgetPod on a failed/rejected bind, or
-// by OnPodDelete on deletion.
+// The assumed marker is a pure rollback record. It is consumed only by NEGATIVE events — a
+// delete, a bound->unassigned transition (multi-scheduler arbitration clears spec.nodeName back
+// to ""), a termination, or the framework ForgetPod — and never by a POSITIVE (assigned) event.
+// A pod's spec.nodeName is not a trustworthy "real bind" signal: arbitration fakes it via a
+// client-go transform, so a positive event for an assumed pod must not re-add the pod (Reserve
+// already accounted it) and must leave the marker in place, because ext.ForgetPod fires
+// asynchronously on arbitration failure and needs the marker to roll back. Rolling back via the
+// marker snapshot also works before PreBind wrote the allocation annotation, which the
+// annotation-based deletePod cannot. The negative paths are idempotent against a racing
+// ForgetPod: whichever runs second finds the pod already gone from allocateSet (isValid guard)
+// and subtracts nothing.
+
+// OnPodAdd implements frameworkext.SharedPluginCache.
 func (n *nodeDeviceCache) OnPodAdd(pod *corev1.Pod) {
-	if pod.Spec.NodeName != "" {
-		if assumed, ok := n.takeAssumed(pod.UID); ok {
-			n.reconcileAssumed(assumed, pod)
-			return
+	// A terminated pod is a negative event even on Add: a watch reconnect can relist an
+	// already-terminated Reserved pod, and the marker lives until a terminal event, so this
+	// must roll it back (from the snapshot) rather than fall through to the positive handling.
+	if util.IsPodTerminated(pod) {
+		if !n.releaseAssumed(pod) {
+			n.updatePod(nil, pod)
 		}
+		return
+	}
+	if pod.Spec.NodeName != "" && n.isAssumed(pod.UID) {
+		return
 	}
 	n.updatePod(nil, pod)
 }
 
-// OnPodUpdate implements frameworkext.SharedPluginCache. Only reconciles the assumed marker
-// once the pod is bound — see OnPodAdd for why pre-bind (NodeName=="") events are skipped.
+// OnPodUpdate implements frameworkext.SharedPluginCache.
 func (n *nodeDeviceCache) OnPodUpdate(oldPod, newPod *corev1.Pod) {
-	if newPod.Spec.NodeName != "" {
-		if assumed, ok := n.takeAssumed(newPod.UID); ok {
-			// Prior cache state is Reserve's assumed write, not oldPod's annotations, so
-			// reconcile against the assumed snapshot rather than treating oldPod as truth.
-			n.reconcileAssumed(assumed, newPod)
-			return
+	unassigned := oldPod != nil && oldPod.Spec.NodeName != "" && newPod.Spec.NodeName == ""
+	if unassigned || util.IsPodTerminated(newPod) {
+		if !n.releaseAssumed(newPod) {
+			n.updatePod(oldPod, newPod)
 		}
+		return
+	}
+	if newPod.Spec.NodeName != "" && n.isAssumed(newPod.UID) {
+		return
 	}
 	n.updatePod(oldPod, newPod)
 }
 
 // OnPodDelete implements frameworkext.SharedPluginCache.
 func (n *nodeDeviceCache) OnPodDelete(pod *corev1.Pod) {
-	if assumed, ok := n.takeAssumed(pod.UID); ok {
-		// Pod was assumed but got deleted before the informer add/update ever landed.
-		// Roll back the assumed write; annotations at this point may not carry the
-		// allocation Reserve wrote, so deletePod cannot be trusted to undo it.
-		n.rollbackAssumed(assumed, pod)
-		return
+	if !n.releaseAssumed(pod) {
+		n.deletePod(pod)
 	}
-	n.deletePod(pod)
+}
+
+// forgetPod is the framework ForgetPodHandler (registered in Start). Unlike the CacheReserver
+// ForgetPod — which clears only the marker because Plugin.Unreserve has already reverted the
+// ledger — the framework path must revert the ledger too. It mirrors OnPodDelete so the two
+// forget paths are symmetric and idempotent. This closes the leak where a Reserved pod forgotten
+// via the framework (e.g. multi-scheduler arbitration failure) left its marker dangling and its
+// Reserve write un-reverted.
+func (n *nodeDeviceCache) forgetPod(pod *corev1.Pod) {
+	if !n.releaseAssumed(pod) {
+		n.deletePod(pod)
+	}
 }
 
 // OnNodeAdd implements frameworkext.SharedPluginCache. nodeDeviceInfos is keyed by node
@@ -663,6 +677,16 @@ func (n *nodeDeviceCache) ForgetPod(pod *corev1.Pod) error {
 	return nil
 }
 
+// isAssumed reports whether pod uid currently has an assumed marker, without consuming it.
+// Used by the positive (assigned) event paths, which must not re-add an assumed pod nor
+// disturb its marker.
+func (n *nodeDeviceCache) isAssumed(uid types.UID) bool {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
+	_, ok := n.assumedPods[uid]
+	return ok
+}
+
 func (n *nodeDeviceCache) takeAssumed(uid types.UID) (*assumedAllocation, bool) {
 	// Fast path: the vast majority of pod events are for pods that were never assumed, so
 	// peek under a read lock and avoid taking the write lock (which blocks all readers) on
@@ -686,44 +710,23 @@ func (n *nodeDeviceCache) takeAssumed(uid types.UID) (*assumedAllocation, bool) 
 	return assumed, true
 }
 
-// reconcileAssumed removes what AssumePod recorded on assumed.nodeName and applies the
-// informer event's authoritative state. The caller guarantees pod.Spec.NodeName != "".
-//
-// When the event stays on the assumed node (the common case), the subtract of Reserve's
-// write and the add of the event's allocation run under a SINGLE hold of the per-node lock,
-// so no concurrent Filter/Score observes the intermediate under-counted state (which would
-// let it over-allocate). When the pod diverged to a different node, the event's node is
-// credited first (a transient over-count is safe; an under-count is not) and the phantom is
-// then removed from the assumed node.
-func (n *nodeDeviceCache) reconcileAssumed(assumed *assumedAllocation, pod *corev1.Pod) {
-	if assumed.nodeName != pod.Spec.NodeName {
-		n.updatePod(nil, pod)
+// releaseAssumed claims and rolls back the assumed marker for a negative event (delete,
+// bound->unassigned, terminate, or framework ForgetPod), reverting Reserve's write from the
+// snapshot. It reports whether a marker was present so callers fall back to the annotation-based
+// updatePod/deletePod for pods this scheduler never assumed. Idempotent against a racing negative
+// path: takeAssumed atomically claims the marker and rollbackAssumed's isValid guard makes a
+// second subtract a no-op.
+func (n *nodeDeviceCache) releaseAssumed(pod *corev1.Pod) bool {
+	assumed, ok := n.takeAssumed(pod.UID)
+	if ok {
 		n.rollbackAssumed(assumed, pod)
-		return
 	}
-
-	info := n.getNodeDevice(pod.Spec.NodeName, true)
-	info.lock.Lock()
-	defer info.lock.Unlock()
-	if len(assumed.allocations) > 0 {
-		info.updateCacheUsed(assumed.allocations, pod, false)
-	}
-	if util.IsPodTerminated(pod) {
-		// A bound pod that has already terminated holds no allocations; only roll back.
-		return
-	}
-	newAllocations, err := apiext.GetDeviceAllocations(pod.Annotations)
-	if err != nil {
-		klog.ErrorS(err, "failed to get device allocations while reconciling assumed pod", "pod", klog.KObj(pod))
-		return
-	}
-	if len(newAllocations) > 0 {
-		info.updateCacheUsed(newAllocations, pod, true)
-	}
+	return ok
 }
 
-// rollbackAssumed subtracts the assumed allocation from assumed.nodeName. Extracted so
-// OnPodDelete (nothing to apply afterward) can reuse it.
+// rollbackAssumed subtracts the assumed allocation from assumed.nodeName. Shared by every
+// negative path (delete, unassign, terminate, framework ForgetPod) — it reverts Reserve's
+// write from the snapshot, so it works even before PreBind wrote the allocation annotation.
 func (n *nodeDeviceCache) rollbackAssumed(assumed *assumedAllocation, pod *corev1.Pod) {
 	if len(assumed.allocations) == 0 {
 		return

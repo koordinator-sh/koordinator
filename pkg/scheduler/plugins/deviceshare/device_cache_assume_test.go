@@ -98,31 +98,39 @@ func unboundPod(uid string) *corev1.Pod {
 	}
 }
 
-func Test_nodeDeviceCache_PreBindPatchEvent_KeepsAssumedMarker(t *testing.T) {
+// The assumed marker is a pure rollback record: positive (assigned) events — the PreBind
+// annotation patch and the bound event — never consume it or re-add the pod. It is cleared
+// only by a terminal negative event (here, delete).
+func Test_nodeDeviceCache_PositiveEvents_KeepMarkerAndDoNotReAdd(t *testing.T) {
 	cache := newNodeDeviceCache(nil)
 	pod := unboundPod("1")
 	alloc := gpuAllocations(0, 100)
 	reserveInto(cache, "node-1", pod, alloc)
 	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+	nd := cache.getNodeDevice("node-1", false)
 
 	// PreBind patches the allocation annotation while the pod is still unbound (NodeName=="").
 	prebindPod := pod.DeepCopy()
 	assert.NoError(t, apiext.SetDeviceAllocations(prebindPod, alloc))
 	cache.OnPodUpdate(pod, prebindPod)
-
-	// The marker must be preserved and the node must stay credited — no premature rollback.
 	_, ok := assumedEntry(cache, pod.UID)
 	assert.True(t, ok, "PreBind (unbound) event must not consume the assumed marker")
-	nd := cache.getNodeDevice("node-1", false)
 	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, pod.Namespace, pod.Name), "node stays credited while assumed")
 
-	// The authoritative bound event reconciles and clears the marker; the node stays credited.
+	// The bound event is positive: it must NOT consume the marker and must NOT re-add the pod
+	// (spec.nodeName is not a trustworthy bind signal — arbitration fakes it).
 	boundPod := prebindPod.DeepCopy()
 	boundPod.Spec.NodeName = "node-1"
 	cache.OnPodUpdate(prebindPod, boundPod)
 	_, ok = assumedEntry(cache, pod.UID)
-	assert.False(t, ok, "bound event must consume the assumed marker")
-	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, pod.Namespace, pod.Name))
+	assert.True(t, ok, "bound (positive) event must leave the marker for a terminal event")
+	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, pod.Namespace, pod.Name), "no re-add, no double count")
+
+	// A terminal delete finally clears the marker and rolls the allocation back exactly once.
+	cache.OnPodDelete(boundPod)
+	_, ok = assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "delete must clear the marker")
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "delete rolls back the assumed write")
 }
 
 func Test_nodeDeviceCache_UnreserveAfterPreBind_NoDoubleCount(t *testing.T) {
@@ -150,16 +158,16 @@ func Test_nodeDeviceCache_UnreserveAfterPreBind_NoDoubleCount(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func Test_nodeDeviceCache_ReconcileAssumed_TerminatedAtBind_NotCredited(t *testing.T) {
+func Test_nodeDeviceCache_TerminatedAtBind_NotCredited(t *testing.T) {
 	cache := newNodeDeviceCache(nil)
 	pod := unboundPod("1")
 	alloc := gpuAllocations(0, 100)
 	reserveInto(cache, "node-1", pod, alloc)
 	assert.NoError(t, cache.AssumePod(pod, "node-1"))
 
-	// The bound event arrives for a pod that has already terminated (fast-failing pod). The
-	// atomic same-node reconcile must roll back Reserve's write and NOT re-credit the pod —
-	// a terminated pod holds no allocations. Mirrors updatePod's IsPodTerminated handling.
+	// The bound event arrives for a pod that has already terminated (fast-failing pod).
+	// Termination is a negative event: roll Reserve's write back via the marker and do NOT
+	// credit the pod — a terminated pod holds no allocations.
 	boundTerminated := pod.DeepCopy()
 	boundTerminated.Spec.NodeName = "node-1"
 	assert.NoError(t, apiext.SetDeviceAllocations(boundTerminated, alloc))
@@ -167,9 +175,29 @@ func Test_nodeDeviceCache_ReconcileAssumed_TerminatedAtBind_NotCredited(t *testi
 	cache.OnPodUpdate(pod, boundTerminated)
 
 	nd := cache.getNodeDevice("node-1", false)
-	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "terminated pod must not be credited at reconcile")
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "terminated pod must not be credited")
 	_, ok := assumedEntry(cache, pod.UID)
-	assert.False(t, ok, "marker must be consumed on the bound event")
+	assert.False(t, ok, "marker must be consumed on the terminated event")
+}
+
+// A watch reconnect can relist an already-terminated Reserved pod as an Add (not an Update),
+// before any annotation was written. OnPodAdd must treat termination as a negative event and
+// roll back via the marker — not fall through to the annotation-based deletePod, which would
+// leak Reserve's write and leave the marker dangling.
+func Test_nodeDeviceCache_OnPodAdd_TerminatedWithMarker_RollsBack(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := assumeTestPod("1", "node-1") // bound, but carries no device-allocation annotation
+	reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	terminated := pod.DeepCopy()
+	terminated.Status.Phase = corev1.PodFailed
+	cache.OnPodAdd(terminated)
+
+	nd := cache.getNodeDevice("node-1", false)
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "terminated relist Add must roll back the assumed write")
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "terminated relist Add must clear the marker")
 }
 
 func assumedEntry(cache *nodeDeviceCache, uid types.UID) (*assumedAllocation, bool) {
@@ -222,73 +250,98 @@ func Test_nodeDeviceCache_ForgetPod_Idempotent(t *testing.T) {
 	assert.NoError(t, cache.ForgetPod(assumeTestPod("never", "node-1")))
 }
 
-func Test_nodeDeviceCache_OnPodAdd_Reconcile(t *testing.T) {
-	tests := []struct {
-		name         string
-		assumedNode  string
-		assumedAlloc apiext.DeviceAllocations
-		eventNode    string
-		eventAlloc   apiext.DeviceAllocations // nil => event carries no allocation
-		wantNode1    []int                    // GPU minors expected for the pod on node-1
-		wantNode2    []int                    // GPU minors expected for the pod on node-2
-	}{
-		{
-			name:         "event agrees with reserve: net-zero on the same node",
-			assumedNode:  "node-1",
-			assumedAlloc: gpuAllocations(0, 100),
-			eventNode:    "node-1",
-			eventAlloc:   gpuAllocations(0, 100),
-			wantNode1:    []int{0},
-			wantNode2:    nil,
-		},
-		{
-			name:         "event on a different node: phantom cleared, event's node credited",
-			assumedNode:  "node-1",
-			assumedAlloc: gpuAllocations(0, 100),
-			eventNode:    "node-2",
-			eventAlloc:   gpuAllocations(0, 100),
-			wantNode1:    nil,
-			wantNode2:    []int{0},
-		},
-		{
-			name:         "event with mutated allocation: cache converges on the event",
-			assumedNode:  "node-1",
-			assumedAlloc: gpuAllocations(0, 100),
-			eventNode:    "node-1",
-			eventAlloc:   gpuAllocations(1, 50),
-			wantNode1:    []int{1},
-			wantNode2:    nil,
-		},
-		{
-			name:         "event with empty allocation: assumed rollback only",
-			assumedNode:  "node-1",
-			assumedAlloc: gpuAllocations(0, 100),
-			eventNode:    "node-1",
-			eventAlloc:   nil,
-			wantNode1:    nil,
-			wantNode2:    nil,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cache := newNodeDeviceCache(nil)
-			pod := assumeTestPod("1", tt.assumedNode)
-			reserveInto(cache, tt.assumedNode, pod, tt.assumedAlloc)
-			assert.NoError(t, cache.AssumePod(pod, tt.assumedNode))
+// A positive event on a node other than the one Reserve wrote (a faked arbitration nodeName)
+// must not re-add the pod there, and must leave the reserved node's marker intact so a later
+// ForgetPod can still roll it back.
+func Test_nodeDeviceCache_PositiveEvent_DivergentNode_NotCredited(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := assumeTestPod("1", "node-1")
+	reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
 
-			cache.OnPodAdd(eventPodFrom(pod, tt.eventNode, tt.eventAlloc))
+	// Arbitration transform fakes spec.nodeName as node-2 (not the reserved node).
+	cache.OnPodAdd(eventPodFrom(pod, "node-2", gpuAllocations(0, 100)))
 
-			node1 := cache.getNodeDevice("node-1", false)
-			assert.ElementsMatch(t, tt.wantNode1, gpuMinors(node1, pod.Namespace, pod.Name))
-			if node2 := cache.getNodeDevice("node-2", false); node2 != nil {
-				assert.ElementsMatch(t, tt.wantNode2, gpuMinors(node2, pod.Namespace, pod.Name))
-			} else {
-				assert.Empty(t, tt.wantNode2)
-			}
-			_, ok := assumedEntry(cache, pod.UID)
-			assert.False(t, ok, "assumed marker must be cleared after the informer event")
-		})
+	node1 := cache.getNodeDevice("node-1", false)
+	assert.ElementsMatch(t, []int{0}, gpuMinors(node1, pod.Namespace, pod.Name), "reserved node unchanged")
+	if node2 := cache.getNodeDevice("node-2", false); node2 != nil {
+		assert.Empty(t, gpuMinors(node2, pod.Namespace, pod.Name), "faked node must not be credited")
 	}
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.True(t, ok, "marker must survive a faked-nodeName event for ForgetPod to roll back")
+}
+
+// A bound->unassigned transition (arbitration clears spec.nodeName back to "") is a negative
+// event: it rolls Reserve's write back via the marker and clears the marker.
+func Test_nodeDeviceCache_UnassignRelease_RollsBackAndClearsMarker(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := assumeTestPod("1", "node-1")
+	reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	oldBound := eventPodFrom(pod, "node-1", gpuAllocations(0, 100))
+	newUnassigned := unboundPod("1")
+	cache.OnPodUpdate(oldBound, newUnassigned)
+
+	node1 := cache.getNodeDevice("node-1", false)
+	assert.Empty(t, gpuMinors(node1, pod.Namespace, pod.Name), "unassign must roll back the reserved node")
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "unassign must clear the marker")
+}
+
+// forgetPod is the framework ForgetPodHandler: it rolls back the assumed snapshot (Fix for the
+// leak where the framework forget path left the marker dangling) and is idempotent.
+func Test_nodeDeviceCache_ForgetPod_RollsBackAssumedAndIdempotent(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := assumeTestPod("1", "node-1")
+	reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	cache.forgetPod(pod)
+	node1 := cache.getNodeDevice("node-1", false)
+	assert.Empty(t, gpuMinors(node1, pod.Namespace, pod.Name), "framework forget must roll back the assumed write")
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "framework forget must clear the marker")
+
+	// Idempotent: a second forget is a safe no-op, never a double subtract.
+	cache.forgetPod(pod)
+	assert.Empty(t, gpuMinors(node1, pod.Namespace, pod.Name))
+}
+
+// The framework ForgetPod (arbitration failure) and the informer unassign event fire
+// asynchronously in either order; both must net exactly one subtract and never go negative.
+func Test_nodeDeviceCache_ForgetAndUnassign_IdempotentEitherOrder(t *testing.T) {
+	// forget first, then the unassign informer update.
+	t.Run("forget then unassign", func(t *testing.T) {
+		cache := newNodeDeviceCache(nil)
+		pod := assumeTestPod("1", "node-1")
+		reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
+		assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+		cache.forgetPod(pod)
+		cache.OnPodUpdate(eventPodFrom(pod, "node-1", gpuAllocations(0, 100)), unboundPod("1"))
+
+		node1 := cache.getNodeDevice("node-1", false)
+		assert.Empty(t, gpuMinors(node1, pod.Namespace, pod.Name))
+		_, ok := assumedEntry(cache, pod.UID)
+		assert.False(t, ok)
+	})
+
+	// unassign informer update first, then forget.
+	t.Run("unassign then forget", func(t *testing.T) {
+		cache := newNodeDeviceCache(nil)
+		pod := assumeTestPod("1", "node-1")
+		reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
+		assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+		cache.OnPodUpdate(eventPodFrom(pod, "node-1", gpuAllocations(0, 100)), unboundPod("1"))
+		cache.forgetPod(pod)
+
+		node1 := cache.getNodeDevice("node-1", false)
+		assert.Empty(t, gpuMinors(node1, pod.Namespace, pod.Name))
+		_, ok := assumedEntry(cache, pod.UID)
+		assert.False(t, ok)
+	})
 }
 
 func Test_nodeDeviceCache_OnPodDelete_DeleteBeforeBind(t *testing.T) {
@@ -320,23 +373,24 @@ func Test_nodeDeviceCache_OnPodAdd_NotAssumed_PassThrough(t *testing.T) {
 	assert.ElementsMatch(t, []int{0}, gpuMinors(node1, pod.Namespace, pod.Name))
 }
 
-func Test_nodeDeviceCache_OnPodUpdate_ReconcilesAgainstAssumedNotOldPod(t *testing.T) {
+// While a pod is assumed, a positive update is suppressed: the ledger stays at Reserve's write
+// and the event's (untrusted) annotation is not applied. Reserve owns the accounting until a
+// negative event rolls it back.
+func Test_nodeDeviceCache_OnPodUpdate_PositiveWhileAssumed_Suppressed(t *testing.T) {
 	cache := newNodeDeviceCache(nil)
 	pod := assumeTestPod("1", "node-1")
 	// Reserve wrote minor 0; the assumed snapshot records that.
 	reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
 	assert.NoError(t, cache.AssumePod(pod, "node-1"))
 
-	// oldPod carries a stale, never-applied allocation (minor 5). The cache state is Reserve's
-	// assumed write (minor 0), so reconcile must roll back the assumed snapshot and apply
-	// newPod (minor 1) — oldPod's minor 5 must never be treated as truth.
-	oldPod := eventPodFrom(pod, "node-1", gpuAllocations(5, 100))
+	// A bound update whose annotation claims a different minor must NOT be applied while assumed.
+	oldPod := eventPodFrom(pod, "node-1", gpuAllocations(0, 100))
 	newPod := eventPodFrom(pod, "node-1", gpuAllocations(1, 50))
 	cache.OnPodUpdate(oldPod, newPod)
 
 	node1 := cache.getNodeDevice("node-1", false)
-	assert.ElementsMatch(t, []int{1}, gpuMinors(node1, pod.Namespace, pod.Name),
-		"cache must converge on newPod's allocation, ignoring oldPod")
+	assert.ElementsMatch(t, []int{0}, gpuMinors(node1, pod.Namespace, pod.Name),
+		"positive update while assumed must not re-add or mutate the ledger")
 	_, ok := assumedEntry(cache, pod.UID)
-	assert.False(t, ok, "assumed marker must be cleared after the update event")
+	assert.True(t, ok, "positive update must leave the marker in place")
 }
