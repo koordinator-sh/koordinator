@@ -51,7 +51,7 @@ func Test_nodeDeviceCache_ConcurrentReserveAndEvents(t *testing.T) {
 		prebindPod.Spec.NodeName = ""
 		_ = apiext.SetDeviceAllocations(prebindPod, alloc)
 
-		wg.Add(4)
+		wg.Add(6)
 		go func() { defer wg.Done(); _ = cache.AssumePod(pod, node) }()
 		go func() { defer wg.Done(); cache.OnPodUpdate(pod, prebindPod) }()
 		go func() { defer wg.Done(); cache.OnPodAdd(eventPodFrom(pod, node, alloc)) }()
@@ -63,6 +63,10 @@ func Test_nodeDeviceCache_ConcurrentReserveAndEvents(t *testing.T) {
 				cache.OnPodDelete(eventPodFrom(pod, node, alloc))
 			}
 		}()
+		// The framework ForgetPod (arbitration failure) races the informer unassign event —
+		// the async pair that must stay idempotent and race-free.
+		go func() { defer wg.Done(); cache.forgetPod(pod) }()
+		go func() { defer wg.Done(); cache.OnPodUpdate(eventPodFrom(pod, node, alloc), prebindPod) }()
 	}
 
 	done := make(chan struct{})
@@ -76,8 +80,8 @@ func Test_nodeDeviceCache_ConcurrentReserveAndEvents(t *testing.T) {
 
 // Test_nodeDeviceCache_ConcurrentReserveOnPodAdd_NoDoubleCount asserts the key correctness
 // invariant: a Reserve racing the informer OnPodAdd for the same pod counts the allocation
-// exactly once — never double (reconcile is net-zero when the marker is set; the allocateSet
-// double-add guard prevents it otherwise) and never zero.
+// exactly once — never double (the positive event is suppressed once the marker is set; the
+// allocateSet double-add guard prevents it otherwise) and never zero.
 func Test_nodeDeviceCache_ConcurrentReserveOnPodAdd_NoDoubleCount(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		cache := newNodeDeviceCache(nil)

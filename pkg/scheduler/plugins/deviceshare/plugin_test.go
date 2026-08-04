@@ -269,6 +269,50 @@ func Test_New(t *testing.T) {
 	assert.Equal(t, Name, p.Name())
 }
 
+// Test_New_SharedCacheAcrossProfiles verifies the core P1 goal for DeviceShare: two scheduler
+// profiles that both load the plugin from the same FrameworkExtenderFactory share a single
+// nodeDeviceCache instance, rather than allocating one cache (and one handler set) per profile.
+func Test_New_SharedCacheAcrossProfiles(t *testing.T) {
+	frameworkexthelper.ResetRegistrations()
+	frameworkexthelper.ResetStartupHooks()
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
+
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+
+	newProfile := func(schedulerName string) framework.Framework {
+		cs := kubefake.NewSimpleClientset()
+		informerFactory := informers.NewSharedInformerFactory(cs, 0)
+		snapshot := newTestSharedLister(nil, nil)
+		fh, err := schedulertesting.NewFramework(
+			context.TODO(),
+			registeredPlugins,
+			schedulerName,
+			runtime.WithClientSet(cs),
+			runtime.WithInformerFactory(informerFactory),
+			runtime.WithSnapshotSharedLister(snapshot),
+		)
+		assert.NoError(t, err)
+		return fh
+	}
+
+	p1, err := proxyNew(context.TODO(), getDefaultArgs(), newProfile("koord-scheduler"))
+	assert.NoError(t, err)
+	p2, err := proxyNew(context.TODO(), getDefaultArgs(), newProfile("secondary-scheduler"))
+	assert.NoError(t, err)
+
+	assert.Same(t, p1.(*Plugin).nodeDeviceCache, p2.(*Plugin).nodeDeviceCache,
+		"DeviceShare must share a single nodeDeviceCache across scheduler profiles")
+}
+
 func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
