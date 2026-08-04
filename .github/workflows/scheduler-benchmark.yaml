@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       force_regression:
-        description: "Set to 'true' to override elasticquota throughputDropPct=0 and prove the regression gate exits non-zero on real CI infra (manual test only — schedule trigger never sets this)"
+        description: "Set to 'true' to patch thresholdBreached=true into the elasticquota result after the run, guaranteeing the regression gate exits non-zero (manual negative-path test only — schedule trigger never sets this)"
         required: false
         default: "false"
   schedule:
@@ -85,20 +85,20 @@ jobs:
         if: always()
         id: elasticquota
         run: |
-          CONFIG=configs/scenarios/elasticquota-1k.yaml
-          if [ "${{ github.event.inputs.force_regression }}" = "true" ]; then
-            # Negative-path test: set an unreachable threshold so this run
-            # is guaranteed to breach, proving the regression gate exits
-            # non-zero on real CI infra. Only reachable via workflow_dispatch
-            # — the schedule trigger never sets github.event.inputs.
-            CONFIG=/tmp/elasticquota-force-regression.yaml
-            cp test/perf/configs/scenarios/elasticquota-1k.yaml "$CONFIG"
-            sed -i 's/throughputDropPct:.*/throughputDropPct: 0/' "$CONFIG"
-          fi
           make -C test/perf benchmark \
-            CONFIG="$CONFIG" \
+            CONFIG=configs/scenarios/elasticquota-1k.yaml \
             BASELINE=baselines/elasticquota-1k.json \
             OUTPUT=results/elasticquota-result.json
+          if [ "${{ github.event.inputs.force_regression }}" = "true" ]; then
+            # Negative-path test: directly patch thresholdBreached=true into
+            # the result JSON so the Fail-on-regression step is guaranteed to
+            # exit non-zero, regardless of how the run performed against the
+            # baseline. Only reachable via workflow_dispatch — the schedule
+            # trigger never sets github.event.inputs.
+            jq '.thresholdBreached = true' test/perf/results/elasticquota-result.json \
+              > /tmp/patched.json && mv /tmp/patched.json test/perf/results/elasticquota-result.json
+            echo "force_regression=true: patched thresholdBreached=true in result"
+          fi
 
       - name: Fail on regression
         if: always()

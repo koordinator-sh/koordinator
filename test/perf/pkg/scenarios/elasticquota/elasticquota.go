@@ -52,10 +52,9 @@ var elasticQuotaGVR = schema.GroupVersionResource{
 }
 
 // quotaNameLabel is applied to every pod this scenario creates so the
-// ElasticQuota plugin can associate the pod with the right quota object.
-// If koordinator scopes purely by namespace this label is inert; if it
-// scopes by label it is required. Confirm against
-// pkg/scheduler/plugins/elasticquota before merging (see PR questions).
+// ElasticQuota plugin associates the pod with s.quotaName (created in Setup).
+// Without this label, the plugin falls back to a quota named after the
+// namespace or the default quota, which would not exercise the intended path.
 const quotaNameLabel = "quota.scheduling.sigs.k8s.io/name"
 
 func init() {

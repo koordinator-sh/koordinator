@@ -125,7 +125,7 @@ func (f *FailureWatcher) Start(ctx context.Context) error {
 
 			f.mu.Lock()
 			f.failedPods[ev.InvolvedObject.Name]++
-			if strings.Contains(ev.Message, insufficientQuotaSubstring) {
+			if isQuotaBlockedEvent(ev.Message) {
 				f.quotaBlockedPods[ev.InvolvedObject.Name]++
 			}
 			f.mu.Unlock()
@@ -152,4 +152,11 @@ func (f *FailureWatcher) QuotaBlockedPodCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.quotaBlockedPods)
+}
+
+// isQuotaBlockedEvent reports whether the FailedScheduling event message
+// indicates the pod was throttled by an ElasticQuota limit. Extracted as a
+// named function so it can be unit-tested independently of the watch stream.
+func isQuotaBlockedEvent(message string) bool {
+	return strings.Contains(message, insufficientQuotaSubstring)
 }
