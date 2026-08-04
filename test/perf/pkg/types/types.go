@@ -43,6 +43,8 @@ type ScenarioConfig struct {
 	QoSClass         string                 `yaml:"qosClass"`
 	GangSize         int                    `yaml:"gangSize"`
 	MinMember        int                    `yaml:"minMember"`
+	QuotaCPU         string                 `yaml:"quotaCPU"`
+	QuotaMemory      string                 `yaml:"quotaMemory"`
 	ResourceRequests map[string]string      `yaml:"resourceRequests"`
 	Labels           map[string]string      `yaml:"labels"`
 	Annotations      map[string]string      `yaml:"annotations"`
@@ -161,6 +163,7 @@ type BenchmarkResult struct {
 	LatencyP99Sec          float64  `json:"latencyP99Sec"`
 	GangCompletionP50Sec   *float64 `json:"gangCompletionP50Sec"`
 	GangCompletionP99Sec   *float64 `json:"gangCompletionP99Sec"`
+	QuotaBlockedPodCount   *int     `json:"quotaBlockedPodCount"`
 	PProfCPUArtifact       string   `json:"pprofCPUArtifact,omitempty"`
 	PProfHeapArtifact      string   `json:"pprofHeapArtifact,omitempty"`
 	ThresholdBreached      bool     `json:"thresholdBreached"`

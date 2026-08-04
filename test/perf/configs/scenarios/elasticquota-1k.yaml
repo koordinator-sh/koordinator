@@ -1,0 +1,26 @@
+name: elasticquota
+description: >
+  1,000 pods vs an ElasticQuota max of 150 CPU on 100 kwok nodes.
+  Aggregate demand is 1,000 × 500m = 500 CPU, deliberately exceeding the
+  150 CPU quota so ~70% of pods are transiently Pending on
+  "Insufficient quotas" before earlier pods are counted and space opens up.
+schedulerName: koord-scheduler
+namespace: elasticquota-benchmark
+nodeCount: 100
+nodeCreationWorkers: 20
+podCount: 1000
+concurrency: 50
+clientQPS: 100
+clientBurst: 200
+qosClass: LS
+resourceRequests:
+  cpu: "500m"
+  memory: "512Mi"
+labels:
+  koordinator.sh/priority: "100"
+quotaCPU: "150"
+quotaMemory: "300Gi"
+timeout: 10m
+thresholds:
+  throughputDropPct: 10
+  p99IncreasePct: 20

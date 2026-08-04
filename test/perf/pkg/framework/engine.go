@@ -265,6 +265,13 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
  	}
 	failedPodCount, failureEventCount := failureWatcher.Stats()
 
+	// Only populated for scenarios that declare a quota — nil for basic/gang.
+	var quotaBlockedPodCount *int
+	if cfg.QuotaCPU != "" || cfg.QuotaMemory != "" {
+		n := failureWatcher.QuotaBlockedPodCount()
+		quotaBlockedPodCount = &n
+	}
+
 	// Steps 9-10: compute percentiles and throughput.
 	p50, p90, p99 := ComputeLatencyPercentiles(watcher.Latencies())
 	throughput := ComputeThroughput(cfg.PodCount, totalDuration)
@@ -305,6 +312,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 		LatencyP99Sec:          p99.Seconds(),
 		GangCompletionP50Sec:   gangP50Sec,
 		GangCompletionP99Sec:   gangP99Sec,
+		QuotaBlockedPodCount:   quotaBlockedPodCount,
 		ThresholdBreached:      breached,
 		SchedulingFailureCount: failureEventCount,
 		SchedulingFailureRate:  failureRate,

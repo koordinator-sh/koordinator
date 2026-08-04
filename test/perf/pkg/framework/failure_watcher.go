@@ -19,6 +19,7 @@ package framework
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +28,12 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 )
+
+// insufficientQuotaSubstring matches the FailedScheduling event message the
+// ElasticQuota plugin emits when a pod is blocked by quota limits. Substring
+// match because the upstream message text includes the quota name and has
+// changed across scheduler-plugins/koordinator versions.
+const insufficientQuotaSubstring = "Insufficient quotas"
 
 // FailureWatcher observes FailedScheduling events for a known set of pods
 // and tracks how many distinct pods hit at least one scheduling failure,
@@ -45,8 +52,9 @@ type FailureWatcher struct {
 	// ready is closed once the event watch stream is established.
 	ready chan struct{}
 
-	mu         sync.Mutex
-	failedPods map[string]int // pod name → FailedScheduling event count
+	mu               sync.Mutex
+	failedPods       map[string]int // pod name → FailedScheduling event count (any reason)
+	quotaBlockedPods map[string]int // pod name → count of events matching insufficientQuotaSubstring
 }
 
 // NewFailureWatcher creates a FailureWatcher scoped to namespace, tracking
@@ -59,11 +67,12 @@ func NewFailureWatcher(client kubernetes.Interface, namespace string, podNames [
 		set[name] = struct{}{}
 	}
 	return &FailureWatcher{
-		client:     client,
-		namespace:  namespace,
-		podNames:   set,
-		ready:      make(chan struct{}),
-		failedPods: make(map[string]int),
+		client:           client,
+		namespace:        namespace,
+		podNames:         set,
+		ready:            make(chan struct{}),
+		failedPods:       make(map[string]int),
+		quotaBlockedPods: make(map[string]int),
 	}
 }
 
@@ -116,6 +125,9 @@ func (f *FailureWatcher) Start(ctx context.Context) error {
 
 			f.mu.Lock()
 			f.failedPods[ev.InvolvedObject.Name]++
+			if strings.Contains(ev.Message, insufficientQuotaSubstring) {
+				f.quotaBlockedPods[ev.InvolvedObject.Name]++
+			}
 			f.mu.Unlock()
 		}
 	}
@@ -131,4 +143,13 @@ func (f *FailureWatcher) Stats() (failedPodCount, totalEvents int) {
 		totalEvents += count
 	}
 	return len(f.failedPods), totalEvents
+}
+
+// QuotaBlockedPodCount returns the number of distinct pods that received at
+// least one FailedScheduling event whose message contained
+// insufficientQuotaSubstring. Safe to call after cancelling Start's context.
+func (f *FailureWatcher) QuotaBlockedPodCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.quotaBlockedPods)
 }

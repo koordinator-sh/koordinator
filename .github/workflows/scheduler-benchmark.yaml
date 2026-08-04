@@ -4,7 +4,12 @@ on:
   # Not a required PR gate yet — runtime + kind/kwok/Koordinator flakiness
   # makes it unsuitable as a blocking check on every PR. Run on demand and
   # nightly until the benchmark is stable enough to promote to a PR gate.
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_regression:
+        description: "Set to 'true' to override elasticquota throughputDropPct=0 and prove the regression gate exits non-zero on real CI infra (manual test only — schedule trigger never sets this)"
+        required: false
+        default: "false"
   schedule:
     - cron: "0 3 * * *"   # nightly at 03:00 UTC
 
@@ -70,12 +75,37 @@ jobs:
             BASELINE=baselines/gang-1k.json \
             OUTPUT=results/gang-result.json
 
+      - name: Drain gang namespace
+        if: always()
+        run: |
+          kubectl delete pods -n benchmark --all --timeout=120s 2>/dev/null || true
+          kubectl wait pod --for=delete -n benchmark --all --timeout=120s 2>/dev/null || true
+
+      - name: Run benchmark (elasticquota)
+        if: always()
+        id: elasticquota
+        run: |
+          CONFIG=configs/scenarios/elasticquota-1k.yaml
+          if [ "${{ github.event.inputs.force_regression }}" = "true" ]; then
+            # Negative-path test: set an unreachable threshold so this run
+            # is guaranteed to breach, proving the regression gate exits
+            # non-zero on real CI infra. Only reachable via workflow_dispatch
+            # — the schedule trigger never sets github.event.inputs.
+            CONFIG=/tmp/elasticquota-force-regression.yaml
+            cp test/perf/configs/scenarios/elasticquota-1k.yaml "$CONFIG"
+            sed -i 's/throughputDropPct:.*/throughputDropPct: 0/' "$CONFIG"
+          fi
+          make -C test/perf benchmark \
+            CONFIG="$CONFIG" \
+            BASELINE=baselines/elasticquota-1k.json \
+            OUTPUT=results/elasticquota-result.json
+
       - name: Fail on regression
         if: always()
         run: |
           failed=false
           found=false
-          for result in test/perf/results/basic-result.json test/perf/results/gang-result.json; do
+          for result in test/perf/results/basic-result.json test/perf/results/gang-result.json test/perf/results/elasticquota-result.json; do
             if [ -f "$result" ]; then
               found=true
               breached=$(jq -r '.thresholdBreached' "$result")
@@ -107,7 +137,7 @@ jobs:
       # pure threshold breaches — a regression is already reported by the result
       # JSON and uploading 30+ kubectl commands on every slow run adds noise.
       - name: Debug on failure
-        if: steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure'
+        if: steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure' || steps.elasticquota.outcome == 'failure'
         run: |
           echo "=== kind clusters ==="
           kind get clusters || true
