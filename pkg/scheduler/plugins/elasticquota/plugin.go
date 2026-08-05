@@ -384,13 +384,13 @@ func toElasticQuota(obj interface{}) *apiv1alpha1.ElasticQuota {
 	}
 
 	if unstructuredObj == nil || unstructuredObj.Object == nil {
-		klog.Errorf("Fail to convert quota object, unstructured object or its content is nil")
+		klog.Errorf("Failed to convert quota object, unstructured object or its content is nil")
 		return nil
 	}
 
 	quota := &apiv1alpha1.ElasticQuota{}
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObj.Object, quota); err != nil {
-		klog.Errorf("Fail to convert unstructured object %v to ElasticQuota: %v", obj, err)
+		klog.Errorf("Failed to convert unstructured object %v to ElasticQuota: %v", obj, err)
 		return nil
 	}
 	return quota

@@ -2018,6 +2018,48 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 	}
 }
 
+// The ElasticQuota update event is registered by GVK, so the scheduler informer delivers
+// oldObj/newObj as *unstructured.Unstructured instead of typed *ElasticQuota. The hint must
+// still reach the QueueSkip branch rather than falling back to Queue on a failed conversion.
+func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged_UnstructuredPayload(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
+
+	quota := &v1alpha1.ElasticQuota{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ElasticQuota",
+			APIVersion: "scheduling.x-k8s.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test1",
+			Labels: map[string]string{extension.LabelQuotaTreeID: "tree1"},
+			Annotations: map[string]string{
+				extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+			},
+		},
+		Spec: v1alpha1.ElasticQuotaSpec{
+			Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+			Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+		},
+	}
+
+	suit := newPluginTestSuit(t, nil)
+	gp := suit.createPlugin(t).(*Plugin)
+	gp.OnQuotaAdd(quota)
+	gp.updateQuotaSnapshot()
+
+	rawMap, err := apiruntime.DefaultUnstructuredConverter.ToUnstructured(quota)
+	assert.NoError(t, err)
+	unstructuredQuota := &unstructured.Unstructured{Object: rawMap}
+
+	pod := MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+		Label(extension.LabelQuotaTreeID, "tree1").Obj()
+
+	result, err := gp.isSchedulableAfterQuotaChanged(klog.Background(), pod,
+		unstructuredQuota, unstructuredQuota.DeepCopy())
+	assert.NoError(t, err)
+	assert.Equal(t, fwktype.QueueSkip, result)
+}
+
 func TestPlugin_EventsToRegister(t *testing.T) {
 	tests := []struct {
 		name               string
