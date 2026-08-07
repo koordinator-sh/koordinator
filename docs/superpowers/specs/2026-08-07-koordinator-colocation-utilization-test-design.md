@@ -64,7 +64,7 @@ BatchCPU 的数值按 Koordinator 当前接口使用整数 CPU 份额；BatchMem
 - `cpuReclaimThresholdPercent: 70`
 - `memoryReclaimThresholdPercent: 70`
 - `memoryCalculatePolicy: usage`
-- `resourceDiffThresholdPercent: 5`
+- `resourceDiffThreshold: 0.05`
 
 若现有 `slo-controller-config` 已包含其他节点级策略，实施必须使用 node selector 增加资源池专属配置，而不是替换整个 ConfigMap。执行前导出原配置，测试结束后恢复。
 
