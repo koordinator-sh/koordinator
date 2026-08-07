@@ -30,5 +30,6 @@ vendor
 .DS_Store
 
 dist/
+.worktrees/
 
 README-contributing.md
