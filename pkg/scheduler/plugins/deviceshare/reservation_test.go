@@ -1464,3 +1464,29 @@ func Test_isDeviceAllocationsInclude(t *testing.T) {
 		})
 	}
 }
+
+func TestCalcRequiredDeviceResourcesKeyedByMinor(t *testing.T) {
+	// A fully consumed reservation produces an empty-capacity required map.
+	// The map must be keyed by the real device minors. With non-contiguous
+	// minors (3 and 5) this only holds if we range over the minor values; if
+	// we range over the slice itself we get the indices 0 and 1 instead, which
+	// keys the constraint to the wrong devices.
+	alloc := &reusableAlloc{
+		allocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+			schedulingv1alpha1.GPU: {
+				3: corev1.ResourceList{},
+				5: corev1.ResourceList{},
+			},
+		},
+		remained: map[schedulingv1alpha1.DeviceType]deviceResources{},
+	}
+
+	required := calcRequiredDeviceResources(alloc, map[schedulingv1alpha1.DeviceType]deviceResources{})
+
+	gpu := required[schedulingv1alpha1.GPU]
+	assert.Len(t, gpu, 2)
+	_, has3 := gpu[3]
+	_, has5 := gpu[5]
+	assert.True(t, has3, "required map should be keyed by minor 3")
+	assert.True(t, has5, "required map should be keyed by minor 5")
+}
