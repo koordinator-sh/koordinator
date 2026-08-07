@@ -21,11 +21,16 @@ limitations under the License.
 //     separate from the "benchmark" namespace basic/gang use — this scenario's
 //     whole point is to be quota-throttled, and must not share a parent quota
 //     tree with scenarios that setup-cluster.sh deliberately made unthrottled.
-//   - Setup creates exactly one ElasticQuota object per run, sized from
-//     cfg.QuotaCPU/QuotaMemory. min is fixed at 0 so the configured max is
-//     the only enforced bound.
-//   - Pods deliberately request more in aggregate than the quota's max allows,
-//     so some fraction are transiently Pending on "Insufficient quotas".
+//   - Setup creates exactly one ElasticQuota object named after the namespace.
+//     Naming the quota after the namespace means pod↔quota association works via
+//     the namespace-name fallback in Plugin.GetQuotaName even when the label is
+//     absent, and avoids a non-deterministic fallback if a previous Teardown
+//     leaves a stale object in the same namespace.
+//   - min is set equal to max. With EnableRuntimeQuota defaulting to true,
+//     the enforced admission bound is the periodically-refreshed runtime
+//     (derived from min + shared-weight distribution, capped by max). Setting
+//     min == max pins runtime == max so the blocked-pod count is reproducible
+//     across runs regardless of RefreshRuntime timing.
 package elasticquota
 
 import (
@@ -41,6 +46,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
@@ -50,12 +56,6 @@ var elasticQuotaGVR = schema.GroupVersionResource{
 	Version:  "v1alpha1",
 	Resource: "elasticquotas",
 }
-
-// quotaNameLabel is applied to every pod this scenario creates so the
-// ElasticQuota plugin associates the pod with s.quotaName (created in Setup).
-// Without this label, the plugin falls back to a quota named after the
-// namespace or the default quota, which would not exercise the intended path.
-const quotaNameLabel = "quota.scheduling.sigs.k8s.io/name"
 
 func init() {
 	scenarios.Register(func() scenarios.Scenario { return &ElasticQuotaScenario{} })
@@ -71,8 +71,9 @@ type ElasticQuotaScenario struct {
 
 func (s *ElasticQuotaScenario) Name() string { return "elasticquota" }
 
-// Setup creates a dedicated namespace and one ElasticQuota object sized from
-// cfg.QuotaCPU/QuotaMemory. Returns an error when either quota field is unset.
+// Setup creates a dedicated namespace and one ElasticQuota object named after
+// the namespace, sized from cfg.QuotaCPU/QuotaMemory with min == max.
+// Returns an error when either quota field is unset or unparseable.
 func (s *ElasticQuotaScenario) Setup(
 	ctx context.Context,
 	client kubernetes.Interface,
@@ -108,7 +109,9 @@ func (s *ElasticQuotaScenario) Setup(
 		return fmt.Errorf("invalid quotaMemory %q: %w", cfg.QuotaMemory, err)
 	}
 
-	quotaName := fmt.Sprintf("bench-elasticquota-%s", shortID(runID))
+	// Name the quota after the namespace so Plugin.GetQuotaName's
+	// namespace-name fallback also associates pods with this quota.
+	quotaName := ns
 	s.quotaName = quotaName
 
 	eq := &unstructured.Unstructured{Object: map[string]interface{}{
@@ -126,9 +129,10 @@ func (s *ElasticQuotaScenario) Setup(
 				"cpu":    cfg.QuotaCPU,
 				"memory": cfg.QuotaMemory,
 			},
+			// min == max pins runtime == max (see package doc for why).
 			"min": map[string]interface{}{
-				"cpu":    "0",
-				"memory": "0",
+				"cpu":    cfg.QuotaCPU,
+				"memory": cfg.QuotaMemory,
 			},
 		},
 	}}
@@ -169,14 +173,20 @@ func (s *ElasticQuotaScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*
 	runIDPrefix := shortID(runID)
 	pods := make([]*corev1.Pod, 0, cfg.PodCount)
 	for i := 0; i < cfg.PodCount; i++ {
-		labels := map[string]string{
-			types.RunIDLabel: runID,
-			quotaNameLabel:   s.quotaName,
-			"app":            "kwok-bench-elasticquota",
-		}
+		// Apply cfg.Labels first so the built-in labels set below can never
+		// be overwritten by a config-supplied value. A clobbered RunIDLabel
+		// would make Watcher/FailureWatcher select nothing and hang the run.
+		labels := make(map[string]string, len(cfg.Labels)+3)
 		for k, v := range cfg.Labels {
 			labels[k] = v
 		}
+		// extension.LabelQuotaName ("quota.scheduling.koordinator.sh/name") is
+		// the key koord-scheduler's ElasticQuota plugin reads via
+		// extension.GetQuotaName(pod). Using the imported constant (not a
+		// hardcoded string) stays correct if the key ever moves.
+		labels[extension.LabelQuotaName] = s.quotaName
+		labels[types.RunIDLabel] = runID
+		labels["app"] = "kwok-bench-elasticquota"
 		if cfg.QoSClass != "" {
 			labels["koordinator.sh/qosClass"] = cfg.QoSClass
 		}

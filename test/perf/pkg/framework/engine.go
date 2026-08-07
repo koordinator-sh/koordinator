@@ -286,25 +286,14 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 		gangP50Sec, gangP99Sec = &v50, &v99
 	}
 
-	// failureRate is what gets stored in the result JSON (full picture).
-	// For the regression gate, quota-blocked pods are expected failures in the
-	// elasticquota scenario, not scheduling regressions — subtract them so the
-	// 1% gate only fires on unexpected failures.
 	failureRate := schedulingFailureRate(failedPodCount, cfg.PodCount)
-	regressionFailedCount := failedPodCount
-	if quotaBlockedPodCount != nil {
-		regressionFailedCount -= *quotaBlockedPodCount
-		if regressionFailedCount < 0 {
-			regressionFailedCount = 0
-		}
-	}
 	breached, err := CompareToBaseline(types.BenchmarkResult{
 		NodeCount:              cfg.NodeCount,
 		PodCount:               cfg.PodCount,
 		ThroughputPodsPerSec:   throughput,
 		LatencyP99Sec:          p99.Seconds(),
-		SchedulingFailureCount: regressionFailedCount,
-		SchedulingFailureRate:  schedulingFailureRate(regressionFailedCount, cfg.PodCount),
+		SchedulingFailureCount: failedPodCount,
+		SchedulingFailureRate:  failureRate,
 	}, baselinePath, cfg.Thresholds)
 	if err != nil {
 		klog.ErrorS(err, "baseline comparison failed — ThresholdBreached will be false")

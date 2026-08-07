@@ -171,14 +171,16 @@ func (s *GangScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.P
 		}
 		groupName := s.groupNames[groupIdx]
 
-		labels := map[string]string{
-			types.RunIDLabel:    runID,
-			v1alpha1.PodGroupLabel: groupName,
-			"app":               "kwok-bench-gang",
-		}
+		// Apply cfg.Labels first so the built-in labels set below can never
+		// be overwritten by a config-supplied value. A clobbered RunIDLabel
+		// would make Watcher/FailureWatcher select nothing and hang the run.
+		labels := make(map[string]string, len(cfg.Labels)+3)
 		for k, v := range cfg.Labels {
 			labels[k] = v
 		}
+		labels[types.RunIDLabel] = runID
+		labels[v1alpha1.PodGroupLabel] = groupName
+		labels["app"] = "kwok-bench-gang"
 		if cfg.QoSClass != "" {
 			labels["koordinator.sh/qosClass"] = cfg.QoSClass
 		}

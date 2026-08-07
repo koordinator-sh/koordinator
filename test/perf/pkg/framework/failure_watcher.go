@@ -31,8 +31,14 @@ import (
 
 // insufficientQuotaSubstring matches the FailedScheduling event message the
 // ElasticQuota plugin emits when a pod is blocked by quota limits. Substring
-// match because the upstream message text includes the quota name and has
-// changed across scheduler-plugins/koordinator versions.
+// match because the recorded message is prefixed with "0/N nodes are
+// available: ..." so an exact match would never work, and the suffix includes
+// the quota name which varies per run.
+// Note: the plugin also emits "Insufficient non-preemptible quotas, ..." from
+// the same PreFilter path, which does NOT contain this substring and is
+// therefore not counted here. This scenario does not set non-preemptible pods,
+// so the current match is complete. A future scenario that does would need to
+// extend this check.
 const insufficientQuotaSubstring = "Insufficient quotas"
 
 // FailureWatcher observes FailedScheduling events for a known set of pods
@@ -53,8 +59,8 @@ type FailureWatcher struct {
 	ready chan struct{}
 
 	mu               sync.Mutex
-	failedPods       map[string]int // pod name → FailedScheduling event count (any reason)
-	quotaBlockedPods map[string]int // pod name → count of events matching insufficientQuotaSubstring
+	failedPods       map[string]int    // pod name → FailedScheduling event count (any reason)
+	quotaBlockedPods map[string]struct{} // pod name set — membership only; only len() is used
 }
 
 // NewFailureWatcher creates a FailureWatcher scoped to namespace, tracking
@@ -72,7 +78,7 @@ func NewFailureWatcher(client kubernetes.Interface, namespace string, podNames [
 		podNames:         set,
 		ready:            make(chan struct{}),
 		failedPods:       make(map[string]int),
-		quotaBlockedPods: make(map[string]int),
+		quotaBlockedPods: make(map[string]struct{}),
 	}
 }
 
@@ -126,7 +132,7 @@ func (f *FailureWatcher) Start(ctx context.Context) error {
 			f.mu.Lock()
 			f.failedPods[ev.InvolvedObject.Name]++
 			if isQuotaBlockedEvent(ev.Message) {
-				f.quotaBlockedPods[ev.InvolvedObject.Name]++
+				f.quotaBlockedPods[ev.InvolvedObject.Name] = struct{}{}
 			}
 			f.mu.Unlock()
 		}
