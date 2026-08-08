@@ -130,3 +130,38 @@ func TestScoreNodeImbalance(t *testing.T) {
 		assert.Equal(t, 0.25, stdDev)
 	})
 }
+
+func TestScoreNodeImbalanceWithRequests(t *testing.T) {
+	resources := []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory}
+
+	t.Run("nil node returns zero", func(t *testing.T) {
+		requests := corev1.ResourceList{
+			corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+			corev1.ResourceMemory: *resource.NewQuantity(512, resource.BinarySI),
+		}
+		stdDev := scoreNodeImbalanceWithRequests(nil, requests, resources)
+		assert.Equal(t, 0.0, stdDev)
+	})
+
+	t.Run("balanced CPU/memory node gives low stddev", func(t *testing.T) {
+		node := makeNode(1000, 1024)
+		requests := corev1.ResourceList{
+			corev1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
+			corev1.ResourceMemory: *resource.NewQuantity(512, resource.BinarySI),
+		}
+
+		stdDev := scoreNodeImbalanceWithRequests(node, requests, resources)
+		assert.True(t, stdDev < 0.01)
+	})
+
+	t.Run("CPU-heavy node gives high stddev", func(t *testing.T) {
+		node := makeNode(1000, 1024)
+		requests := corev1.ResourceList{
+			corev1.ResourceCPU:    *resource.NewMilliQuantity(900, resource.DecimalSI),
+			corev1.ResourceMemory: *resource.NewQuantity(100, resource.BinarySI),
+		}
+
+		stdDev := scoreNodeImbalanceWithRequests(node, requests, resources)
+		assert.True(t, stdDev > 0.1)
+	})
+}

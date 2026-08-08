@@ -74,3 +74,12 @@ func scoreNodeImbalance(node *corev1.Node, pods []*corev1.Pod, resources []corev
 	fractions := allocationFractions(requests, node.Status.Allocatable, resources)
 	return stdDev(fractions)
 }
+
+// scoreNodeImbalanceWithRequests computes the standard deviation of allocation fractions across resources using precalculated requests.
+func scoreNodeImbalanceWithRequests(node *corev1.Node, requests corev1.ResourceList, resources []corev1.ResourceName) float64 {
+	if node == nil {
+		return 0
+	}
+	fractions := allocationFractions(requests, node.Status.Allocatable, resources)
+	return stdDev(fractions)
+}

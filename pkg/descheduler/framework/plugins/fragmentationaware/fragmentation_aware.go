@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	resourcehelper "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 
 	deschedulerconfig "github.com/koordinator-sh/koordinator/pkg/descheduler/apis/config"
@@ -186,6 +187,15 @@ type evictionCandidate struct {
 func (pl *FragmentationAware) chooseBestEvictionCandidate(node *corev1.Node, allPods []*corev1.Pod, evictablePods []*corev1.Pod, candidateNodes []*corev1.Node, stdBefore float64) *evictionCandidate {
 	var bestCandidate *evictionCandidate
 
+	// Pre-calculate base node utilization to achieve O(1) time complexity w.r.t pods when simulating removal
+	utilization := nodeutil.NodeUtilization(allPods, pl.args.Resources)
+	baseRequests := make(corev1.ResourceList, len(utilization))
+	for res, qty := range utilization {
+		if qty != nil {
+			baseRequests[res] = *qty
+		}
+	}
+
 	for _, pod := range evictablePods {
 		if pl.args.NodeFit {
 			if !nodeutil.PodFitsAnyOtherNode(pl.handle.GetPodsAssignedToNodeFunc(), pod, candidateNodes) {
@@ -193,14 +203,19 @@ func (pl *FragmentationAware) chooseBestEvictionCandidate(node *corev1.Node, all
 			}
 		}
 
-		var podsAfter []*corev1.Pod
-		for _, p := range allPods {
-			if p.UID != pod.UID {
-				podsAfter = append(podsAfter, p)
+		// Calculate what the node requests would be if this pod were removed in O(1) time
+		requestsAfter := baseRequests.DeepCopy()
+		podRequests := resourcehelper.PodRequests(pod, resourcehelper.PodResourcesOptions{})
+
+		for _, res := range pl.args.Resources {
+			if podReq, ok := podRequests[res]; ok {
+				qty := requestsAfter[res]
+				qty.Sub(podReq)
+				requestsAfter[res] = qty
 			}
 		}
 
-		stdAfter := scoreNodeImbalance(node, podsAfter, pl.args.Resources)
+		stdAfter := scoreNodeImbalanceWithRequests(node, requestsAfter, pl.args.Resources)
 		gain := stdBefore - stdAfter
 
 		if gain <= pl.args.MinImprovementThreshold {
