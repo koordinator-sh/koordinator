@@ -552,6 +552,13 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
 	nodeDeviceInfo.lock.Unlock()
 	if err := p.nodeDeviceCache.AssumePod(pod, nodeName); err != nil {
+		// The framework does not guarantee Unreserve for a Reserve plugin that returns an
+		// error at the Reserve extension point itself, so roll back the cache write here
+		// rather than relying on it. Safe if Unreserve does also run for this pod (vanilla
+		// and batch paths both do today): the isValid guard skips the second subtract.
+		nodeDeviceInfo.lock.Lock()
+		nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
+		nodeDeviceInfo.lock.Unlock()
 		return fwktype.AsStatus(err)
 	}
 	return nil

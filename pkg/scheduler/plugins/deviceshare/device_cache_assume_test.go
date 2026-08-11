@@ -235,6 +235,46 @@ func Test_nodeDeviceCache_AssumePod_MissingNode(t *testing.T) {
 	assert.False(t, ok, "no assumed entry must be recorded on error")
 }
 
+// AssumePod snapshots the pod's cache contribution and publishes the marker under a single
+// n.lock hold. If a concurrent event already removed the pod's allocation (empty snapshot),
+// there is nothing to roll back later, so no marker is published — avoiding an orphaned entry.
+func Test_nodeDeviceCache_AssumePod_SkipsEmptyMarker(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := assumeTestPod("1", "node-1")
+	// The node exists but the pod has no allocation recorded (simulating a concurrent removal
+	// between Reserve's write and AssumePod).
+	cache.getNodeDevice("node-1", true)
+
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "no marker must be published when the pod's cache contribution is empty")
+}
+
+// Pins the safety property the Reserve-error inline rollback relies on: rolling back Reserve's
+// cache write, then a subsequent Unreserve subtract for the same pod, nets exactly one subtract.
+// The isValid guard makes the second subtract a no-op, so the inline rollback cannot double-count
+// even when the framework also runs Unreserve. (Corrects the round-3 "would double-subtract".)
+func Test_nodeDeviceCache_ReserveErrorRollback_NoDoubleSubtract(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := assumeTestPod("1", "node-1")
+	alloc := gpuAllocations(0, 100)
+	reserveInto(cache, "node-1", pod, alloc) // Reserve's updateCacheUsed(+A)
+	nd := cache.getNodeDevice("node-1", false)
+	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, pod.Namespace, pod.Name))
+
+	// Inline rollback on AssumePod error: updateCacheUsed(-A).
+	nd.lock.Lock()
+	nd.updateCacheUsed(alloc, pod, false)
+	nd.lock.Unlock()
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "inline rollback removes the write")
+
+	// Framework Unreserve also runs updateCacheUsed(-A): must be a no-op, not go negative.
+	nd.lock.Lock()
+	nd.updateCacheUsed(alloc, pod, false)
+	nd.lock.Unlock()
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "second subtract is a no-op via isValid")
+}
+
 func Test_nodeDeviceCache_ForgetPod_Idempotent(t *testing.T) {
 	cache := newNodeDeviceCache(nil)
 	pod := assumeTestPod("1", "node-1")
