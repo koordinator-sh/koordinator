@@ -622,21 +622,31 @@ func (n *nodeDeviceCache) OnNodeDelete(*corev1.Node) {}
 // UID only" approach cannot roll back Reserve's write if the informer event's pod object
 // disagrees with what Reserve assumed.
 func (n *nodeDeviceCache) AssumePod(pod *corev1.Pod, nodeName string) error {
-	info := n.getNodeDevice(nodeName, false)
+	// Snapshot the pod's cache contribution and publish the marker under a single n.lock hold,
+	// so no event handler can mutate the pod's per-node allocation between the two. A handler
+	// reaches the cache only via getNodeDevice (n.lock) and mutates under nodeDevice.lock, so
+	// holding n.lock here makes snapshot+publish atomic against it — the marker always equals
+	// the pod's current cache contribution at publish time, closing the ledger-desync window.
+	// Lock order is n-before-node, matching invalidateNodeDevice/updateNodeDevice.
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	info := n.nodeDeviceInfos[nodeName]
 	if info == nil {
 		return fmt.Errorf("nodeDevice for %s is missing when assuming pod %s", nodeName, klog.KObj(pod))
 	}
 	info.lock.RLock()
 	allocations := info.copyPodAllocations(pod)
 	info.lock.RUnlock()
-
-	n.lock.Lock()
+	if len(allocations) == 0 {
+		// A concurrent event removed the pod's allocation before we published the marker;
+		// there is nothing to roll back later, so do not publish a stale/empty marker.
+		return nil
+	}
 	if n.assumedPods == nil {
 		n.assumedPods = make(map[types.UID]*assumedAllocation)
 	}
 	n.assumedPods[pod.UID] = &assumedAllocation{nodeName: nodeName, allocations: allocations}
 	n.recordAssumedPodsSizeLocked()
-	n.lock.Unlock()
 	return nil
 }
 
