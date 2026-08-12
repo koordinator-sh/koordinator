@@ -59,7 +59,7 @@ type FailureWatcher struct {
 	ready chan struct{}
 
 	mu               sync.Mutex
-	failedPods       map[string]int    // pod name → FailedScheduling event count (any reason)
+	failedPods       map[string]int      // pod name → FailedScheduling event count (any reason)
 	quotaBlockedPods map[string]struct{} // pod name set — membership only; only len() is used
 }
 

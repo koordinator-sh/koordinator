@@ -62,6 +62,13 @@ type ScenarioConfig struct {
 	// parallel. Defaults to 20 when unset or zero.
 	NodeCreationWorkers int `yaml:"nodeCreationWorkers"`
 
+	// ExpectedScheduledPodCount, when set, tells Watcher how many of the PodCount
+	// pods are actually expected to reach PodScheduled=True. The remaining pods are
+	// expected to stay Pending for the run's duration (e.g. elasticquota's
+	// deliberately-throttled pods). nil means "all PodCount pods are expected to
+	// schedule" — the existing basic/gang behaviour, unchanged.
+	ExpectedScheduledPodCount *int `yaml:"expectedScheduledPodCount"`
+
 	// Timeout bounds the total wall-clock duration of one benchmark run,
 	// expressed as a Go duration string (e.g. "10m", "90s"). A run that
 	// exceeds this is aborted and reported with TimedOut: true rather than
@@ -126,6 +133,17 @@ func (c ScenarioConfig) Validate() error {
 			return fmt.Errorf("timeout must be > 0, got %q", c.Timeout)
 		}
 	}
+	if c.ExpectedScheduledPodCount != nil {
+		if *c.ExpectedScheduledPodCount <= 0 || *c.ExpectedScheduledPodCount > c.PodCount {
+			return fmt.Errorf("expectedScheduledPodCount must be in (0, podCount], got %d (podCount=%d)",
+				*c.ExpectedScheduledPodCount, c.PodCount)
+		}
+	}
+	if c.Thresholds.FailureRatePct != nil {
+		if *c.Thresholds.FailureRatePct < 0 || *c.Thresholds.FailureRatePct > 100 {
+			return fmt.Errorf("thresholds.failureRatePct must be in [0, 100], got %g", *c.Thresholds.FailureRatePct)
+		}
+	}
 	return nil
 }
 
@@ -133,6 +151,33 @@ func (c ScenarioConfig) Validate() error {
 type Thresholds struct {
 	ThroughputDropPct float64 `yaml:"throughputDropPct"`
 	P99IncreasePct    float64 `yaml:"p99IncreasePct"`
+
+	// FailureRatePct overrides CompareToBaseline's default 1% scheduling-failure-rate
+	// gate, expressed as a percentage (e.g. 75 for 75%). nil means "use the default 1%"
+	// — unchanged for basic/gang. Scenarios that deliberately produce a high, expected
+	// failure rate (elasticquota) set this so the gate reflects intent rather than
+	// treating expected throttling as a regression.
+	FailureRatePct *float64 `yaml:"failureRatePct"`
+}
+
+// ShortID returns the first 8 characters of id (typically a UUID run-id) for
+// use in resource names. Returns the full string when len(id) < 8.
+func ShortID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+
+// FailureStats carries the plain per-run failure-watcher numbers a Scenario may
+// need to compute its own BenchmarkResult fields. Defined in pkg/types (not
+// pkg/framework) so a Scenario implementation can consume it without importing
+// pkg/framework — pkg/framework already imports pkg/scenarios, so the reverse
+// import would be a cycle.
+type FailureStats struct {
+	FailedPodCount       int
+	FailureEventCount    int
+	QuotaBlockedPodCount int
 }
 
 // NodeSpec describes what simulated nodes should look like.

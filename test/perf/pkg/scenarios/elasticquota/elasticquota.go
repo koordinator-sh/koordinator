@@ -17,20 +17,25 @@ limitations under the License.
 // Package elasticquota implements the ElasticQuota benchmark scenario.
 //
 // Design:
-//   - Runs in its own dedicated namespace (default "elasticquota-benchmark"),
-//     separate from the "benchmark" namespace basic/gang use — this scenario's
-//     whole point is to be quota-throttled, and must not share a parent quota
-//     tree with scenarios that setup-cluster.sh deliberately made unthrottled.
+//   - Runs in its own dedicated namespace (required — cfg.Namespace must be set
+//     explicitly; there is no implicit default to avoid disagreeing with
+//     engine.go's defaultNamespace used by Watcher/FailureWatcher). Separate
+//     from the "benchmark" namespace basic/gang use so it can hold a tight quota
+//     without throttling the other scenarios.
 //   - Setup creates exactly one ElasticQuota object named after the namespace.
 //     Naming the quota after the namespace means pod↔quota association works via
 //     the namespace-name fallback in Plugin.GetQuotaName even when the label is
 //     absent, and avoids a non-deterministic fallback if a previous Teardown
-//     leaves a stale object in the same namespace.
+//     leaves a stale object in the same namespace. Setup is idempotent: if the
+//     object already exists from a crashed prior run, it is updated in place.
 //   - min is set equal to max. With EnableRuntimeQuota defaulting to true,
 //     the enforced admission bound is the periodically-refreshed runtime
 //     (derived from min + shared-weight distribution, capped by max). Setting
 //     min == max pins runtime == max so the blocked-pod count is reproducible
-//     across runs regardless of RefreshRuntime timing.
+//     across runs regardless of RefreshRuntime timing — but only while the sum
+//     of every ElasticQuota's min in the cluster fits inside total node
+//     allocatable; see validateQuotaFits in Setup, which fails loudly rather
+//     than letting runtime silently drop below max.
 package elasticquota
 
 import (
@@ -81,10 +86,12 @@ func (s *ElasticQuotaScenario) Setup(
 	cfg types.ScenarioConfig,
 	runID string,
 ) error {
-	ns := cfg.Namespace
-	if ns == "" {
-		ns = "elasticquota-benchmark"
+	if cfg.Namespace == "" {
+		return fmt.Errorf("elasticquota scenario requires namespace to be set explicitly " +
+			"in config — there is no implicit default, to avoid disagreeing with " +
+			"engine.go's defaultNamespace fallback used by Watcher/FailureWatcher")
 	}
+	ns := cfg.Namespace
 	s.namespace = ns
 
 	if _, err := client.CoreV1().Namespaces().Get(ctx, ns, metav1.GetOptions{}); err != nil {
@@ -102,17 +109,25 @@ func (s *ElasticQuotaScenario) Setup(
 	if cfg.QuotaCPU == "" || cfg.QuotaMemory == "" {
 		return fmt.Errorf("elasticquota scenario requires both quotaCPU and quotaMemory in config")
 	}
-	if _, err := resource.ParseQuantity(cfg.QuotaCPU); err != nil {
+	cpuQty, err := resource.ParseQuantity(cfg.QuotaCPU)
+	if err != nil {
 		return fmt.Errorf("invalid quotaCPU %q: %w", cfg.QuotaCPU, err)
 	}
-	if _, err := resource.ParseQuantity(cfg.QuotaMemory); err != nil {
+	memQty, err := resource.ParseQuantity(cfg.QuotaMemory)
+	if err != nil {
 		return fmt.Errorf("invalid quotaMemory %q: %w", cfg.QuotaMemory, err)
 	}
-
 	// Name the quota after the namespace so Plugin.GetQuotaName's
 	// namespace-name fallback also associates pods with this quota.
 	quotaName := ns
 	s.quotaName = quotaName
+
+	// Pass quotaName+ns so validateQuotaFits can skip the stale object on
+	// retry — otherwise it would be counted twice (once via the initialised
+	// reservedCPU/reservedMem, and again as an existing EQ in the cluster).
+	if err := validateQuotaFits(ctx, client, dynClient, cpuQty, memQty, quotaName, ns); err != nil {
+		return fmt.Errorf("quota-fit check failed: %w", err)
+	}
 
 	eq := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "scheduling.sigs.k8s.io/v1alpha1",
@@ -139,7 +154,20 @@ func (s *ElasticQuotaScenario) Setup(
 	if _, err := dynClient.Resource(elasticQuotaGVR).Namespace(ns).Create(
 		ctx, eq, metav1.CreateOptions{},
 	); err != nil {
-		return fmt.Errorf("failed to create ElasticQuota %q: %w", quotaName, err)
+		if !errors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create ElasticQuota %q: %w", quotaName, err)
+		}
+		// A previous run's Teardown may not have run (process killed, cancelled
+		// run). The quota name is fixed (== namespace), so update in place rather
+		// than failing every subsequent run after a crash.
+		existing, getErr := dynClient.Resource(elasticQuotaGVR).Namespace(ns).Get(ctx, quotaName, metav1.GetOptions{})
+		if getErr != nil {
+			return fmt.Errorf("ElasticQuota %q already exists but could not be read for update: %w", quotaName, getErr)
+		}
+		eq.SetResourceVersion(existing.GetResourceVersion())
+		if _, updateErr := dynClient.Resource(elasticQuotaGVR).Namespace(ns).Update(ctx, eq, metav1.UpdateOptions{}); updateErr != nil {
+			return fmt.Errorf("failed to update existing ElasticQuota %q: %w", quotaName, updateErr)
+		}
 	}
 	return nil
 }
@@ -149,9 +177,6 @@ func (s *ElasticQuotaScenario) Setup(
 // configs/scenarios/elasticquota-1k.yaml).
 func (s *ElasticQuotaScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.Pod, error) {
 	ns := s.namespace
-	if ns == "" {
-		ns = "elasticquota-benchmark"
-	}
 	schedulerName := cfg.SchedulerName
 	if schedulerName == "" {
 		schedulerName = "koord-scheduler"
@@ -170,7 +195,7 @@ func (s *ElasticQuotaScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*
 		podResources = corev1.ResourceRequirements{Requests: rl, Limits: rl}
 	}
 
-	runIDPrefix := shortID(runID)
+	runIDPrefix := types.ShortID(runID)
 	pods := make([]*corev1.Pod, 0, cfg.PodCount)
 	for i := 0; i < cfg.PodCount; i++ {
 		// Apply cfg.Labels first so the built-in labels set below can never
@@ -227,17 +252,16 @@ func (s *ElasticQuotaScenario) Teardown(
 	runID string,
 ) error {
 	ns := s.namespace
-	if ns == "" {
-		ns = "elasticquota-benchmark"
-	}
 	labelSel := fmt.Sprintf("%s=%s", types.RunIDLabel, runID)
 	policy := metav1.DeletePropagationBackground
 
-	if err := dynClient.Resource(elasticQuotaGVR).Namespace(ns).DeleteCollection(ctx,
-		metav1.DeleteOptions{PropagationPolicy: &policy},
-		metav1.ListOptions{LabelSelector: labelSel},
-	); err != nil {
-		return fmt.Errorf("failed to delete ElasticQuota objects for run %q: %w", runID, err)
+	// Delete the quota by name, not by label selector. The quota name is fixed
+	// (== namespace), so a stale object left by a *previous* run carries a
+	// different run-id label and DeleteCollection by label would miss it.
+	if err := dynClient.Resource(elasticQuotaGVR).Namespace(ns).Delete(
+		ctx, s.quotaName, metav1.DeleteOptions{PropagationPolicy: &policy},
+	); err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete ElasticQuota %q: %w", s.quotaName, err)
 	}
 
 	return client.CoreV1().Pods(ns).DeleteCollection(ctx,
@@ -246,9 +270,76 @@ func (s *ElasticQuotaScenario) Teardown(
 	)
 }
 
-func shortID(runID string) string {
-	if len(runID) > 8 {
-		return runID[:8]
+// Augment implements scenarios.ResultAugmenter so the engine does not need to
+// inspect elasticquota-specific config fields to populate QuotaBlockedPodCount.
+func (s *ElasticQuotaScenario) Augment(stats types.FailureStats, result *types.BenchmarkResult) {
+	n := stats.QuotaBlockedPodCount
+	result.QuotaBlockedPodCount = &n
+}
+
+// validateQuotaFits is a best-effort check that this run's quota min, plus every
+// other ElasticQuota's min already in the cluster, does not exceed total node
+// allocatable. It does not fully replicate RuntimeQuotaCalculator.redistribution
+// — it exists to fail loudly at Setup instead of silently producing a
+// non-reproducible runtime when min > total allocatable (see package doc).
+func validateQuotaFits(
+	ctx context.Context,
+	client kubernetes.Interface,
+	dynClient dynamic.Interface,
+	quotaCPU, quotaMemory resource.Quantity,
+	skipName, skipNamespace string,
+) error {
+	nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to list nodes for quota-fit check: %w", err)
 	}
-	return runID
+	var totalCPU, totalMem resource.Quantity
+	for _, n := range nodes.Items {
+		if c, ok := n.Status.Allocatable[corev1.ResourceCPU]; ok {
+			totalCPU.Add(c)
+		}
+		if m, ok := n.Status.Allocatable[corev1.ResourceMemory]; ok {
+			totalMem.Add(m)
+		}
+	}
+
+	quotas, err := dynClient.Resource(elasticQuotaGVR).Namespace("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to list existing ElasticQuota objects for quota-fit check: %w", err)
+	}
+	reservedCPU := quotaCPU.DeepCopy()
+	reservedMem := quotaMemory.DeepCopy()
+	for _, q := range quotas.Items {
+		// Skip the quota this run is about to create/update: it is already
+		// accounted for by the initial reservedCPU/reservedMem values above.
+		// Without this check a retry (AlreadyExists path) double-counts the
+		// stale object and may incorrectly reject an otherwise-valid config.
+		if q.GetName() == skipName && q.GetNamespace() == skipNamespace {
+			continue
+		}
+		if s, found, _ := unstructured.NestedString(q.Object, "spec", "min", "cpu"); found {
+			if qty, parseErr := resource.ParseQuantity(s); parseErr == nil {
+				reservedCPU.Add(qty)
+			}
+		}
+		if s, found, _ := unstructured.NestedString(q.Object, "spec", "min", "memory"); found {
+			if qty, parseErr := resource.ParseQuantity(s); parseErr == nil {
+				reservedMem.Add(qty)
+			}
+		}
+	}
+
+	if reservedCPU.Cmp(totalCPU) > 0 {
+		return fmt.Errorf("sum of all ElasticQuota min.cpu (%s, including this run's %s) exceeds "+
+			"total node allocatable cpu (%s) — runtime will silently drop below max; "+
+			"lower quotaCPU, raise nodeCount, or lower another quota's min",
+			reservedCPU.String(), quotaCPU.String(), totalCPU.String())
+	}
+	if reservedMem.Cmp(totalMem) > 0 {
+		return fmt.Errorf("sum of all ElasticQuota min.memory (%s, including this run's %s) exceeds "+
+			"total node allocatable memory (%s) — runtime will silently drop below max; "+
+			"lower quotaMemory, raise nodeCount, or lower another quota's min",
+			reservedMem.String(), quotaMemory.String(), totalMem.String())
+	}
+	return nil
 }

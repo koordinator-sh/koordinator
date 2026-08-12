@@ -37,9 +37,9 @@ import (
 )
 
 func main() {
-	configPath  := flag.String("config", "", "Path to scenario YAML config (required)")
-	outputPath  := flag.String("output", "results/result.json", "Path for JSON result output")
-	kubeconfig  := flag.String("kubeconfig", "", "Path to kubeconfig (default: ~/.kube/config)")
+	configPath := flag.String("config", "", "Path to scenario YAML config (required)")
+	outputPath := flag.String("output", "results/result.json", "Path for JSON result output")
+	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (default: ~/.kube/config)")
 	baselinePath := flag.String("baseline", "", "Path to baseline JSON for regression detection (optional)")
 	flag.Parse()
 

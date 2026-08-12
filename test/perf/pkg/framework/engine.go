@@ -145,7 +145,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	klog.InfoS("Starting benchmark", "scenario", cfg.Name, "runID", runID, "timeout", timeout)
 
 	if _, err := e.client.CoreV1().Nodes().List(runCtx, metav1.ListOptions{Limit: 1}); err != nil {
-		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("cannot reach API server: %w", err), nil, 0, 0)
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("cannot reach API server: %w", err), scenario, nil, nil, 0, 0)
 	}
 	klog.InfoS("API server reachable", "scenario", scenario.Name())
 
@@ -161,7 +161,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	}
 	klog.InfoS("Creating nodes", "count", cfg.NodeCount, "workers", effectiveWorkers(cfg.NodeCreationWorkers))
 	if err := e.provider.CreateNodes(runCtx, runID, nodeSpec, cfg.NodeCount); err != nil {
-		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("CreateNodes failed: %w", err), nil, 0, 0)
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("CreateNodes failed: %w", err), scenario, nil, nil, 0, 0)
 	}
 	defer func() {
 		if err := e.provider.DeleteNodes(context.Background(), runID); err != nil {
@@ -171,13 +171,13 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 
 	// Step 2: block until nodes are Ready or the timeout fires.
 	if err := e.provider.WaitReady(runCtx, runID, defaultNodeWaitTimeout); err != nil {
-		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("WaitReady failed: %w", err), nil, 0, 0)
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("WaitReady failed: %w", err), scenario, nil, nil, 0, 0)
 	}
 	klog.InfoS("Nodes ready")
 
 	// Step 3: scenario-specific prerequisites (e.g. namespace creation).
 	if err := scenario.Setup(runCtx, e.client, e.dynClient, cfg, runID); err != nil {
-		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("scenario Setup failed: %w", err), nil, 0, 0)
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("scenario Setup failed: %w", err), scenario, nil, nil, 0, 0)
 	}
 	defer func() {
 		if err := scenario.Teardown(context.Background(), e.client, e.dynClient, runID); err != nil {
@@ -187,7 +187,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 
 	pods, err := scenario.Pods(cfg, runID)
 	if err != nil {
-		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("scenario Pods failed: %w", err), nil, 0, 0)
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("scenario Pods failed: %w", err), scenario, nil, nil, 0, 0)
 	}
 	if len(pods) != cfg.PodCount {
 		return fmt.Errorf("scenario %q returned %d pods, but config podCount is %d", scenario.Name(), len(pods), cfg.PodCount)
@@ -198,7 +198,11 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	}
 
 	// Step 4: start both watchers before the burst so no event is missed.
-	watcher := NewWatcher(e.client, namespace, runID, cfg.PodCount)
+	expectedScheduled := cfg.PodCount
+	if cfg.ExpectedScheduledPodCount != nil {
+		expectedScheduled = *cfg.ExpectedScheduledPodCount
+	}
+	watcher := NewWatcher(e.client, namespace, runID, cfg.PodCount, expectedScheduled)
 	watcherErrCh := make(chan error, 1)
 	go func() { watcherErrCh <- watcher.Start(runCtx) }()
 
@@ -214,12 +218,12 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	select {
 	case <-watcher.Ready():
 	case <-runCtx.Done():
-		return e.timeoutAwareReport(cfg, runID, outputPath, runCtx.Err(), nil, 0, 0)
+		return e.timeoutAwareReport(cfg, runID, outputPath, runCtx.Err(), scenario, failureWatcher, nil, 0, 0)
 	}
 	select {
 	case <-failureWatcher.Ready():
 	case <-runCtx.Done():
-		return e.timeoutAwareReport(cfg, runID, outputPath, runCtx.Err(), nil, 0, 0)
+		return e.timeoutAwareReport(cfg, runID, outputPath, runCtx.Err(), scenario, failureWatcher, nil, 0, 0)
 	}
 
 	klog.InfoS("Starting pod burst", "pods", cfg.PodCount, "concurrency", cfg.Concurrency)
@@ -246,7 +250,7 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 
 	// Step 7: wait for all creates and record API creation time.
 	if err := g.Wait(); err != nil {
-		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("pod creation failed: %w", err), watcher, time.Since(burstStart), 0)
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("pod creation failed: %w", err), scenario, failureWatcher, watcher, time.Since(burstStart), 0)
 	}
 	apiCreationDuration := time.Since(burstStart)
 	klog.InfoS("API creation phase complete", "duration", apiCreationDuration.Round(10*time.Millisecond))
@@ -254,29 +258,23 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 	// Step 8: wait for watcher to observe every pod scheduled.
 	klog.InfoS("Waiting for all pods to be scheduled")
 	if err := <-watcherErrCh; err != nil {
-		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("watcher failed: %w", err), watcher, apiCreationDuration, time.Since(burstStart))
+		return e.timeoutAwareReport(cfg, runID, outputPath, fmt.Errorf("watcher failed: %w", err), scenario, failureWatcher, watcher, apiCreationDuration, time.Since(burstStart))
 	}
 	totalDuration := time.Since(burstStart)
 
 	// Stop the failure watcher and collect its results.
 	failureCancel()
 	if err := <-failureWatcherErrCh; err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
- 		klog.ErrorS(err, "failure watcher failed", "runID", runID)
- 	}
+		klog.ErrorS(err, "failure watcher failed", "runID", runID)
+	}
 	failedPodCount, failureEventCount := failureWatcher.Stats()
 
-	// Only populated for scenarios that declare a quota — nil for basic/gang.
-	// Uses && so both fields must be set, matching the validation in
-	// ElasticQuotaScenario.Setup which requires both QuotaCPU and QuotaMemory.
-	var quotaBlockedPodCount *int
-	if cfg.QuotaCPU != "" && cfg.QuotaMemory != "" {
-		n := failureWatcher.QuotaBlockedPodCount()
-		quotaBlockedPodCount = &n
-	}
-
-	// Steps 9-10: compute percentiles and throughput.
+	// Steps 9-10: compute percentiles and throughput. Use len(watcher.Latencies())
+	// rather than cfg.PodCount so scenarios with ExpectedScheduledPodCount set
+	// (e.g. elasticquota) get an accurate throughput for the pods that actually
+	// scheduled, not the total burst size.
 	p50, p90, p99 := ComputeLatencyPercentiles(watcher.Latencies())
-	throughput := ComputeThroughput(cfg.PodCount, totalDuration)
+	throughput := ComputeThroughput(len(watcher.Latencies()), totalDuration)
 
 	// Gang completion percentiles are only populated when pods carry
 	// types.PodGroupLabel (gang scenario); nil for basic and others.
@@ -314,10 +312,19 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 		LatencyP99Sec:          p99.Seconds(),
 		GangCompletionP50Sec:   gangP50Sec,
 		GangCompletionP99Sec:   gangP99Sec,
-		QuotaBlockedPodCount:   quotaBlockedPodCount,
 		ThresholdBreached:      breached,
 		SchedulingFailureCount: failureEventCount,
 		SchedulingFailureRate:  failureRate,
+	}
+
+	// Let the scenario contribute its own result fields without the engine
+	// needing to know which config fields drove them. See scenarios.ResultAugmenter.
+	if augmenter, ok := scenario.(scenarios.ResultAugmenter); ok {
+		augmenter.Augment(types.FailureStats{
+			FailedPodCount:       failedPodCount,
+			FailureEventCount:    failureEventCount,
+			QuotaBlockedPodCount: failureWatcher.QuotaBlockedPodCount(),
+		}, &result)
 	}
 
 	// Step 13: write JSON report. Steps 11-12 run via defer after this returns.
@@ -327,7 +334,17 @@ func (e *Engine) Run(ctx context.Context, cfg types.ScenarioConfig, outputPath, 
 // timeoutAwareReport handles errors that abort Run early. On DeadlineExceeded
 // it writes a partial report with TimedOut: true so partial numbers are not
 // lost. For any other error it returns immediately without writing a report.
-func (e *Engine) timeoutAwareReport(cfg types.ScenarioConfig, runID, outputPath string, runErr error, watcher *Watcher, apiCreationDuration, totalDuration time.Duration) error {
+// scenario and failureWatcher may be nil for early failures before those are
+// constructed; when non-nil, failure/quota stats are populated in the report.
+func (e *Engine) timeoutAwareReport(
+	cfg types.ScenarioConfig,
+	runID, outputPath string,
+	runErr error,
+	scenario scenarios.Scenario,
+	failureWatcher *FailureWatcher,
+	watcher *Watcher,
+	apiCreationDuration, totalDuration time.Duration,
+) error {
 	if !errors.Is(runErr, context.DeadlineExceeded) {
 		return fmt.Errorf("benchmark run failed: %w", runErr)
 	}
@@ -352,6 +369,22 @@ func (e *Engine) timeoutAwareReport(cfg types.ScenarioConfig, runID, outputPath 
 		result.LatencyP99Sec = p99.Seconds()
 		if totalDuration > 0 {
 			result.ThroughputPodsPerSec = ComputeThroughput(len(watcher.Latencies()), totalDuration)
+		}
+	}
+	// Populate failure and scenario-specific stats on the timeout path too —
+	// without this, quotaBlockedPodCount is null in every timed-out result.
+	if failureWatcher != nil {
+		failedPodCount, failureEventCount := failureWatcher.Stats()
+		result.SchedulingFailureCount = failureEventCount
+		result.SchedulingFailureRate = schedulingFailureRate(failedPodCount, cfg.PodCount)
+		if scenario != nil {
+			if augmenter, ok := scenario.(scenarios.ResultAugmenter); ok {
+				augmenter.Augment(types.FailureStats{
+					FailedPodCount:       failedPodCount,
+					FailureEventCount:    failureEventCount,
+					QuotaBlockedPodCount: failureWatcher.QuotaBlockedPodCount(),
+				}, &result)
+			}
 		}
 	}
 	if writeErr := WriteReport(result, outputPath); writeErr != nil {
