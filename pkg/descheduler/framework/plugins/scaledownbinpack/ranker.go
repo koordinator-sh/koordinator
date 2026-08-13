@@ -78,9 +78,9 @@ func RankPods(nodes []*corev1.Node, eligibleTargetPods []*corev1.Pod, skippedTar
 
 		var num, den float64
 		for resName, weight := range resourceWeights {
-			capacity := node.Status.Capacity[resName]
-			capMilli := capacity.MilliValue()
-			if capMilli <= 0 {
+			allocatable := node.Status.Allocatable[resName]
+			allocMilli := allocatable.MilliValue()
+			if allocMilli <= 0 {
 				continue
 			}
 
@@ -98,8 +98,8 @@ func RankPods(nodes []*corev1.Node, eligibleTargetPods []*corev1.Pod, skippedTar
 				ntReq += q.MilliValue()
 			}
 
-			uNt := float64(ntReq) / float64(capMilli)
-			uT := float64(tReq) / float64(capMilli)
+			uNt := float64(ntReq) / float64(allocMilli)
+			uT := float64(tReq) / float64(allocMilli)
 
 			num += weight * uNt
 			den += weight * uT
@@ -144,8 +144,8 @@ func RankPods(nodes []*corev1.Node, eligibleTargetPods []*corev1.Pod, skippedTar
 	for _, info := range nodeInfos {
 		sort.Slice(info.EligibleTargetPods, func(i, j int) bool {
 			pi, pj := info.EligibleTargetPods[i], info.EligibleTargetPods[j]
-			sizeI := getPodSize(pi, resourceWeights)
-			sizeJ := getPodSize(pj, resourceWeights)
+			sizeI := getPodSize(pi, info.Node.Status.Allocatable, resourceWeights)
+			sizeJ := getPodSize(pj, info.Node.Status.Allocatable, resourceWeights)
 
 			if sizeI != sizeJ {
 				return sizeI > sizeJ // descending
@@ -174,11 +174,15 @@ func RankPods(nodes []*corev1.Node, eligibleTargetPods []*corev1.Pod, skippedTar
 	return globalRanked
 }
 
-func getPodSize(pod *corev1.Pod, weights map[corev1.ResourceName]float64) float64 {
+func getPodSize(pod *corev1.Pod, allocatable corev1.ResourceList, weights map[corev1.ResourceName]float64) float64 {
 	var size float64
 	for resName, weight := range weights {
 		q := util.GetPodRequest(pod, resName)[resName]
-		size += weight * float64(q.MilliValue())
+		alloc := allocatable[resName]
+		allocMilli := alloc.MilliValue()
+		if allocMilli > 0 {
+			size += weight * (float64(q.MilliValue()) / float64(allocMilli))
+		}
 	}
 	return size
 }

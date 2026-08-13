@@ -32,6 +32,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/cpuset"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/gpu"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/groupidentity"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/oomscoreadj"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/rdma"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/resctrl"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks/tc"
@@ -101,6 +102,12 @@ const (
 	// owner: @kangclzjc @saintube @zwzhang0107
 	// alpha: v1.5
 	Resctrl featuregate.Feature = "Resctrl"
+
+	// OOMScoreAdj manages per-container /proc/<pid>/oom_score_adj via pod annotations.
+	//
+	// owner: @saintube
+	// alpha: v1.8
+	OOMScoreAdj featuregate.Feature = "OOMScoreAdj"
 )
 
 var (
@@ -115,6 +122,7 @@ var (
 		TerwayQoS:        {Default: false, PreRelease: featuregate.Alpha},
 		TCNetworkQoS:     {Default: false, PreRelease: featuregate.Alpha},
 		Resctrl:          {Default: false, PreRelease: featuregate.Alpha},
+		OOMScoreAdj:      {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	runtimeHookPlugins = map[featuregate.Feature]HookPlugin{
@@ -128,6 +136,7 @@ var (
 		TerwayQoS:        terwayqos.Object(),
 		TCNetworkQoS:     tc.Object(),
 		Resctrl:          resctrl.Object(),
+		OOMScoreAdj:      oomscoreadj.Object(),
 	}
 )
 

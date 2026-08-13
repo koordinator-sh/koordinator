@@ -160,7 +160,7 @@ func TestPlugin_PreEnqueue(t *testing.T) {
 				st.MakePod().Name("pod3-1").UID("pod3-1").Namespace("ganga_ns").Label(v1alpha1.PodGroupLabel, "ganga").Obj(),
 			},
 			pgs:                        makePg("ganga", "ganga_ns", 4, &gangACreatedTime, nil),
-			expectedErrorMessage:       "gangGroup [ganga_ns/ganga] basic check: memberGangs [ganga_ns/ganga] child pod not collect enough, current gang: ganga_ns/ganga, podName: ganga_ns/pod3",
+			expectedErrorMessage:       "gangGroup [ganga_ns/ganga] basic check: memberGangs [ganga_ns/ganga(collected 2/4 children)] child pod not collect enough, current gang: ganga_ns/ganga, podName: ganga_ns/pod3",
 			expectedScheduleCycle:      1,
 			expectedChildCycleMap:      map[string]int{},
 			expectedScheduleCycleValid: true,

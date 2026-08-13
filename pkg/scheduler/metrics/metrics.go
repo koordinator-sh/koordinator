@@ -146,6 +146,7 @@ var (
 		},
 		[]string{"result"},
 	)
+
 	ReservationSelectorIndexCandidates = metrics.NewHistogram(
 		&metrics.HistogramOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
@@ -154,6 +155,17 @@ var (
 			Buckets:        metrics.ExponentialBuckets(1, 2, 16),
 			StabilityLevel: metrics.ALPHA,
 		},
+	)
+
+	InlineBatchScheduleDuration = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "inline_batch_schedule_duration_seconds",
+			Help:           "Duration of an inline batch schedule (whole-job PreFilter/Filter/Reserve/Assume + Bind) triggered by a FindOneNode plan, labeled by result (success/failure).",
+			Buckets:        metrics.ExponentialBuckets(0.001, 2, 15),
+			StabilityLevel: metrics.ALPHA,
+		},
+		[]string{"result"},
 	)
 
 	metricsList = []metrics.Registerable{
@@ -170,6 +182,7 @@ var (
 		GangScheduleCycleDuration,
 		ReservationSelectorIndexQueryTotal,
 		ReservationSelectorIndexCandidates,
+		InlineBatchScheduleDuration,
 	}
 
 	gcMetricsList = []prometheus.Collector{

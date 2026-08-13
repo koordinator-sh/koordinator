@@ -72,11 +72,11 @@ type FrameworkExtender interface {
 	ExtendedHandle
 
 	// RunFindOneNodePlugin invokes the registered FindOneNodePlugin (if any) during the PreFilter phase.
-	// The plugin's FindOneNode method attempts to deterministically select a single target node name for the given pod.
-	// The normal Filter/Score cycle will still run as a validation step, but only against the single node returned by FindOneNode.
-	// It returns the chosen node name and a Status. If no plugin is registered, or the plugin decides not to intervene,
+	// The plugin's FindOneNode method attempts to deterministically compute a placement plan for the whole job
+	// (all member pods and their target nodes) for the given pod.
+	// It returns the BatchScheduleResult and a Status. If no plugin is registered, or the plugin decides not to intervene,
 	// the status will be fwktype.Skip and the scheduler falls back to the standard multi-node filtering flow.
-	RunFindOneNodePlugin(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status)
+	RunFindOneNodePlugin(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (*BatchScheduleResult, *fwktype.Status)
 	SetConfiguredPlugins(plugins *schedconfig.Plugins)
 
 	RunReservationExtensionPreRestoreReservation(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status
@@ -119,8 +119,29 @@ type FindOneNodePluginProvider interface {
 // FindOneNodePlugin is responsible for finding a node for the pod according to calculated placement plans.
 type FindOneNodePlugin interface {
 	fwktype.Plugin
-	// FindOneNode  This extension point is used to help the scheduler customize the Pod Filter and Score process
-	FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status)
+	// FindOneNode This extension point is used to help the scheduler customize the Pod Filter and Score process.
+	// On Success it returns a BatchScheduleResult describing the placement plan for all member pods of the job
+	// (the triggering pod included). On Skip it means the plugin does not intervene and the scheduler falls back
+	// to the standard multi-node filtering flow.
+	FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (*BatchScheduleResult, *fwktype.Status)
+}
+
+// BatchScheduleResult describes a placement plan for a whole job computed by a FindOneNodePlugin.
+// It contains all member pods and their target nodes so that the scheduler can batch-schedule them together.
+type BatchScheduleResult struct {
+	// Pods is the full set of member pods that the plan covers, including the triggering pod.
+	Pods []*corev1.Pod
+	// PodToNodeName maps a pod key (namespace/name) to its planned node name.
+	PodToNodeName map[string]string
+}
+
+// BatchScheduler batch-schedules all pods of a job according to a BatchScheduleResult computed by a FindOneNodePlugin.
+// It runs an arbitrateOne-style scheduling and binding cycle (PreFilter/Filter/Reserve/Assume + Bind) for all pods,
+// and on failure unreserves and forgets any assumed pods. It is implemented outside the frameworkext package and
+// registered on the FrameworkExtender to avoid import cycles.
+type BatchScheduler interface {
+	BatchSchedule(ctx context.Context, ext FrameworkExtender, cycleState fwktype.CycleState,
+		triggerPod *corev1.Pod, plan *BatchScheduleResult) *fwktype.Status
 }
 
 type PreferNodesPluginProvider interface {

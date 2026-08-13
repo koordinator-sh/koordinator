@@ -74,22 +74,3 @@ func scoreNodeImbalance(node *corev1.Node, pods []*corev1.Pod, resources []corev
 	fractions := allocationFractions(requests, node.Status.Allocatable, resources)
 	return stdDev(fractions)
 }
-
-// scorePodRemovalGain computes the gain (before - after) in standard deviation when a given pod is removed.
-// A higher, positive gain means removing the pod decreases the standard deviation significantly.
-func scorePodRemovalGain(node *corev1.Node, pods []*corev1.Pod, targetPod *corev1.Pod, resources []corev1.ResourceName) float64 {
-	if node == nil || targetPod == nil {
-		return 0
-	}
-	stdBefore := scoreNodeImbalance(node, pods, resources)
-
-	var podsAfter []*corev1.Pod
-	for _, p := range pods {
-		if p.UID != targetPod.UID {
-			podsAfter = append(podsAfter, p)
-		}
-	}
-
-	stdAfter := scoreNodeImbalance(node, podsAfter, resources)
-	return stdBefore - stdAfter
-}

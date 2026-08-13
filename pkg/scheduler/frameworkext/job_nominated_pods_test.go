@@ -308,7 +308,7 @@ func Test_frameworkExtenderImpl_RunFilterPluginsWithNominatedIgnoreSameJob(t *te
 			frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
 			cycleState := framework.NewCycleState()
 			if tt.nominatedPodsToRemove.Len() != 0 {
-				MakeNominatedPodsOfTheSameJob(cycleState, tt.nominatedPodsToRemove.UnsortedList())
+				MakeNominatedPodsOfTheSameJob(cycleState, tt.nominatedPodsToRemove)
 			}
 			assert.Equal(t, tt.want, frameworkExtender.RunFilterPluginsWithNominatedPods(context.TODO(), cycleState, tt.pod, nodeInfo))
 		})
@@ -703,7 +703,7 @@ func TestMakeAndGetNominatedPodsOfTheSameJob(t *testing.T) {
 	t.Run("set and get", func(t *testing.T) {
 		state := framework.NewCycleState()
 		uids := []string{"uid-1", "uid-2", "uid-3"}
-		MakeNominatedPodsOfTheSameJob(state, uids)
+		MakeNominatedPodsOfTheSameJob(state, sets.New[string](uids...))
 
 		result := GetNominatedPodsOfTheSameJob(state)
 		assert.NotNil(t, result, "should return non-nil set when data exists")
@@ -722,7 +722,7 @@ func TestMakeAndGetNominatedPodsOfTheSameJob(t *testing.T) {
 
 	t.Run("empty list returns empty set", func(t *testing.T) {
 		state := framework.NewCycleState()
-		MakeNominatedPodsOfTheSameJob(state, []string{})
+		MakeNominatedPodsOfTheSameJob(state, sets.New[string]())
 
 		result := GetNominatedPodsOfTheSameJob(state)
 		assert.NotNil(t, result, "should return non-nil set even for empty list")
