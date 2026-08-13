@@ -76,7 +76,7 @@ Koordinator is licensed under the Apache License, Version 2.0. See [LICENSE](./L
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=koordinator-sh/koordinator&type=Date)](https://star-history.com/#koordinator-sh/koordinator&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=koordinator-sh/koordinator&type=Date)](https://star-history.dera.page/#koordinator-sh/koordinator&type=Date)
 -->
 
 ## 安全
