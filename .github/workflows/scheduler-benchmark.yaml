@@ -33,9 +33,6 @@ jobs:
           dotnet: true
           haskell: true
 
-      - name: Make scripts executable
-        run: chmod +x test/perf/hack/*.sh
-
       # Install the kind CLI only — setup-cluster.sh creates the cluster
       # itself so only one place owns cluster lifecycle.
       - name: Install kind
