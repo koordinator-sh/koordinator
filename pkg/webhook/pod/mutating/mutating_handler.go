@@ -36,6 +36,7 @@ const (
 	ExtendedResourceSpec     = "ExtendedResourceSpec"
 	MultiQuotaTree           = "MultiQuotaTree"
 	DeviceResourceSpec       = "DeviceResourceSpec"
+	MultiSchedulerDispatcher = "MultiSchedulerDispatcher"
 )
 
 // PodMutatingHandler handles Pod
@@ -153,6 +154,16 @@ func (h *PodMutatingHandler) handleCreate(ctx context.Context, req admission.Req
 		metrics.Pod, string(req.Operation), err, DeviceResourceSpec, time.Since(start).Seconds())
 	if err != nil {
 		klog.Errorf("Failed to mutating Pod %s/%s by DeviceResourceSpec, err: %v", obj.Namespace, obj.Name, err)
+		return mutated, err
+	}
+	mutated = mutated || m
+
+	start = time.Now()
+	m, err = h.multiSchedulerDispatchMutatingPod(ctx, req, obj)
+	metrics.RecordWebhookDurationMilliseconds(metrics.MutatingWebhook,
+		metrics.Pod, string(req.Operation), err, MultiSchedulerDispatcher, time.Since(start).Seconds())
+	if err != nil {
+		klog.Errorf("Failed to mutating Pod %s/%s by MultiSchedulerDispatcher, err: %v", obj.Namespace, obj.Name, err)
 		return mutated, err
 	}
 	mutated = mutated || m
