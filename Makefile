@@ -39,7 +39,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 LINT_TIMEOUT ?= 15m
-DOCKER_BUILDER ?= buildx build  --build-arg TARGETPLATFORM=linux/amd64 --build-arg TARGETARCH=amd64 --build-arg VERSION=v1.7.0 --build-arg BUILD_MODE=vendor --allow=network.host
+DOCKER_BUILDER ?= buildx build  --build-arg TARGETPLATFORM=linux/arm64 --build-arg TARGETARCH=arm64 --build-arg VERSION=v1.7.0 --build-arg BUILD_MODE=vendor --allow=network.host
 #DOCKER_BUILDER ?= buildx build  --platform=linux/amd64 --build-arg BUILD_MODE=vendor --allow=network.host
 
 .PHONY: all
@@ -133,7 +133,7 @@ build-koord-device-daemon: ## Build koord-device-daemon binary.
 	go build -o bin/koord-device-daemon cmd/koord-device-daemon/main.go
 
 .PHONY: docker-build
-docker-build: docker-build-koord-manager docker-build-koord-scheduler docker-build-koord-descheduler 
+docker-build: docker-build-koord-manager docker-build-koord-scheduler docker-build-koord-descheduler  docker-build-koordlet
 
 .PHONY: docker-build-koordlet
 docker-build-koordlet: ## Build docker image with the koordlet.

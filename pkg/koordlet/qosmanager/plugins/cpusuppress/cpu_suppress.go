@@ -299,7 +299,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		klog.Warningf("query node cpu metrics failed, error: %v", err)
 		return
 	}
-	klog.Infof("node %s usage: %v", node.Name, nodeCPUUsage)
+	klog.V(5).Infof("node %s usage: %v", node.Name, nodeCPUUsage)
 
 	hostAppMetrics := helpers.CollectAllHostAppMetricsLast(nodeSLO.Spec.HostApplications, r.metricCache,
 		metriccache.HostAppCPUUsageMetric, r.metricCollectInterval)
@@ -309,7 +309,7 @@ func (r *CPUSuppress) suppressBECPU() {
 		*nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressThresholdPercent,
 		nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressMinPercent)
 
-	klog.Info(suppressCPUQuantity)
+	klog.V(5).Info(suppressCPUQuantity)
 
 	// Step 2.
 	nodeCPUInfoRaw, exist := r.metricCache.Get(metriccache.NodeCPUInfoKey)
@@ -322,25 +322,25 @@ func (r *CPUSuppress) suppressBECPU() {
 		klog.Fatalf("type error, expect %T， but got %T", metriccache.NodeCPUInfo{}, nodeCPUInfoRaw)
 	}
 	nodeCPUINfoByte, err := json.Marshal(nodeCPUInfo)
-	klog.Info(err)
-	klog.Info(string(nodeCPUINfoByte))
+	klog.V(5).Info(err)
+	klog.V(5).Info(string(nodeCPUINfoByte))
 	if nodeSLO.Spec.ResourceUsedThresholdWithBE.CPUSuppressPolicy == slov1alpha1.CPUCfsQuotaPolicy {
 		r.adjustByCfsQuota(suppressCPUQuantity, node)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
 		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
 	} else {
 		// adjustByCPUset bf
-		klog.Info("adjustByCPUSet")
+		klog.V(5).Info("adjustByCPUSet")
 		r.adjustByCPUSet(suppressCPUQuantity, nodeCPUInfo)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
-		klog.Info(r.suppressPolicyStatuses)
+		klog.V(5).Info(r.suppressPolicyStatuses)
 		r.recoverCFSQuotaIfNeed()
 	}
 }
 
 func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
 	rootCgroupParentDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
-	klog.Info(rootCgroupParentDir)
+	klog.V(5).Info(rootCgroupParentDir)
 	oldCPUS, err := r.cgroupReader.ReadCPUSet(rootCgroupParentDir)
 	if err != nil {
 		klog.Warningf("applyBESuppressPolicy failed to get current best-effort cgroup cpuset, err: %s", err)
