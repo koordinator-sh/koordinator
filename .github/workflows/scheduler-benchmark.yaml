@@ -73,10 +73,10 @@ jobs:
       - name: Run benchmark (elasticquota)
         if: always()
         id: elasticquota
-        continue-on-error: true  # TODO: remove once verified green on a real cluster run
         run: |
           make -C test/perf benchmark \
             CONFIG=configs/scenarios/elasticquota-1k.yaml \
+            BASELINE=baselines/elasticquota-1k.json \
             OUTPUT=results/elasticquota-result.json
 
       - name: Fail on regression
