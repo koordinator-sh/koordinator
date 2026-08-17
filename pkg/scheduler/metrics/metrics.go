@@ -171,12 +171,17 @@ var (
 	// SharedCacheAssumedPods tracks the size of a shared plugin cache's assumed-allocation
 	// ledger (assumedPods), labeled by cache name so every opt-in shared cache — DeviceShare
 	// now, NodeNUMAResource / Reservation in follow-ups — reports on the same metric without
-	// redesign. A steadily climbing value signals an assume/forget leak.
+	// redesign. Note the ledger entry for a successfully-bound pod is cleared only when the pod
+	// leaves (delete / unassign / terminate / ForgetPod), so this value tracks "pods this
+	// process assumed that are still alive" and climbs with cluster occupancy during normal
+	// operation — it is NOT a simple leak gauge. A leak shows up as entries for pods that no
+	// longer exist; detect it by diffing the ledger (see the /assumedAllocations debug
+	// endpoint) against live pods rather than by watching the raw count.
 	SharedCacheAssumedPods = metrics.NewGaugeVec(
 		&metrics.GaugeOpts{
 			Subsystem: schedulermetrics.SchedulerSubsystem,
 			Name:      "shared_cache_assumed_pods",
-			Help:      "The number of pods currently held in a shared plugin cache's assumed-allocation ledger, labeled by cache name.",
+			Help:      "Size of a shared plugin cache's assumed-allocation ledger (labeled by cache name); tracks assumed pods still alive, not a pure leak gauge.",
 		},
 		[]string{sharedCacheNameKey},
 	)
