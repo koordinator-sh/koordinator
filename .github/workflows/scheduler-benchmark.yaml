@@ -93,6 +93,16 @@ jobs:
                 echo "::error::Benchmark regression detected in $(basename $result) — see uploaded results"
                 failed=true
               fi
+              # Elasticquota must demonstrate real quota throttling — a zero count
+              # means the settle loop never fired or the plugin config is broken.
+              if [[ "$result" == *"elasticquota"* ]]; then
+                quota_blocked=$(jq -r '.quotaBlockedPodCount // 0' "$result")
+                echo "$(basename $result): quotaBlockedPodCount=$quota_blocked"
+                if ! jq -e '.quotaBlockedPodCount > 0' "$result" > /dev/null; then
+                  echo "::error::quotaBlockedPodCount is 0 in $(basename $result) — throttling did not occur"
+                  failed=true
+                fi
+              fi
             fi
           done
           if [ "$found" = "false" ]; then
@@ -116,7 +126,7 @@ jobs:
       # pure threshold breaches — a regression is already reported by the result
       # JSON and uploading 30+ kubectl commands on every slow run adds noise.
       - name: Debug on failure
-        if: steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure' || steps.elasticquota.outcome == 'failure'
+        if: steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure' || steps.elasticquota.conclusion == 'failure'
         run: |
           echo "=== kind clusters ==="
           kind get clusters || true

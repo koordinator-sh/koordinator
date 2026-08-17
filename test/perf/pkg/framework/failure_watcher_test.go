@@ -34,13 +34,18 @@ func TestIsQuotaBlockedEvent(t *testing.T) {
 		message string
 		want    bool
 	}{
-		{"Insufficient quotas", true},
-		// quota name matches the namespace name, not a run-ID suffix (§1 fix)
-		{"Insufficient quotas (elasticquota-benchmark, cpu)", true},
+		// Real format from Plugin.PreFilter / checkQuotaRecursive:
+		// "Insufficient quotas, quotaName: %v, runtime: %v, used: %v, pod's request: %v, exceedDimensions: %v"
+		{
+			"Insufficient quotas, quotaName: elasticquota-benchmark, runtime: map[cpu:150], " +
+				"used: map[cpu:100m], pod's request: map[cpu:500m], exceedDimensions: [cpu]",
+			true,
+		},
+		{"Insufficient quotas", true}, // bare prefix also matches (substring check)
 		{"0/100 nodes are available: insufficient cpu", false},
 		{"Preemption is not helpful for scheduling", false},
 		// non-preemptible variant does NOT match — intentional, see failure_watcher.go comment
-		{"Insufficient non-preemptible quotas (elasticquota-benchmark, cpu)", false},
+		{"Insufficient non-preemptible quotas, quotaName: elasticquota-benchmark", false},
 		{"", false},
 	}
 	for _, c := range cases {
@@ -83,10 +88,12 @@ func TestFailureWatcher_EventRouting(t *testing.T) {
 		})
 	}
 
-	emit("pod-a", "Insufficient quotas (elasticquota-benchmark, cpu)")
-	emit("pod-a", "Insufficient quotas (elasticquota-benchmark, cpu)")           // repeat — distinct-pod count must not double
-	emit("pod-b", "0/100 nodes are available: insufficient cpu")                 // non-quota FailedScheduling
-	emit("pod-outside-run", "Insufficient quotas (elasticquota-benchmark, cpu)") // not tracked by this watcher
+	realMsg := "Insufficient quotas, quotaName: elasticquota-benchmark, runtime: map[cpu:150], " +
+		"used: map[cpu:100m], pod's request: map[cpu:500m], exceedDimensions: [cpu]"
+	emit("pod-a", realMsg)
+	emit("pod-a", realMsg)                                       // repeat — distinct-pod count must not double
+	emit("pod-b", "0/100 nodes are available: insufficient cpu") // non-quota FailedScheduling
+	emit("pod-outside-run", realMsg)                             // not tracked by this watcher
 
 	time.Sleep(50 * time.Millisecond) // let the goroutine drain the channel
 	cancel()

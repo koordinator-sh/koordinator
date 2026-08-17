@@ -29,6 +29,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
 
@@ -150,6 +151,98 @@ func TestSetup_FieldShape(t *testing.T) {
 	}
 	if minMem != maxMem {
 		t.Errorf("spec.min.memory = %q, want == spec.max.memory (%q)", minMem, maxMem)
+	}
+}
+
+// TestPods_FieldShape is the regression guard for the round-1 label-key bug
+// and the cfg.Labels-first merge-order fix. It calls Pods() directly without
+// calling Setup first — valid because Pods() now derives namespace and quota
+// name from cfg rather than from s.namespace / s.quotaName.
+func TestPods_FieldShape(t *testing.T) {
+	cfg := types.ScenarioConfig{
+		Namespace:        "elasticquota-benchmark",
+		PodCount:         3,
+		SchedulerName:    "koord-scheduler",
+		ResourceRequests: map[string]string{"cpu": "500m", "memory": "512Mi"},
+		Labels: map[string]string{
+			"custom-label":           "should-not-clobber",
+			extension.LabelQuotaName: "attacker-supplied-quota", // must be overridden by the built-in
+		},
+	}
+	s := &ElasticQuotaScenario{} // Setup deliberately not called
+
+	pods, err := s.Pods(cfg, "run-abc123")
+	if err != nil {
+		t.Fatalf("Pods() error = %v", err)
+	}
+	if len(pods) != cfg.PodCount {
+		t.Fatalf("len(pods) = %d, want %d", len(pods), cfg.PodCount)
+	}
+	for _, p := range pods {
+		if p.Namespace != cfg.Namespace {
+			t.Errorf("pod %s: namespace = %q, want %q", p.Name, p.Namespace, cfg.Namespace)
+		}
+		// LabelQuotaName must be the namespace name regardless of what cfg.Labels said.
+		if got := p.Labels[extension.LabelQuotaName]; got != cfg.Namespace {
+			t.Errorf("pod %s: %s = %q, want %q (cfg.Labels must not override the built-in)",
+				p.Name, extension.LabelQuotaName, got, cfg.Namespace)
+		}
+		if got := p.Labels["custom-label"]; got != "should-not-clobber" {
+			t.Errorf("pod %s: custom-label = %q, want preserved", p.Name, got)
+		}
+		if p.Spec.SchedulerName != cfg.SchedulerName {
+			t.Errorf("pod %s: schedulerName = %q, want %q", p.Name, p.Spec.SchedulerName, cfg.SchedulerName)
+		}
+		if got := p.Spec.NodeSelector["type"]; got != "kwok" {
+			t.Errorf("pod %s: nodeSelector[type] = %q, want kwok", p.Name, got)
+		}
+		found := false
+		for _, tol := range p.Spec.Tolerations {
+			if tol.Key == "kwok.x-k8s.io/node" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("pod %s: missing kwok.x-k8s.io/node toleration", p.Name)
+		}
+	}
+}
+
+// TestSetup_LeftoverPods verifies that Setup returns an error when the
+// namespace already contains pods from a previous benchmark run whose Teardown
+// did not complete — those pods hold quota the new run cannot reclaim.
+func TestSetup_LeftoverPods(t *testing.T) {
+	cfg := validCfg()
+	fakeK8s := k8sfake.NewSimpleClientset(largeNode())
+	fakeDyn := newFakeDynClient()
+
+	// Plant a leftover pod that carries the run-independent app label.
+	leftover := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "stale-pod",
+			Namespace: cfg.Namespace,
+			Labels:    map[string]string{"app": "kwok-bench-elasticquota"},
+		},
+	}
+	if _, err := fakeK8s.CoreV1().Pods(cfg.Namespace).Create(
+		context.Background(), leftover, metav1.CreateOptions{},
+	); err != nil {
+		t.Fatalf("failed to create leftover pod: %v", err)
+	}
+
+	// Namespace must exist for the pod to have been created in it.
+	if _, err := fakeK8s.CoreV1().Namespaces().Create(
+		context.Background(),
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: cfg.Namespace}},
+		metav1.CreateOptions{},
+	); err != nil {
+		t.Fatalf("failed to create namespace: %v", err)
+	}
+
+	s := &ElasticQuotaScenario{}
+	err := s.Setup(context.Background(), fakeK8s, fakeDyn, cfg, "run-new")
+	if err == nil {
+		t.Fatal("Setup() = nil, want error for leftover pods in namespace")
 	}
 }
 

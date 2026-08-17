@@ -41,6 +41,7 @@ package elasticquota
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -50,11 +51,18 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
 )
+
+// podAppLabelSelector is a run-independent selector that matches every pod
+// created by any elasticquota benchmark run. Used by Teardown so it can clean
+// up pods left by a different run (different run-id label) that crashed before
+// its own Teardown completed.
+const podAppLabelSelector = "app=kwok-bench-elasticquota"
 
 var elasticQuotaGVR = schema.GroupVersionResource{
 	Group:    "scheduling.sigs.k8s.io",
@@ -104,6 +112,23 @@ func (s *ElasticQuotaScenario) Setup(
 		); createErr != nil {
 			return fmt.Errorf("failed to create namespace %q: %w", ns, createErr)
 		}
+	}
+
+	// Fail loudly if a previous run's Teardown did not complete and left pods
+	// behind. Those pods carry extension.LabelQuotaName for this namespace,
+	// so the plugin still associates them with this quota and kwok pause pods
+	// never terminate — the quota's used is never released, and no pod from
+	// the new run can be admitted. validateQuotaFits cannot catch this because
+	// it only compares quota min against node allocatable, not actual pod usage.
+	leftover, err := client.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: podAppLabelSelector})
+	if err != nil {
+		return fmt.Errorf("failed to check for leftover pods in namespace %q: %w", ns, err)
+	}
+	if len(leftover.Items) > 0 {
+		return fmt.Errorf("namespace %q already contains %d elasticquota pod(s) left over from a "+
+			"previous run (Teardown likely did not complete) — these hold quota a new run cannot "+
+			"reclaim; delete them first: kubectl delete pods -n %s -l %s",
+			ns, len(leftover.Items), ns, podAppLabelSelector)
 	}
 
 	if cfg.QuotaCPU == "" || cfg.QuotaMemory == "" {
@@ -176,7 +201,9 @@ func (s *ElasticQuotaScenario) Setup(
 // quota's max (the YAML's quotaCPU is sized so this is guaranteed — see
 // configs/scenarios/elasticquota-1k.yaml).
 func (s *ElasticQuotaScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.Pod, error) {
-	ns := s.namespace
+	// Derive namespace and quota name directly from cfg so Pods() is a pure
+	// function of its inputs and can be unit-tested without calling Setup first.
+	ns := cfg.Namespace
 	schedulerName := cfg.SchedulerName
 	if schedulerName == "" {
 		schedulerName = "koord-scheduler"
@@ -209,7 +236,7 @@ func (s *ElasticQuotaScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*
 		// the key koord-scheduler's ElasticQuota plugin reads via
 		// extension.GetQuotaName(pod). Using the imported constant (not a
 		// hardcoded string) stays correct if the key ever moves.
-		labels[extension.LabelQuotaName] = s.quotaName
+		labels[extension.LabelQuotaName] = cfg.Namespace // quota is always named after the namespace
 		labels[types.RunIDLabel] = runID
 		labels["app"] = "kwok-bench-elasticquota"
 		if cfg.QoSClass != "" {
@@ -249,11 +276,16 @@ func (s *ElasticQuotaScenario) Teardown(
 	ctx context.Context,
 	client kubernetes.Interface,
 	dynClient dynamic.Interface,
-	runID string,
+	_ string, // runID — unused; pod deletion uses the run-independent app label (see below)
 ) error {
 	ns := s.namespace
-	labelSel := fmt.Sprintf("%s=%s", types.RunIDLabel, runID)
 	policy := metav1.DeletePropagationBackground
+
+	// Both deletes are best-effort and independent — a failure in one must not
+	// skip the other, since either object left behind blocks every subsequent
+	// run (the quota via a fixed-name collision, the pods by holding quota that
+	// kwok pause pods never release).
+	var errs []string
 
 	// Delete the quota by name, not by label selector. The quota name is fixed
 	// (== namespace), so a stale object left by a *previous* run carries a
@@ -261,13 +293,27 @@ func (s *ElasticQuotaScenario) Teardown(
 	if err := dynClient.Resource(elasticQuotaGVR).Namespace(ns).Delete(
 		ctx, s.quotaName, metav1.DeleteOptions{PropagationPolicy: &policy},
 	); err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete ElasticQuota %q: %w", s.quotaName, err)
+		klog.ErrorS(err, "failed to delete ElasticQuota during Teardown — continuing to pod cleanup", "quota", s.quotaName)
+		errs = append(errs, fmt.Sprintf("delete quota %q: %v", s.quotaName, err))
 	}
 
-	return client.CoreV1().Pods(ns).DeleteCollection(ctx,
+	// Delete by the run-independent app label, not the run-id label. A crashed
+	// prior run's pods carry a different run-id, so a per-run label selector
+	// cannot see them — they hold quota that is never released, making every
+	// subsequent run time out. Setup's leftover-pod check guards the same
+	// invariant from the other direction.
+	if err := client.CoreV1().Pods(ns).DeleteCollection(ctx,
 		metav1.DeleteOptions{PropagationPolicy: &policy},
-		metav1.ListOptions{LabelSelector: labelSel},
-	)
+		metav1.ListOptions{LabelSelector: podAppLabelSelector},
+	); err != nil {
+		klog.ErrorS(err, "failed to delete pods during Teardown", "namespace", ns)
+		errs = append(errs, fmt.Sprintf("delete pods in %q: %v", ns, err))
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("teardown had %d error(s): %s", len(errs), strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // Augment implements scenarios.ResultAugmenter so the engine does not need to
@@ -282,6 +328,8 @@ func (s *ElasticQuotaScenario) Augment(stats types.FailureStats, result *types.B
 // allocatable. It does not fully replicate RuntimeQuotaCalculator.redistribution
 // — it exists to fail loudly at Setup instead of silently producing a
 // non-reproducible runtime when min > total allocatable (see package doc).
+// Note: quotas whose spec.min.cpu or spec.min.memory cannot be parsed as a
+// quantity are silently skipped — this is intentional for a best-effort check.
 func validateQuotaFits(
 	ctx context.Context,
 	client kubernetes.Interface,

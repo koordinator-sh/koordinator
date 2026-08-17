@@ -22,6 +22,8 @@ package types
 import (
 	"fmt"
 	"time"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // RunIDLabel is the pod and node label key used to associate all objects
@@ -138,6 +140,22 @@ func (c ScenarioConfig) Validate() error {
 			return fmt.Errorf("expectedScheduledPodCount must be in (0, podCount], got %d (podCount=%d)",
 				*c.ExpectedScheduledPodCount, c.PodCount)
 		}
+		// Cross-field consistency: expectedScheduledPodCount must match the number of
+		// pods that actually fit inside the configured quota (min over all resource
+		// dimensions). This catches silent drift when quotaCPU/quotaMemory or
+		// resourceRequests are edited without updating expectedScheduledPodCount.
+		// If any quantity is unparseable, the check is skipped — scenario Setup will
+		// surface the parse error before the cluster is ever touched.
+		if c.QuotaCPU != "" && c.QuotaMemory != "" {
+			if implied, err := impliedScheduledCount(c.QuotaCPU, c.QuotaMemory, c.ResourceRequests); err == nil {
+				if implied != *c.ExpectedScheduledPodCount {
+					return fmt.Errorf("expectedScheduledPodCount (%d) does not match the value implied by "+
+						"quotaCPU/quotaMemory/resourceRequests (%d) — the quota now admits a different "+
+						"number of pods than configured; update expectedScheduledPodCount or the "+
+						"quota/request sizing", *c.ExpectedScheduledPodCount, implied)
+				}
+			}
+		}
 	}
 	if c.Thresholds.FailureRatePct != nil {
 		if *c.Thresholds.FailureRatePct < 0 || *c.Thresholds.FailureRatePct > 100 {
@@ -145,6 +163,42 @@ func (c ScenarioConfig) Validate() error {
 		}
 	}
 	return nil
+}
+
+// impliedScheduledCount returns how many pods of the given resourceRequests
+// fit inside a quota of quotaCPU/quotaMemory, taking the minimum across
+// whichever of cpu/memory are present in resourceRequests. Returns an error
+// when no comparable dimension is found or a quantity is unparseable.
+func impliedScheduledCount(quotaCPU, quotaMemory string, requests map[string]string) (int, error) {
+	dims := []struct{ quota, request string }{
+		{quotaCPU, requests["cpu"]},
+		{quotaMemory, requests["memory"]},
+	}
+	bound := -1
+	for _, d := range dims {
+		if d.quota == "" || d.request == "" {
+			continue
+		}
+		q, err := resource.ParseQuantity(d.quota)
+		if err != nil {
+			return 0, err
+		}
+		r, err := resource.ParseQuantity(d.request)
+		if err != nil {
+			return 0, err
+		}
+		if r.MilliValue() == 0 {
+			continue
+		}
+		n := int(q.MilliValue() / r.MilliValue())
+		if bound == -1 || n < bound {
+			bound = n
+		}
+	}
+	if bound == -1 {
+		return 0, fmt.Errorf("no comparable cpu/memory dimensions in quota and resourceRequests")
+	}
+	return bound, nil
 }
 
 // Thresholds defines regression detection limits used by CI comparison.
@@ -161,7 +215,7 @@ type Thresholds struct {
 }
 
 // ShortID returns the first 8 characters of id (typically a UUID run-id) for
-// use in resource names. Returns the full string when len(id) < 8.
+// use in resource names. Returns the full string when len(id) <= 8.
 func ShortID(id string) string {
 	if len(id) > 8 {
 		return id[:8]
@@ -225,11 +279,21 @@ type BenchmarkResult struct {
 	// SchedulingFailureRate is the fraction of pods (0.0–1.0) that received
 	// at least one FailedScheduling event during the run.
 	SchedulingFailureRate float64 `json:"schedulingFailureRate"`
+
+	// CreateFailureCount is the number of pods whose API Create failed after
+	// all retries and were excluded from the run rather than aborting it entirely.
+	// Usually 0; non-zero signals transient apiserver or network trouble.
+	CreateFailureCount int `json:"createFailureCount"`
 }
 
-// PodLatency records the scheduling latency for a single pod.
+// PodLatency records the scheduling latency for a single pod, plus the two
+// absolute server-side timestamps it was derived from (CreatedAt, ScheduledAt).
+// The timestamps let ComputeThroughputWindow measure the actual scheduling
+// window of the recorded pods, independent of client-side send pacing.
 type PodLatency struct {
-	PodName string
-	GangID  string
-	Latency time.Duration
+	PodName     string
+	GangID      string
+	Latency     time.Duration
+	CreatedAt   time.Time
+	ScheduledAt time.Time
 }

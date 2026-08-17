@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
@@ -135,14 +136,21 @@ func (w *Watcher) Start(ctx context.Context) error {
 				// Latency is measured from pod creation to scheduler decision.
 				latency := cond.LastTransitionTime.Time.Sub(pod.CreationTimestamp.Time)
 				w.latencies = append(w.latencies, PodLatency{
-					PodName: pod.Name,
-					GangID:  pod.Labels[v1alpha1.PodGroupLabel], // empty for non-gang scenarios
-					Latency: latency,
+					PodName:     pod.Name,
+					GangID:      pod.Labels[v1alpha1.PodGroupLabel], // empty for non-gang scenarios
+					Latency:     latency,
+					CreatedAt:   pod.CreationTimestamp.Time,
+					ScheduledAt: cond.LastTransitionTime.Time,
 				})
-				done := len(w.latencies) >= w.expectedScheduled
+				scheduledNow := len(w.latencies)
+				done := scheduledNow >= w.expectedScheduled
 				w.mu.Unlock()
 
 				if done {
+					klog.InfoS("Expected pod count reached",
+						"scheduled", scheduledNow,
+						"podCount", w.podCount,
+						"expectedPending", w.podCount-w.expectedScheduled)
 					return nil
 				}
 				break
