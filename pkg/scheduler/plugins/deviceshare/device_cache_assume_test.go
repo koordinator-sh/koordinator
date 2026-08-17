@@ -275,6 +275,46 @@ func Test_nodeDeviceCache_ReserveErrorRollback_NoDoubleSubtract(t *testing.T) {
 	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "second subtract is a no-op via isValid")
 }
 
+// A reservation's reserve pod is Reserved (marker stored); its synthetic delete event flows
+// through the onPodDelete adapter, which now routes to OnPodDelete → releaseAssumed. The marker
+// must be cleared and the assumed allocation rolled back — the legacy annotation path left the
+// ledger entry to leak forever (ZiMengSheng review item 2).
+func Test_nodeDeviceCache_onPodDelete_ReleasesAssumedMarker(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := assumeTestPod("resv-1", "node-1")
+	alloc := gpuAllocations(0, 100)
+	reserveInto(cache, "node-1", pod, alloc)
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	cache.onPodDelete(pod) // synthetic reservation delete (ResourceEventHandler interface{} arg)
+
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "reservation delete must clear the assumed marker")
+	nd := cache.getNodeDevice("node-1", false)
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "reservation delete must roll back the assumed allocation")
+}
+
+// An expired/failed reservation surfaces as a synthetic reserve pod with Phase=PodFailed; its
+// update event through the onPodUpdate adapter must hit the terminate→releaseAssumed branch and
+// clear the marker (the legacy onPodUpdate→deletePod path did not).
+func Test_nodeDeviceCache_onPodUpdate_TerminatedReservation_ReleasesMarker(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := assumeTestPod("resv-1", "node-1")
+	alloc := gpuAllocations(0, 100)
+	reserveInto(cache, "node-1", pod, alloc)
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	oldPod := pod.DeepCopy()
+	newPod := pod.DeepCopy()
+	newPod.Status.Phase = corev1.PodFailed
+	cache.onPodUpdate(oldPod, newPod)
+
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "terminated reservation must clear the assumed marker")
+	nd := cache.getNodeDevice("node-1", false)
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name))
+}
+
 func Test_nodeDeviceCache_ForgetPod_Idempotent(t *testing.T) {
 	cache := newNodeDeviceCache(nil)
 	pod := assumeTestPod("1", "node-1")

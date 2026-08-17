@@ -40,6 +40,7 @@ import (
 	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -311,6 +312,96 @@ func Test_New_SharedCacheAcrossProfiles(t *testing.T) {
 
 	assert.Same(t, p1.(*Plugin).nodeDeviceCache, p2.(*Plugin).nodeDeviceCache,
 		"DeviceShare must share a single nodeDeviceCache across scheduler profiles")
+}
+
+// Test_ForgetPodHandler_RegisteredPerProfile pins ZiMengSheng review item 1: the ForgetPod
+// handler must be registered per profile in New(), not once in Start() on the constructing
+// profile's handle. Invoking ForgetPod through a SECOND profile's extender must still reach the
+// shared cache and clear the assumed marker; if it were registered only on the first profile,
+// the marker would dangle and the reserved node keep a phantom allocation.
+func Test_ForgetPodHandler_RegisteredPerProfile(t *testing.T) {
+	frameworkexthelper.ResetRegistrations()
+	frameworkexthelper.ResetStartupHooks()
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+	newProfile := func(schedulerName string) framework.Framework {
+		cs := kubefake.NewSimpleClientset()
+		fh, err := schedulertesting.NewFramework(
+			context.TODO(), registeredPlugins, schedulerName,
+			runtime.WithClientSet(cs),
+			runtime.WithInformerFactory(informers.NewSharedInformerFactory(cs, 0)),
+			runtime.WithSnapshotSharedLister(newTestSharedLister(nil, nil)))
+		assert.NoError(t, err)
+		return fh
+	}
+
+	// p1 (constructed first) creates the shared cache; p2 is a second profile.
+	p1, err := proxyNew(context.TODO(), getDefaultArgs(), newProfile("koord-scheduler"))
+	assert.NoError(t, err)
+	p2, err := proxyNew(context.TODO(), getDefaultArgs(), newProfile("secondary-scheduler"))
+	assert.NoError(t, err)
+	cache := p1.(*Plugin).nodeDeviceCache
+
+	pod := assumeTestPod("1", "node-1")
+	reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	// Forget through the SECOND profile's extender (not the one that constructed the cache).
+	_ = p2.(*Plugin).handle.ForgetPod(klog.Background(), pod)
+
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "ForgetPod via a second profile must clear the shared cache's assumed marker")
+	nd := cache.getNodeDevice("node-1", false)
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "ForgetPod via a second profile must roll back the assumed allocation")
+}
+
+// Test_SharedDispatcher_PopulatesCacheFromInitialList exercises the production wiring end to end
+// (ZiMengSheng review item 5, coverage): StartSharedCaches registers the unified pod dispatcher
+// on the shared informer factory, and a pre-existing bound pod carrying an allocation annotation
+// must flow dispatcher → OnPodAdd → updatePod into the shared cache via the informer initial-list
+// path — the path the legacy per-plugin test wiring never exercised.
+func Test_SharedDispatcher_PopulatesCacheFromInitialList(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node-1"}}
+	suit := newPluginTestSuit(t, []*corev1.Node{node})
+
+	_, err := suit.koordClientSet.SchedulingV1alpha1().Devices().Create(context.TODO(), fakeDeviceCRWithoutTopology, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	boundPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "existing-gpu-pod", UID: types.UID("existing-gpu-pod")},
+		Spec:       corev1.PodSpec{NodeName: "test-node-1"},
+	}
+	assert.NoError(t, apiext.SetDeviceAllocations(boundPod, gpuAllocations(0, 100)))
+	_, err = suit.ClientSet().CoreV1().Pods(boundPod.Namespace).Create(context.TODO(), boundPod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+
+	// Four-phase startup: StartSharedCaches (registers the dispatcher) → informer Start → sync.
+	suit.start(context.TODO())
+	suit.Framework.SharedInformerFactory().Start(nil)
+	suit.koordinatorSharedInformerFactory.Start(nil)
+	suit.Framework.SharedInformerFactory().WaitForCacheSync(nil)
+	suit.koordinatorSharedInformerFactory.WaitForCacheSync(nil)
+
+	cache := pl.(*Plugin).nodeDeviceCache
+	assert.Eventually(t, func() bool {
+		nd := cache.getNodeDevice("test-node-1", false)
+		return nd != nil && len(gpuMinors(nd, boundPod.Namespace, boundPod.Name)) == 1
+	}, 10*time.Second, 20*time.Millisecond, "dispatcher must populate the shared cache from the informer initial list")
+
+	nd := cache.getNodeDevice("test-node-1", false)
+	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, boundPod.Namespace, boundPod.Name))
 }
 
 func Test_Plugin_PreFilterExtensions(t *testing.T) {

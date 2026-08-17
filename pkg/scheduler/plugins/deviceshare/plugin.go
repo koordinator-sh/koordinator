@@ -552,14 +552,18 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
 	nodeDeviceInfo.lock.Unlock()
 	if err := p.nodeDeviceCache.AssumePod(pod, nodeName); err != nil {
-		// The framework does not guarantee Unreserve for a Reserve plugin that returns an
-		// error at the Reserve extension point itself, so roll back the cache write here
-		// rather than relying on it. Safe if Unreserve does also run for this pod (vanilla
-		// and batch paths both do today): the isValid guard skips the second subtract.
+		// AssumePod only fails when the node's cache entry vanished (a benign GC race between
+		// the write above and here). Roll back the cache write — the framework does not
+		// guarantee Unreserve for a Reserve plugin that returns an error at the Reserve
+		// extension point, so we clean up rather than rely on it (safe if Unreserve also runs:
+		// the isValid guard skips the second subtract) — then degrade to annotation semantics
+		// (no marker; informer events repopulate the cache) instead of failing the pod over a
+		// transient race.
 		nodeDeviceInfo.lock.Lock()
 		nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
 		nodeDeviceInfo.lock.Unlock()
-		return fwktype.AsStatus(err)
+		klog.InfoS("skip assuming pod in device cache, relying on informer events", "pod", klog.KObj(pod), "node", nodeName, "err", err)
+		return nil
 	}
 	return nil
 }
@@ -861,6 +865,12 @@ func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktyp
 	if !ok {
 		return nil, fmt.Errorf("unexpected shared cache type %T for key %q, want *nodeDeviceCache", sharedCache, Name)
 	}
+	// Register the ForgetPod handler per profile: forgetPodHandlers is per-extender state, so
+	// registering only on the profile that constructed the shared cache would miss ForgetPod
+	// invoked through any other profile's extender (e.g. multi-scheduler arbitration failure),
+	// leaving Reserve's write un-reverted and the assumed marker dangling. forgetPod is
+	// idempotent, so registering it on every profile's extender is safe.
+	extendedHandle.RegisterForgetPodHandler(deviceCache.forgetPod)
 	// Ensure the node informer is instantiated and its initial list is awaited during
 	// startup. Registering it here (per profile, during New) makes it visible to the
 	// framework's WaitForHandlersSync, so the scheduler waits for the node cache to finish
