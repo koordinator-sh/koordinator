@@ -155,6 +155,30 @@ func Test_StartSharedCaches_StartsEachCacheExactlyOnce(t *testing.T) {
 	assert.Equal(t, 1, b.starts())
 }
 
+// Registering a NEW shared cache after StartSharedCaches would leave it out of the published
+// dispatch snapshot, never getting Start() and silently receiving no events. That is a wiring
+// bug, so it panics rather than no-oping; an already-registered key stays safe to look up.
+func Test_getOrRegisterSharedCache_PanicsOnRegisterAfterStart(t *testing.T) {
+	factory := newTestFactory(t)
+	rec := &orderRecorder{}
+	factory.getOrRegisterSharedCache("existing", nil, func(ExtendedHandle) SharedPluginCache {
+		return newRecordingCache("existing", rec)
+	})
+	assert.NoError(t, factory.StartSharedCaches(context.TODO(), newTestInformerFactory()))
+
+	assert.NotPanics(t, func() {
+		factory.getOrRegisterSharedCache("existing", nil, func(ExtendedHandle) SharedPluginCache {
+			return newRecordingCache("existing", rec)
+		})
+	}, "looking up an already-registered cache after start must not panic")
+
+	assert.Panics(t, func() {
+		factory.getOrRegisterSharedCache("late", nil, func(ExtendedHandle) SharedPluginCache {
+			return newRecordingCache("late", rec)
+		})
+	}, "registering a new shared cache after start must panic")
+}
+
 func Test_StartSharedCaches_NoCachesIsNoOp(t *testing.T) {
 	factory := newTestFactory(t)
 	// No registered caches — must not panic and must remain a no-op.

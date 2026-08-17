@@ -544,6 +544,13 @@ func (f *FrameworkExtenderFactory) getOrRegisterSharedCache(key string, handle E
 	if c, ok := f.sharedCaches[key]; ok {
 		return c
 	}
+	if f.sharedCachesStarted {
+		// Registering a new shared cache after StartSharedCaches has published the dispatch
+		// snapshot would leave it out of that snapshot: it never gets Start() and never
+		// receives an event. That is a wiring bug (registration must happen during plugin
+		// New(), before StartSharedCaches), not a recoverable state — fail loudly.
+		panic(fmt.Sprintf("frameworkext: shared cache %q registered after StartSharedCaches; register it during plugin New()", key))
+	}
 	c := create(handle)
 	f.sharedCaches[key] = c
 	f.sharedCachesOrder = append(f.sharedCachesOrder, key)

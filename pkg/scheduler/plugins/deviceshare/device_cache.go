@@ -521,7 +521,12 @@ func newNodeDeviceCache(handle frameworkext.ExtendedHandle) *nodeDeviceCache {
 func (n *nodeDeviceCache) Start(context.Context) {
 	registerDeviceEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
 	registerReservationEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
-	n.handle.RegisterForgetPodHandler(n.forgetPod)
+	// NOTE: the ForgetPod handler is registered per profile in Plugin.New(), NOT here.
+	// forgetPodHandlers is per-extender state, and n.handle is only the profile that first
+	// constructed the shared cache — registering here would miss ForgetPod invoked through
+	// any other profile's extender. Start() may only use factory-scoped dependencies (the
+	// koord/shared informer factories above are singletons); per-extender registration belongs
+	// in New(). See the SharedPluginCache doc.
 	// Launch GC only after all informer factories have started and synced, so its first
 	// tick reads a fully populated node lister. Registering it behind an
 	// AfterAllInformersSynced hook gives an explicit happens-after-sync guarantee that does
@@ -535,12 +540,14 @@ func (n *nodeDeviceCache) Start(context.Context) {
 }
 
 // The OnPod* handlers below are invoked serially by the shared pod informer (one event at a
-// time), so they never race one another. They intentionally do not hold a single lock across
-// the whole operation: assumedPods is always accessed under n.lock (AssumePod/ForgetPod/
-// takeAssumed/isAssumed), the node map under n.lock (getNodeDevice/gcNodeDevice), and per-node
-// allocation state under the per-node nodeDevice.lock — the same lock discipline every other
-// caller uses, so a concurrent Reserve/Unreserve (scheduling goroutine), Device event, GC, or
-// framework ForgetPod stays race-free without a global write lock.
+// time), so they never race one another. The event path does not hold the cache-wide n.lock in
+// write mode across a whole event: assumedPods is accessed under n.lock (AssumePod/ForgetPod/
+// takeAssumed/isAssumed hold it briefly — AssumePod in write mode for the snapshot+publish, the
+// event path only via isAssumed's read lock), the node map under n.lock (getNodeDevice/
+// gcNodeDevice), and per-node allocation state under the per-node nodeDevice.lock — the same
+// lock discipline every other caller uses, so a concurrent Reserve/Unreserve (scheduling
+// goroutine), Device event, GC, or framework ForgetPod stays race-free. The only cache-wide
+// write-lock holders are the per-Reserve/Unreserve assume/forget calls, not the per-event path.
 //
 // The assumed marker is a pure rollback record. It is consumed only by NEGATIVE events — a
 // delete, a bound->unassigned transition (multi-scheduler arbitration clears spec.nodeName back

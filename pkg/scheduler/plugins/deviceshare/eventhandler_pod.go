@@ -31,9 +31,10 @@ import (
 )
 
 // registerReservationEventHandler subscribes the deviceCache to Reservation CRD events,
-// which are converted to synthetic pod events by NewReservationToPodEventHandler. K8s Pod
-// events flow through the framework's unified SharedPluginCache dispatcher instead and
-// are handled by nodeDeviceCache.OnPodAdd/OnPodUpdate/OnPodDelete.
+// which NewReservationToPodEventHandler converts to synthetic reserve-pod events. Both these
+// synthetic events (via the onPod* adapters below) and real K8s Pod events (via the framework's
+// unified SharedPluginCache dispatcher) converge on nodeDeviceCache.OnPodAdd/OnPodUpdate/
+// OnPodDelete, so both consult the assumed ledger through one code path.
 func registerReservationEventHandler(deviceCache *nodeDeviceCache, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
 	eventHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    deviceCache.onPodAdd,
@@ -45,13 +46,19 @@ func registerReservationEventHandler(deviceCache *nodeDeviceCache, koordSharedIn
 	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordSharedInformerFactory, reservationInformer.Informer(), reservationEventHandler)
 }
 
+// onPodAdd/onPodUpdate/onPodDelete are ResourceEventHandler adapters (interface{} args) that
+// route through the unified OnPodAdd/OnPodUpdate/OnPodDelete, so synthetic reservation events
+// consult the assumed ledger exactly like real pod events. A reservation's reserve pod goes
+// through Plugin.Reserve → AssumePod (marker keyed by the reserve pod's UID = reservation UID);
+// routing its delete/terminate through OnPod* is what lets releaseAssumed clear that marker,
+// instead of the legacy annotation path that leaked one ledger entry per device reservation.
 func (n *nodeDeviceCache) onPodAdd(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
 		klog.Errorf("pod cache add failed to parse, obj %T", obj)
 		return
 	}
-	n.updatePod(nil, pod)
+	n.OnPodAdd(pod)
 }
 
 func (n *nodeDeviceCache) onPodUpdate(oldObj, newObj interface{}) {
@@ -64,8 +71,7 @@ func (n *nodeDeviceCache) onPodUpdate(oldObj, newObj interface{}) {
 	if !ok {
 		return
 	}
-	n.updatePod(oldPod, pod)
-	return
+	n.OnPodUpdate(oldPod, pod)
 }
 
 func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
@@ -83,7 +89,7 @@ func (n *nodeDeviceCache) onPodDelete(obj interface{}) {
 	default:
 		return
 	}
-	n.deletePod(pod)
+	n.OnPodDelete(pod)
 }
 
 func (n *nodeDeviceCache) updatePod(oldPod *corev1.Pod, pod *corev1.Pod) {
