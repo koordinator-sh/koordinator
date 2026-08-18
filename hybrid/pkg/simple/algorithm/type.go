@@ -64,6 +64,7 @@ type Result struct {
 
 // UploadResponse 上传文件
 type UploadResponse struct {
+	UploadID string      `json:"upload_id"`
 	TaskID   string      `json:"task_id"`
 	Status   string      `json:"status"`
 	Progress float64     `json:"progress"`
@@ -74,6 +75,7 @@ type UploadResponse struct {
 
 // UploadStatusResponse 文件上传状态
 type UploadStatusResponse struct {
+	UploadID       string      `json:"upload_id"`
 	TaskID         string      `json:"task_id"`
 	Status         string      `json:"status"`
 	Progress       float64     `json:"progress"`
@@ -100,6 +102,7 @@ type CleanResponse struct {
 
 // ModelRunningResponse 模型运行结果
 type ModelRunningResponse struct {
+	UploadID       string      `json:"upload_id"`
 	TaskID         string      `json:"task_id"`
 	Status         string      `json:"status"`
 	Progress       float64     `json:"progress"`

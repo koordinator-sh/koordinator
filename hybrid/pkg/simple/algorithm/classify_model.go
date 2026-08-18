@@ -21,8 +21,10 @@ const (
 	model4CSVPath     = "/v1/model4-csv"
 )
 
-func (c *Client) RunAlgorithm4(ctx context.Context) (*ModelRunningResponse, error) {
-	req, err := c.newRequest(ctx, http.MethodPost, runModel4Path, nil, "")
+func (c *Client) RunAlgorithm4(ctx context.Context, uploadID string) (*ModelRunningResponse, error) {
+	req, err := c.newJSONRequest(ctx, runModel4Path, struct {
+		UploadID string `json:"upload_id"`
+	}{UploadID: uploadID})
 	if err != nil {
 		return nil, err
 	}

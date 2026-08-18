@@ -24,8 +24,11 @@ const (
 	model5LongCSVPath     = "/v1/model5-long-csv"
 )
 
-func (c *Client) RunAlgorithm5Short(ctx context.Context) (*ModelRunningResponse, error) {
-	req, err := c.newRequest(ctx, http.MethodPost, runModel5ShortPath, nil, "")
+func (c *Client) RunAlgorithm5Short(ctx context.Context, uploadID string) (*ModelRunningResponse, error) {
+	req, err := c.newJSONRequest(ctx, runModel5ShortPath, struct {
+		UploadID       string `json:"upload_id"`
+		EnableBacktest bool   `json:"enable_backtest"`
+	}{UploadID: uploadID})
 	if err != nil {
 		return nil, err
 	}
@@ -34,8 +37,11 @@ func (c *Client) RunAlgorithm5Short(ctx context.Context) (*ModelRunningResponse,
 	return &resp, c.do(req, &resp)
 
 }
-func (c *Client) RunAlgorithm5Long(ctx context.Context) (*ModelRunningResponse, error) {
-	req, err := c.newRequest(ctx, http.MethodPost, runModel5LongPath, nil, "")
+func (c *Client) RunAlgorithm5Long(ctx context.Context, uploadID string) (*ModelRunningResponse, error) {
+	req, err := c.newJSONRequest(ctx, runModel5LongPath, struct {
+		UploadID       string `json:"upload_id"`
+		EnableBacktest bool   `json:"enable_backtest"`
+	}{UploadID: uploadID})
 	if err != nil {
 		return nil, err
 	}

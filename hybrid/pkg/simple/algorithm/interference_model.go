@@ -21,8 +21,10 @@ const (
 	model6CSVPath     = "/v1/model6-csv"
 )
 
-func (c *Client) RunAlgorithm6(ctx context.Context) (*ModelRunningResponse, error) {
-	req, err := c.newRequest(ctx, http.MethodPost, runModel6Path, nil, "")
+func (c *Client) RunAlgorithm6(ctx context.Context, uploadID string) (*ModelRunningResponse, error) {
+	req, err := c.newJSONRequest(ctx, runModel6Path, struct {
+		UploadID string `json:"upload_id"`
+	}{UploadID: uploadID})
 	if err != nil {
 		return nil, err
 	}

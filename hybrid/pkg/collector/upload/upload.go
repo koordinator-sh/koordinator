@@ -254,16 +254,24 @@ func (s *Service) uploadModelFile(ctx context.Context, f io.Reader, fileName str
 		return fmt.Errorf("failed to upload: %w", err)
 	}
 
-	klog.Infof("Model %s upload accepted, taskID=%s", modelType, resp.TaskID)
+	uploadID := resp.UploadID
+	if uploadID == "" {
+		uploadID = resp.TaskID
+	}
+	if uploadID == "" {
+		return fmt.Errorf("upload response did not contain upload_id or task_id")
+	}
+
+	klog.Infof("Model %s upload accepted, uploadID=%s", modelType, uploadID)
 
 	// 启动异步协程轮询上传状态,文件上传成功后发送模型
-	go s.watchUploadStatus(s.mgrCtx, modelType, resp.TaskID)
+	go s.watchUploadStatus(s.mgrCtx, modelType, uploadID)
 
 	return nil
 }
 
 // watchUploadStatus 异步轮询上传任务状态,直到上传成功或失败
-func (s *Service) watchUploadStatus(ctx context.Context, modelType algorithm.ModelType, taskID string) {
+func (s *Service) watchUploadStatus(ctx context.Context, modelType algorithm.ModelType, uploadID string) {
 	const (
 		pollInterval = 10 * time.Second // 轮询间隔
 		pollTimeout  = 10 * time.Minute // 上传超时时间
@@ -275,41 +283,41 @@ func (s *Service) watchUploadStatus(ctx context.Context, modelType algorithm.Mod
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
-	klog.InfoS("Watching upload status", "model", modelType, "taskID", taskID)
+	klog.InfoS("Watching upload status", "model", modelType, "uploadID", uploadID)
 
 	for {
 		select {
 		case <-timeoutCtx.Done():
 			if ctx.Err() != nil {
-				klog.V(4).InfoS("Upload watcher context cancelled", "model", modelType, "taskID", taskID)
+				klog.V(4).InfoS("Upload watcher context cancelled", "model", modelType, "uploadID", uploadID)
 			} else {
-				klog.ErrorS(nil, "Upload watcher timed out", "model", modelType, "taskID", taskID, "timeout", pollTimeout)
+				klog.ErrorS(nil, "Upload watcher timed out", "model", modelType, "uploadID", uploadID, "timeout", pollTimeout)
 			}
 			return
 
 		case <-ticker.C:
-			status, err := s.queryUploadStatus(timeoutCtx, taskID)
+			status, err := s.queryUploadStatus(timeoutCtx, uploadID)
 			if err != nil {
-				klog.ErrorS(err, "Failed to query upload status, will retry", "model", modelType, "taskID", taskID)
+				klog.ErrorS(err, "Failed to query upload status, will retry", "model", modelType, "uploadID", uploadID)
 				continue
 			}
 
-			klog.V(5).InfoS("Polled upload status", "model", modelType, "taskID", taskID, "status", status)
+			klog.V(5).InfoS("Polled upload status", "model", modelType, "uploadID", uploadID, "status", status)
 
 			switch status {
 			case algorithm.StatusSuccess:
-				klog.InfoS("Upload succeeded, notifying triggerAlgorithm", "model", modelType, "taskID", taskID)
+				klog.InfoS("Upload succeeded, notifying triggerAlgorithm", "model", modelType, "uploadID", uploadID)
 				// 上传成功, 通知触发算法运行
-				s.notifyReady(algorithm.Signal{Model: string(modelType), Ready: true})
+				s.notifyReady(algorithm.Signal{Model: string(modelType), Ready: true, UploadID: uploadID})
 				return
 
 			case algorithm.StatusFailure:
-				klog.ErrorS(nil, "Upload failed on server side", "model", modelType, "taskID", taskID, "status", status)
+				klog.ErrorS(nil, "Upload failed on server side", "model", modelType, "uploadID", uploadID, "status", status)
 				return
 
 			default:
 				// PENDING / PROGRESS  继续等待
-				klog.V(4).InfoS("Upload still in progress", "model", modelType, "taskID", taskID, "status", status)
+				klog.V(4).InfoS("Upload still in progress", "model", modelType, "uploadID", uploadID, "status", status)
 			}
 		}
 	}
@@ -322,14 +330,10 @@ func (s *Service) queryUploadStatus(ctx context.Context, taskID string) (string,
 		return "", err
 	}
 
-	// 任务已完成(无论成功还是失败), 根据内层处理的 result 判断
+	// 上传服务以顶层 status 作为任务状态；成功响应的 result 结构不保证包含
+	// success 字段，因此不能依赖 resp.Result.Success 判断上传是否成功。
 	if resp.Status == algorithm.StatusSuccess {
-		if resp.Result.Success {
-			return algorithm.StatusSuccess, nil
-		}
-		// 任务完成但处理失败,提取错误信息
-		klog.ErrorS(nil, "Upload task completed with error", "taskID", taskID, "error", resp.Result.Error) // 需在 Result struct 加 Error 字段
-		return algorithm.StatusFailure, nil
+		return algorithm.StatusSuccess, nil
 	}
 
 	if resp.Status == algorithm.StatusFailure {
@@ -344,6 +348,9 @@ func (s *Service) triggerAlgorithm(sig algorithm.Signal) error {
 	if !sig.Ready {
 		return nil
 	}
+	if sig.UploadID == "" {
+		return fmt.Errorf("cannot run model %s without upload_id", sig.Model)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -356,7 +363,7 @@ func (s *Service) triggerAlgorithm(sig algorithm.Signal) error {
 			klog.Infof("model4 previous task still running, skipping trigger")
 			return nil
 		}
-		resp, err := s.client.RunAlgorithm4(ctx)
+		resp, err := s.client.RunAlgorithm4(ctx, sig.UploadID)
 		if err != nil {
 			return fmt.Errorf("failed to run model4 algorithm: %w", err)
 		}
@@ -367,7 +374,7 @@ func (s *Service) triggerAlgorithm(sig algorithm.Signal) error {
 		if s.watcher.IsRunning(algorithm.Model5Short) {
 			klog.Infof("model5 short previous task still running, skipping trigger")
 		} else {
-			respShort, err := s.client.RunAlgorithm5Short(ctx)
+			respShort, err := s.client.RunAlgorithm5Short(ctx, sig.UploadID)
 			if err != nil {
 				return fmt.Errorf("failed to run model5 algorithm for short: %w", err)
 			}
@@ -378,7 +385,7 @@ func (s *Service) triggerAlgorithm(sig algorithm.Signal) error {
 		if s.watcher.IsRunning(algorithm.Model5Long) {
 			klog.Infof("model5 long previous task still running, skipping trigger")
 		} else {
-			respLong, err := s.client.RunAlgorithm5Long(ctx)
+			respLong, err := s.client.RunAlgorithm5Long(ctx, sig.UploadID)
 			if err != nil {
 				return fmt.Errorf("failed to run model5 algorithm for long: %w", err)
 			}
@@ -391,7 +398,7 @@ func (s *Service) triggerAlgorithm(sig algorithm.Signal) error {
 			klog.Infof("model6 previous task still running, skipping trigger")
 			return nil
 		}
-		resp, err := s.client.RunAlgorithm6(ctx)
+		resp, err := s.client.RunAlgorithm6(ctx, sig.UploadID)
 		if err != nil {
 			return fmt.Errorf("failed to run model6 algorithm: %w", err)
 		}

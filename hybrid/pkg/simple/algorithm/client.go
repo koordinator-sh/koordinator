@@ -7,6 +7,7 @@
 package algorithm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -17,8 +18,9 @@ import (
 )
 
 type Signal struct {
-	Model string `json:"model"`
-	Ready bool   `json:"ready"`
+	Model    string `json:"model"`
+	Ready    bool   `json:"ready"`
+	UploadID string `json:"upload_id"`
 }
 
 type Option func(*Client)
@@ -74,6 +76,14 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body io.Re
 	return req, nil
 }
 
+func (c *Client) newJSONRequest(ctx context.Context, path string, payload interface{}) (*http.Request, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	return c.newRequest(ctx, http.MethodPost, path, bytes.NewReader(body), "application/json")
+}
+
 func (c *Client) do(req *http.Request, v interface{}) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -81,7 +91,7 @@ func (c *Client) do(req *http.Request, v interface{}) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, raw)
 	}
@@ -100,7 +110,7 @@ func (c *Client) doDownload(req *http.Request, w io.Writer) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		raw, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, raw)
 	}

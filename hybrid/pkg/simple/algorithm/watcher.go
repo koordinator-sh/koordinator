@@ -180,10 +180,10 @@ func (w *Watcher) queryStatus(ctx context.Context, model ModelType, taskID strin
 
 func processStatus(resp *ModelStatusResponse) (string, error) {
 	if resp.Status == StatusSuccess {
-		if resp.Result.Status == StatusSuccess {
-			return StatusSuccess, nil
-		}
-		return StatusFailure, nil
+		// The API uses the top-level status as the authoritative task state.
+		// The nested result payload differs between models and does not always
+		// contain a status field.
+		return StatusSuccess, nil
 	}
 	if resp.Status == StatusFailure {
 		return StatusFailure, nil
