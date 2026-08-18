@@ -32,8 +32,13 @@ import (
 	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 )
 
+type bindingCycleLease interface {
+	release()
+	reacquire(ctx context.Context) error
+}
+
 // bindingCycle mirrors scheduler.bindingCycle (schedule_one.go:269): it waits on Permit, then runs
-// PreBind, Bind and PostBind for an assumed pod.
+// PreBind and Bind for an assumed pod. Post-bind work is handled after the slot is released.
 func (w *Workflow) bindingCycle(
 	ctx context.Context,
 	state fwktype.CycleState,
@@ -41,10 +46,15 @@ func (w *Workflow) bindingCycle(
 	scheduleResult *scheduleResult,
 	assumedPodInfo *framework.QueuedPodInfo,
 	start time.Time,
-	podsToActivate *framework.PodsToActivate) *fwktype.Status {
+	podsToActivate *framework.PodsToActivate,
+	bindingSlot bindingCycleLease) *fwktype.Status {
 	logger := klog.FromContext(ctx)
+	if bindingSlot != nil {
+		defer bindingSlot.release()
+	}
 
 	assumedPod := assumedPodInfo.Pod
+	willWaitOnPermit := schedFramework.WillWaitOnPermit(ctx, assumedPod)
 
 	if w.nominatedNodeNameForExpectationEnabled {
 		preFlightStatus := schedFramework.RunPreBindPreFlights(ctx, state, assumedPod, scheduleResult.SuggestedHost)
@@ -53,7 +63,7 @@ func (w *Workflow) bindingCycle(
 			preFlightStatus.IsRejected() {
 			return preFlightStatus
 		}
-		if preFlightStatus.IsSuccess() || schedFramework.WillWaitOnPermit(ctx, assumedPod) {
+		if preFlightStatus.IsSuccess() || willWaitOnPermit {
 			// Add NominatedNodeName to tell the external components (e.g., the cluster autoscaler) that the pod is about to be bound to the node.
 			// We only do this when any of WaitOnPermit or PreBind will work because otherwise the pod will be soon bound anyway.
 			if err := w.updatePod(ctx, schedFramework, assumedPod, nil, &fwktype.NominatingInfo{
@@ -67,7 +77,20 @@ func (w *Workflow) bindingCycle(
 	}
 
 	// Run "permit" plugins.
-	if status := schedFramework.WaitOnPermit(ctx, assumedPod); !status.IsSuccess() {
+	// A waiting pod must not occupy a binding slot: a Permit plugin such as Coscheduling may
+	// require more members to complete their scheduling cycles before it can release the group.
+	// Reacquire the slot before continuing so PreBind, Bind and FinishBinding
+	// remain bounded by the configured binding concurrency.
+	if willWaitOnPermit && bindingSlot != nil {
+		bindingSlot.release()
+	}
+	status := schedFramework.WaitOnPermit(ctx, assumedPod)
+	if willWaitOnPermit && bindingSlot != nil {
+		if err := bindingSlot.reacquire(ctx); err != nil {
+			return fwktype.AsStatus(err)
+		}
+	}
+	if !status.IsSuccess() {
 		if status.IsRejected() {
 			fitErr := &framework.FitError{
 				NumAllNodes: 1,
@@ -101,6 +124,23 @@ func (w *Workflow) bindingCycle(
 		return status
 	}
 
+	return nil
+}
+
+// completeBindingCycle performs work that does not need to hold a binding slot.
+// It runs after Bind and Cache.FinishBinding have completed so event handling,
+// metrics, PostBind and activation cannot block new binding cycles.
+func (w *Workflow) completeBindingCycle(
+	ctx context.Context,
+	state fwktype.CycleState,
+	schedFramework framework.Framework,
+	scheduleResult *scheduleResult,
+	assumedPodInfo *framework.QueuedPodInfo,
+	start time.Time,
+	podsToActivate *framework.PodsToActivate) {
+	logger := klog.FromContext(ctx)
+	assumedPod := assumedPodInfo.Pod
+
 	// Calculating nodeResourceString can be heavy. Avoid it if klog verbosity is below 2.
 	logger.V(2).Info("Successfully bound pod to node", "pod", klog.KObj(assumedPod), "node", scheduleResult.SuggestedHost, "evaluatedNodes", scheduleResult.EvaluatedNodes, "feasibleNodes", scheduleResult.FeasibleNodes)
 	metrics.PodScheduled(schedFramework.ProfileName(), metrics.SinceInSeconds(start))
@@ -108,6 +148,7 @@ func (w *Workflow) bindingCycle(
 	if assumedPodInfo.InitialAttemptTimestamp != nil {
 		metrics.PodSchedulingSLIDuration.WithLabelValues(getAttemptsLabel(assumedPodInfo)).Observe(metrics.SinceInSeconds(*assumedPodInfo.InitialAttemptTimestamp))
 	}
+	schedFramework.EventRecorder().Eventf(assumedPod, nil, corev1.EventTypeNormal, "Scheduled", "Binding", "Successfully assigned %v/%v to %v", assumedPod.Namespace, assumedPod.Name, scheduleResult.SuggestedHost)
 	// Run "postbind" plugins.
 	schedFramework.RunPostBindPlugins(ctx, state, assumedPod, scheduleResult.SuggestedHost)
 
@@ -118,7 +159,6 @@ func (w *Workflow) bindingCycle(
 		// as `podsToActivate.Map` is no longer consumed.
 	}
 
-	return nil
 }
 
 // bind mirrors scheduler.bind (schedule_one.go:978): extenders first, then bind plugins, and always
@@ -126,7 +166,7 @@ func (w *Workflow) bindingCycle(
 func (w *Workflow) bind(ctx context.Context, schedFramework framework.Framework, assumed *corev1.Pod, targetNode string, state fwktype.CycleState) (status *fwktype.Status) {
 	logger := klog.FromContext(ctx)
 	defer func() {
-		w.finishBinding(logger, schedFramework, assumed, targetNode, status)
+		w.finishBinding(logger, assumed, status)
 	}()
 
 	bound, err := w.extendersBinding(logger, assumed, targetNode)
@@ -156,19 +196,15 @@ func (w *Workflow) extendersBinding(logger klog.Logger, pod *corev1.Pod, node st
 	return false, nil
 }
 
-// finishBinding mirrors scheduler.finishBinding (schedule_one.go:1010): it always signals the
-// cache that binding is finished (so the assumed pod can expire) and emits the "Scheduled" event
-// on success.
-func (w *Workflow) finishBinding(logger klog.Logger, fwk framework.Framework, assumed *corev1.Pod, targetNode string, status *fwktype.Status) {
+// finishBinding signals the cache that binding is finished so the assumed pod
+// can expire. Event recording is deliberately outside the binding slot.
+func (w *Workflow) finishBinding(logger klog.Logger, assumed *corev1.Pod, status *fwktype.Status) {
 	if finErr := w.sched.Cache.FinishBinding(logger, assumed); finErr != nil {
 		utilruntime.HandleErrorWithLogger(logger, finErr, "Scheduler cache FinishBinding failed")
 	}
 	if !status.IsSuccess() {
 		logger.V(1).Info("Failed to bind pod", "pod", klog.KObj(assumed))
-		return
 	}
-
-	fwk.EventRecorder().Eventf(assumed, nil, corev1.EventTypeNormal, "Scheduled", "Binding", "Successfully assigned %v/%v to %v", assumed.Namespace, assumed.Name, targetNode)
 }
 
 // handleBindingCycleError mirrors scheduler.handleBindingCycleError (schedule_one.go:356): it
