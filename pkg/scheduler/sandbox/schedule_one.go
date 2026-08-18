@@ -29,6 +29,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
 // pluginMetricsSamplePercent is the percentage of plugin metrics to be sampled,
@@ -102,19 +103,42 @@ func (w *SandboxCustomWorkflow) ScheduleOne(ctx context.Context) {
 		return
 	}
 
+	// Acquire before starting the goroutine so backpressure does not accumulate waiting goroutines.
+	slotWaitStart := time.Now()
+	if err := w.acquireBindingSlot(ctx); err != nil {
+		if w.bindingSlots != nil {
+			koordmetrics.SandboxBindingSlotWaitDuration.WithLabelValues(fwk.ProfileName()).Observe(time.Since(slotWaitStart).Seconds())
+		}
+		workflow.handleBindingCycleError(ctx, state, fwk, assumedPodInfo, start, scheduleResult, fwktype.AsStatus(err))
+		return
+	}
+	if w.bindingSlots != nil {
+		koordmetrics.SandboxBindingSlotWaitDuration.WithLabelValues(fwk.ProfileName()).Observe(time.Since(slotWaitStart).Seconds())
+	}
+	bindingSlot := &bindingSlotLease{workflow: w, held: w.bindingSlots != nil}
+
 	// bind the pod to its host asynchronously (we can do this b/c of the assumption step above).
 	go func() {
+		defer bindingSlot.release()
+
 		bindingCycleCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
 		metrics.Goroutines.WithLabelValues(metrics.Binding).Inc()
 		defer metrics.Goroutines.WithLabelValues(metrics.Binding).Dec()
 
-		status := workflow.bindingCycle(bindingCycleCtx, state, fwk, scheduleResult, assumedPodInfo, start, podsToActivate)
+		bindingStart := time.Now()
+		status := workflow.bindingCycle(bindingCycleCtx, state, fwk, scheduleResult, assumedPodInfo, start, podsToActivate, bindingSlot)
+		bindingResult := "success"
+		if !status.IsSuccess() {
+			bindingResult = "error"
+		}
+		koordmetrics.SandboxBindingDuration.WithLabelValues(fwk.ProfileName(), bindingResult).Observe(time.Since(bindingStart).Seconds())
 		if !status.IsSuccess() {
 			workflow.handleBindingCycleError(bindingCycleCtx, state, fwk, assumedPodInfo, start, scheduleResult, status)
 			return
 		}
+		workflow.completeBindingCycle(bindingCycleCtx, state, fwk, scheduleResult, assumedPodInfo, start, podsToActivate)
 	}()
 }
 

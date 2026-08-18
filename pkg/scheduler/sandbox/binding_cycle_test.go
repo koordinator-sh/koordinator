@@ -105,6 +105,7 @@ func TestBindingCyclePermitRejectRecordsPlugin(t *testing.T) {
 				&framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: pod}},
 				time.Now(),
 				framework.NewPodsToActivate(),
+				nil,
 			)
 
 			var fitErr *framework.FitError
