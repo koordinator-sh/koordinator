@@ -19,6 +19,7 @@ package app
 import (
 	"context"
 
+	"github.com/spf13/pflag"
 	"k8s.io/client-go/informers"
 	kubeclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -39,6 +40,10 @@ type CustomWorkflow interface {
 	IsEnabled() bool
 	Setup(ctx context.Context, opts *CustomWorkflowOptions) error
 	Run(ctx context.Context)
+}
+
+type customWorkflowFlagProvider interface {
+	AddFlags(fs *pflag.FlagSet)
 }
 
 type CustomWorkflowOptions struct {
