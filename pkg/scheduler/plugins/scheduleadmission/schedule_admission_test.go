@@ -177,8 +177,23 @@ func TestPreEnqueue(t *testing.T) {
 			pl := &Plugin{enablePrefixMatch: tt.enablePrefixMatch}
 			status := pl.PreEnqueue(context.Background(), tt.pod)
 			assert.Equal(t, tt.wantStatus, status.Code())
+
+			// PreFilter shares the same admission logic so it must behave consistently,
+			// gating pods that entered the scheduling cycle before the label was applied.
+			result, preFilterStatus := pl.PreFilter(context.Background(), nil, tt.pod, nil)
+			assert.Nil(t, result)
+			if tt.wantStatus == fwktype.Success {
+				assert.True(t, preFilterStatus.IsSuccess())
+			} else {
+				assert.Equal(t, tt.wantStatus, preFilterStatus.Code())
+			}
 		})
 	}
+}
+
+func TestPreFilterExtensions(t *testing.T) {
+	pl := &Plugin{}
+	assert.Nil(t, pl.PreFilterExtensions())
 }
 
 func TestEventsToRegister(t *testing.T) {

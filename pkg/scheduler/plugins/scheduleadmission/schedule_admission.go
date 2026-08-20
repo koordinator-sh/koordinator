@@ -36,6 +36,7 @@ const (
 
 var (
 	_ fwktype.PreEnqueuePlugin  = &Plugin{}
+	_ fwktype.PreFilterPlugin   = &Plugin{}
 	_ fwktype.EnqueueExtensions = &Plugin{}
 )
 
@@ -66,6 +67,24 @@ func (pl *Plugin) Name() string {
 }
 
 func (pl *Plugin) PreEnqueue(ctx context.Context, pod *corev1.Pod) *fwktype.Status {
+	return pl.admit(pod)
+}
+
+// PreFilter intercepts gated pods that are already in the scheduling cycle, e.g. pods that
+// entered the ActiveQ before the controller applied the schedule-admission label.
+func (pl *Plugin) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
+	if status := pl.admit(pod); !status.IsSuccess() {
+		return nil, status
+	}
+	return nil, nil
+}
+
+func (pl *Plugin) PreFilterExtensions() fwktype.PreFilterExtensions {
+	return nil
+}
+
+// admit rejects the pod as long as it carries schedule-admission gate labels.
+func (pl *Plugin) admit(pod *corev1.Pod) *fwktype.Status {
 	if extension.HasScheduleAdmissionLabels(pod, pl.enablePrefixMatch) {
 		gates := extension.GetScheduleAdmissionGates(pod, pl.enablePrefixMatch)
 		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
