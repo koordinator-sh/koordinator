@@ -146,6 +146,22 @@ func (f *FailureWatcher) Start(ctx context.Context) error {
 	}
 }
 
+// FailedPodNames returns the set of distinct pod names that received at least
+// one FailedScheduling event. Exposed as a set (not just a count) so callers
+// like waitForSettle can compute a true union with the scheduled-pod set
+// instead of summing two counts that can overlap (a pod that transiently
+// fails and is later scheduled appears in both sets).
+// Safe to call after cancelling Start's context.
+func (f *FailureWatcher) FailedPodNames() map[string]struct{} {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make(map[string]struct{}, len(f.failedPods))
+	for name := range f.failedPods {
+		out[name] = struct{}{}
+	}
+	return out
+}
+
 // Stats returns the number of distinct pods that received at least one
 // FailedScheduling event, and the total event count across all pods.
 // Safe to call after cancelling Start's context.

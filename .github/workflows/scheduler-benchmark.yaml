@@ -126,7 +126,7 @@ jobs:
       # pure threshold breaches — a regression is already reported by the result
       # JSON and uploading 30+ kubectl commands on every slow run adds noise.
       - name: Debug on failure
-        if: steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure' || steps.elasticquota.conclusion == 'failure'
+        if: always() && (steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure' || steps.elasticquota.outcome == 'failure')
         run: |
           echo "=== kind clusters ==="
           kind get clusters || true

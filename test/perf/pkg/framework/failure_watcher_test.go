@@ -111,4 +111,20 @@ func TestFailureWatcher_EventRouting(t *testing.T) {
 	if got := fw.QuotaBlockedPodCount(); got != 1 {
 		t.Errorf("QuotaBlockedPodCount() = %d, want 1 (only pod-a)", got)
 	}
+
+	// FailedPodNames must return the same pod-name set as Stats' distinct-pod
+	// count — used by accountedForCount to build a true |scheduled ∪ failed|
+	// union rather than a sum that double-counts a pod that failed then scheduled.
+	names := fw.FailedPodNames()
+	if len(names) != 2 {
+		t.Errorf("len(FailedPodNames()) = %d, want 2", len(names))
+	}
+	for _, want := range []string{"pod-a", "pod-b"} {
+		if _, ok := names[want]; !ok {
+			t.Errorf("FailedPodNames() missing %q", want)
+		}
+	}
+	if _, ok := names["pod-outside-run"]; ok {
+		t.Errorf("FailedPodNames() contains pod-outside-run — filtering failed")
+	}
 }

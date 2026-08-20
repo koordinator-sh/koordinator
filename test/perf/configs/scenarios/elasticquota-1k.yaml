@@ -26,8 +26,15 @@ quotaCPU: "150"
 quotaMemory: "300Gi"
 timeout: 10m
 thresholds:
-  throughputDropPct: 10
-  p99IncreasePct: 20
+  # Widened relative to basic/gang: this scenario's ~10s window and integer-
+  # second timestamps mean a single second of quantization is ~10% of the
+  # window (vs. ~2.6% for basic-1k's ~38s window). 10%/20% (basic/gang's
+  # values) would flap on timestamp quantization alone, before any real
+  # regression. 25%/40% leaves headroom for that quantization plus normal
+  # CI-runner jitter while still catching a meaningful regression (e.g. the
+  # 2x-slowdown case the round-4 review verified: ~47% throughput drop).
+  throughputDropPct: 25
+  p99IncreasePct: 40
   # ~700/1000 pods failing is the expected, by-design outcome for this scenario.
   # The default 1% gate (meant for basic/gang) would trip on every run. 75%
   # gives a small margin above the expected ~70% so a genuine worsening (e.g.
