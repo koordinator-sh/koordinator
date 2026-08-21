@@ -24,7 +24,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
@@ -74,11 +73,11 @@ func (w *Workflow) bindingCycle(
 				NumAllNodes: 1,
 				Pod:         assumedPodInfo.Pod,
 				Diagnosis: framework.Diagnosis{
-					NodeToStatus:         framework.NewDefaultNodeToStatus(),
-					UnschedulablePlugins: sets.New(status.Plugin()),
+					NodeToStatus: framework.NewDefaultNodeToStatus(),
 				},
 			}
 			fitErr.Diagnosis.NodeToStatus.Set(scheduleResult.SuggestedHost, status)
+			fitErr.Diagnosis.AddPluginStatus(status)
 			return fwktype.NewStatus(status.Code()).WithError(fitErr)
 		}
 		return status
@@ -174,7 +173,8 @@ func (w *Workflow) finishBinding(logger klog.Logger, fwk framework.Framework, as
 
 // handleBindingCycleError mirrors scheduler.handleBindingCycleError (schedule_one.go:356): it
 // unreserves and forgets the assumed pod, moves other pods that may now be schedulable, and
-// requeues the failed pod through the scheduler's failure handler.
+// requeues the failed pod through the scheduler failure handler, preserving Koordinator's
+// error handling, monitoring, and auditing hooks.
 func (w *Workflow) handleBindingCycleError(
 	ctx context.Context,
 	state fwktype.CycleState,

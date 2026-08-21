@@ -20,12 +20,14 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	kubeclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
+	kubefeatures "k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler"
 )
 
-// Workflow contains the scheduler state used by the copied upstream scheduling loop.
+// Workflow contains the scheduler state shared by custom scheduling workflows.
 type Workflow struct {
 	sched      *scheduler.Scheduler
 	kubeClient kubeclientset.Interface
@@ -33,11 +35,20 @@ type Workflow struct {
 	nominatedNodeNameForExpectationEnabled bool
 }
 
+// NewWorkflow creates a scheduling loop over the shared scheduler state.
+func NewWorkflow(sched *scheduler.Scheduler, kubeClient kubeclientset.Interface) *Workflow {
+	return &Workflow{
+		sched:                                  sched,
+		kubeClient:                             kubeClient,
+		nominatedNodeNameForExpectationEnabled: utilfeature.DefaultFeatureGate.Enabled(kubefeatures.NominatedNodeNameForExpectation),
+	}
+}
+
 // Run mirrors scheduler.Run (k8s.io/kubernetes/pkg/scheduler/scheduler.go:538): it starts the
 // scheduling queue and the per-pod scheduling loop in a dedicated goroutine (the loop hangs on
 // Pop when no pods are pending, which would otherwise deadlock the shutdown), then blocks until
 // the context is done and closes everything down.
-func (w *Workflow) Run(ctx context.Context) {
+func (w *Workflow) Run(ctx context.Context, scheduleOne func(context.Context)) {
 	logger := klog.FromContext(ctx)
 	w.sched.SchedulingQueue.Run(logger)
 
@@ -45,7 +56,7 @@ func (w *Workflow) Run(ctx context.Context) {
 		w.sched.APIDispatcher.Run(logger)
 	}
 
-	go wait.UntilWithContext(ctx, w.ScheduleOne, 0)
+	go wait.UntilWithContext(ctx, scheduleOne, 0)
 
 	<-ctx.Done()
 	if w.sched.APIDispatcher != nil {

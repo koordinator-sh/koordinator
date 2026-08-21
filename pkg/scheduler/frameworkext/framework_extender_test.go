@@ -61,6 +61,26 @@ func init() {
 	}
 }
 
+type testEquivalenceCapacityPlugin struct{}
+
+func (p *testEquivalenceCapacityPlugin) Name() string {
+	return "TestEquivalenceCapacityPlugin"
+}
+
+func (p *testEquivalenceCapacityPlugin) EquivalenceCapacity(context.Context, fwktype.CycleState, *corev1.Pod, fwktype.NodeInfo) (int64, bool, bool) {
+	return 1, true, true
+}
+
+func TestFrameworkExtenderCollectsEquivalenceCapacityPlugins(t *testing.T) {
+	impl := &frameworkExtenderImpl{}
+	plugin := &testEquivalenceCapacityPlugin{}
+	impl.updatePlugins(plugin)
+
+	plugins := impl.EquivalenceCapacityPlugins()
+	assert.Len(t, plugins, 1)
+	assert.Same(t, plugin, plugins[0])
+}
+
 // TestForgetPod_SchedulerNil verifies that ForgetPod does not panic when the scheduler
 // has not been initialized yet (InitScheduler not called), and that all registered
 // ForgetPodHandlers are still invoked so plugin-level accounting stays consistent.
