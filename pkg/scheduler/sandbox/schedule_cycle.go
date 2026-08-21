@@ -23,11 +23,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
+
+	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 // scheduleResult mirrors scheduler.ScheduleResult (scheduler.go:159) but keeps the nominatingInfo
@@ -36,6 +40,23 @@ import (
 type scheduleResult struct {
 	scheduler.ScheduleResult
 	nominatingInfo *fwktype.NominatingInfo
+}
+
+// decideFunc produces the scheduling decision for a pod, mirroring scheduler.SchedulePod's
+// contract: it returns a ScheduleResult with the suggested host, or a *framework.FitError when
+// the pod does not fit any node.
+type decideFunc func(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod) (scheduler.ScheduleResult, error)
+
+// schedulingDecision identifies the node-selection path and whether the custom workflow
+// must invoke the Koordinator lifecycle hooks that normally wrap Scheduler.SchedulePod.
+type schedulingDecision struct {
+	decide                       decideFunc
+	workflowRunsKoordinatorHooks bool
+}
+
+// decideDefault delegates to the upstream schedulePod implementation.
+func (w *Workflow) decideDefault(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+	return w.sched.SchedulePod(ctx, schedFramework, state, pod)
 }
 
 // frameworkForPod mirrors scheduler.frameworkForPod (schedule_one.go:390).
@@ -69,8 +90,8 @@ func (w *Workflow) skipPodSchedule(ctx context.Context, fwk framework.Framework,
 }
 
 // schedulingCycle mirrors scheduler.schedulingCycle (schedule_one.go:141): it runs the full
-// decision path (SchedulePod = PreFilter/Filter/Score), falls back to PostFilter on fit errors,
-// then assumes the pod and runs Reserve and Permit.
+// decision path via decide, falls back to PostFilter on fit errors, then assumes the pod and
+// runs Reserve and Permit.
 func (w *Workflow) schedulingCycle(
 	ctx context.Context,
 	state fwktype.CycleState,
@@ -78,11 +99,15 @@ func (w *Workflow) schedulingCycle(
 	podInfo *framework.QueuedPodInfo,
 	start time.Time,
 	podsToActivate *framework.PodsToActivate,
+	decision schedulingDecision,
 ) (*scheduleResult, *framework.QueuedPodInfo, *fwktype.Status) {
 	logger := klog.FromContext(ctx)
 	pod := podInfo.Pod
-	result, err := w.sched.SchedulePod(ctx, schedFramework, state, pod)
+	result, err := decision.decide(ctx, state, schedFramework, pod)
 	if err != nil {
+		if decision.workflowRunsKoordinatorHooks {
+			frameworkext.RecordScheduleDiagnosis(state, err)
+		}
 		defer func() {
 			metrics.SchedulingAlgorithmLatency.Observe(metrics.SinceInSeconds(start))
 		}()
@@ -124,13 +149,19 @@ func (w *Workflow) schedulingCycle(
 		return &scheduleResult{nominatingInfo: nominatingInfo}, podInfo, fwktype.NewStatus(fwktype.Unschedulable).WithError(err)
 	}
 
+	if decision.workflowRunsKoordinatorHooks {
+		if status := w.runPreAssumeHooks(ctx, state, schedFramework, pod, result.SuggestedHost); !status.IsSuccess() {
+			return &scheduleResult{nominatingInfo: clearNominatedNode}, podInfo, status
+		}
+	}
+
 	metrics.SchedulingAlgorithmLatency.Observe(metrics.SinceInSeconds(start))
 	// Tell the cache to assume that a pod now is running on a given node, even though it hasn't been bound yet.
 	// This allows us to keep scheduling without waiting on binding to occur.
 	assumedPodInfo := podInfo.DeepCopy()
 	assumedPod := assumedPodInfo.Pod
 	// assume modifies `assumedPod` by setting NodeName=scheduleResult.SuggestedHost
-	err = w.assume(logger, assumedPod, result.SuggestedHost)
+	err = w.assume(logger, assumedPod, result.SuggestedHost, schedFramework)
 	if err != nil {
 		// This is most probably result of a BUG in retrying logic.
 		// We report an error here so that pod scheduling can be retried.
@@ -198,24 +229,42 @@ func (w *Workflow) schedulingCycle(
 	return &scheduleResult{ScheduleResult: result}, assumedPodInfo, nil
 }
 
-// assume signals to the cache that a pod is already in the cache, so that binding can be asynchronous.
-// assume modifies `assumed`.
-func (w *Workflow) assume(logger klog.Logger, assumed *corev1.Pod, host string) error {
-	// Optimistically assume that the binding will succeed and send it to apiserver
-	// in the background.
-	// If the binding fails, scheduler will release resources allocated to assumed pod
-	// immediately.
+// assume signals to the cache that a pod is already assigned so binding can run asynchronously.
+// It modifies assumed by setting its node name.
+func (w *Workflow) assume(logger klog.Logger, assumed *corev1.Pod, host string, schedFramework framework.Framework) error {
 	assumed.Spec.NodeName = host
-
 	if err := w.sched.Cache.AssumePod(logger, assumed); err != nil {
-		logger.Error(err, "Scheduler cache AssumePod failed")
+		logger.Error(err, "Scheduler cache AssumePod failed", "pod", klog.KObj(assumed), "node", host)
 		return err
 	}
+	schedFramework.DeleteNominatedPodIfExists(assumed)
+	return nil
+}
 
-	// If "assumed" is a nominated pod, remove it from the internal cache.
-	if w.sched.SchedulingQueue != nil {
-		w.sched.SchedulingQueue.DeleteNominatedPodIfExists(assumed)
+func (w *Workflow) runPreAssumeHooks(
+	ctx context.Context,
+	state fwktype.CycleState,
+	schedFramework framework.Framework,
+	pod *corev1.Pod,
+	nodeName string,
+) *fwktype.Status {
+	extender, ok := schedFramework.(frameworkext.FrameworkExtender)
+	if !ok {
+		return nil
 	}
 
+	if reservationNominator := extender.GetReservationNominator(); reservationNominator != nil {
+		if status := reservationNominator.ReservationNominate(ctx, state, pod, nodeName); !status.IsSuccess() {
+			return status
+		}
+	}
+
+	if k8sfeature.DefaultFeatureGate.Enabled(koordfeatures.ResizePod) {
+		status := extender.RunResizePod(ctx, state, pod, nodeName)
+		if !status.IsSuccess() {
+			schedFramework.RunReservePluginsUnreserve(ctx, state, pod, nodeName)
+			return status
+		}
+	}
 	return nil
 }

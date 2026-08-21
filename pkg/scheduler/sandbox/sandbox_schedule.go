@@ -29,17 +29,19 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
 	fwktype "k8s.io/kube-scheduler/framework"
-	kubefeatures "k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/backend/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
-	utiltrace "k8s.io/utils/trace"
+
+	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	schedulerframeworkext "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
 const (
@@ -57,18 +59,123 @@ const (
 
 type equivalenceScheduling struct {
 	sched                    *scheduler.Scheduler
-	nextStartNodeIndex       int
+	equivalence              *equivalenceClassCache
+	nextStartNodeIndex       atomic.Int64
 	percentageOfNodesToScore int32
 }
 
 func newEquivalenceScheduling(sched *scheduler.Scheduler, percentageOfNodesToScore *int32) *equivalenceScheduling {
 	s := &equivalenceScheduling{
-		sched: sched,
+		sched:       sched,
+		equivalence: newEquivalenceClassCache(defaultEquivalenceClassTTL),
 	}
 	if percentageOfNodesToScore != nil {
 		s.percentageOfNodesToScore = *percentageOfNodesToScore
 	}
 	return s
+}
+
+func (s *equivalenceScheduling) registerNodeEventHandler(informer toolscache.SharedIndexInformer) error {
+	// Any change of the node inventory may invalidate cached equivalence-class decisions;
+	// flushing everything is the conservative choice and rebuilding is one full scheduling
+	// cycle away.
+	_, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
+		AddFunc:    func(obj interface{}) { s.flushEquivalenceCache("node_event") },
+		UpdateFunc: func(oldObj, newObj interface{}) { s.flushEquivalenceCache("node_event") },
+		DeleteFunc: func(obj interface{}) { s.flushEquivalenceCache("node_event") },
+	})
+	return err
+}
+
+func (s *equivalenceScheduling) handles(pod *corev1.Pod) bool {
+	return apiext.IsSandboxPod(pod) && apiext.GetSandboxTemplateHash(pod) != ""
+}
+
+func (s *equivalenceScheduling) flushEquivalenceCache(reason string) {
+	s.equivalence.flush()
+	koordmetrics.SandboxEquivalenceClassFlushes.WithLabelValues(reason).Inc()
+}
+
+type sandboxPreFilterResult struct {
+	result             *fwktype.PreFilterResult
+	status             *fwktype.Status
+	unscheduledPlugins sets.Set[string]
+}
+
+func (s *equivalenceScheduling) runSandboxPreFilter(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod) sandboxPreFilterResult {
+	result, status, unscheduledPlugins := schedFramework.RunPreFilterPlugins(ctx, state, pod)
+	return sandboxPreFilterResult{
+		result:             result,
+		status:             status,
+		unscheduledPlugins: unscheduledPlugins,
+	}
+}
+
+// decide is the decision path for sandbox pods carrying a template hash. It first tries
+// the equivalence-class fast path; on a miss it runs a full self-orchestrated scheduling cycle
+// (the exported scheduler.SchedulePod cannot be used here because ScheduleResult only carries
+// the winning host, not the score-ordered feasible list needed for cache backfill) and backfills
+// the class.
+func (s *equivalenceScheduling) decide(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod) (result scheduler.ScheduleResult, err error) {
+	start := time.Now()
+	path := "full"
+	resultLabel := "error"
+	defer func() {
+		if err == nil {
+			resultLabel = "success"
+		} else if _, ok := err.(*framework.FitError); ok {
+			resultLabel = "unschedulable"
+		}
+		koordmetrics.SandboxSchedulingDuration.WithLabelValues(schedFramework.ProfileName(), path, resultLabel).Observe(time.Since(start).Seconds())
+		if err == nil && result.SuggestedHost != "" {
+			koordmetrics.PodSchedulingEvaluatedNodes.Observe(float64(result.EvaluatedNodes))
+			koordmetrics.PodSchedulingFeasibleNodes.Observe(float64(result.FeasibleNodes))
+		}
+	}()
+
+	hash := apiext.GetSandboxTemplateHash(pod)
+	snapshot, err := s.updateSnapshot(klog.FromContext(ctx), schedFramework)
+	if err != nil {
+		return scheduler.ScheduleResult{}, err
+	}
+	if snapshot.NumNodes() == 0 {
+		return scheduler.ScheduleResult{}, scheduler.ErrNoNodesAvailable
+	}
+
+	preFilter := s.runSandboxPreFilter(ctx, state, schedFramework, pod)
+	if !preFilter.status.IsSuccess() {
+		koordmetrics.SandboxEquivalenceClassMisses.WithLabelValues(schedFramework.ProfileName(), equivalenceCacheMissPreFilter.String()).Inc()
+		result, _, err = s.scheduleSandboxPod(ctx, state, schedFramework, pod, snapshot, preFilter)
+		return result, err
+	}
+
+	if node, ok, reason := s.scheduleFromEquivalenceClass(ctx, state, schedFramework, pod, hash, snapshot, preFilter); ok {
+		path = "fast"
+		koordmetrics.SandboxEquivalenceClassHits.WithLabelValues(schedFramework.ProfileName()).Inc()
+		return scheduler.ScheduleResult{SuggestedHost: node, EvaluatedNodes: 1, FeasibleNodes: 1}, nil
+	} else {
+		if reason == "" {
+			reason = equivalenceCacheMissEmpty
+		}
+		koordmetrics.SandboxEquivalenceClassMisses.WithLabelValues(schedFramework.ProfileName(), reason.String()).Inc()
+	}
+
+	result, orderedNodes, err := s.scheduleSandboxPod(ctx, state, schedFramework, pod, snapshot, preFilter)
+	if err == nil {
+		// The quota baselines reflect every occupant (running and assumed) at decision time.
+		// The pod paying for this full path occupies one slot on the suggested host itself.
+		cycle := s.sched.CurrentCycle()
+		s.equivalence.store(hash, buildQuotaNodesWithPlugins(ctx, state, pod, orderedNodes, schedFramework.SnapshotSharedLister(), s.equivalenceCapacityPlugins(schedFramework)), cycle)
+		s.equivalence.recordConsumption(hash, result.SuggestedHost, cycle)
+	}
+	return result, err
+}
+
+func (s *equivalenceScheduling) equivalenceCapacityPlugins(schedFramework framework.Framework) []schedulerframeworkext.EquivalenceCapacityPlugin {
+	if extender, ok := schedFramework.(schedulerframeworkext.FrameworkExtender); ok {
+		return extender.EquivalenceCapacityPlugins()
+	}
+	return nil
 }
 
 func (s *equivalenceScheduling) updateSnapshot(logger klog.Logger, schedFramework framework.Framework) (*cache.Snapshot, error) {
@@ -82,30 +189,79 @@ func (s *equivalenceScheduling) updateSnapshot(logger klog.Logger, schedFramewor
 	return snapshot, nil
 }
 
-// schedulePod tries to schedule the given pod to one of the nodes in the node list.
-// If it succeeds, it will return the name of the node.
-// If it fails, it will return a FitError with reasons.
-func (s *equivalenceScheduling) schedulePod(ctx context.Context, schedFramework framework.Framework, state fwktype.CycleState, pod *corev1.Pod) (result scheduler.ScheduleResult, err error) {
-	trace := utiltrace.New("Scheduling", utiltrace.Field{Key: "namespace", Value: pod.Namespace}, utiltrace.Field{Key: "name", Value: pod.Name})
-	defer trace.LogIfLong(100 * time.Millisecond)
-	snapshot, err := s.updateSnapshot(klog.FromContext(ctx), schedFramework)
+// scheduleFromEquivalenceClass tries to reuse the cached decision of the pod's equivalence
+// class: it takes the next cached node and validates it with a single-node Filter pass. PreFilter
+// still runs per pod because plugins read its state from the cycle state (e.g. NodeResourcesFit's
+// Filter reads the PreFilter-computed pod requests). The second return value is false when the
+// class cannot serve this pod (miss, expiry, exhaustion, or a plugin error), and the caller
+// falls back to the full scheduling path.
+func (s *equivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod, hash string, snapshot *cache.Snapshot, preFilter sandboxPreFilterResult) (string, bool, equivalenceCacheMissReason) {
+	if !preFilter.status.IsSuccess() {
+		return "", false, equivalenceCacheMissPreFilter
+	}
+	var sawFilterRejected, sawSnapshotError bool
+	for {
+		node, ok, reason := s.equivalence.next(hash, s.sched.CurrentCycle())
+		if !ok {
+			if sawFilterRejected && reason == equivalenceCacheMissQuotaExhausted {
+				return "", false, equivalenceCacheMissFilterRejected
+			}
+			if sawSnapshotError && reason == equivalenceCacheMissQuotaExhausted {
+				return "", false, equivalenceCacheMissSnapshotError
+			}
+			return "", false, reason
+		}
+		// Respect this pod's PreFilter node restriction: same-class pods should produce the
+		// same PreFilter result, but the restriction is cheap to honor and keeps the reuse safe.
+		if !preFilter.result.AllNodes() && !preFilter.result.NodeNames.Has(node) {
+			continue
+		}
+		nodeInfo, err := snapshot.NodeInfos().Get(node)
+		if err != nil {
+			// The node is gone from the snapshot; drop it and try the next candidate.
+			sawSnapshotError = true
+			continue
+		}
+		filterStatus := schedFramework.RunFilterPluginsWithNominatedPods(ctx, state, pod, nodeInfo)
+		if filterStatus.IsSuccess() {
+			return node, true, ""
+		}
+		if filterStatus.Code() == fwktype.Error {
+			s.flushEquivalenceCache(equivalenceCacheMissFilterError.String())
+			return "", false, equivalenceCacheMissFilterError
+		}
+		// The cached node no longer fits (its resources were consumed since the decision was
+		// cached); drop it and try the next candidate.
+		sawFilterRejected = true
+	}
+}
+
+func advanceNodeIndex(index *atomic.Int64, delta, nodeCount int64) {
+	if nodeCount <= 0 {
+		return
+	}
+	for {
+		old := index.Load()
+		next := (old + delta) % nodeCount
+		if index.CompareAndSwap(old, next) {
+			return
+		}
+	}
+}
+
+// scheduleSandboxPod mirrors scheduler.schedulePod (schedule_one.go:421) for sandbox pods,
+// returning the score-ordered feasible node names alongside the result for cache backfill.
+// Unlike the upstream it does not consult the opportunistic-batching node hint: the sandbox
+// equivalence class replaces that mechanism for the multi-pod-per-node case.
+func (s *equivalenceScheduling) scheduleSandboxPod(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod, snapshot *cache.Snapshot, preFilter sandboxPreFilterResult) (scheduler.ScheduleResult, []string, error) {
+	var result scheduler.ScheduleResult
+
+	feasibleNodes, diagnosis, err := s.findNodesThatFitPod(ctx, schedFramework, state, pod, snapshot, preFilter)
 	if err != nil {
-		return result, err
+		return result, nil, err
 	}
-	trace.Step("Snapshotting scheduler cache and node infos done")
-
-	if snapshot.NumNodes() == 0 {
-		return result, scheduler.ErrNoNodesAvailable
-	}
-
-	feasibleNodes, diagnosis, nodeHint, signature, err := s.findNodesThatFitPod(ctx, schedFramework, state, pod, snapshot)
-	if err != nil {
-		return result, err
-	}
-	trace.Step("Computing predicates done")
-
 	if len(feasibleNodes) == 0 {
-		return result, &framework.FitError{
+		return result, nil, &framework.FitError{
 			Pod:         pod,
 			NumAllNodes: snapshot.NumNodes(),
 			Diagnosis:   diagnosis,
@@ -115,45 +271,33 @@ func (s *equivalenceScheduling) schedulePod(ctx context.Context, schedFramework 
 	// When only one node after predicate, just use it.
 	if len(feasibleNodes) == 1 {
 		node := feasibleNodes[0].Node().Name
-		if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.OpportunisticBatching) {
-			schedFramework.StoreScheduleResults(ctx, signature, nodeHint, node, nil, s.sched.CurrentCycle())
-		}
 		return scheduler.ScheduleResult{
 			SuggestedHost:  node,
 			EvaluatedNodes: 1 + diagnosis.NodeToStatus.Len(),
 			FeasibleNodes:  1,
-		}, nil
+		}, []string{node}, nil
 	}
 
 	priorityList, err := prioritizeNodes(ctx, s.sched.Extenders, schedFramework, state, pod, feasibleNodes)
 	if err != nil {
-		return result, err
+		return result, nil, err
 	}
-
 	sortedPrioritizedNodes := newSortedNodeScores(priorityList)
-	node := sortedPrioritizedNodes.Pop()
-	trace.Step("Prioritizing done")
-
-	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.OpportunisticBatching) {
-		schedFramework.StoreScheduleResults(ctx, signature, nodeHint, node, sortedPrioritizedNodes, s.sched.CurrentCycle())
+	orderedNodes := make([]string, 0, sortedPrioritizedNodes.Len())
+	for sortedPrioritizedNodes.Len() > 0 {
+		orderedNodes = append(orderedNodes, sortedPrioritizedNodes.Pop())
 	}
 
 	return scheduler.ScheduleResult{
-		SuggestedHost:  node,
+		SuggestedHost:  orderedNodes[0],
 		EvaluatedNodes: len(feasibleNodes) + diagnosis.NodeToStatus.Len(),
 		FeasibleNodes:  len(feasibleNodes),
-	}, err
+	}, orderedNodes, nil
 }
 
-// Filters the nodes to find the ones that fit the pod based on the framework
-// filter plugins and filter extenders.
-func (s *equivalenceScheduling) findNodesThatFitPod(
-	ctx context.Context,
-	schedFramework framework.Framework,
-	state fwktype.CycleState,
-	pod *corev1.Pod,
-	snapshot *cache.Snapshot,
-) ([]fwktype.NodeInfo, framework.Diagnosis, string, fwktype.PodSignature, error) {
+// findNodesThatFitPod mirrors scheduler.findNodesThatFitPod (schedule_one.go:482), without the
+// opportunistic-batching node hint (replaced by the sandbox equivalence class).
+func (s *equivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFramework framework.Framework, state fwktype.CycleState, pod *corev1.Pod, snapshot *cache.Snapshot, preFilter sandboxPreFilterResult) ([]fwktype.NodeInfo, framework.Diagnosis, error) {
 	logger := klog.FromContext(ctx)
 	diagnosis := framework.Diagnosis{
 		NodeToStatus: framework.NewDefaultNodeToStatus(),
@@ -161,14 +305,16 @@ func (s *equivalenceScheduling) findNodesThatFitPod(
 
 	allNodes, err := snapshot.NodeInfos().List()
 	if err != nil {
-		return nil, diagnosis, "", nil, err
+		return nil, diagnosis, err
 	}
-	// Run "prefilter" plugins.
-	preRes, status, unscheduledPlugins := schedFramework.RunPreFilterPlugins(ctx, state, pod)
-	diagnosis.UnschedulablePlugins = unscheduledPlugins
+	// PreFilter runs once in decide and its result is reused by both the
+	// equivalence-class fast path and the full fallback path.
+	preRes := preFilter.result
+	status := preFilter.status
+	diagnosis.UnschedulablePlugins = preFilter.unscheduledPlugins
 	if !status.IsSuccess() {
 		if !status.IsRejected() {
-			return nil, diagnosis, "", nil, status.AsError()
+			return nil, diagnosis, status.AsError()
 		}
 		// All nodes in NodeToStatus will have the same status so that they can be handled in the preemption.
 		diagnosis.NodeToStatus.SetAbsentNodesStatus(status)
@@ -178,28 +324,19 @@ func (s *equivalenceScheduling) findNodesThatFitPod(
 		diagnosis.PreFilterMsg = msg
 		logger.V(5).Info("Status after running PreFilter plugins for pod", "pod", klog.KObj(pod), "status", msg)
 		diagnosis.AddPluginStatus(status)
-		return nil, diagnosis, "", nil, nil
-	}
-
-	var nodeHint string
-	var signature fwktype.PodSignature
-	if utilfeature.DefaultFeatureGate.Enabled(kubefeatures.OpportunisticBatching) {
-		// We get the node hint even if we have a nominated name for simplicity, but we could potentially avoid it
-		// in this scenario in the future.
-		nodeHint, signature = schedFramework.GetNodeHint(ctx, pod, state, s.sched.CurrentCycle())
+		return nil, diagnosis, nil
 	}
 
 	// "NominatedNodeName" can potentially be set in a previous scheduling cycle as a result of preemption.
 	// This node is likely the only candidate that will fit the pod, and hence we try it first before iterating over all nodes.
-	// We take the same tack for hinted nodes from the batch module.
-	if len(pod.Status.NominatedNodeName) > 0 || len(nodeHint) > 0 {
-		feasibleNodes, err := s.evaluateNominatedNode(ctx, pod, schedFramework, state, nodeHint, snapshot, diagnosis)
+	if len(pod.Status.NominatedNodeName) > 0 {
+		feasibleNodes, err := s.evaluateNominatedNode(ctx, pod, schedFramework, state, "", snapshot, diagnosis)
 		if err != nil {
 			utilruntime.HandleErrorWithContext(ctx, err, "Evaluation failed on nominated node", "pod", klog.KObj(pod), "node", pod.Status.NominatedNodeName)
 		}
 		// Nominated node passes all the filters, scheduler is good to assign this node to the pod.
 		if len(feasibleNodes) != 0 {
-			return feasibleNodes, diagnosis, nodeHint, signature, nil
+			return feasibleNodes, diagnosis, nil
 		}
 	}
 
@@ -213,20 +350,20 @@ func (s *equivalenceScheduling) findNodesThatFitPod(
 				nodes = append(nodes, nodeInfo)
 			}
 		}
-		diagnosis.NodeToStatus.SetAbsentNodesStatus(fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("node(s) didn't satisfy plugin(s) %v", sets.List(unscheduledPlugins))))
+		diagnosis.NodeToStatus.SetAbsentNodesStatus(fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("node(s) didn't satisfy plugin(s) %v", sets.List(preFilter.unscheduledPlugins))))
 	}
 	feasibleNodes, err := s.findNodesThatPassFilters(ctx, schedFramework, state, pod, &diagnosis, nodes)
-	// always try to update the s.nextStartNodeIndex regardless of whether an error has occurred
+	// always try to update the nextStartNodeIndex regardless of whether an error has occurred
 	// this is helpful to make sure that all the nodes have a chance to be searched
 	processedNodes := len(feasibleNodes) + diagnosis.NodeToStatus.Len()
-	s.nextStartNodeIndex = (s.nextStartNodeIndex + processedNodes) % len(allNodes)
+	advanceNodeIndex(&s.nextStartNodeIndex, int64(processedNodes), int64(len(allNodes)))
 	if err != nil {
-		return nil, diagnosis, nodeHint, signature, err
+		return nil, diagnosis, err
 	}
 
 	feasibleNodesAfterExtender, err := findNodesThatPassExtenders(ctx, s.sched.Extenders, pod, feasibleNodes, diagnosis.NodeToStatus)
 	if err != nil {
-		return nil, diagnosis, nodeHint, signature, err
+		return nil, diagnosis, err
 	}
 	if len(feasibleNodesAfterExtender) != len(feasibleNodes) {
 		// Extenders filtered out some nodes.
@@ -243,7 +380,7 @@ func (s *equivalenceScheduling) findNodesThatFitPod(
 		diagnosis.UnschedulablePlugins.Insert(framework.ExtenderName)
 	}
 
-	return feasibleNodesAfterExtender, diagnosis, nodeHint, signature, nil
+	return feasibleNodesAfterExtender, diagnosis, nil
 }
 
 func (s *equivalenceScheduling) evaluateNominatedNode(
@@ -303,7 +440,8 @@ func (s *equivalenceScheduling) hasExtenderFilters() bool {
 	return false
 }
 
-// findNodesThatPassFilters finds the nodes that fit the filter plugins.
+// findNodesThatPassFilters mirrors scheduler.findNodesThatPassFilters (schedule_one.go:625),
+// using the equivalence scheduling path's own nextStartNodeIndex instead of the scheduler's private one.
 func (s *equivalenceScheduling) findNodesThatPassFilters(
 	ctx context.Context,
 	schedFramework framework.Framework,
@@ -312,6 +450,9 @@ func (s *equivalenceScheduling) findNodesThatPassFilters(
 	diagnosis *framework.Diagnosis,
 	nodes []fwktype.NodeInfo) ([]fwktype.NodeInfo, error) {
 	numAllNodes := len(nodes)
+	if numAllNodes == 0 {
+		return nil, nil
+	}
 	numNodesToFind := s.numFeasibleNodesToFind(schedFramework.PercentageOfNodesToScore(), int32(numAllNodes))
 	if !s.hasExtenderFilters() && !s.hasScoring(schedFramework) {
 		numNodesToFind = 1
@@ -320,10 +461,11 @@ func (s *equivalenceScheduling) findNodesThatPassFilters(
 	// Create feasible list with enough space to avoid growing it
 	// and allow assigning.
 	feasibleNodes := make([]fwktype.NodeInfo, numNodesToFind)
+	startNodeIndex := int(s.nextStartNodeIndex.Load()) % numAllNodes
 
 	if !schedFramework.HasFilterPlugins() {
 		for i := range feasibleNodes {
-			feasibleNodes[i] = nodes[(s.nextStartNodeIndex+i)%numAllNodes]
+			feasibleNodes[i] = nodes[(startNodeIndex+i)%numAllNodes]
 		}
 		return feasibleNodes, nil
 	}
@@ -341,7 +483,7 @@ func (s *equivalenceScheduling) findNodesThatPassFilters(
 	checkNode := func(i int) {
 		// We check the nodes starting from where we left off in the previous scheduling cycle,
 		// this is to make sure all nodes have the same chance of being examined across pods.
-		nodeInfo := nodes[(s.nextStartNodeIndex+i)%numAllNodes]
+		nodeInfo := nodes[(startNodeIndex+i)%numAllNodes]
 		status := schedFramework.RunFilterPluginsWithNominatedPods(ctx, state, pod, nodeInfo)
 		if status.Code() == fwktype.Error {
 			errCh.SendErrorWithCancel(status.AsError(), func() {

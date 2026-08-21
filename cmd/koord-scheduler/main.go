@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scarceresourceavoidance"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scheduleadmission"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/schedulinghint"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/sandbox"
 
 	// Ensure metric package is initialized
 	_ "k8s.io/component-base/metrics/prometheus/clientgo"
@@ -67,6 +68,10 @@ func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
+
+	// Register custom workflows. When one is enabled, it takes over the scheduling loop
+	// instead of the default scheduler workflow.
+	app.KnownWorkflowList = append(app.KnownWorkflowList, sandbox.New())
 
 	// Register custom plugins to the scheduler framework.
 	// Later they can consist of scheduler profile(s) and hence

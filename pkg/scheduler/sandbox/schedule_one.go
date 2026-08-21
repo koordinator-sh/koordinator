@@ -21,11 +21,14 @@ import (
 	"math/rand"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
+
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 // pluginMetricsSamplePercent is the percentage of plugin metrics to be sampled,
@@ -36,12 +39,12 @@ const pluginMetricsSamplePercent = 10
 // whose asynchronous binding cycle failed, mirroring schedule_one.go.
 var clearNominatedNode = &fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: ""}
 
-// ScheduleOne mirrors scheduler.ScheduleOne (k8s.io/kubernetes/pkg/scheduler/schedule_one.go:65):
-// pops one pod from the scheduling queue, runs the scheduling cycle synchronously, and launches
-// the asynchronous binding cycle on success.
-func (w *Workflow) ScheduleOne(ctx context.Context) {
+// ScheduleOne selects the sandbox or default decision path, runs the scheduling cycle
+// synchronously, and launches the asynchronous binding cycle on success.
+func (w *SandboxCustomWorkflow) ScheduleOne(ctx context.Context) {
 	logger := klog.FromContext(ctx)
-	sched := w.sched
+	workflow := w.workflow
+	sched := workflow.sched
 	podInfo, err := sched.NextPod(logger)
 	if err != nil {
 		utilruntime.HandleErrorWithContext(ctx, err, "Error while retrieving next pod from scheduling queue")
@@ -57,7 +60,7 @@ func (w *Workflow) ScheduleOne(ctx context.Context) {
 	ctx = klog.NewContext(ctx, logger)
 	logger.V(4).Info("About to try and schedule pod", "pod", klog.KObj(pod))
 
-	fwk, err := w.frameworkForPod(pod)
+	fwk, err := workflow.frameworkForPod(pod)
 	if err != nil {
 		// This shouldn't happen, because we only accept for scheduling the pods
 		// which specify a scheduler name that matches one of the profiles.
@@ -65,7 +68,7 @@ func (w *Workflow) ScheduleOne(ctx context.Context) {
 		sched.SchedulingQueue.Done(pod.UID)
 		return
 	}
-	if w.skipPodSchedule(ctx, fwk, pod) {
+	if workflow.skipPodSchedule(ctx, fwk, pod) {
 		// We don't put this Pod back to the queue, but we have to cleanup the in-flight pods/events.
 		sched.SchedulingQueue.Done(pod.UID)
 		return
@@ -88,7 +91,12 @@ func (w *Workflow) ScheduleOne(ctx context.Context) {
 	schedulingCycleCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	scheduleResult, assumedPodInfo, status := w.schedulingCycle(schedulingCycleCtx, state, fwk, podInfo, start, podsToActivate)
+	decision := w.decisionForPod(pod)
+	if decision.workflowRunsKoordinatorHooks {
+		workflow.startKoordinatorSchedule(state, fwk, pod)
+	}
+
+	scheduleResult, assumedPodInfo, status := workflow.schedulingCycle(schedulingCycleCtx, state, fwk, podInfo, start, podsToActivate, decision)
 	if !status.IsSuccess() {
 		sched.FailureHandler(schedulingCycleCtx, fwk, assumedPodInfo, status, scheduleResult.nominatingInfo, start)
 		return
@@ -102,10 +110,34 @@ func (w *Workflow) ScheduleOne(ctx context.Context) {
 		metrics.Goroutines.WithLabelValues(metrics.Binding).Inc()
 		defer metrics.Goroutines.WithLabelValues(metrics.Binding).Dec()
 
-		status := w.bindingCycle(bindingCycleCtx, state, fwk, scheduleResult, assumedPodInfo, start, podsToActivate)
+		status := workflow.bindingCycle(bindingCycleCtx, state, fwk, scheduleResult, assumedPodInfo, start, podsToActivate)
 		if !status.IsSuccess() {
-			w.handleBindingCycleError(bindingCycleCtx, state, fwk, assumedPodInfo, start, scheduleResult, status)
+			workflow.handleBindingCycleError(bindingCycleCtx, state, fwk, assumedPodInfo, start, scheduleResult, status)
 			return
 		}
 	}()
+}
+
+func (w *SandboxCustomWorkflow) decisionForPod(pod *corev1.Pod) schedulingDecision {
+	if w.scheduling != nil && w.scheduling.handles(pod) {
+		return schedulingDecision{
+			decide:                       w.scheduling.decide,
+			workflowRunsKoordinatorHooks: true,
+		}
+	}
+	return schedulingDecision{decide: w.workflow.decideDefault}
+}
+
+func (w *Workflow) startKoordinatorSchedule(state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod) {
+	extender, ok := fwk.(frameworkext.FrameworkExtender)
+	if !ok {
+		return
+	}
+	frameworkext.InitDiagnosis(state, pod)
+	if starter, ok := fwk.(interface{ StartMonitoring(*corev1.Pod) }); ok {
+		starter.StartMonitoring(pod)
+	}
+	if auditor := extender.GetWorkloadAuditor(); auditor != nil {
+		auditor.RecordAttemptPod(pod)
+	}
 }
