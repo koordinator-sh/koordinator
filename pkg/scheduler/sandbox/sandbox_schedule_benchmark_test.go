@@ -286,7 +286,7 @@ func newSandboxBenchmarkScheduling(b *testing.B, ctx context.Context, percentage
 		Profiles: profile.Map{
 			"koord-scheduler": fwk,
 		},
-	}, nil)
-	s.equivalence = newEquivalenceClassCache(time.Hour)
+	}, nil, defaultEquivalenceClassCacheSize)
+	s.equivalence = newEquivalenceClassCache(time.Hour, defaultEquivalenceClassCacheSize)
 	return s
 }
