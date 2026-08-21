@@ -1850,6 +1850,26 @@ func Test_getNominatedReusableAlloc(t *testing.T) {
 			wantMatchedIndex: -1,
 			wantNominated:    true,
 		},
+		{
+			// RestoreReservationPreAllocation appends the pre-allocatable allocations to the ones
+			// already restored by RestoreReservation, and the latter carry no pre-allocatable pod.
+			// Such entries must be skipped rather than dereferenced.
+			name: "pre-allocating reserve pod with a plain matched reservation in the restore state",
+			pod:  preAllocReservePod,
+			setup: func(pl *Plugin) *nodeReservationRestoreStateData {
+				rInfo := newRInfo("pre-allocating", true)
+				pl.handle.GetReservationNominator().AddNominatedPreAllocation(rInfo, node.Name, preAllocatablePod)
+				return &nodeReservationRestoreStateData{
+					preAllocationRInfo: rInfo,
+					matched: []reusableAlloc{
+						{rInfo: newRInfo("plain", false), allocatable: reservedGPU(2), remained: reservedGPU(2)},
+						{rInfo: rInfo, preAllocatable: preAllocatablePod, allocatable: reservedGPU(7)},
+					},
+				}
+			},
+			wantMatchedIndex: 1,
+			wantNominated:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2007,4 +2027,82 @@ func Test_Plugin_Reserve_NominatedReservationMustNotSpill(t *testing.T) {
 			assert.Nil(t, state.allocationResult)
 		})
 	}
+}
+
+// Test_Plugin_FilterNominateReservation_PreAllocation checks that the pre-allocation branch skips the
+// allocations restored for the matched reservations, which carry no pre-allocatable pod, instead of
+// dereferencing them. RestoreReservationPreAllocation appends the pre-allocatable allocations to the
+// ones already restored by RestoreReservation, so both kinds can coexist in the matched list.
+func Test_Plugin_FilterNominateReservation_PreAllocation(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}}
+	suit := newPluginTestSuit(t, []*corev1.Node{node})
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	suit.Framework.SharedInformerFactory().Start(stopCh)
+	suit.Framework.SharedInformerFactory().WaitForCacheSync(stopCh)
+
+	wholeGPU := corev1.ResourceList{
+		apiext.ResourceGPUCore:        resource.MustParse("100"),
+		apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+		apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+	}
+	pl.nodeDeviceCache.updateNodeDevice(node.Name, &schedulingv1alpha1.Device{
+		Spec: schedulingv1alpha1.DeviceSpec{
+			Devices: []schedulingv1alpha1.DeviceInfo{
+				{Type: schedulingv1alpha1.GPU, Minor: ptr.To[int32](1), Health: true, Resources: wholeGPU.DeepCopy()},
+			},
+		},
+	})
+
+	preAllocatablePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "pre-allocatable-pod", UID: uuid.NewUUID()},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+				apiext.ResourceGPU: resource.MustParse("100"),
+			}},
+		}}},
+	}
+
+	cycleState := framework.NewCycleState()
+	_, status := pl.PreFilter(context.TODO(), cycleState, preAllocatablePod, nil)
+	assert.True(t, status.IsSuccess())
+
+	newRInfo := func(name string, preAllocation bool) *frameworkext.ReservationInfo {
+		return frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: name, UID: uuid.NewUUID()},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template:       &corev1.PodTemplateSpec{},
+				PreAllocation:  preAllocation,
+				AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			},
+			Status: schedulingv1alpha1.ReservationStatus{NodeName: node.Name},
+		})
+	}
+	reservedGPU := func() map[schedulingv1alpha1.DeviceType]deviceResources {
+		return map[schedulingv1alpha1.DeviceType]deviceResources{
+			schedulingv1alpha1.GPU: {1: wholeGPU.DeepCopy()},
+		}
+	}
+
+	preAllocRInfo := newRInfo("pre-allocating-reservation", true)
+	cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
+		nodeToState: frameworkext.NodeReservationRestoreStates{
+			node.Name: &nodeReservationRestoreStateData{
+				preAllocationRInfo: preAllocRInfo,
+				matched: []reusableAlloc{
+					// restored by RestoreReservation, so it has no pre-allocatable pod
+					{rInfo: newRInfo("plain-reservation", false), allocatable: reservedGPU(), remained: reservedGPU()},
+					// restored by RestoreReservationPreAllocation
+					{rInfo: preAllocRInfo, preAllocatable: preAllocatablePod, allocatable: reservedGPU(), remained: reservedGPU()},
+				},
+			},
+		},
+	})
+
+	status = pl.FilterNominateReservation(context.TODO(), cycleState, preAllocatablePod, preAllocRInfo, node.Name)
+	assert.True(t, status.IsSuccess(), "status: %v", status)
 }

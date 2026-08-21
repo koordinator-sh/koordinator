@@ -572,7 +572,8 @@ func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreS
 		return nil, false, nil
 	}
 	for i, v := range restoreState.matched {
-		if v.preAllocatable.GetUID() == preAllocatable.GetUID() {
+		// the allocations restored for the matched reservations carry no pre-allocatable pod
+		if v.preAllocatable != nil && v.preAllocatable.GetUID() == preAllocatable.GetUID() {
 			return restoreState.matched[i : i+1], true, nil
 		}
 	}

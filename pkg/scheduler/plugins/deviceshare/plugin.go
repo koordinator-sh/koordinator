@@ -475,7 +475,8 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 	// if pre-allocation, we filter the reserve pod with the pre-allocatable pod
 	if restoreState.preAllocationRInfo != nil {
 		for i, v := range restoreState.matched {
-			if v.preAllocatable.GetUID() == pod.GetUID() {
+			// the allocations restored for the matched reservations carry no pre-allocatable pod
+			if v.preAllocatable != nil && v.preAllocatable.GetUID() == pod.GetUID() {
 				allocIndex = i
 				break
 			}
