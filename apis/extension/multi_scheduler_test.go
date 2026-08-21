@@ -57,6 +57,47 @@ func TestGetSchedulerName(t *testing.T) {
 	assert.Equal(t, "default-scheduler", result, "Should return spec.SchedulerName when label is not present")
 }
 
+func TestIsSandboxPod(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		expected bool
+	}{
+		{
+			name:     "nil pod",
+			pod:      nil,
+			expected: false,
+		},
+		{
+			name: "pod with sandbox label true",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{LabelSandbox: "true"}},
+			},
+			expected: true,
+		},
+		{
+			name: "pod with sandbox label false",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{LabelSandbox: "false"}},
+			},
+			expected: false,
+		},
+		{
+			name: "pod without sandbox label",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"other-label": "true"}},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, IsSandboxPod(tt.pod))
+		})
+	}
+}
+
 func TestGetSchedulingHint(t *testing.T) {
 	// Test case 1: Nil pod
 	result, err := GetSchedulingHint(nil)

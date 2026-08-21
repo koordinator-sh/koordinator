@@ -49,6 +49,7 @@ type CustomWorkflowOptions struct {
 	KoordClient                koordclientset.Interface
 	RecorderFactory            func(name string) events.EventRecorder
 	KubeConfig                 *rest.Config
+	PercentageOfNodesToScore   *int32
 }
 
 func RunWorkflow(

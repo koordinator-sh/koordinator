@@ -446,6 +446,12 @@ func recordScheduleDiagnosis(cycleState fwktype.CycleState, err error) {
 	}
 }
 
+// RecordScheduleDiagnosis records scheduling errors for custom workflows that
+// bypass FrameworkExtenderFactory.scheduleOne.
+func RecordScheduleDiagnosis(cycleState fwktype.CycleState, err error) {
+	recordScheduleDiagnosis(cycleState, err)
+}
+
 func (f *FrameworkExtenderFactory) CollectSchedulePodResult(sched *scheduler.Scheduler) {
 	schedulePod := sched.SchedulePod
 	sched.SchedulePod = func(ctx context.Context, fwk framework.Framework, state fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {

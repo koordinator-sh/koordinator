@@ -569,6 +569,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 				KoordClient:                cc.KoordinatorClient,
 				RecorderFactory:            recorderFactory,
 				KubeConfig:                 cc.KubeConfig,
+				PercentageOfNodesToScore:   cc.ComponentConfig.PercentageOfNodesToScore,
 			})
 			if err != nil {
 				return nil, nil, nil, nil, err
