@@ -1189,8 +1189,11 @@ func Test_allocateWithNominated(t *testing.T) {
 		name              string
 		pod               *corev1.Pod
 		buildRestoreState func(rInfo *frameworkext.ReservationInfo) *nodeReservationRestoreStateData
+		nominate          bool
+		allocatePolicy    schedulingv1alpha1.ReservationAllocatePolicy
 		wantNil           bool
 		wantSuccess       bool
+		wantNominated     bool
 	}{
 		{
 			name: "reserve pod without pre-allocation",
@@ -1264,6 +1267,43 @@ func Test_allocateWithNominated(t *testing.T) {
 			wantNil:     true,
 			wantSuccess: true,
 		},
+		{
+			// The pod is nominated to a Restricted reservation whose reserved device is exhausted.
+			// It must be rejected instead of silently spilling over to the devices reserved by
+			// the other reservations or to the remaining devices of the node.
+			name: "normal pod nominated to an exhausted restricted reservation",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "normal-pod",
+					UID:  normalPodUID,
+				},
+			},
+			nominate:       true,
+			allocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			buildRestoreState: func(rInfo *frameworkext.ReservationInfo) *nodeReservationRestoreStateData {
+				return &nodeReservationRestoreStateData{
+					matched: []reusableAlloc{
+						{
+							rInfo: rInfo,
+							allocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+								schedulingv1alpha1.GPU: {
+									0: {
+										apiext.ResourceGPUCore:        resource.MustParse("50"),
+										apiext.ResourceGPUMemory:      resource.MustParse("4Gi"),
+										apiext.ResourceGPUMemoryRatio: resource.MustParse("50"),
+									},
+								},
+							},
+							// fully consumed by the other owner pods, so nothing is reusable
+							remained: nil,
+						},
+					},
+				}
+			},
+			wantNil:       true,
+			wantSuccess:   false,
+			wantNominated: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1289,7 +1329,13 @@ func Test_allocateWithNominated(t *testing.T) {
 			pl.nodeDeviceCache.updateNodeDevice("test-node", newDevice())
 
 			rInfo := newReservationInfo()
+			if tt.allocatePolicy != "" {
+				rInfo.Reservation.Spec.AllocatePolicy = tt.allocatePolicy
+			}
 			restoreState := tt.buildRestoreState(rInfo)
+			if tt.nominate {
+				pl.handle.GetReservationNominator().AddNominatedReservation(tt.pod, node.Name, rInfo)
+			}
 
 			state := &preFilterState{
 				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
@@ -1312,7 +1358,7 @@ func Test_allocateWithNominated(t *testing.T) {
 				pod:        tt.pod,
 			}
 
-			result, status := pl.allocateWithNominated(
+			result, nominated, status := pl.allocateWithNominated(
 				allocator,
 				state,
 				restoreState,
@@ -1332,6 +1378,7 @@ func Test_allocateWithNominated(t *testing.T) {
 			} else {
 				assert.False(t, status.IsSuccess())
 			}
+			assert.Equal(t, tt.wantNominated, nominated)
 		})
 	}
 }

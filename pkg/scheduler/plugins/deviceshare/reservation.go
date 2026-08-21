@@ -18,9 +18,12 @@ package deviceshare
 
 import (
 	"context"
+	"fmt"
+	"sort"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 
@@ -445,7 +448,7 @@ func calcRequiredDeviceResources(alloc *reusableAlloc, preemptibleInRR map[sched
 		}
 		for deviceType, minors := range minorHints {
 			resources := deviceResources{}
-			for minor := range minors.UnsortedList() {
+			for _, minor := range minors.UnsortedList() {
 				resources[minor] = corev1.ResourceList{}
 			}
 			required[deviceType] = resources
@@ -454,6 +457,11 @@ func calcRequiredDeviceResources(alloc *reusableAlloc, preemptibleInRR map[sched
 	return required
 }
 
+// allocateWithNominated tries to allocate the devices reserved by the reservation, or by the pre-allocatable pod,
+// nominated for the pod.
+// The second return value reports whether the pod has been nominated to a reservation. Once nominated, the caller
+// MUST NOT fall back to allocating the devices reserved by the other reservations. Otherwise the pod would be
+// accounted as an owner of the nominated reservation while occupying the devices reserved by a different one.
 func (p *Plugin) allocateWithNominated(
 	allocator *AutopilotAllocator,
 	state *preFilterState,
@@ -461,22 +469,25 @@ func (p *Plugin) allocateWithNominated(
 	node *corev1.Node,
 	pod *corev1.Pod,
 	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
-) (apiext.DeviceAllocations, *fwktype.Status) {
+) (apiext.DeviceAllocations, bool, *fwktype.Status) {
 	if reservationutil.IsReservePod(pod) && !reservationutil.IsReservePodPreAllocation(pod) {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	// if the pod is reservation-ignored, it should allocate the node unallocated resources and all the reserved
 	// unallocated resources.
 	if apiext.IsReservationIgnored(pod) {
-		return p.tryAllocateIgnoreReservation(allocator, state, restoreState, restoreState.matched, node, basicPreemptible)
+		result, status := p.tryAllocateIgnoreReservation(allocator, state, restoreState, restoreState.matched, node, basicPreemptible)
+		return result, false, status
 	}
 
-	nominatedReusableAlloc, status := p.getNominatedReusableAlloc(restoreState, pod, node)
+	nominatedReusableAlloc, nominated, status := p.getNominatedReusableAlloc(restoreState, pod, node)
 	if !status.IsSuccess() {
-		return nil, status
+		return nil, nominated, status
 	}
 
+	// The pod is going to be bound to the nominated reservation, so its devices have to be allocated from the
+	// reserved ones. Reject the allocation instead of falling back if the reserved devices are unsatisfied.
 	result, status := p.tryAllocateFromReusable(
 		allocator,
 		state,
@@ -485,9 +496,9 @@ func (p *Plugin) allocateWithNominated(
 		pod,
 		node,
 		basicPreemptible,
-		false,
+		len(nominatedReusableAlloc) > 0,
 	)
-	return result, status
+	return result, nominated, status
 }
 
 func (p *Plugin) scoreWithNominatedReservation(
@@ -525,42 +536,92 @@ func (p *Plugin) scoreWithNominatedReservation(
 	return score, status
 }
 
-func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreStateData, pod *corev1.Pod, node *corev1.Node) ([]reusableAlloc, *fwktype.Status) {
+// getNominatedReusableAlloc returns the reusable allocation of the reservation, or of the pre-allocatable pod,
+// nominated for the pod.
+// The second return value reports whether a reservation or a pre-allocatable pod has been nominated, no matter
+// whether it reserves any device resource.
+func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreStateData, pod *corev1.Pod, node *corev1.Node) ([]reusableAlloc, bool, *fwktype.Status) {
 	if !reservationutil.IsReservePod(pod) {
 		reservation := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
 		if reservation == nil {
-			return nil, nil
+			return nil, false, nil
 		}
 
 		for i, v := range restoreState.matched {
 			if v.rInfo.UID() == reservation.UID() {
-				return restoreState.matched[i : i+1], nil
+				return restoreState.matched[i : i+1], true, nil
 			}
 		}
-		klog.V(5).Infof("nominated reservation %v doesn't reserve any device resource, pod %s, node %s", klog.KObj(reservation), klog.KObj(pod), node.Name)
-		return nil, nil
+		klog.V(4).InfoS("nominated reservation doesn't reserve any device resource",
+			"reservation", reservation.GetName(), "reservationUID", reservation.UID(),
+			"pod", klog.KObj(pod), "node", node.Name, "matched", dumpReusableAllocs(restoreState.matched))
+		return nil, true, nil
 	}
 
 	if !reservationutil.IsReservePodPreAllocation(pod) {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	if restoreState.preAllocationRInfo == nil {
 		klog.V(5).Infof("node has no pre-allocatable device resource, pod %s, node %s", klog.KObj(pod), node.Name)
-		return nil, nil
+		return nil, false, nil
 	}
 
 	preAllocatable := p.handle.GetReservationNominator().GetNominatedPreAllocation(restoreState.preAllocationRInfo, node.Name)
 	if preAllocatable == nil {
-		return nil, nil
+		return nil, false, nil
 	}
 	for i, v := range restoreState.matched {
 		if v.preAllocatable.GetUID() == preAllocatable.GetUID() {
-			return restoreState.matched[i : i+1], nil
+			return restoreState.matched[i : i+1], true, nil
 		}
 	}
-	klog.V(5).Infof("nominated pre-allocatable %v doesn't reserve any device resource, pod %s, node %s", klog.KObj(preAllocatable), klog.KObj(pod), node.Name)
-	return nil, nil
+	klog.V(4).InfoS("nominated pre-allocatable pod doesn't reserve any device resource",
+		"preAllocatable", klog.KObj(preAllocatable), "preAllocatableUID", preAllocatable.GetUID(),
+		"pod", klog.KObj(pod), "node", node.Name, "matched", dumpReusableAllocs(restoreState.matched))
+	return nil, true, nil
+}
+
+// dumpReusableAllocs summarizes the reserved and the still remained device minors of the reusable allocations,
+// which helps to diagnose why a pod fails to reuse the devices reserved by its nominated reservation.
+func dumpReusableAllocs(allocs []reusableAlloc) []string {
+	if len(allocs) == 0 {
+		return nil
+	}
+	dumps := make([]string, 0, len(allocs))
+	for i := range allocs {
+		alloc := &allocs[i]
+		var name, uid, policy string
+		if alloc.rInfo != nil {
+			name, uid, policy = alloc.rInfo.GetName(), string(alloc.rInfo.UID()), string(alloc.rInfo.GetAllocatePolicy())
+		}
+		if alloc.preAllocatable != nil {
+			name = name + "/" + alloc.preAllocatable.Name
+		}
+		dumps = append(dumps, fmt.Sprintf("%s(uid=%s, policy=%s, allocatable=%v, remained=%v)",
+			name, uid, policy, dumpDeviceMinors(alloc.allocatable), dumpDeviceMinors(alloc.remained)))
+	}
+	return dumps
+}
+
+// dumpDeviceMinors lists the sorted minors which still hold non-zero resources per device type.
+func dumpDeviceMinors(resources map[schedulingv1alpha1.DeviceType]deviceResources) map[schedulingv1alpha1.DeviceType][]int {
+	if len(resources) == 0 {
+		return nil
+	}
+	r := make(map[schedulingv1alpha1.DeviceType][]int, len(resources))
+	for deviceType, minorResources := range resources {
+		minors := make([]int, 0, len(minorResources))
+		for minor, resource := range minorResources {
+			if quotav1.IsZero(resource) {
+				continue
+			}
+			minors = append(minors, minor)
+		}
+		sort.Ints(minors)
+		r[deviceType] = minors
+	}
+	return r
 }
 
 // isDeviceAllocationsInclude checks if allocations include all devices from required
