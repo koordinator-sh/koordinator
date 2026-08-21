@@ -17,6 +17,7 @@ limitations under the License.
 package sandbox
 
 import (
+	"container/list"
 	"sync"
 	"time"
 )
@@ -25,6 +26,10 @@ import (
 // primary invalidation dimensions are per-node quota exhaustion and the consumption drift
 // threshold below; the TTL only exists so that a stale entry cannot outlive a scheduling burst.
 const defaultEquivalenceClassTTL = 5 * time.Second
+
+// defaultEquivalenceClassCacheSize is the maximum number of sandbox template hashes retained
+// by the equivalence cache when no explicit scheduler flag is provided.
+const defaultEquivalenceClassCacheSize = 16
 
 // defaultDriftFactor bounds how many pods of the class may be placed from one cached decision
 // before the score ordering is recomputed: consumed >= driftFactor*len(nodes) drops the entry.
@@ -50,12 +55,13 @@ type equivalenceClassNode struct {
 // entry is dropped when every node's quota is spent, when the drift threshold is reached, on TTL
 // expiry, or on any node inventory change (flush).
 type equivalenceClassEntry struct {
-	key       string
-	nodes     []equivalenceClassNode
-	cursor    int
-	consumed  int
-	createdAt time.Time
-	lastCycle int64
+	key        string
+	nodes      []equivalenceClassNode
+	cursor     int
+	consumed   int
+	createdAt  time.Time
+	lastCycle  int64
+	lruElement *list.Element
 }
 
 type equivalenceCacheMissReason string
@@ -64,7 +70,6 @@ const (
 	equivalenceCacheMissEmpty          equivalenceCacheMissReason = "empty"
 	equivalenceCacheMissUnknownClass   equivalenceCacheMissReason = "unknown_class"
 	equivalenceCacheMissExpired        equivalenceCacheMissReason = "expired"
-	equivalenceCacheMissNonConsecutive equivalenceCacheMissReason = "non_consecutive"
 	equivalenceCacheMissDrift          equivalenceCacheMissReason = "drift"
 	equivalenceCacheMissQuotaExhausted equivalenceCacheMissReason = "quota_exhausted"
 	equivalenceCacheMissFilterRejected equivalenceCacheMissReason = "filter_rejected"
@@ -77,21 +82,28 @@ func (r equivalenceCacheMissReason) String() string {
 	return string(r)
 }
 
-// equivalenceClassCache keeps one active scheduling decision. Reuse is limited to consecutive
-// scheduling cycles of the same sandbox template hash, mirroring the bounded state used by
-// Kubernetes opportunistic batching. A different hash replaces the active decision instead of
-// accumulating another node list.
+// equivalenceClassCache keeps a bounded set of scheduling decisions keyed by sandbox template
+// hash. Entries are reused independently, so interleaved hashes do not invalidate one another.
+// The LRU bound limits memory while retaining the most recently used equivalence classes.
 type equivalenceClassCache struct {
-	mu    sync.Mutex
-	entry *equivalenceClassEntry
-	ttl   time.Duration
-	now   func() time.Time
+	mu       sync.Mutex
+	entries  map[string]*equivalenceClassEntry
+	lru      *list.List
+	capacity int
+	ttl      time.Duration
+	now      func() time.Time
 }
 
-func newEquivalenceClassCache(ttl time.Duration) *equivalenceClassCache {
+func newEquivalenceClassCache(ttl time.Duration, capacity int) *equivalenceClassCache {
+	if capacity <= 0 {
+		capacity = defaultEquivalenceClassCacheSize
+	}
 	return &equivalenceClassCache{
-		ttl: ttl,
-		now: time.Now,
+		entries:  make(map[string]*equivalenceClassEntry, capacity),
+		lru:      list.New(),
+		capacity: capacity,
+		ttl:      ttl,
+		now:      time.Now,
 	}
 }
 
@@ -104,12 +116,23 @@ func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, 
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	c.removeExpiredLocked(c.now())
+	if oldEntry := c.entries[key]; oldEntry != nil {
+		c.removeLocked(oldEntry)
+	}
+
 	nodes = append([]equivalenceClassNode(nil), nodes...)
-	c.entry = &equivalenceClassEntry{
+	entry := &equivalenceClassEntry{
 		key:       key,
 		nodes:     nodes,
 		createdAt: c.now(),
 		lastCycle: cycle,
+	}
+	entry.lruElement = c.lru.PushFront(entry)
+	c.entries[key] = entry
+	for len(c.entries) > c.capacity {
+		c.removeLocked(c.lru.Back().Value.(*equivalenceClassEntry))
 	}
 }
 
@@ -118,10 +141,11 @@ func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, 
 func (c *equivalenceClassCache) recordConsumption(key, node string, cycle int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	entry := c.entry
+	entry := c.entries[key]
 	if entry == nil || entry.key != key || entry.lastCycle != cycle {
 		return
 	}
+	c.lru.MoveToFront(entry.lruElement)
 	for i := range entry.nodes {
 		if entry.nodes[i].name == node {
 			entry.nodes[i].quota--
@@ -133,34 +157,28 @@ func (c *equivalenceClassCache) recordConsumption(key, node string, cycle int64)
 
 // next returns the next candidate node of the class, decrementing its quota and advancing the
 // cursor round-robin. The second return value is false when the class is unknown, expired,
-// non-consecutive, drifted beyond the recomputation threshold, or fully out of quota. The third
-// return value identifies the miss reason. On a miss, the active entry is dropped and the caller
-// falls back to the full path, which backfills a fresh entry.
+// drifted beyond the recomputation threshold, or fully out of quota. The third return value
+// identifies the miss reason. On a miss, the affected entry is dropped and the caller falls back
+// to the full path, which backfills a fresh entry.
 func (c *equivalenceClassCache) next(key string, cycle int64) (string, bool, equivalenceCacheMissReason) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	entry := c.entry
+	entry := c.entries[key]
 	if entry == nil {
-		return "", false, equivalenceCacheMissEmpty
-	}
-	// Multiple candidates may be checked in one scheduling cycle when an earlier cached node no
-	// longer passes Filter. Otherwise, only the immediately following cycle may reuse the state.
-	if entry.key != key {
-		c.entry = nil
+		if len(c.entries) == 0 {
+			return "", false, equivalenceCacheMissEmpty
+		}
 		return "", false, equivalenceCacheMissUnknownClass
 	}
-	if cycle != entry.lastCycle && cycle != entry.lastCycle+1 {
-		c.entry = nil
-		return "", false, equivalenceCacheMissNonConsecutive
-	}
 	if c.now().Sub(entry.createdAt) > c.ttl {
-		c.entry = nil
+		c.removeLocked(entry)
 		return "", false, equivalenceCacheMissExpired
 	}
 	if entry.consumed >= defaultDriftFactor*len(entry.nodes) {
-		c.entry = nil
+		c.removeLocked(entry)
 		return "", false, equivalenceCacheMissDrift
 	}
+	c.lru.MoveToFront(entry.lruElement)
 	entry.lastCycle = cycle
 	for i := 0; i < len(entry.nodes); i++ {
 		idx := (entry.cursor + i) % len(entry.nodes)
@@ -172,15 +190,38 @@ func (c *equivalenceClassCache) next(key string, cycle int64) (string, bool, equ
 		entry.cursor = (idx + 1) % len(entry.nodes)
 		return entry.nodes[idx].name, true, ""
 	}
-	c.entry = nil
+	c.removeLocked(entry)
 	return "", false, equivalenceCacheMissQuotaExhausted
 }
 
-// flush drops the active class. It is called on node add/update/delete events: any change of the
-// node inventory may invalidate the cached decision, and rebuilding it is one full scheduling
-// cycle away.
+// flush drops all cached classes. It is called on node add/update/delete events: any change of the
+// node inventory may invalidate cached decisions, and rebuilding them is one full scheduling cycle
+// away.
 func (c *equivalenceClassCache) flush() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entry = nil
+	c.entries = make(map[string]*equivalenceClassEntry, c.capacity)
+	c.lru.Init()
+}
+
+func (c *equivalenceClassCache) removeExpiredLocked(now time.Time) {
+	for element := c.lru.Back(); element != nil; {
+		previous := element.Prev()
+		entry := element.Value.(*equivalenceClassEntry)
+		if now.Sub(entry.createdAt) > c.ttl {
+			c.removeLocked(entry)
+		}
+		element = previous
+	}
+}
+
+func (c *equivalenceClassCache) removeLocked(entry *equivalenceClassEntry) {
+	if entry == nil {
+		return
+	}
+	delete(c.entries, entry.key)
+	if entry.lruElement != nil {
+		c.lru.Remove(entry.lruElement)
+		entry.lruElement = nil
+	}
 }

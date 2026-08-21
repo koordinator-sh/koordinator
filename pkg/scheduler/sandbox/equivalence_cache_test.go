@@ -36,7 +36,7 @@ func quotaNodes(quota int64, names ...string) []equivalenceClassNode {
 func TestEquivalenceClassCache(t *testing.T) {
 	newTestCache := func() (*equivalenceClassCache, *time.Time) {
 		now := time.Now()
-		c := newEquivalenceClassCache(time.Second)
+		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
 		c.now = func() time.Time { return now }
 		return c, &now
 	}
@@ -108,40 +108,91 @@ func TestEquivalenceClassCache(t *testing.T) {
 		assert.False(t, ok)
 	})
 
-	t.Run("stores only the latest class", func(t *testing.T) {
+	t.Run("retains multiple classes", func(t *testing.T) {
 		c, _ := newTestCache()
 		c.store("h1", quotaNodes(1, "node-a"), 1)
 		c.store("h2", quotaNodes(1, "node-b"), 2)
-		assert.Equal(t, "h2", c.entry.key)
-		node, ok, _ := c.next("h2", 3)
+		assert.Len(t, c.entries, 2)
+
+		node, ok, _ := c.next("h1", 3)
+		assert.True(t, ok)
+		assert.Equal(t, "node-a", node)
+		node, ok, _ = c.next("h2", 3)
 		assert.True(t, ok)
 		assert.Equal(t, "node-b", node)
 	})
 
-	t.Run("many distinct classes retain one entry", func(t *testing.T) {
+	t.Run("interleaved classes do not invalidate one another", func(t *testing.T) {
+		c, _ := newTestCache()
+		c.store("h1", quotaNodes(2, "node-a", "node-b"), 1)
+		c.store("h2", quotaNodes(2, "node-c", "node-d"), 2)
+
+		node, ok, _ := c.next("h1", 10)
+		assert.True(t, ok)
+		assert.Equal(t, "node-a", node)
+		node, ok, _ = c.next("h2", 11)
+		assert.True(t, ok)
+		assert.Equal(t, "node-c", node)
+		node, ok, _ = c.next("h1", 12)
+		assert.True(t, ok)
+		assert.Equal(t, "node-b", node)
+		node, ok, _ = c.next("h2", 13)
+		assert.True(t, ok)
+		assert.Equal(t, "node-d", node)
+	})
+
+	t.Run("custom capacity evicts least recently used class", func(t *testing.T) {
+		c := newEquivalenceClassCache(time.Second, 2)
+		c.now = func() time.Time { return time.Now() }
+		c.store("h1", quotaNodes(10, "node-a"), 1)
+		c.store("h2", quotaNodes(10, "node-b"), 2)
+		c.store("h3", quotaNodes(10, "node-c"), 3)
+
+		assert.Len(t, c.entries, 2)
+		assert.NotContains(t, c.entries, "h1")
+		assert.Contains(t, c.entries, "h2")
+		assert.Contains(t, c.entries, "h3")
+
+		_, ok, _ := c.next("h2", 4)
+		assert.True(t, ok, "accessing h2 should refresh its LRU position")
+		c.store("h4", quotaNodes(10, "node-d"), 5)
+
+		assert.Len(t, c.entries, 2)
+		assert.Contains(t, c.entries, "h2")
+		assert.Contains(t, c.entries, "h4")
+		assert.NotContains(t, c.entries, "h3")
+	})
+
+	t.Run("default capacity bounds high cardinality", func(t *testing.T) {
 		c, _ := newTestCache()
 		nodes := quotaNodes(1, "node-a")
 		for i := 0; i < 150000; i++ {
 			c.store(strconv.Itoa(i), nodes, int64(i))
 		}
-		assert.Equal(t, "149999", c.entry.key)
-		assert.Len(t, c.entry.nodes, 1)
+		assert.Len(t, c.entries, defaultEquivalenceClassCacheSize)
+		assert.Contains(t, c.entries, "149999")
+		assert.NotContains(t, c.entries, "0")
 	})
 
-	t.Run("non-consecutive cycle drops the entry", func(t *testing.T) {
+	t.Run("non-consecutive cycle still hits the matching class", func(t *testing.T) {
 		c, _ := newTestCache()
-		c.store("h1", quotaNodes(1, "node-a"), 10)
+		c.store("h1", quotaNodes(2, "node-a"), 10)
 		_, ok, _ := c.next("h1", 12)
-		assert.False(t, ok)
-		assert.Nil(t, c.entry)
+		assert.True(t, ok)
+		_, ok, _ = c.next("h1", 14)
+		assert.True(t, ok)
 	})
 
-	t.Run("different class drops the active entry", func(t *testing.T) {
+	t.Run("unknown class does not evict cached classes", func(t *testing.T) {
 		c, _ := newTestCache()
 		c.store("h1", quotaNodes(1, "node-a"), 10)
-		_, ok, _ := c.next("h2", 11)
+		c.store("h2", quotaNodes(1, "node-b"), 11)
+		_, ok, reason := c.next("h3", 12)
 		assert.False(t, ok)
-		assert.Nil(t, c.entry)
+		assert.Equal(t, equivalenceCacheMissUnknownClass, reason)
+		assert.Len(t, c.entries, 2)
+		assert.Contains(t, c.entries, "h1")
+		assert.Contains(t, c.entries, "h2")
 	})
 
 	t.Run("multiple candidates may be consumed in one cycle", func(t *testing.T) {
@@ -158,9 +209,13 @@ func TestEquivalenceClassCache(t *testing.T) {
 	t.Run("flush drops the active class", func(t *testing.T) {
 		c, _ := newTestCache()
 		c.store("h1", quotaNodes(1, "node-a"), 1)
+		c.store("h2", quotaNodes(1, "node-b"), 2)
 		c.flush()
 		_, ok, _ := c.next("h1", 2)
 		assert.False(t, ok)
+		_, ok, _ = c.next("h2", 2)
+		assert.False(t, ok)
+		assert.Empty(t, c.entries)
 	})
 
 	t.Run("store ignores empty key and empty list", func(t *testing.T) {
@@ -175,7 +230,7 @@ func TestEquivalenceClassCache(t *testing.T) {
 }
 
 func TestEquivalenceClassCacheConcurrentAccess(t *testing.T) {
-	c := newEquivalenceClassCache(time.Second)
+	c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
 	const workers = 8
 	const iterations = 1000
 
@@ -204,31 +259,23 @@ func TestEquivalenceClassCacheConcurrentAccess(t *testing.T) {
 
 func TestEquivalenceClassCacheMissReasons(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
-		c := newEquivalenceClassCache(time.Second)
+		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
 		_, ok, reason := c.next("hash", 1)
 		assert.False(t, ok)
 		assert.Equal(t, equivalenceCacheMissEmpty, reason)
 	})
 
 	t.Run("unknown class", func(t *testing.T) {
-		c := newEquivalenceClassCache(time.Second)
+		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
 		c.store("hash-a", quotaNodes(1, "node-a"), 1)
 		_, ok, reason := c.next("hash-b", 2)
 		assert.False(t, ok)
 		assert.Equal(t, equivalenceCacheMissUnknownClass, reason)
 	})
 
-	t.Run("non-consecutive", func(t *testing.T) {
-		c := newEquivalenceClassCache(time.Second)
-		c.store("hash", quotaNodes(1, "node-a"), 1)
-		_, ok, reason := c.next("hash", 3)
-		assert.False(t, ok)
-		assert.Equal(t, equivalenceCacheMissNonConsecutive, reason)
-	})
-
 	t.Run("expired", func(t *testing.T) {
 		now := time.Now()
-		c := newEquivalenceClassCache(time.Second)
+		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
 		c.now = func() time.Time { return now }
 		c.store("hash", quotaNodes(1, "node-a"), 1)
 		now = now.Add(2 * time.Second)
@@ -238,7 +285,7 @@ func TestEquivalenceClassCacheMissReasons(t *testing.T) {
 	})
 
 	t.Run("drift", func(t *testing.T) {
-		c := newEquivalenceClassCache(time.Second)
+		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
 		c.store("hash", quotaNodes(100, "node-a", "node-b"), 1)
 		for i := 0; i < 4; i++ {
 			_, ok, _ := c.next("hash", int64(i+2))
@@ -250,7 +297,7 @@ func TestEquivalenceClassCacheMissReasons(t *testing.T) {
 	})
 
 	t.Run("quota exhausted", func(t *testing.T) {
-		c := newEquivalenceClassCache(time.Second)
+		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
 		c.store("hash", quotaNodes(1, "node-a"), 1)
 		_, ok, _ := c.next("hash", 2)
 		assert.True(t, ok)
