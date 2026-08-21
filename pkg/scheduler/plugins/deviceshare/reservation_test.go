@@ -1511,3 +1511,500 @@ func Test_isDeviceAllocationsInclude(t *testing.T) {
 		})
 	}
 }
+
+func Test_dumpDeviceMinors(t *testing.T) {
+	tests := []struct {
+		name      string
+		resources map[schedulingv1alpha1.DeviceType]deviceResources
+		want      map[schedulingv1alpha1.DeviceType][]int
+	}{
+		{
+			name:      "nil resources",
+			resources: nil,
+			want:      nil,
+		},
+		{
+			name:      "empty resources",
+			resources: map[schedulingv1alpha1.DeviceType]deviceResources{},
+			want:      nil,
+		},
+		{
+			name: "minors are sorted",
+			resources: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					7: {apiext.ResourceGPUCore: resource.MustParse("100")},
+					2: {apiext.ResourceGPUCore: resource.MustParse("100")},
+					5: {apiext.ResourceGPUCore: resource.MustParse("100")},
+				},
+			},
+			want: map[schedulingv1alpha1.DeviceType][]int{
+				schedulingv1alpha1.GPU: {2, 5, 7},
+			},
+		},
+		{
+			// an exhausted reservation holds zero-valued resources, which must not be reported
+			// as a minor still having remaining capacity
+			name: "zero and empty resources are skipped",
+			resources: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					0: {apiext.ResourceGPUCore: resource.MustParse("0")},
+					1: {},
+					2: {apiext.ResourceGPUCore: resource.MustParse("100")},
+				},
+			},
+			want: map[schedulingv1alpha1.DeviceType][]int{
+				schedulingv1alpha1.GPU: {2},
+			},
+		},
+		{
+			name: "multiple device types",
+			resources: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					1: {apiext.ResourceGPUCore: resource.MustParse("100")},
+				},
+				schedulingv1alpha1.RDMA: {
+					3: {apiext.ResourceRDMA: resource.MustParse("100")},
+					0: {apiext.ResourceRDMA: resource.MustParse("0")},
+				},
+			},
+			want: map[schedulingv1alpha1.DeviceType][]int{
+				schedulingv1alpha1.GPU:  {1},
+				schedulingv1alpha1.RDMA: {3},
+			},
+		},
+		{
+			// a device type whose every minor is exhausted still reports an entry, so the log
+			// distinguishes "reserved but exhausted" from "never reserved"
+			name: "device type with all minors exhausted",
+			resources: map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: {
+					0: {apiext.ResourceGPUCore: resource.MustParse("0")},
+				},
+			},
+			want: map[schedulingv1alpha1.DeviceType][]int{
+				schedulingv1alpha1.GPU: {},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, dumpDeviceMinors(tt.resources))
+		})
+	}
+}
+
+func Test_dumpReusableAllocs(t *testing.T) {
+	newRInfo := func(name string, uid types.UID, policy schedulingv1alpha1.ReservationAllocatePolicy) *frameworkext.ReservationInfo {
+		return frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: name, UID: uid},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template:       &corev1.PodTemplateSpec{},
+				AllocatePolicy: policy,
+			},
+		})
+	}
+
+	tests := []struct {
+		name   string
+		allocs []reusableAlloc
+		want   []string
+	}{
+		{
+			name:   "nil allocs",
+			allocs: nil,
+			want:   nil,
+		},
+		{
+			name:   "empty allocs",
+			allocs: []reusableAlloc{},
+			want:   nil,
+		},
+		{
+			// the reservation still holds its whole reserved device, so remained equals allocatable
+			name: "restricted reservation with remaining capacity",
+			allocs: []reusableAlloc{
+				{
+					rInfo: newRInfo("reservation-a", "uid-a", schedulingv1alpha1.ReservationAllocatePolicyRestricted),
+					allocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {7: {apiext.ResourceGPUCore: resource.MustParse("100")}},
+					},
+					remained: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {7: {apiext.ResourceGPUCore: resource.MustParse("100")}},
+					},
+				},
+			},
+			want: []string{
+				"reservation-a(uid=uid-a, policy=Restricted, allocatable=map[gpu:[7]], remained=map[gpu:[7]])",
+			},
+		},
+		{
+			// an exhausted reservation reports an empty remained, which is the signal that the
+			// nominated reservation cannot serve the pod
+			name: "exhausted reservation reports empty remained",
+			allocs: []reusableAlloc{
+				{
+					rInfo: newRInfo("reservation-b", "uid-b", schedulingv1alpha1.ReservationAllocatePolicyRestricted),
+					allocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {2: {apiext.ResourceGPUCore: resource.MustParse("100")}},
+					},
+					remained: nil,
+				},
+			},
+			want: []string{
+				"reservation-b(uid=uid-b, policy=Restricted, allocatable=map[gpu:[2]], remained=map[])",
+			},
+		},
+		{
+			name: "pre-allocatable pod is appended to the reservation name",
+			allocs: []reusableAlloc{
+				{
+					rInfo:          newRInfo("reservation-c", "uid-c", schedulingv1alpha1.ReservationAllocatePolicyAligned),
+					preAllocatable: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pre-allocatable-pod"}},
+					allocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {1: {apiext.ResourceGPUCore: resource.MustParse("100")}},
+					},
+				},
+			},
+			want: []string{
+				"reservation-c/pre-allocatable-pod(uid=uid-c, policy=Aligned, allocatable=map[gpu:[1]], remained=map[])",
+			},
+		},
+		{
+			// dumping is only used for logging, so a malformed alloc must not panic
+			name:   "nil rInfo does not panic",
+			allocs: []reusableAlloc{{}},
+			want:   []string{"(uid=, policy=, allocatable=map[], remained=map[])"},
+		},
+		{
+			name: "multiple allocs keep their order",
+			allocs: []reusableAlloc{
+				{rInfo: newRInfo("reservation-d", "uid-d", schedulingv1alpha1.ReservationAllocatePolicyRestricted)},
+				{rInfo: newRInfo("reservation-e", "uid-e", schedulingv1alpha1.ReservationAllocatePolicyDefault)},
+			},
+			want: []string{
+				"reservation-d(uid=uid-d, policy=Restricted, allocatable=map[], remained=map[])",
+				"reservation-e(uid=uid-e, policy=, allocatable=map[], remained=map[])",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, dumpReusableAllocs(tt.allocs))
+		})
+	}
+}
+
+func Test_getNominatedReusableAlloc(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}}
+
+	newRInfo := func(uid types.UID, preAllocation bool) *frameworkext.ReservationInfo {
+		return frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: "reservation-" + string(uid), UID: uid},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template:       &corev1.PodTemplateSpec{},
+				PreAllocation:  preAllocation,
+				AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			},
+			Status: schedulingv1alpha1.ReservationStatus{NodeName: node.Name},
+		})
+	}
+	reservedGPU := func(minor int) map[schedulingv1alpha1.DeviceType]deviceResources {
+		return map[schedulingv1alpha1.DeviceType]deviceResources{
+			schedulingv1alpha1.GPU: {minor: {apiext.ResourceGPUCore: resource.MustParse("100")}},
+		}
+	}
+
+	normalPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "normal-pod", UID: "normal-pod-uid"}}
+	reservePod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: "reserve-pod", UID: "reserve-pod-uid",
+		Annotations: map[string]string{reservationutil.AnnotationReservePod: "true"},
+	}}
+	preAllocReservePod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: "pre-alloc-reserve-pod", UID: "pre-alloc-reserve-pod-uid",
+		Annotations: map[string]string{
+			reservationutil.AnnotationReservePod:      "true",
+			reservationutil.AnnotationIsPreAllocation: "true",
+		},
+	}}
+	preAllocatablePod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pre-allocatable-pod", UID: "pre-allocatable-pod-uid"}}
+	otherPreAllocatablePod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "other-pre-allocatable-pod", UID: "other-pre-allocatable-pod-uid"}}
+
+	tests := []struct {
+		name string
+		pod  *corev1.Pod
+		// setup builds the restore state and registers the nomination on the plugin's nominator.
+		setup func(pl *Plugin) *nodeReservationRestoreStateData
+		// wantMatchedIndex is the index in restoreState.matched expected to be returned,
+		// or -1 when no reusable allocation is expected.
+		wantMatchedIndex int
+		wantNominated    bool
+	}{
+		{
+			name: "normal pod without nominated reservation",
+			pod:  normalPod,
+			setup: func(_ *Plugin) *nodeReservationRestoreStateData {
+				return &nodeReservationRestoreStateData{}
+			},
+			wantMatchedIndex: -1,
+			wantNominated:    false,
+		},
+		{
+			name: "normal pod nominated to a reservation reserving devices",
+			pod:  normalPod,
+			setup: func(pl *Plugin) *nodeReservationRestoreStateData {
+				rInfo := newRInfo("reserving-devices", false)
+				pl.handle.GetReservationNominator().AddNominatedReservation(normalPod, node.Name, rInfo)
+				return &nodeReservationRestoreStateData{
+					matched: []reusableAlloc{
+						{rInfo: newRInfo("other", false), allocatable: reservedGPU(2), remained: reservedGPU(2)},
+						{rInfo: rInfo, allocatable: reservedGPU(7), remained: reservedGPU(7)},
+					},
+				}
+			},
+			wantMatchedIndex: 1,
+			wantNominated:    true,
+		},
+		{
+			// The reservation is nominated but reserves no device resource, so it is absent from
+			// the restored matched list. It must still be reported as nominated, otherwise the
+			// caller would fall back and take the devices reserved by the other reservations.
+			name: "normal pod nominated to a reservation reserving no device",
+			pod:  normalPod,
+			setup: func(pl *Plugin) *nodeReservationRestoreStateData {
+				pl.handle.GetReservationNominator().AddNominatedReservation(normalPod, node.Name, newRInfo("reserving-nothing", false))
+				return &nodeReservationRestoreStateData{
+					matched: []reusableAlloc{
+						{rInfo: newRInfo("other", false), allocatable: reservedGPU(2), remained: reservedGPU(2)},
+					},
+				}
+			},
+			wantMatchedIndex: -1,
+			wantNominated:    true,
+		},
+		{
+			name: "reserve pod without pre-allocation",
+			pod:  reservePod,
+			setup: func(_ *Plugin) *nodeReservationRestoreStateData {
+				return &nodeReservationRestoreStateData{}
+			},
+			wantMatchedIndex: -1,
+			wantNominated:    false,
+		},
+		{
+			name: "pre-allocating reserve pod without restored pre-allocation info",
+			pod:  preAllocReservePod,
+			setup: func(_ *Plugin) *nodeReservationRestoreStateData {
+				return &nodeReservationRestoreStateData{}
+			},
+			wantMatchedIndex: -1,
+			wantNominated:    false,
+		},
+		{
+			name: "pre-allocating reserve pod without nominated pre-allocatable pod",
+			pod:  preAllocReservePod,
+			setup: func(_ *Plugin) *nodeReservationRestoreStateData {
+				return &nodeReservationRestoreStateData{
+					preAllocationRInfo: newRInfo("pre-allocating", true),
+					matched: []reusableAlloc{
+						{rInfo: newRInfo("pre-allocating", true), preAllocatable: preAllocatablePod, allocatable: reservedGPU(7)},
+					},
+				}
+			},
+			wantMatchedIndex: -1,
+			wantNominated:    false,
+		},
+		{
+			name: "pre-allocating reserve pod nominated to a pre-allocatable pod reserving devices",
+			pod:  preAllocReservePod,
+			setup: func(pl *Plugin) *nodeReservationRestoreStateData {
+				rInfo := newRInfo("pre-allocating", true)
+				pl.handle.GetReservationNominator().AddNominatedPreAllocation(rInfo, node.Name, preAllocatablePod)
+				return &nodeReservationRestoreStateData{
+					preAllocationRInfo: rInfo,
+					matched: []reusableAlloc{
+						{rInfo: rInfo, preAllocatable: otherPreAllocatablePod, allocatable: reservedGPU(2)},
+						{rInfo: rInfo, preAllocatable: preAllocatablePod, allocatable: reservedGPU(7)},
+					},
+				}
+			},
+			wantMatchedIndex: 1,
+			wantNominated:    true,
+		},
+		{
+			// The nominated pre-allocatable pod holds no device, so it is absent from the matched
+			// list while the nomination itself still stands.
+			name: "pre-allocating reserve pod nominated to a pre-allocatable pod reserving no device",
+			pod:  preAllocReservePod,
+			setup: func(pl *Plugin) *nodeReservationRestoreStateData {
+				rInfo := newRInfo("pre-allocating", true)
+				pl.handle.GetReservationNominator().AddNominatedPreAllocation(rInfo, node.Name, preAllocatablePod)
+				return &nodeReservationRestoreStateData{
+					preAllocationRInfo: rInfo,
+					matched: []reusableAlloc{
+						{rInfo: rInfo, preAllocatable: otherPreAllocatablePod, allocatable: reservedGPU(2)},
+					},
+				}
+			},
+			wantMatchedIndex: -1,
+			wantNominated:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, []*corev1.Node{node})
+			p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+
+			restoreState := tt.setup(pl)
+
+			got, nominated, status := pl.getNominatedReusableAlloc(restoreState, tt.pod, node)
+
+			assert.True(t, status.IsSuccess())
+			assert.Equal(t, tt.wantNominated, nominated)
+			if tt.wantMatchedIndex < 0 {
+				assert.Nil(t, got)
+				return
+			}
+			assert.Equal(t, restoreState.matched[tt.wantMatchedIndex:tt.wantMatchedIndex+1], got)
+		})
+	}
+}
+
+// Test_Plugin_Reserve_NominatedReservationMustNotSpill reproduces the production incident where a pod
+// nominated to a Restricted reservation holding one GPU was allocated the GPU reserved by a *different*
+// reservation: every device of the node was reserved, the nominated reservation could not serve the pod,
+// and the allocation silently fell back to the devices released by mergedMatchedAllocatable, picking the
+// smallest minor. Such a pod would be accounted as an owner of its nominated reservation while occupying
+// another reservation's device, so it must be rejected instead.
+func Test_Plugin_Reserve_NominatedReservationMustNotSpill(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}}
+
+	wholeGPU := corev1.ResourceList{
+		apiext.ResourceGPUCore:        resource.MustParse("100"),
+		apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+		apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+	}
+	reservedGPU := func(minor int) map[schedulingv1alpha1.DeviceType]deviceResources {
+		return map[schedulingv1alpha1.DeviceType]deviceResources{
+			schedulingv1alpha1.GPU: {minor: wholeGPU.DeepCopy()},
+		}
+	}
+	newRInfo := func(name string, uid types.UID) *frameworkext.ReservationInfo {
+		return frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: name, UID: uid},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template:       &corev1.PodTemplateSpec{},
+				AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			},
+			Status: schedulingv1alpha1.ReservationStatus{NodeName: node.Name},
+		})
+	}
+
+	// Both GPUs of the node are entirely held by the two reserve pods, so nothing is free outside
+	// of the reservations, exactly like the node observed in the incident.
+	newNodeDeviceCache := func() *nodeDeviceCache {
+		return &nodeDeviceCache{
+			nodeDeviceInfos: map[string]*nodeDevice{
+				node.Name: {
+					deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy(), 1: wholeGPU.DeepCopy()},
+					},
+					deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy(), 1: wholeGPU.DeepCopy()},
+					},
+					deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {},
+					},
+					allocateSet:   map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+					vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{},
+					numaTopology:  &NUMATopology{},
+					deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+						schedulingv1alpha1.GPU: {
+							{Type: schedulingv1alpha1.GPU, Health: true, UUID: "gpu-0", Minor: ptr.To[int32](0), Resources: wholeGPU.DeepCopy()},
+							{Type: schedulingv1alpha1.GPU, Health: true, UUID: "gpu-1", Minor: ptr.To[int32](1), Resources: wholeGPU.DeepCopy()},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	rInfoA := newRInfo("reservation-a", "reservation-a-uid")
+	rInfoB := newRInfo("reservation-b", "reservation-b-uid")
+
+	tests := []struct {
+		name         string
+		restoreState *nodeReservationRestoreStateData
+	}{
+		{
+			// reservation-b reserves GPU 1 but has already handed it to its own owner pods,
+			// so the Restricted policy leaves the pod nothing to reuse.
+			name: "nominated reservation is exhausted",
+			restoreState: &nodeReservationRestoreStateData{
+				matched: []reusableAlloc{
+					{rInfo: rInfoA, allocatable: reservedGPU(0), remained: reservedGPU(0)},
+					{rInfo: rInfoB, allocatable: reservedGPU(1), remained: nil},
+				},
+				mergedMatchedAllocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy(), 1: wholeGPU.DeepCopy()},
+				},
+			},
+		},
+		{
+			// reservation-b is nominated but reserves no device at all, so it is absent from the
+			// restored matched list. The pod must not take GPU 0 reserved by reservation-a.
+			name: "nominated reservation reserves no device",
+			restoreState: &nodeReservationRestoreStateData{
+				matched: []reusableAlloc{
+					{rInfo: rInfoA, allocatable: reservedGPU(0), remained: reservedGPU(0)},
+				},
+				mergedMatchedAllocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy()},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, []*corev1.Node{node})
+			p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			pl.nodeDeviceCache = newNodeDeviceCache()
+
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default", Name: "gpu-pod", UID: "gpu-pod-uid",
+			}}
+			state := &preFilterState{
+				skip: false,
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: wholeGPU.DeepCopy(),
+				},
+			}
+			state.gpuRequirements, err = parseGPURequirements(pod, state.podRequests, nil,
+				testGPUSharedResourceTemplatesCache, testGPUSharedResourceTemplatesMatchedResources)
+			assert.NoError(t, err)
+
+			cycleState := framework.NewCycleState()
+			cycleState.Write(stateKey, state)
+			cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
+				nodeToState: frameworkext.NodeReservationRestoreStates{node.Name: tt.restoreState},
+			})
+			// the reservation plugin has already nominated reservation-b for this pod
+			pl.handle.GetReservationNominator().AddNominatedReservation(pod, node.Name, rInfoB)
+
+			status := pl.Reserve(context.TODO(), cycleState, pod, node.Name)
+
+			assert.Equal(t, fwktype.Unschedulable, status.Code(), "the pod must be rejected, got status %v", status)
+			// most importantly, it must not have been given GPU 0 reserved by reservation-a
+			assert.Nil(t, state.allocationResult)
+		})
+	}
+}
