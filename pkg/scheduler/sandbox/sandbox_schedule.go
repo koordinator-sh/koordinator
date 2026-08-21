@@ -64,10 +64,10 @@ type equivalenceScheduling struct {
 	percentageOfNodesToScore int32
 }
 
-func newEquivalenceScheduling(sched *scheduler.Scheduler, percentageOfNodesToScore *int32) *equivalenceScheduling {
+func newEquivalenceScheduling(sched *scheduler.Scheduler, percentageOfNodesToScore *int32, cacheCapacity int) *equivalenceScheduling {
 	s := &equivalenceScheduling{
 		sched:       sched,
-		equivalence: newEquivalenceClassCache(defaultEquivalenceClassTTL),
+		equivalence: newEquivalenceClassCache(defaultEquivalenceClassTTL, cacheCapacity),
 	}
 	if percentageOfNodesToScore != nil {
 		s.percentageOfNodesToScore = *percentageOfNodesToScore

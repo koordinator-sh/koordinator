@@ -43,6 +43,7 @@ type SandboxCustomWorkflow struct {
 	scheduling            *equivalenceScheduling
 	bindingSlots          chan struct{}
 	maxConcurrentBindings int
+	equivalenceCacheSize  int
 }
 
 type bindingSlotLease struct {
@@ -54,6 +55,7 @@ type bindingSlotLease struct {
 func New() *SandboxCustomWorkflow {
 	return &SandboxCustomWorkflow{
 		maxConcurrentBindings: defaultMaxConcurrentBindings,
+		equivalenceCacheSize:  defaultEquivalenceClassCacheSize,
 	}
 }
 
@@ -64,6 +66,12 @@ func (w *SandboxCustomWorkflow) AddFlags(fs *pflag.FlagSet) {
 		"sandbox-max-concurrent-bindings",
 		w.maxConcurrentBindings,
 		"Maximum number of concurrent post-Permit binding cycles for the sandbox custom workflow.",
+	)
+	fs.IntVar(
+		&w.equivalenceCacheSize,
+		"sandbox-equivalence-cache-size",
+		w.equivalenceCacheSize,
+		"Maximum number of sandbox template equivalence-class entries retained by the custom workflow.",
 	)
 }
 
@@ -83,8 +91,11 @@ func (w *SandboxCustomWorkflow) Setup(_ context.Context, opts *app.CustomWorkflo
 	if w.maxConcurrentBindings <= 0 {
 		return fmt.Errorf("sandbox max concurrent bindings must be greater than 0")
 	}
+	if w.equivalenceCacheSize <= 0 {
+		return fmt.Errorf("sandbox equivalence cache size must be greater than 0")
+	}
 	w.workflow = NewWorkflow(opts.Sched, opts.KubeClient)
-	w.scheduling = newEquivalenceScheduling(opts.Sched, opts.PercentageOfNodesToScore)
+	w.scheduling = newEquivalenceScheduling(opts.Sched, opts.PercentageOfNodesToScore, w.equivalenceCacheSize)
 	if err := w.scheduling.registerNodeEventHandler(opts.SharedInformerFactory.Core().V1().Nodes().Informer()); err != nil {
 		return err
 	}

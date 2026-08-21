@@ -46,12 +46,15 @@ func TestSandboxCustomWorkflowIsEnabled(t *testing.T) {
 func TestSandboxCustomWorkflowAddFlags(t *testing.T) {
 	w := New()
 	assert.Equal(t, defaultMaxConcurrentBindings, w.maxConcurrentBindings)
+	assert.Equal(t, defaultEquivalenceClassCacheSize, w.equivalenceCacheSize)
 
 	fs := pflag.NewFlagSet(Name, pflag.ContinueOnError)
 	w.AddFlags(fs)
 	require.NoError(t, fs.Set("sandbox-max-concurrent-bindings", "256"))
+	require.NoError(t, fs.Set("sandbox-equivalence-cache-size", "32"))
 
 	assert.Equal(t, 256, w.maxConcurrentBindings)
+	assert.Equal(t, 32, w.equivalenceCacheSize)
 }
 
 func TestSandboxCustomWorkflowBindingConcurrency(t *testing.T) {
@@ -104,6 +107,7 @@ func TestSandboxCustomWorkflowSetupDoesNotInitializeBindingSlotsWhenDisabled(t *
 
 	w := New()
 	w.maxConcurrentBindings = 0
+	w.equivalenceCacheSize = 0
 	require.NoError(t, w.Setup(context.Background(), &app.CustomWorkflowOptions{}))
 	assert.Nil(t, w.bindingSlots)
 }
@@ -115,4 +119,13 @@ func TestSandboxCustomWorkflowSetupRejectsInvalidBindingConcurrency(t *testing.T
 	w.maxConcurrentBindings = 0
 	err := w.Setup(context.Background(), &app.CustomWorkflowOptions{})
 	assert.EqualError(t, err, "sandbox max concurrent bindings must be greater than 0")
+}
+
+func TestSandboxCustomWorkflowSetupRejectsInvalidEquivalenceCacheSize(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.SandboxCustomWorkflow, true)()
+
+	w := New()
+	w.equivalenceCacheSize = 0
+	err := w.Setup(context.Background(), &app.CustomWorkflowOptions{})
+	assert.EqualError(t, err, "sandbox equivalence cache size must be greater than 0")
 }

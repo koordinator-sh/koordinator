@@ -138,13 +138,13 @@ func newSandboxTestSchedulingWithPlugins(t *testing.T, ctx context.Context, extr
 		Profiles: profile.Map{
 			"koord-scheduler": fwk,
 		},
-	}, nil)
-	s.equivalence = newEquivalenceClassCache(time.Second)
+	}, nil, defaultEquivalenceClassCacheSize)
+	s.equivalence = newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
 	return s
 }
 
 func TestEquivalenceSchedulingHandlesSandboxPodsWithTemplateHash(t *testing.T) {
-	s := newEquivalenceScheduling(nil, nil)
+	s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
 
 	assert.True(t, s.handles(makeSandboxPod("sandbox", "hash-a")))
 	assert.False(t, s.handles(makeSandboxPod("missing-hash", "")))
