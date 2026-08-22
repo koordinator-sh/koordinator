@@ -330,16 +330,21 @@ func Test_nodeDeviceCache_ForgetPod_Idempotent(t *testing.T) {
 	assert.NoError(t, cache.ForgetPod(assumeTestPod("never", "node-1")))
 }
 
-// A positive event on a node other than the one Reserve wrote (a faked arbitration nodeName)
-// must not re-add the pod there, and must leave the reserved node's marker intact so a later
-// ForgetPod can still roll it back.
+// Defensive pin: a positive event landing on a node other than the one Reserve wrote must not
+// re-add the pod there, and must leave the reserved node's marker intact so a later negative
+// event (nodeName reset / ForgetPod) can roll it back. Per @saintube (2026-08-19) this case does
+// not occur by design — the arbitrating node always equals the Reserve node, so a positive event
+// never diverges; the assumed node is accounted for like a preemption nomination, and forgetting
+// happens on the nodeName reset, not on a divergent positive event. This test keeps the suppress
+// behavior honest even so.
 func Test_nodeDeviceCache_PositiveEvent_DivergentNode_NotCredited(t *testing.T) {
 	cache := newNodeDeviceCache(nil)
 	pod := assumeTestPod("1", "node-1")
 	reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
 	assert.NoError(t, cache.AssumePod(pod, "node-1"))
 
-	// Arbitration transform fakes spec.nodeName as node-2 (not the reserved node).
+	// A positive event on node-2 (not the reserved node) — a degenerate case that does not occur
+	// by design; the suppress must hold regardless.
 	cache.OnPodAdd(eventPodFrom(pod, "node-2", gpuAllocations(0, 100)))
 
 	node1 := cache.getNodeDevice("node-1", false)

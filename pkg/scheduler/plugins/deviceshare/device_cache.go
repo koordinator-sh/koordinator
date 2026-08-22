@@ -560,6 +560,10 @@ func (n *nodeDeviceCache) Start(context.Context) {
 // annotation-based deletePod cannot. The negative paths are idempotent against a racing
 // ForgetPod: whichever runs second finds the pod already gone from allocateSet (isValid guard)
 // and subtracts nothing.
+//
+// This mirrors preemption nomination (per @saintube): the assumed node is accounted for
+// immediately, and resetting spec.nodeName back to "" is the negative event that forgets the
+// pod — the arbitrating node always equals the Reserve node, so a positive event never diverges.
 
 // OnPodAdd implements frameworkext.SharedPluginCache.
 func (n *nodeDeviceCache) OnPodAdd(pod *corev1.Pod) {
