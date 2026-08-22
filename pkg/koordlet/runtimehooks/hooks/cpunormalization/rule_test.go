@@ -30,6 +30,8 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
+
+	"github.com/koordinator-sh/koordinator/pkg/features"
 )
 
 func TestRule(t *testing.T) {
@@ -486,6 +488,8 @@ func TestPlugin_ruleUpdateCb(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Disable CPUBurst feature gate to test CPUNormalization independently
+			_ = features.DefaultMutableKoordletFeatureGate.Set("CPUBurst=false")
 			helper := system.NewFileTestUtil(t)
 			defer helper.Cleanup()
 			stopCh := make(chan struct{})

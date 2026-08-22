@@ -23,6 +23,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
@@ -112,6 +113,11 @@ func (p *Plugin) adjustPodCFSQuota(podCtx *protocol.PodContext) error {
 	if !p.rule.IsEnabled() {
 		return nil
 	}
+	if features.DefaultKoordletFeatureGate.Enabled(features.CPUBurst) {
+		klog.V(5).Infof("plugin %s skips pod %s/%s cfs quota adjustment because CPUBurst feature is enabled",
+			name, podCtx.Request.PodMeta.Namespace, podCtx.Request.PodMeta.Name)
+		return nil
+	}
 
 	originalCFSQuota := podCtx.Request.Resources.CFSQuota
 	if originalCFSQuota == nil || *originalCFSQuota <= 0 { // no need to scale when cgroup is unset
@@ -132,6 +138,12 @@ func (p *Plugin) adjustPodCFSQuota(podCtx *protocol.PodContext) error {
 
 func (p *Plugin) adjustContainerCFSQuota(containerCtx *protocol.ContainerContext) error {
 	if !p.rule.IsEnabled() {
+		return nil
+	}
+	if features.DefaultKoordletFeatureGate.Enabled(features.CPUBurst) {
+		klog.V(5).Infof("plugin %s skips container %s/%s/%s cfs quota adjustment because CPUBurst feature is enabled",
+			name, containerCtx.Request.PodMeta.Namespace, containerCtx.Request.PodMeta.Name,
+			containerCtx.Request.ContainerMeta.Name)
 		return nil
 	}
 
