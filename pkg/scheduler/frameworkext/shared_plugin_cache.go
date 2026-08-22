@@ -59,12 +59,17 @@ type SharedPluginCache interface {
 // for a racing ForgetPod on arbitration failure. Because the marker is not consumed on a
 // positive event, it lives for the whole lifetime of a successfully-bound pod.
 //
-// Two consequences implementers must accept: (1) rollback is against the Reserve-time snapshot,
-// not the pod's current annotation, so post-assume annotation changes are not reconciled while
-// the marker is live; (2) if a pod is genuinely bound to a node other than the one Reserve
-// assumed, that node is not credited until a later informer event arrives after the marker is
-// cleared. This is a deliberate departure from an annotation-authoritative "reconcile on every
-// event" model, chosen for arbitration safety.
+// This mirrors preemption nomination in the kube-scheduler framework: the assumed (Reserve)
+// node is accounted for immediately, and canceling that assumption — a reset of spec.nodeName
+// from a non-empty value back to "" — is the negative event that forgets the pod, rather than
+// the cache declining to account for the assumption in the first place. By design the
+// arbitrating node always equals the Reserve node, so a positive event never lands on a
+// different node and there is no divergent-bind undercount; this would be revisited only if a
+// future arbitration design introduces a genuine node change (a rare coalesced A→B update for a
+// pod whose marker has already cleared falls back to the plugin's ordinary nodeName-change
+// handling in updatePod). One consequence implementers must accept: rollback is against the
+// Reserve-time snapshot, not the pod's current annotation, so post-assume annotation changes are
+// not reconciled while the marker is live.
 type CacheReserver interface {
 	SharedPluginCache
 	AssumePod(pod *corev1.Pod, nodeName string) error
