@@ -23,6 +23,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
 )
@@ -252,9 +253,66 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "skip cfs quota when CPUBurst is enabled",
+			fields: fields{
+				rule: &Rule{
+					enable:   true,
+					curRatio: 1.2,
+				},
+			},
+			arg: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					PodMeta: protocol.PodMeta{
+						Namespace: "default",
+						Name:      "test-pod",
+					},
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+					Resources: &protocol.Resources{
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
+					},
+				},
+				Response: protocol.PodResponse{
+					Resources: protocol.Resources{},
+				},
+			},
+			wantErr: false,
+			wantField: &protocol.PodContext{
+				Request: protocol.PodRequest{
+					PodMeta: protocol.PodMeta{
+						Namespace: "default",
+						Name:      "test-pod",
+					},
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+					Resources: &protocol.Resources{
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
+					},
+				},
+				Response: protocol.PodResponse{
+					Resources: protocol.Resources{},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			featureGate := features.DefaultMutableKoordletFeatureGate
+			if tt.name == "skip cfs quota when CPUBurst is enabled" {
+				assert.NoError(t, featureGate.Set("CPUBurst=true"))
+				defer func() {
+					_ = featureGate.Set("CPUBurst=false")
+				}()
+			} else {
+				_ = featureGate.Set("CPUBurst=false")
+			}
 			p := newPlugin()
 			p.rule = tt.fields.rule
 			gotErr := p.AdjustPodCFSQuota(tt.arg)
@@ -475,9 +533,72 @@ func TestPluginAdjustContainerCFSQuota(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "skip cfs quota when CPUBurst is enabled",
+			fields: fields{
+				rule: &Rule{
+					enable:   true,
+					curRatio: 1.2,
+				},
+			},
+			arg: &protocol.ContainerContext{
+				Request: protocol.ContainerRequest{
+					PodMeta: protocol.PodMeta{
+						Namespace: "default",
+						Name:      "test-pod",
+					},
+					ContainerMeta: protocol.ContainerMeta{
+						Name: "test-container",
+					},
+					PodLabels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+					Resources: &protocol.Resources{
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
+					},
+				},
+				Response: protocol.ContainerResponse{
+					Resources: protocol.Resources{},
+				},
+			},
+			wantErr: false,
+			wantField: &protocol.ContainerContext{
+				Request: protocol.ContainerRequest{
+					PodMeta: protocol.PodMeta{
+						Namespace: "default",
+						Name:      "test-pod",
+					},
+					ContainerMeta: protocol.ContainerMeta{
+						Name: "test-container",
+					},
+					PodLabels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+					Resources: &protocol.Resources{
+						CPUShares:   ptr.To[int64](1024),
+						CFSQuota:    ptr.To[int64](100000),
+						MemoryLimit: ptr.To[int64](2147483648),
+					},
+				},
+				Response: protocol.ContainerResponse{
+					Resources: protocol.Resources{},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			featureGate := features.DefaultMutableKoordletFeatureGate
+			if tt.name == "skip cfs quota when CPUBurst is enabled" {
+				assert.NoError(t, featureGate.Set("CPUBurst=true"))
+				defer func() {
+					_ = featureGate.Set("CPUBurst=false")
+				}()
+			} else {
+				_ = featureGate.Set("CPUBurst=false")
+			}
 			p := newPlugin()
 			p.rule = tt.fields.rule
 			gotErr := p.AdjustContainerCFSQuota(tt.arg)
