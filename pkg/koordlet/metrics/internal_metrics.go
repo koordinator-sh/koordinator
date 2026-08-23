@@ -18,6 +18,7 @@ package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	k8smetrics "k8s.io/component-base/metrics"
 	"k8s.io/component-base/metrics/legacyregistry"
 )
 
@@ -27,25 +28,34 @@ const (
 
 var (
 	// InternalRegistry only register metrics of koordlet itself for performance and functional monitor
-	// TODO consider using k8s.io/component-base/metrics to replace github.com/prometheus/client_golang/prometheus
 	InternalRegistry = legacyregistry.DefaultGatherer
 )
 
-func internalMustRegister(metrics ...prometheus.Collector) {
-	legacyregistry.RawMustRegister(metrics...)
+// internalMustRegister registers metrics that declare a StabilityLevel, so the component-base stability
+// framework applies to them. New koordlet internal metrics should be defined with
+// k8s.io/component-base/metrics and registered here.
+func internalMustRegister(metrics ...k8smetrics.Registerable) {
+	legacyregistry.MustRegister(metrics...)
+}
+
+// internalRawMustRegister bypasses the stability framework and is only for collectors that cannot implement
+// k8smetrics.Registerable, i.e. the pkg/util/metrics GC wrappers, which expose the wrapped
+// prometheus.Collector rather than the component-base type.
+func internalRawMustRegister(collectors ...prometheus.Collector) {
+	legacyregistry.RawMustRegister(collectors...)
 }
 
 func init() {
-	internalMustRegister(CommonCollectors...)
-	internalMustRegister(CPUSuppressCollector...)
-	internalMustRegister(CPUBurstCollector...)
-	internalMustRegister(CPUSetCollector...)
-	internalMustRegister(PredictionCollectors...)
-	internalMustRegister(CoreSchedCollector...)
-	internalMustRegister(NodeMetricCollectors...)
-	internalMustRegister(OOMScoreAdjCollector...)
-	internalMustRegister(ResourceExecutorCollector...)
-	internalMustRegister(KubeletStubCollector...)
-	internalMustRegister(RuntimeHookCollectors...)
-	internalMustRegister(HostApplicationCollectors...)
+	internalRawMustRegister(CommonCollectors...)
+	internalRawMustRegister(CPUSuppressCollector...)
+	internalRawMustRegister(CPUBurstCollector...)
+	internalRawMustRegister(CPUSetCollector...)
+	internalRawMustRegister(PredictionCollectors...)
+	internalRawMustRegister(CoreSchedCollector...)
+	internalRawMustRegister(NodeMetricCollectors...)
+	internalRawMustRegister(OOMScoreAdjCollector...)
+	internalRawMustRegister(ResourceExecutorCollector...)
+	internalRawMustRegister(KubeletStubCollector...)
+	internalRawMustRegister(RuntimeHookCollectors...)
+	internalRawMustRegister(HostApplicationCollectors...)
 }
