@@ -30,6 +30,7 @@ import (
 // All generated defaulters are covering - they call all nested defaulters.
 func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&CoschedulingArgs{}, func(obj interface{}) { SetObjectDefaults_CoschedulingArgs(obj.(*CoschedulingArgs)) })
+	scheme.AddTypeDefaultingFunc(&DefaultPreBindArgs{}, func(obj interface{}) { SetObjectDefaults_DefaultPreBindArgs(obj.(*DefaultPreBindArgs)) })
 	scheme.AddTypeDefaultingFunc(&DeviceShareArgs{}, func(obj interface{}) { SetObjectDefaults_DeviceShareArgs(obj.(*DeviceShareArgs)) })
 	scheme.AddTypeDefaultingFunc(&ElasticQuotaArgs{}, func(obj interface{}) { SetObjectDefaults_ElasticQuotaArgs(obj.(*ElasticQuotaArgs)) })
 	scheme.AddTypeDefaultingFunc(&LoadAwareSchedulingArgs{}, func(obj interface{}) { SetObjectDefaults_LoadAwareSchedulingArgs(obj.(*LoadAwareSchedulingArgs)) })
@@ -42,6 +43,10 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 
 func SetObjectDefaults_CoschedulingArgs(in *CoschedulingArgs) {
 	SetDefaults_CoschedulingArgs(in)
+}
+
+func SetObjectDefaults_DefaultPreBindArgs(in *DefaultPreBindArgs) {
+	SetDefaults_DefaultPreBindArgs(in)
 }
 
 func SetObjectDefaults_DeviceShareArgs(in *DeviceShareArgs) {

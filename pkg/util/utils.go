@@ -19,18 +19,22 @@ package util
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -95,19 +99,108 @@ func MaxFloat64(i, j float64) float64 {
 
 func RetryOnConflictOrTooManyRequests(fn func() error) error {
 	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
-		return errors.IsConflict(err) || errors.IsTooManyRequests(err)
+		return apierrors.IsConflict(err) || apierrors.IsTooManyRequests(err)
 	}, fn)
 }
 
 func RetryOnConflictOrTooManyRequestsOrConnectionClose(fn func() error) error {
 	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
-		return errors.IsConflict(err) || errors.IsTooManyRequests(err) || isErrorConnectionClosed(err)
+		return apierrors.IsConflict(err) || apierrors.IsTooManyRequests(err) || isErrorConnectionClosed(err)
 	}, fn)
 }
 
 func isErrorConnectionClosed(err error) bool {
 	errMsg := err.Error()
 	return strings.Contains(errMsg, "http2: client connection force closed via ClientConn.Close") || net.IsProbableEOF(err) || net.IsConnectionReset(err)
+}
+
+// DefaultTransientBackoff is the recommended backoff for in-place retries of transient failures
+// on the requests between the scheduler and the apiserver, e.g. network jitter on the load
+// balancer in front of the apiserver. The retry window (4 attempts, ~1.4s) is designed to cover
+// the second-scale jitter.
+var DefaultTransientBackoff = wait.Backoff{
+	Steps:    4,
+	Duration: 200 * time.Millisecond,
+	Factor:   2.0,
+	Jitter:   0.1,
+	Cap:      3 * time.Second,
+}
+
+// IsRetryableTransientError reports whether err is a transient failure worth an in-place retry
+// for the requests between the scheduler and the apiserver. It covers both transient apiserver-side
+// failures (e.g. throttling, temporarily unavailable) and network-level failures (e.g. connection
+// refused/reset, broken pipe, http2 connection loss, probable EOF, transport timeout).
+// Permanent failures (e.g. NotFound, Conflict, Forbidden, validation errors) return false.
+func IsRetryableTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Transient apiserver-side failures.
+	if apierrors.IsServerTimeout(err) || apierrors.IsTimeout(err) ||
+		apierrors.IsTooManyRequests(err) || apierrors.IsServiceUnavailable(err) ||
+		apierrors.IsInternalError(err) || apierrors.IsUnexpectedServerError(err) {
+		return true
+	}
+	// Transient network-level failures, e.g. network jitter between the scheduler and the apiserver.
+	return net.IsConnectionRefused(err) || net.IsConnectionReset(err) || isErrorBrokenPipe(err) ||
+		net.IsHTTP2ConnectionLost(err) || isErrorHTTP2ConnectionForceClosed(err) ||
+		net.IsProbableEOF(err) || net.IsTimeout(err)
+}
+
+// isErrorBrokenPipe returns true if the given err is "broken pipe" error, e.g. writing to
+// a connection that has been closed by the peer. It is the same class of transient
+// failures as "connection reset by peer", but apimachinery util/net provides no helper
+// for it, so keep the implementation aligned with net.IsConnectionReset.
+func isErrorBrokenPipe(err error) bool {
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return errno == syscall.EPIPE
+	}
+	return false
+}
+
+// isErrorHTTP2ConnectionForceClosed returns true if the given err is the http2
+// errClientConnForceClosed, e.g. the underlying connection was closed while the
+// request was in flight (a typical symptom of transient packet loss on the load
+// balancer in front of the apiserver). Neither net.IsHTTP2ConnectionLost nor
+// net.IsProbableEOF matches this message, so check it explicitly.
+func isErrorHTTP2ConnectionForceClosed(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "http2: client connection force closed via ClientConn.Close")
+}
+
+// RetryOnTransientError retries fn in place on transient failures with DefaultTransientBackoff.
+// See RetryOnTransientErrorWithBackoff for the detailed semantics.
+func RetryOnTransientError(ctx context.Context, fn func() error) error {
+	return RetryOnTransientErrorWithBackoff(ctx, DefaultTransientBackoff, fn)
+}
+
+// RetryOnTransientErrorWithBackoff retries fn in place on transient failures according to the
+// given backoff. The ctx is checked before each attempt so that the retry loop fails fast when
+// the scheduler loses leadership or shuts down, in which case retrying is pointless and
+// continuing the request is no longer safe.
+func RetryOnTransientErrorWithBackoff(ctx context.Context, backoff wait.Backoff, fn func() error) error {
+	succeeded := false
+	err := retry.OnError(backoff, IsRetryableTransientError, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := fn(); err != nil {
+			return err
+		}
+		succeeded = true
+		return nil
+	})
+	if err == nil && !succeeded {
+		// Never report success without a successful attempt: retry.OnError can return a nil
+		// error even though no attempt succeeded. It substitutes the terminal error of the
+		// backoff loop with the last retriable error, which stays nil when the loop ends
+		// without recording one, e.g. interrupted by a canceled context before any
+		// retryable failure.
+		if err = ctx.Err(); err == nil {
+			err = errors.New("retry on transient error interrupted before completion")
+		}
+	}
+	return err
 }
 
 func GeneratePodPatch(oldPod, newPod *corev1.Pod) ([]byte, error) {
