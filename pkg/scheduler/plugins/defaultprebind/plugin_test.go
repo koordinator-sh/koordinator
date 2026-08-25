@@ -908,3 +908,40 @@ func TestApplyPodPatchRetry(t *testing.T) {
 		assert.Equal(t, int32(0), atomic.LoadInt32(&attempts), "a canceled context should fail fast without any request")
 	})
 }
+
+// TestApplyReservationPatchRetry verifies the retry behavior of ApplyPatch for Reservation,
+// symmetric to TestApplyPodPatchRetry. The canceled-context case specifically protects against
+// regression of the patchedReservation == nil sentinel in applyReservationPatch.
+func TestApplyReservationPatchRetry(t *testing.T) {
+	originalReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+			UID:  types.UID("test-reservation-uid"),
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "main"}},
+				},
+			},
+		},
+	}
+	modifiedReservation := originalReservation.DeepCopy()
+	modifiedReservation.Annotations = map[string]string{"testAnnotation": "1"}
+
+	t.Run("fail fast on canceled context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		client := koordfake.NewSimpleClientset(originalReservation)
+		var attempts int32
+		client.PrependReactor("patch", "reservations", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			atomic.AddInt32(&attempts, 1)
+			return false, nil, nil
+		})
+		pl := newTestPlugin(kubefake.NewSimpleClientset(), client)
+		status := pl.ApplyPatch(ctx, framework.NewCycleState(), originalReservation, modifiedReservation)
+		assert.NotNil(t, status)
+		assert.False(t, status.IsSuccess())
+		assert.Equal(t, int32(0), atomic.LoadInt32(&attempts), "a canceled context should fail fast without any request")
+	})
+}

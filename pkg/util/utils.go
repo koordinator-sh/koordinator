@@ -159,13 +159,20 @@ func isErrorBrokenPipe(err error) bool {
 	return false
 }
 
+// errHTTP2ConnectionForceClosedMsg is the error returned by http2.ClientConn.Close()
+// when the underlying connection is force closed mid-flight (a typical symptom of
+// transient packet loss on the load balancer in front of the apiserver).
+// The error is created via errors.New inside ClientConn.Close() (not a package-level var),
+// so errors.Is/errors.As cannot match it. String matching is the only viable approach.
+const errHTTP2ConnectionForceClosedMsg = "http2: client connection force closed via ClientConn.Close"
+
 // isErrorHTTP2ConnectionForceClosed returns true if the given err is the http2
 // errClientConnForceClosed, e.g. the underlying connection was closed while the
 // request was in flight (a typical symptom of transient packet loss on the load
 // balancer in front of the apiserver). Neither net.IsHTTP2ConnectionLost nor
 // net.IsProbableEOF matches this message, so check it explicitly.
 func isErrorHTTP2ConnectionForceClosed(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "http2: client connection force closed via ClientConn.Close")
+	return err != nil && strings.Contains(err.Error(), errHTTP2ConnectionForceClosedMsg)
 }
 
 // RetryOnTransientError retries fn in place on transient failures with DefaultTransientBackoff.
