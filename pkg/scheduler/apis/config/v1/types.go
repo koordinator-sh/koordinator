@@ -426,3 +426,15 @@ type SchedulingHintArgs struct {
 	// Defaults to 100 if unspecified.
 	MaxHintNodes *int32 `json:"maxHintNodes,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ScheduleAdmissionArgs holds arguments used to configure the ScheduleAdmission plugin.
+type ScheduleAdmissionArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// EnablePrefixMatch controls how schedule-admission labels are matched.
+	// When false (default), only the fixed schedule-admission label is checked (fast path).
+	// When true, any label with the schedule-admission prefix also gates the pod.
+	EnablePrefixMatch *bool `json:"enablePrefixMatch,omitempty"`
+}
