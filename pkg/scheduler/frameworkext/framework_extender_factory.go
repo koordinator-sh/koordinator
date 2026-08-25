@@ -52,6 +52,12 @@ var (
 	EnableNetworkTopologyManager = false
 )
 
+// errBatchScheduled is a sentinel error returned from scheduleOne when a pod's whole job has been
+// batch-scheduled (assumed and bound) inline by the FindOneNode success path. It is intentionally not
+// a FitError so that PostFilter/preemption is skipped, and it is suppressed by the batch-scheduled
+// error handler filter so no requeue or failure event is emitted.
+var errBatchScheduled = fmt.Errorf("pod handled by inline batch schedule: %s", BatchScheduledReason)
+
 func AddFlags(fs *pflag.FlagSet) {
 	fs.IntVarP(&debugTopNScores, "debug-scores", "s", debugTopNScores, "logging topN nodes score and scores for each plugin after running the score extension, disable if set to 0")
 	fs.BoolVarP(&debugFilterFailure, "debug-filters", "f", debugFilterFailure, "logging filter failures")
@@ -210,6 +216,29 @@ func (f *FrameworkExtenderFactory) KoordinatorClientSet() koordinatorclientset.I
 	return f.koordinatorClientSet
 }
 
+// SetBatchScheduler registers the inline BatchScheduler on all framework extenders.
+// It must be called after all profiles have been created (i.e. after the scheduler is constructed).
+func (f *FrameworkExtenderFactory) SetBatchScheduler(bs BatchScheduler) {
+	for _, extender := range f.profiles {
+		if impl, ok := extender.(*frameworkExtenderImpl); ok {
+			impl.batchScheduler = bs
+		}
+	}
+}
+
+// NewBatchScheduledErrorHandlerFilter returns a PreErrorHandlerFilter that suppresses the default
+// scheduling failure handling for pods that have been batch-scheduled (assumed and bound) inline by
+// the FindOneNode success path. Such pods surface as a scheduling "failure" only to short-circuit the
+// scheduling cycle, so no requeue or failure event should be emitted.
+func NewBatchScheduledErrorHandlerFilter() PreErrorHandlerFilter {
+	return func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) bool {
+		if status == nil {
+			return false
+		}
+		return status.Code() == fwktype.Unschedulable && status.Message() == BatchScheduledReason
+	}
+}
+
 func (f *FrameworkExtenderFactory) KoordinatorSharedInformerFactory() koordinatorinformers.SharedInformerFactory {
 	return f.koordinatorSharedInformerFactory
 }
@@ -337,6 +366,18 @@ func makePodInfoFromPod(pod *corev1.Pod) (*framework.QueuedPodInfo, error) {
 	}, nil
 }
 
+// PodScheduleAttemptInfo returns the scheduling attempt count and the first-attempt timestamp that
+// were stashed into the pod's managed fields when it was popped from the scheduling queue (see
+// RecordPodQueueInfoToPod). ok is false when the pod carries no such queue info, e.g. a pod that was
+// never popped from the queue (such as a sibling pod scheduled as part of an inline batch job).
+func PodScheduleAttemptInfo(pod *corev1.Pod) (attempts int, initialAttemptTimestamp *time.Time, ok bool) {
+	podInfo, err := makePodInfoFromPod(pod)
+	if err != nil || podInfo == nil {
+		return 0, nil, false
+	}
+	return podInfo.Attempts, podInfo.InitialAttemptTimestamp, true
+}
+
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
 	InitDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
@@ -345,6 +386,12 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 	}
 	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
+		if st := getBatchScheduleState(cycleState); st != nil && st.handled && st.success {
+			// The whole job (including this pod) has already been assumed and bound by the inline
+			// batch scheduler. Return a sentinel error to skip PostFilter/preemption; the registered
+			// error handler filter suppresses the default failure handling.
+			return scheduleResult, errBatchScheduled
+		}
 		recordScheduleDiagnosis(cycleState, err)
 		return scheduleResult, err
 	}

@@ -140,6 +140,19 @@ const (
 	// This provides earlier scheduling failure visibility for pods that haven't been
 	// individually attempted by the scheduler yet.
 	GangPendingPodsConditionPatch featuregate.Feature = "GangPendingPodsConditionPatch"
+
+	// EnableInlineBatchSchedule enables the inline batch scheduling path. When a FindOneNodePlugin
+	// returns a placement plan for a whole job, the scheduler batch-schedules (PreFilter/Filter/Reserve/
+	// Assume + Bind) all member pods together instead of scheduling them one by one.
+	EnableInlineBatchSchedule featuregate.Feature = "EnableInlineBatchSchedule"
+
+	// EnableBatchScheduleNodeSnapshot enables per-node snapshot injection during the batch/arbitrate
+	// scheduling cycle. When enabled, the engine builds an empty snapshot for the target node
+	// (UpdateSnapshotForNode), stores it, and swaps it in as the framework's snapshot lister for the
+	// PreFilter/Filter/Reserve/Assume and binding phases. This is internal machinery required for
+	// reservation restore. It is enabled by default; when disabled, the flow performs no snapshot
+	// writes and the framework's default shared snapshot lister is used instead.
+	EnableBatchScheduleNodeSnapshot featuregate.Feature = "EnableBatchScheduleNodeSnapshot"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -169,6 +182,8 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	SyncBarrier:                               {Default: false, PreRelease: featuregate.Alpha},
 	CrossSchedulerNomination:                  {Default: false, PreRelease: featuregate.Alpha},
 	GangPendingPodsConditionPatch:             {Default: true, PreRelease: featuregate.Beta},
+	EnableInlineBatchSchedule:                 {Default: false, PreRelease: featuregate.Alpha},
+	EnableBatchScheduleNodeSnapshot:           {Default: true, PreRelease: featuregate.Beta},
 }
 
 func init() {

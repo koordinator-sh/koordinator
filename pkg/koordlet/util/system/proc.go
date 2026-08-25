@@ -31,6 +31,14 @@ const (
 	ProcStatName    = "stat"
 	ProcMemInfoName = "meminfo"
 	ProcCPUInfoName = "cpuinfo"
+
+	// ProcOOMScoreAdjName is the filename for per-process oom_score_adj.
+	ProcOOMScoreAdjName = "oom_score_adj"
+
+	// OOMScoreAdjMin is the minimum allowed value for oom_score_adj.
+	OOMScoreAdjMin int64 = -1000
+	// OOMScoreAdjMax is the maximum allowed value for oom_score_adj.
+	OOMScoreAdjMax int64 = 1000
 )
 
 func GetProcFilePath(procRelativePath string) string {
@@ -178,4 +186,9 @@ func GetContainerPGIDs(containerParentDir string) ([]uint32, error) {
 	}
 
 	return GetPGIDsForPIDs(pids)
+}
+
+// GetProcPIDOOMScoreAdjPath returns the absolute path of /proc/<pid>/oom_score_adj.
+func GetProcPIDOOMScoreAdjPath(pid uint32) string {
+	return filepath.Join(Conf.ProcRootDir, strconv.FormatUint(uint64(pid), 10), ProcOOMScoreAdjName)
 }

@@ -35,6 +35,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
@@ -43,6 +44,7 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -2016,6 +2018,48 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 	}
 }
 
+// The ElasticQuota update event is registered by GVK, so the scheduler informer delivers
+// oldObj/newObj as *unstructured.Unstructured instead of typed *ElasticQuota. The hint must
+// still reach the QueueSkip branch rather than falling back to Queue on a failed conversion.
+func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged_UnstructuredPayload(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.MultiQuotaTree, true)()
+
+	quota := &v1alpha1.ElasticQuota{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ElasticQuota",
+			APIVersion: "scheduling.x-k8s.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "test1",
+			Labels: map[string]string{extension.LabelQuotaTreeID: "tree1"},
+			Annotations: map[string]string{
+				extension.AnnotationSharedWeight: `{"cpu":"10","memory":"30"}`,
+			},
+		},
+		Spec: v1alpha1.ElasticQuotaSpec{
+			Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+			Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+		},
+	}
+
+	suit := newPluginTestSuit(t, nil)
+	gp := suit.createPlugin(t).(*Plugin)
+	gp.OnQuotaAdd(quota)
+	gp.updateQuotaSnapshot()
+
+	rawMap, err := apiruntime.DefaultUnstructuredConverter.ToUnstructured(quota)
+	assert.NoError(t, err)
+	unstructuredQuota := &unstructured.Unstructured{Object: rawMap}
+
+	pod := MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+		Label(extension.LabelQuotaTreeID, "tree1").Obj()
+
+	result, err := gp.isSchedulableAfterQuotaChanged(klog.Background(), pod,
+		unstructuredQuota, unstructuredQuota.DeepCopy())
+	assert.NoError(t, err)
+	assert.Equal(t, fwktype.QueueSkip, result)
+}
+
 func TestPlugin_EventsToRegister(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -2497,6 +2541,90 @@ func TestPlugin_updateQuotaSnapshot(t *testing.T) {
 			if gp.groupQuotaManager != nil {
 				assert.True(t, exists, "default quota manager snapshot should exist")
 			}
+		})
+	}
+}
+
+func TestToElasticQuota(t *testing.T) {
+	eq := &v1alpha1.ElasticQuota{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ElasticQuota",
+			APIVersion: "scheduling.x-k8s.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-quota",
+			Namespace: "test-ns",
+			Labels: map[string]string{
+				extension.LabelQuotaTreeID: "tree1",
+			},
+		},
+		Spec: v1alpha1.ElasticQuotaSpec{
+			Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+			Min: MakeResourceList().CPU(1).Mem(2).Obj(),
+		},
+	}
+
+	// Build an *unstructured.Unstructured from the typed ElasticQuota.
+	rawMap, err := apiruntime.DefaultUnstructuredConverter.ToUnstructured(eq)
+	assert.NoError(t, err)
+	unstructuredObj := &unstructured.Unstructured{Object: rawMap}
+
+	tests := []struct {
+		name    string
+		obj     interface{}
+		wantNil bool
+	}{
+		{
+			name:    "nil object",
+			obj:     nil,
+			wantNil: true,
+		},
+		{
+			name:    "typed ElasticQuota",
+			obj:     eq,
+			wantNil: false,
+		},
+		{
+			name:    "unstructured ElasticQuota",
+			obj:     unstructuredObj,
+			wantNil: false,
+		},
+		{
+			name: "DeletedFinalStateUnknown wrapping unstructured",
+			obj: cache.DeletedFinalStateUnknown{
+				Key: "test-ns/test-quota",
+				Obj: unstructuredObj,
+			},
+			wantNil: false,
+		},
+		{
+			name: "DeletedFinalStateUnknown wrapping typed ElasticQuota",
+			obj: cache.DeletedFinalStateUnknown{
+				Key: "test-ns/test-quota",
+				Obj: eq,
+			},
+			wantNil: false,
+		},
+		{
+			name:    "unhandled type",
+			obj:     &corev1.Pod{},
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toElasticQuota(tt.obj)
+			if tt.wantNil {
+				assert.Nil(t, got)
+				return
+			}
+			assert.NotNil(t, got)
+			assert.Equal(t, eq.Name, got.Name)
+			assert.Equal(t, eq.Namespace, got.Namespace)
+			assert.Equal(t, "tree1", got.Labels[extension.LabelQuotaTreeID])
+			assert.True(t, quotav1.Equals(eq.Spec.Max, got.Spec.Max))
+			assert.True(t, quotav1.Equals(eq.Spec.Min, got.Spec.Min))
 		})
 	}
 }

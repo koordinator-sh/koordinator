@@ -32,6 +32,7 @@ import (
 	// Blank imports trigger each scenario's init() registration.
 	// Add a new line here for each new scenario package.
 	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/basic"
+	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/gang"
 )
 
 func main() {
