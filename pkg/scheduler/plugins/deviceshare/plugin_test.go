@@ -404,6 +404,86 @@ func Test_SharedDispatcher_PopulatesCacheFromInitialList(t *testing.T) {
 	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, boundPod.Namespace, boundPod.Name))
 }
 
+// Test_Plugin_Reserve_SameNameRecreation_NoStaleMarker pins the same-name recreation regression
+// (@saintube review, high priority): allocateSet is keyed by ns/name but the marker by UID, and
+// copyPodAllocations reads by name. If a same-ns/name pod (e.g. a StatefulSet replica) is Reserved
+// before the previous pod's delete reaches the cache, its add is skipped by isValid (name slot
+// held), so Reserve must NOT publish a marker over the stale snapshot — otherwise, once the old
+// pod's delete frees the slot, the new pod's positive events are suppressed and its usage never
+// enters the cache (double allocation). With the fix, Reserve skips AssumePod when the add did not
+// land, and the informer re-add credits the new pod once the slot frees.
+func Test_Plugin_Reserve_SameNameRecreation_NoStaleMarker(t *testing.T) {
+	suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}})
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	cache := pl.nodeDeviceCache
+	cache.getNodeDevice("node-1", true) // seed an (empty) nodeDevice so Reserve's lookup is non-nil
+
+	reserve := func(uid, name string, alloc apiext.DeviceAllocations) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID(uid), Namespace: "default", Name: name}}
+		cs := framework.NewCycleState()
+		cs.Write(stateKey, &preFilterState{skip: false, allocationResult: alloc})
+		assert.True(t, pl.Reserve(context.TODO(), cs, pod, "node-1").IsSuccess())
+	}
+
+	// UID1 reserved on node-1 (ns/name default/sts-0): cache credited, marker for UID1.
+	reserve("uid-1", "sts-0", gpuAllocations(0, 100))
+	_, ok := assumedEntry(cache, types.UID("uid-1"))
+	assert.True(t, ok, "UID1 must be assumed")
+
+	// UID2 recreated with the SAME ns/name before UID1's delete lands: the add collides with the
+	// held slot, so no marker may be published for UID2.
+	reserve("uid-2", "sts-0", gpuAllocations(1, 100))
+	_, ok = assumedEntry(cache, types.UID("uid-2"))
+	assert.False(t, ok, "Reserve must not publish a stale marker when the add did not land")
+
+	// UID1's delete arrives: releaseAssumed clears its marker and frees the ns/name slot.
+	cache.OnPodDelete(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-1", Namespace: "default", Name: "sts-0"}})
+	_, ok = assumedEntry(cache, types.UID("uid-1"))
+	assert.False(t, ok)
+
+	// UID2's bound event: not assumed → updatePod credits alloc2 (self-heal), so its usage is visible.
+	pod2 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-2", Namespace: "default", Name: "sts-0"}}
+	cache.OnPodAdd(eventPodFrom(pod2, "node-1", gpuAllocations(1, 100)))
+	nd := cache.getNodeDevice("node-1", false)
+	assert.ElementsMatch(t, []int{1}, gpuMinors(nd, "default", "sts-0"),
+		"UID2's allocation must become visible after the slot frees")
+}
+
+// Test_Plugin_Unreserve_ClearsMarkerWhenNodeGone pins @saintube review medium item: Unreserve must
+// clear the assumed marker even when the node's cache entry has vanished (GC), instead of returning
+// early on the nil check and leaving the marker dangling (with positive events suppressed) until
+// the pod's terminal event.
+func Test_Plugin_Unreserve_ClearsMarkerWhenNodeGone(t *testing.T) {
+	suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}})
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	cache := pl.nodeDeviceCache
+
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-1", Namespace: "default", Name: "pod-1"}}
+	alloc := gpuAllocations(0, 100)
+	nd := cache.getNodeDevice("node-1", true)
+	nd.lock.Lock()
+	nd.updateCacheUsed(alloc, pod, true)
+	nd.lock.Unlock()
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.True(t, ok, "pod must be assumed")
+
+	// The node's cache entry vanishes (GC) between Reserve and Unreserve.
+	cache.removeNodeDevice("node-1")
+	assert.Nil(t, cache.getNodeDevice("node-1", false))
+
+	cs := framework.NewCycleState()
+	cs.Write(stateKey, &preFilterState{skip: false, allocationResult: alloc})
+	pl.Unreserve(context.TODO(), cs, pod, "node-1")
+
+	_, ok = assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "Unreserve must clear the assumed marker even when the node's cache entry is gone")
+}
+
 func Test_Plugin_PreFilterExtensions(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{

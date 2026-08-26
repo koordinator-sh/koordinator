@@ -549,8 +549,18 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 	}
 	logAllocationContext(pod, nodeName, nodeDeviceInfo, state.designatedAllocation, state.allocationResult)
 	nodeDeviceInfo.lock.Lock()
-	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
+	applied := nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
 	nodeDeviceInfo.lock.Unlock()
+	if !applied {
+		// The add did not land: a pod with the same ns/name still holds the allocateSet slot
+		// (e.g. a StatefulSet replica recreated before the old pod's delete reached the cache).
+		// Publishing an assumed marker here would snapshot the OTHER pod's allocation (the marker
+		// is keyed by UID but the snapshot is read by name); once the old pod's delete frees the
+		// slot, this pod's positive events would be suppressed and its usage never re-added. Skip
+		// the marker and degrade to annotation semantics — the informer re-add credits this pod
+		// once the slot frees.
+		return nil
+	}
 	if err := p.nodeDeviceCache.AssumePod(pod, nodeName); err != nil {
 		// AssumePod only fails when the node's cache entry vanished (a benign GC race between
 		// the write above and here). Roll back the cache write — the framework does not
@@ -684,6 +694,12 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState fwktype.CycleState, p
 		return
 	}
 
+	// Clear the assumed marker unconditionally, before the nil check. ForgetPod is idempotent,
+	// and if the node's cache entry has since vanished the subtract below is a no-op anyway — but
+	// the marker must still be cleared here, or it would dangle (with this pod's positive events
+	// suppressed) until the pod's terminal event.
+	_ = p.nodeDeviceCache.ForgetPod(pod)
+
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
 	if nodeDeviceInfo == nil {
 		return
@@ -692,7 +708,6 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState fwktype.CycleState, p
 	nodeDeviceInfo.lock.Lock()
 	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
 	nodeDeviceInfo.lock.Unlock()
-	_ = p.nodeDeviceCache.ForgetPod(pod)
 	state.allocationResult = nil
 }
 

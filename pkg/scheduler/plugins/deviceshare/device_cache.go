@@ -130,8 +130,14 @@ func (n *nodeDevice) resetDeviceTotal(resources map[schedulingv1alpha1.DeviceTyp
 	}
 }
 
-// updateCacheUsed is used to update deviceUsed when there is a new pod created/deleted
-func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) {
+// updateCacheUsed updates deviceUsed when a pod is created/deleted, and reports whether the
+// operation actually landed for this pod. An add is skipped by isValid when the pod's ns/name
+// slot in allocateSet is already held — e.g. a same-ns/name pod (a StatefulSet replica) not yet
+// deleted. Callers that publish an assumed marker (keyed by UID, but snapshotted by name) must
+// not do so when the add did not land, or the marker would snapshot the other pod's allocation.
+// Same-ns/name pods request the same device types in practice, so the add is all-or-nothing.
+func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) bool {
+	applied := false
 	if len(deviceAllocations) > 0 {
 		for deviceType, allocations := range deviceAllocations {
 			if !n.isValid(deviceType, pod.Namespace, pod.Name, add) {
@@ -140,8 +146,10 @@ func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations,
 			n.updateDeviceUsed(deviceType, allocations, add)
 			n.resetDeviceFree(deviceType)
 			n.updateAllocateSet(deviceType, allocations, pod, add)
+			applied = true
 		}
 	}
+	return applied
 }
 
 // copyPodAllocations returns the DeviceAllocations recorded in allocateSet for pod. The
