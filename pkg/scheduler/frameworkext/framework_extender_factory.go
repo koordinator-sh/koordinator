@@ -574,6 +574,15 @@ func (f *FrameworkExtenderFactory) StartSharedCaches(ctx context.Context, inform
 	}
 	f.sharedCachesMu.Unlock()
 
+	// INVARIANT: no getOrRegisterSharedCache runs concurrently with this function. sharedCachesStarted
+	// is not set until after the dispatchers register below (deliberately, so a registration failure
+	// leaves the factory un-started for fail-fast), so a cache registered in the window between the
+	// snapshot above and the flag set below would miss BOTH the snapshot and the post-start panic
+	// guard. This is unreachable today because profiles are constructed serially and every
+	// getOrRegisterSharedCache (from Plugin.New()) completes before StartSharedCaches is called.
+	// Future hardening (only if that ordering ever changes) must preserve the fail-fast property —
+	// e.g. fold the flag into a critical section that also covers registration.
+
 	if len(caches) > 0 {
 		// Register the unified pod/node dispatchers before committing any state, so a
 		// registration failure leaves the factory un-started (sharedCachesStarted stays
