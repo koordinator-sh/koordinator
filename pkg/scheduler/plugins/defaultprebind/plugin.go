@@ -19,22 +19,36 @@ package defaultprebind
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
 const (
 	Name = "DefaultPreBind"
+
+	// Keep the default retry parameters aligned with SetDefaults_DefaultPreBindArgs,
+	// used when the plugin is enabled without args,
+	// e.g. by the default scheduler profile.
+	defaultMaxAttempts = 4
+)
+
+var (
+	defaultRetryInitialBackoff = 200 * time.Millisecond
+	defaultRetryMaxBackoff     = 3 * time.Second
 )
 
 var _ fwktype.PreBindPlugin = &Plugin{}
@@ -43,6 +57,9 @@ var _ frameworkext.PreBindExtensions = &Plugin{}
 type Plugin struct {
 	clientSet      clientset.Interface
 	koordClientSet koordinatorclientset.Interface
+	maxAttempts    int
+	initialBackoff time.Duration
+	maxBackoff     time.Duration
 }
 
 type koordClientSetHandle interface {
@@ -54,9 +71,29 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 	if koordClientSetHandle == nil {
 		return nil, fmt.Errorf("fwktype.Handle cannot provide koordinator clientset")
 	}
+	maxAttempts := defaultMaxAttempts
+	initialBackoff := defaultRetryInitialBackoff
+	maxBackoff := defaultRetryMaxBackoff
+	// The plugin is auto-enabled in the default scheduler profile without args,
+	// in which case the defaults above apply.
+	if args != nil {
+		preBindArgs, ok := args.(*config.DefaultPreBindArgs)
+		if !ok {
+			return nil, fmt.Errorf("want args to be of type DefaultPreBindArgs, got %T", args)
+		}
+		if err := validation.ValidateDefaultPreBindArgs(preBindArgs); err != nil {
+			return nil, err
+		}
+		maxAttempts = int(preBindArgs.MaxAttempts)
+		initialBackoff = preBindArgs.RetryInitialBackoff.Duration
+		maxBackoff = preBindArgs.RetryMaxBackoff.Duration
+	}
 	return &Plugin{
 		clientSet:      handle.ClientSet(),
 		koordClientSet: koordClientSetHandle.KoordinatorClientSet(),
+		maxAttempts:    maxAttempts,
+		initialBackoff: initialBackoff,
+		maxBackoff:     maxBackoff,
 	}, nil
 }
 
@@ -86,15 +123,27 @@ func (pl *Plugin) ApplyPatch(ctx context.Context, cycleState fwktype.CycleState,
 
 func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *corev1.Pod) *fwktype.Status {
 	var patchedPod *corev1.Pod
-	err := util.RetryOnConflictOrTooManyRequestsOrConnectionClose(func() error {
+	err := util.RetryOnTransientErrorWithBackoff(ctx, pl.retryBackoff(), func() error {
 		got, err := util.PatchPodSafe(ctx, pl.clientSet, originalPod, modifiedPod)
 		if err != nil {
-			klog.ErrorS(err, "Failed to patch Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID)
+			if util.IsRetryableTransientError(err) {
+				klog.V(4).InfoS("Failed to patch Pod with retryable error, will retry", "pod", klog.KObj(originalPod), "uid", originalPod.UID, "err", err)
+			} else {
+				klog.ErrorS(err, "Failed to patch Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID)
+			}
 			return err
 		}
 		patchedPod = got
 		return nil
 	})
+	if err == nil && patchedPod == nil {
+		// Never report success without a successful patch request: retry.OnError can return a
+		// nil error even though no attempt succeeded, e.g. the loop is interrupted by a canceled
+		// context before any attempt.
+		if err = ctx.Err(); err == nil {
+			err = fmt.Errorf("patch of pod %s/%s interrupted before completion", originalPod.Namespace, originalPod.Name)
+		}
+	}
 
 	if err != nil {
 		klog.ErrorS(err, "Failed to apply patch for Pod", "pod", klog.KObj(originalPod), "uid", originalPod.UID)
@@ -114,15 +163,27 @@ func (pl *Plugin) applyPodPatch(ctx context.Context, originalPod, modifiedPod *c
 
 func (pl *Plugin) applyReservationPatch(ctx context.Context, originalReservation, modifiedReservation *schedulingv1alpha1.Reservation) *fwktype.Status {
 	var patchedReservation *schedulingv1alpha1.Reservation
-	err := util.RetryOnConflictOrTooManyRequestsOrConnectionClose(func() error {
+	err := util.RetryOnTransientErrorWithBackoff(ctx, pl.retryBackoff(), func() error {
 		got, err := util.PatchReservationSafe(ctx, pl.koordClientSet, originalReservation, modifiedReservation)
 		if err != nil {
-			klog.ErrorS(err, "Failed to patch Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)
+			if util.IsRetryableTransientError(err) {
+				klog.V(4).InfoS("Failed to patch Reservation with retryable error, will retry", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID, "err", err)
+			} else {
+				klog.ErrorS(err, "Failed to patch Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)
+			}
 			return err
 		}
 		patchedReservation = got
 		return nil
 	})
+	if err == nil && patchedReservation == nil {
+		// Never report success without a successful patch request: retry.OnError can return a
+		// nil error even though no attempt succeeded, e.g. the loop is interrupted by a canceled
+		// context before any attempt.
+		if err = ctx.Err(); err == nil {
+			err = fmt.Errorf("patch of reservation %q interrupted before completion", originalReservation.Name)
+		}
+	}
 	if err != nil {
 		klog.ErrorS(err, "Failed to apply patch for Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)
 		return fwktype.AsStatus(err)
@@ -137,4 +198,18 @@ func (pl *Plugin) applyReservationPatch(ctx context.Context, originalReservation
 
 	klog.V(4).InfoS("Successfully apply patch for Reservation", "reservation", klog.KObj(originalReservation), "uid", originalReservation.UID)
 	return nil
+}
+
+// retryBackoff builds the retry backoff from the plugin args:
+// the initial backoff is doubled after each retry attempt, capped by the max backoff.
+func (pl *Plugin) retryBackoff() wait.Backoff {
+	return wait.Backoff{
+		Duration: pl.initialBackoff,
+		Factor:   2.0,
+		// Jitter spreads out the concurrent retries of a large job whose patches
+		// failed at the same instant, the same as retry.DefaultBackoff.
+		Jitter: 0.1,
+		Steps:  pl.maxAttempts,
+		Cap:    pl.maxBackoff,
+	}
 }
