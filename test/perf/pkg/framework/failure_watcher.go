@@ -192,6 +192,18 @@ func (f *FailureWatcher) LastEventTime() time.Time {
 	return f.lastEventTime
 }
 
+// ResetLastEventTime sets lastEventTime to now. Called by waitForSettle at
+// settle start so the quiet-period clock begins from when settling starts,
+// not from when NewFailureWatcher was called. Without this, a scenario that
+// reaches expectedScheduledPodCount in under settleQuietPeriod seconds could
+// exit the settle loop immediately — lastEventTime from watcher creation
+// would already be stale by the time waitForSettle is invoked.
+func (f *FailureWatcher) ResetLastEventTime() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastEventTime = time.Now()
+}
+
 // isQuotaBlockedEvent reports whether the FailedScheduling event message
 // indicates the pod was throttled by an ElasticQuota limit. Extracted as a
 // named function so it can be unit-tested independently of the watch stream.

@@ -488,6 +488,11 @@ func createPodWithRetry(ctx context.Context, client kubernetes.Interface, pod *c
 // already waited for all podCount pods — so this returns immediately and
 // existing behaviour is unchanged.
 func waitForSettle(ctx context.Context, watcher *Watcher, failureWatcher *FailureWatcher, podCount int) error {
+	// Seed the quiet-period clock from settle start, not watcher creation.
+	// If expectedScheduledPodCount pods land in under settleQuietPeriod,
+	// lastEventTime from NewFailureWatcher would already be stale and the
+	// quiet-period check below would fire immediately on the first tick.
+	failureWatcher.ResetLastEventTime()
 	ticker := time.NewTicker(settlePollInterval)
 	defer ticker.Stop()
 	for {

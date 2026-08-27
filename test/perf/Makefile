@@ -8,8 +8,11 @@ OUTPUT     ?= results/result.json
 KUBECONFIG ?= $(HOME)/.kube/config
 BASELINE   ?=
 
-# Prefer an annotated tag; fall back to short commit SHA.
-GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+# Use the short commit SHA directly — avoids the -dirty suffix that
+# git describe appends when any tracked file is modified during the CI
+# run (e.g. go mod download touching go.sum), which would poison the
+# koordinatorVersion field stamped into every baseline JSON.
+GIT_VERSION := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
 VERSION_FLAG := -X github.com/koordinator-sh/koordinator/test/perf/pkg/framework.Version=$(GIT_VERSION)
 
 .PHONY: benchmark setup teardown clean test fmt-check help

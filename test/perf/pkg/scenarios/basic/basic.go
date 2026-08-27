@@ -104,13 +104,15 @@ func (s *BasicScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.
 		podResources = corev1.ResourceRequirements{Requests: rl, Limits: rl}
 	}
 
-	labels := map[string]string{
-		types.RunIDLabel: runID,
-		"app":            "kwok-bench",
-	}
+	// Apply cfg.Labels first so the built-in labels set below can never
+	// be overwritten by a config-supplied value. A clobbered RunIDLabel
+	// would make Watcher/FailureWatcher select nothing and hang the run.
+	labels := make(map[string]string, len(cfg.Labels)+2)
 	for k, v := range cfg.Labels {
 		labels[k] = v
 	}
+	labels[types.RunIDLabel] = runID
+	labels["app"] = "kwok-bench"
 	if cfg.QoSClass != "" {
 		labels["koordinator.sh/qosClass"] = cfg.QoSClass
 	}
