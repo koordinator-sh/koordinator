@@ -53,6 +53,11 @@ const (
 
 	// stateKey is the key in CycleState to pre-computed data.
 	stateKey = Name
+
+	// ErrInsufficientDevicesInNominatedReservation is reported when a pod nominated to a reservation cannot
+	// allocate its devices from that reservation's reserved devices. In this case the pod must not fall back
+	// to the devices reserved by other reservations.
+	ErrInsufficientDevicesInNominatedReservation = "Insufficient devices in the nominated reservation"
 )
 
 var (
@@ -470,7 +475,8 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 	// if pre-allocation, we filter the reserve pod with the pre-allocatable pod
 	if restoreState.preAllocationRInfo != nil {
 		for i, v := range restoreState.matched {
-			if v.preAllocatable.GetUID() == pod.GetUID() {
+			// the allocations restored for the matched reservations carry no pre-allocatable pod
+			if v.preAllocatable != nil && v.preAllocatable.GetUID() == pod.GetUID() {
 				allocIndex = i
 				break
 			}
@@ -606,11 +612,27 @@ func (p *Plugin) allocate(ctx context.Context, cycleState fwktype.CycleState, po
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	result, status := p.allocateWithNominated(allocator, state, restoreState, node, pod, preemptible)
+	result, nominated, status := p.allocateWithNominated(allocator, state, restoreState, node, pod, preemptible)
 	if !status.IsSuccess() {
 		return status
 	}
 	if len(result) == 0 {
+		// If the pod is nominated to a reservation reserving tracked device resources, its devices MUST come from
+		// that reservation. Silently spilling into other matched reservations' reserved devices would violate the
+		// reservation contract (e.g. Restricted) and let the pod occupy devices reserved for another owner.
+		// A nomination whose target reserves no tracked device resource reports nominated=false and falls back to
+		// the node unallocated resources below.
+		if nominated {
+			klog.V(4).InfoS("failed to allocate devices from the nominated reservation",
+				"pod", klog.KObj(pod), "node", node.Name,
+				"phase", schedulingphase.GetExtensionPointBeingExecuted(cycleState),
+				"matched", dumpReusableAllocs(restoreState.matched))
+			return fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientDevicesInNominatedReservation)
+		}
+		klog.V(5).InfoS("allocating devices without reusing any reservation",
+			"pod", klog.KObj(pod), "node", node.Name,
+			"phase", schedulingphase.GetExtensionPointBeingExecuted(cycleState),
+			"matched", dumpReusableAllocs(restoreState.matched))
 		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
 		var requiredDeviceResource map[schedulingv1alpha1.DeviceType]deviceResources
 		if len(state.designatedAllocation) > 0 {
