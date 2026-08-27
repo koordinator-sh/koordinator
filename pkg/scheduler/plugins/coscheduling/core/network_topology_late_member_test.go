@@ -81,7 +81,7 @@ func newLateMemberPod(name string) *corev1.Pod {
 	}
 }
 
-func TestPodGroupManager_PreFilter_LateMemberOfSatisfiedGang(t *testing.T) {
+func TestPodGroupManager_FindOneNode_LateMembersOfSatisfiedGang(t *testing.T) {
 	gangID := "default/gangA"
 	boundPodOnNode := func(name, nodeName string) *corev1.Pod {
 		pod := newLateMemberPod(name)
@@ -91,34 +91,35 @@ func TestPodGroupManager_PreFilter_LateMemberOfSatisfiedGang(t *testing.T) {
 	tests := []struct {
 		name                   string
 		triggerPod             *corev1.Pod
+		pendingPods            []*corev1.Pod
 		withClusterTopology    bool
 		networkTopologySpec    *extension.NetworkTopologySpec
 		boundPods              []*corev1.Pod
 		manuallySetSatisfied   bool
-		wantResult             *fwktype.PreFilterResult
 		wantStatusCode         fwktype.Code
 		wantStatusMsgSubstring string
+		wantPlannedNodes       sets.Set[string]
 	}{
 		{
 			name:                "not a gang pod",
 			triggerPod:          &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "late-pod"}},
 			withClusterTopology: true,
 			networkTopologySpec: newMustGatherBlockTopologySpec(),
-			wantStatusCode:      fwktype.Success,
+			wantStatusCode:      fwktype.Skip,
 		},
 		{
 			name:                "gang without network topology spec",
 			triggerPod:          newLateMemberPod("late-pod"),
 			withClusterTopology: true,
 			networkTopologySpec: nil,
-			wantStatusCode:      fwktype.Success,
+			wantStatusCode:      fwktype.Skip,
 		},
 		{
 			name:                "gang not satisfied yet",
 			triggerPod:          newLateMemberPod("late-pod"),
 			withClusterTopology: true,
 			networkTopologySpec: newMustGatherBlockTopologySpec(),
-			wantStatusCode:      fwktype.Success,
+			wantStatusCode:      fwktype.Skip,
 		},
 		{
 			name:                   "no cluster network topology",
@@ -142,7 +143,7 @@ func TestPodGroupManager_PreFilter_LateMemberOfSatisfiedGang(t *testing.T) {
 				},
 			},
 			boundPods:      []*corev1.Pod{boundPodOnNode("bound-pod-1", "node-1")},
-			wantStatusCode: fwktype.Success,
+			wantStatusCode: fwktype.Skip,
 		},
 		{
 			name:                   "satisfied but no bound member",
@@ -175,15 +176,32 @@ func TestPodGroupManager_PreFilter_LateMemberOfSatisfiedGang(t *testing.T) {
 			wantStatusMsgSubstring: "the bound members span multiple must-gather topology domains",
 		},
 		{
-			name:                "confined to the bound members' block",
+			name:                "batch scheduled within the bound members' block",
 			triggerPod:          newLateMemberPod("late-pod"),
+			pendingPods:         []*corev1.Pod{newLateMemberPod("late-pod-2")},
 			withClusterTopology: true,
 			networkTopologySpec: newMustGatherBlockTopologySpec(),
 			boundPods: []*corev1.Pod{
 				boundPodOnNode("bound-pod-1", "node-1"),
 				boundPodOnNode("bound-pod-2", "node-2"),
 			},
-			wantResult: &fwktype.PreFilterResult{NodeNames: sets.New("node-1", "node-2")},
+			wantStatusCode:   fwktype.Success,
+			wantPlannedNodes: sets.New("node-1", "node-2"),
+		},
+		{
+			name:       "insufficient offer slot in the bound members' block",
+			triggerPod: newLateMemberPod("late-pod"),
+			pendingPods: []*corev1.Pod{
+				newLateMemberPod("late-pod-2"),
+				newLateMemberPod("late-pod-3"),
+			},
+			withClusterTopology: true,
+			networkTopologySpec: newMustGatherBlockTopologySpec(),
+			boundPods: []*corev1.Pod{
+				boundPodOnNode("bound-pod-1", "node-1"),
+				boundPodOnNode("bound-pod-2", "node-2"),
+			},
+			wantStatusCode: fwktype.Unschedulable,
 		},
 	}
 	for _, tt := range tests {
@@ -193,11 +211,12 @@ func TestPodGroupManager_PreFilter_LateMemberOfSatisfiedGang(t *testing.T) {
 				clusterNetworkTopology = nil
 			}
 			extendedFramework := NewFakeExtendedFramework(t, newLateMemberTestNodes(), nil, nil, nil, clusterNetworkTopology)
-			pgMgr := &PodGroupManager{handle: extendedFramework}
+			pgMgr := &PodGroupManager{handle: extendedFramework, networkTopologySolver: NewNetworkTopologySolver(extendedFramework)}
 			pgMgr.cache = NewGangCache(nil, nil, nil, nil, nil)
 
 			gang := NewGang(gangID)
 			gang.HasGangInit = true
+			gang.GangGroup = []string{gangID}
 			gang.NetworkTopologySpec = tt.networkTopologySpec
 			for _, boundPod := range tt.boundPods {
 				gang.addBoundPod(boundPod)
@@ -205,18 +224,27 @@ func TestPodGroupManager_PreFilter_LateMemberOfSatisfiedGang(t *testing.T) {
 			if tt.manuallySetSatisfied {
 				gang.setResourceSatisfied()
 			}
+			gang.setChild(tt.triggerPod)
+			for _, pendingPod := range tt.pendingPods {
+				gang.setChild(pendingPod)
+			}
 			pgMgr.cache.gangItems[gangID] = gang
 
-			result, status := pgMgr.PreFilter(context.TODO(), framework.NewCycleState(), tt.triggerPod, nil)
-			if tt.wantResult != nil {
+			cycleState := framework.NewCycleState()
+			frameworkext.InitDiagnosis(cycleState, tt.triggerPod)
+			plan, status := pgMgr.FindOneNode(context.TODO(), cycleState, tt.triggerPod, nil)
+			if tt.wantStatusCode == fwktype.Success {
 				assert.True(t, status.IsSuccess())
-				assert.NotNil(t, result)
-				assert.True(t, tt.wantResult.NodeNames.Equal(result.NodeNames))
-			} else if tt.wantStatusCode == fwktype.Success {
-				assert.Nil(t, status)
-				assert.Nil(t, result)
+				assert.NotNil(t, plan)
+				assert.Len(t, plan.Pods, len(tt.pendingPods)+1)
+				plannedNodeNames := sets.New[string]()
+				for podKey, nodeName := range plan.PodToNodeName {
+					assert.Contains(t, tt.wantPlannedNodes, nodeName, "pod %s planned to unexpected node", podKey)
+					plannedNodeNames.Insert(nodeName)
+				}
+				assert.True(t, tt.wantPlannedNodes.Equal(plannedNodeNames))
 			} else {
-				assert.Nil(t, result)
+				assert.Nil(t, plan)
 				assert.Equal(t, tt.wantStatusCode, status.Code())
 				if tt.wantStatusMsgSubstring != "" {
 					assert.Contains(t, status.Message(), tt.wantStatusMsgSubstring)

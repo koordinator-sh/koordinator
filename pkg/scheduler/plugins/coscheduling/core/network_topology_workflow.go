@@ -50,11 +50,7 @@ const (
 func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
 	gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
 	if gangSchedulingContext == nil {
-		// no gang scheduling cycle is ongoing. the pod may be a late member of an
-		// already-satisfied topology-aware gang (e.g. recreated after the batch
-		// was scheduled), which bypassed BeforePreFilter. confine it to the
-		// topology domain of the existing members, or reject it.
-		return pgMgr.preFilterLateMemberOfSatisfiedGang(ctx, pod)
+		return nil, nil
 	}
 	if gangSchedulingContext.networkTopologySpec == nil {
 		return nil, nil
@@ -78,8 +74,14 @@ func (pgMgr *PodGroupManager) PreFilter(ctx context.Context, state fwktype.Cycle
 
 func (pgMgr *PodGroupManager) FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, preRes *fwktype.PreFilterResult) (*frameworkext.BatchScheduleResult, *fwktype.Status) {
 	gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext()
-	if gangSchedulingContext == nil ||
-		gangSchedulingContext.failedMessage != "" ||
+	if gangSchedulingContext == nil {
+		// no gang scheduling cycle is ongoing. the pod may be a late member of an
+		// already-satisfied topology-aware gang (e.g. recreated after the batch was
+		// scheduled), which bypassed BeforePreFilter. batch-schedule the remaining
+		// delta members together, confined to the topology domain of the bound members.
+		return pgMgr.findOneNodeForDeltaMembers(ctx, cycleState, pod, preRes)
+	}
+	if gangSchedulingContext.failedMessage != "" ||
 		gangSchedulingContext.networkTopologySpec == nil {
 		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
@@ -337,27 +339,30 @@ func (pgMgr *PodGroupManager) Score(ctx context.Context, state fwktype.CycleStat
 	return int64(preScoreState.(*PreScoreState).nodesIndex[nodeInfo.Node().Name]), nil
 }
 
-// preFilterLateMemberOfSatisfiedGang handles late members (typically recreated
-// pods/reservations) of an already-satisfied topology-aware gang. Such pods bypassed
-// BeforePreFilter because the gang is once-satisfied, so no gang scheduling context was
-// created for them. It confines the candidate nodes to the must-gather topology domain
-// where the bound members are placed. If the domain cannot be determined, the pod is
-// rejected instead of being placed arbitrarily.
-func (pgMgr *PodGroupManager) preFilterLateMemberOfSatisfiedGang(ctx context.Context, pod *corev1.Pod) (*fwktype.PreFilterResult, *fwktype.Status) {
+// findOneNodeForDeltaMembers batch-schedules the pending late members of an already-satisfied
+// topology-aware gang. Such pods bypassed BeforePreFilter because the gang is once-satisfied,
+// so no gang scheduling context was created for them. Instead of letting every late member
+// walk the topology tree on its own, the whole remaining delta is planned in one PlacePods
+// round, confined to the must-gather topology domain where the bound members are placed. The
+// returned plan cooperates with the inline batch scheduler (EnableInlineBatchSchedule): when
+// the gate is on, all delta members are batch-scheduled together; otherwise the framework
+// extender falls back to placing the trigger pod on its planned node. If the domain cannot be
+// determined, the pod is rejected instead of being placed arbitrarily.
+func (pgMgr *PodGroupManager) findOneNodeForDeltaMembers(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, preRes *fwktype.PreFilterResult) (*frameworkext.BatchScheduleResult, *fwktype.Status) {
 	if !util.IsPodNeedGang(pod) {
-		return nil, nil
+		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
 	gang := pgMgr.GetGangByPod(pod)
 	if gang == nil || gang.NetworkTopologySpec == nil {
-		return nil, nil
+		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
 	if gang.getGangMatchPolicy() != extension.GangMatchPolicyOnceSatisfied || !gang.isGangOnceResourceSatisfied() {
-		return nil, nil
+		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
 	podKey := util.GetId(pod.Namespace, pod.Name)
 	extendedHandle, ok := pgMgr.handle.(frameworkext.ExtendedHandle)
 	if !ok {
-		return nil, nil
+		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
 	treeManager := extendedHandle.GetNetworkTopologyTreeManager()
 	var snapshot *networktopology.TreeSnapshot
@@ -371,8 +376,8 @@ func (pgMgr *PodGroupManager) preFilterLateMemberOfSatisfiedGang(ctx context.Con
 	}
 	mustGatherLayer := GetMustGatherLayer(gang.NetworkTopologySpec, snapshot.IsAncestor)
 	if mustGatherLayer == "" {
-		// no must-gather requirement, the topology is only a soft preference, don't confine
-		return nil, nil
+		// no must-gather requirement, the topology is only a soft preference, don't constrain
+		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
 	domain, status := pgMgr.getMustGatherDomainOfBoundMembers(gang, pod, snapshot, mustGatherLayer)
 	if !status.IsSuccess() {
@@ -380,15 +385,94 @@ func (pgMgr *PodGroupManager) preFilterLateMemberOfSatisfiedGang(ctx context.Con
 	}
 	domainNodeNames := sets.New[string]()
 	collectLeafNodeNames(domain, domainNodeNames)
+	if preRes != nil && !preRes.AllNodes() {
+		domainNodeNames = domainNodeNames.Intersection(preRes.NodeNames)
+	}
 	if len(domainNodeNames) == 0 {
 		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
 			fmt.Sprintf("pod %q belongs to the satisfied topology-aware gang group %q, but the must-gather topology domain %s/%s has no node",
 				podKey, gang.GangGroupId, domain.Layer, domain.Name))
 	}
 
-	klog.Infof("confine late member %q of satisfied gang group %q to the must-gather topology domain %s/%s",
-		podKey, gang.GangGroupId, domain.Layer, domain.Name)
-	return &fwktype.PreFilterResult{NodeNames: domainNodeNames}, nil
+	allPendingPods := pgMgr.cache.getPendingPods(gang.getGangGroup())
+	// the trigger pod must be covered by the plan; the framework extender rejects a success
+	// plan which carries no node for the trigger pod
+	triggerPlanned := false
+	for _, pendingPod := range allPendingPods {
+		if pendingPod.Namespace == pod.Namespace && pendingPod.Name == pod.Name {
+			triggerPlanned = true
+			break
+		}
+	}
+	if !triggerPlanned {
+		allPendingPods = append(allPendingPods, pod)
+	}
+	extension.SortPodsByIndex(allPendingPods)
+	allPendingPodUIDs := sets.New[string]()
+	for _, pendingPod := range allPendingPods {
+		allPendingPodUIDs.Insert(string(pendingPod.UID))
+	}
+	frameworkext.MakeNominatedPodsOfTheSameJob(cycleState, allPendingPodUIDs)
+
+	nodes := make([]fwktype.NodeInfo, 0, len(domainNodeNames))
+	for n := range domainNodeNames {
+		nInfo, err := pgMgr.handle.SnapshotSharedLister().NodeInfos().Get(n)
+		if err != nil {
+			return nil, fwktype.AsStatus(err)
+		}
+		nodes = append(nodes, nInfo.Snapshot())
+	}
+	nodeLevelCycleState := make(map[string]fwktype.CycleState, len(nodes))
+	for _, node := range nodes {
+		nodeLevelCycleState[node.Node().Name] = cycleState.Clone()
+	}
+
+	addPod := func(state fwktype.CycleState, toSchedulePod *corev1.Pod, api fwktype.PodInfo, nodeInfo fwktype.NodeInfo) error {
+		nodeInfo.AddPodInfo(api)
+		status := pgMgr.handle.RunPreFilterExtensionAddPod(ctx, state, toSchedulePod, api, nodeInfo)
+		if !status.IsSuccess() {
+			return status.AsError()
+		}
+		return nil
+	}
+
+	topologyState := &TopologyState{
+		JobTopologyRequirements: &JobTopologyRequirements{
+			TopologyLayerMustGather: mustGatherLayer,
+			DesiredOfferSlot:        len(allPendingPods),
+		},
+	}
+	defer func() {
+		diagnosis := frameworkext.GetDiagnosis(cycleState)
+		diagnosis.TopologyKeyToExplain = string(topologyState.JobTopologyRequirements.TopologyLayerMustGather)
+		if diagnosis.ScheduleDiagnosis == nil {
+			diagnosis.ScheduleDiagnosis = &frameworkext.ScheduleDiagnosis{}
+		}
+		diagnosis.ScheduleDiagnosis.SchedulingMode = frameworkext.JobSchedulingMode
+		diagnosis.ScheduleDiagnosis.NodeOfferSlot = topologyState.NodeOfferSlot
+		diagnosis.ScheduleDiagnosis.NodeToStatusMap = topologyState.NodeToStatusMap
+	}()
+	ctx = ContextWithTopologyState(ctx, topologyState)
+	plannedNodes, status := pgMgr.networkTopologySolver.PlacePods(
+		ctx,
+		nodeLevelCycleState,
+		allPendingPods,
+		nodes,
+		addPod,
+		topologyState.JobTopologyRequirements,
+		networktopology.DeepCopyTreeNode(snapshot.TreeNode, nil),
+		nil,
+	)
+	if !status.IsSuccess() {
+		return nil, status
+	}
+	klog.Infof("delta mode: plan %d late members of satisfied gang group %q within the must-gather topology domain %s/%s",
+		len(allPendingPods), gang.GangGroupId, domain.Layer, domain.Name)
+	recordBatchPlacement(gang.GangGroupId, gang.NetworkTopologySpec, snapshot, plannedNodes)
+	return &frameworkext.BatchScheduleResult{
+		Pods:          allPendingPods,
+		PodToNodeName: plannedNodes,
+	}, nil
 }
 
 // getMustGatherDomainOfBoundMembers returns the single must-gather topology domain that all
