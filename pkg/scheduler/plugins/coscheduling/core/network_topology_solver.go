@@ -147,7 +147,10 @@ func (solver *networkTopologySolverImpl) calculateNodeOfferSlot(
 			offerSlot += 1
 		}
 		statusLock.Lock()
-		topologyState.NodeOfferSlot[nodeInfo.Node().Name] = offerSlot
+		// skip nodes with no offer slot to keep the diagnosis compact
+		if offerSlot > 0 {
+			topologyState.NodeOfferSlot[nodeInfo.Node().Name] = offerSlot
+		}
 		if !status.IsSuccess() {
 			topologyState.NodeToStatusMap[nodeInfo.Node().Name] = status
 		}

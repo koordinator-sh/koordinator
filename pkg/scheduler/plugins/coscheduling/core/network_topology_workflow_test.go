@@ -1261,10 +1261,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					SchedulingMode:      frameworkext.JobSchedulingMode,
 					AlreadyWaitForBound: 0,
 					NodeOfferSlot: map[string]int{
-						"node-1": 0,
 						"node-2": 1,
 						"node-3": 1,
-						"node-4": 0,
 						"node-5": 1,
 						"node-6": 1,
 						"node-7": 1,
@@ -1738,10 +1736,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					SchedulingMode:      frameworkext.JobSchedulingMode,
 					AlreadyWaitForBound: 0,
 					NodeOfferSlot: map[string]int{
-						"node-1": 0,
-						"node-2": 0,
 						"node-3": 1,
-						"node-4": 0,
 						"node-5": 1,
 						"node-6": 1,
 						"node-7": 1,
@@ -1777,10 +1772,8 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					"node-8": fwktype.NewStatus(fwktype.Unschedulable, "Insufficient cpu").WithPlugin("FakeFitPlugin"),
 				},
 				NodeToOfferSlot: map[string]int{
-					"node-1": 0,
 					"node-2": 1,
 					"node-3": 1,
-					"node-4": 0,
 					"node-5": 1,
 					"node-6": 1,
 					"node-7": 1,

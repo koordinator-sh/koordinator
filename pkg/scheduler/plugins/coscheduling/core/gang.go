@@ -476,6 +476,16 @@ func (gang *Gang) getWaitingChildrenFromGang() (children []*v1.Pod) {
 	return children
 }
 
+func (gang *Gang) getBoundChildrenFromGang() (children []*v1.Pod) {
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
+	children = make([]*v1.Pod, 0, len(gang.BoundChildren))
+	for _, pod := range gang.BoundChildren {
+		children = append(children, pod)
+	}
+	return children
+}
+
 func (gang *Gang) isGangFromAnnotation() bool {
 	gang.lock.RLock()
 	defer gang.lock.RUnlock()
