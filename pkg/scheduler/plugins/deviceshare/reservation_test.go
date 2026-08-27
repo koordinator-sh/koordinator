@@ -1767,9 +1767,9 @@ func Test_getNominatedReusableAlloc(t *testing.T) {
 			wantNominated:    true,
 		},
 		{
-			// The reservation is nominated but reserves no device resource, so it is absent from
-			// the restored matched list. It must still be reported as nominated, otherwise the
-			// caller would fall back and take the devices reserved by the other reservations.
+			// The reservation is nominated but reserves no tracked device resource, so it is absent from
+			// the restored matched list. It must be reported as not nominated, so the caller falls back
+			// to the node unallocated resources instead of rejecting the pod.
 			name: "normal pod nominated to a reservation reserving no device",
 			pod:  normalPod,
 			setup: func(pl *Plugin) *nodeReservationRestoreStateData {
@@ -1781,7 +1781,7 @@ func Test_getNominatedReusableAlloc(t *testing.T) {
 				}
 			},
 			wantMatchedIndex: -1,
-			wantNominated:    true,
+			wantNominated:    false,
 		},
 		{
 			name: "reserve pod without pre-allocation",
@@ -1833,8 +1833,9 @@ func Test_getNominatedReusableAlloc(t *testing.T) {
 			wantNominated:    true,
 		},
 		{
-			// The nominated pre-allocatable pod holds no device, so it is absent from the matched
-			// list while the nomination itself still stands.
+			// The nominated pre-allocatable pod holds no tracked device, so it is absent from the matched
+			// list. It must be reported as not nominated, so the caller falls back to the node unallocated
+			// resources instead of rejecting the reserve pod.
 			name: "pre-allocating reserve pod nominated to a pre-allocatable pod reserving no device",
 			pod:  preAllocReservePod,
 			setup: func(pl *Plugin) *nodeReservationRestoreStateData {
@@ -1848,7 +1849,7 @@ func Test_getNominatedReusableAlloc(t *testing.T) {
 				}
 			},
 			wantMatchedIndex: -1,
-			wantNominated:    true,
+			wantNominated:    false,
 		},
 		{
 			// RestoreReservationPreAllocation appends the pre-allocatable allocations to the ones
@@ -1975,19 +1976,6 @@ func Test_Plugin_Reserve_NominatedReservationMustNotSpill(t *testing.T) {
 				},
 			},
 		},
-		{
-			// reservation-b is nominated but reserves no device at all, so it is absent from the
-			// restored matched list. The pod must not take GPU 0 reserved by reservation-a.
-			name: "nominated reservation reserves no device",
-			restoreState: &nodeReservationRestoreStateData{
-				matched: []reusableAlloc{
-					{rInfo: rInfoA, allocatable: reservedGPU(0), remained: reservedGPU(0)},
-				},
-				mergedMatchedAllocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
-					schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy()},
-				},
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -2025,6 +2013,143 @@ func Test_Plugin_Reserve_NominatedReservationMustNotSpill(t *testing.T) {
 			assert.Equal(t, fwktype.Unschedulable, status.Code(), "the pod must be rejected, got status %v", status)
 			// most importantly, it must not have been given GPU 0 reserved by reservation-a
 			assert.Nil(t, state.allocationResult)
+		})
+	}
+}
+
+// Test_Plugin_Reserve_NominatedReservationReservesNoDevice reproduces the regression introduced by the
+// must-not-spill fix: when the nominated reservation reserves no tracked device resource, the pod was
+// rejected with ErrInsufficientDevicesInNominatedReservation instead of falling back to the node resources.
+// The nomination carries no device reservation either because the reservation really reserves no device, or
+// because its device allocation is dispensed with by the DispenseWithLRNDeviceAllocation feature gate, which
+// keeps LRN reservations out of the scheduling ledger even though they requested devices. In both cases the
+// pod must be allocated from the node unallocated resources.
+func Test_Plugin_Reserve_NominatedReservationReservesNoDevice(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}}
+
+	wholeGPU := corev1.ResourceList{
+		apiext.ResourceGPUCore:        resource.MustParse("100"),
+		apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+		apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+	}
+	newRInfo := func(name string, uid types.UID) *frameworkext.ReservationInfo {
+		return frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: name, UID: uid},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template:       &corev1.PodTemplateSpec{},
+				AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+			},
+			Status: schedulingv1alpha1.ReservationStatus{NodeName: node.Name},
+		})
+	}
+
+	// GPU 0 is entirely used while GPU 1 is free, so the fallback allocation can only pick GPU 1.
+	newNodeDeviceCache := func() *nodeDeviceCache {
+		return &nodeDeviceCache{
+			nodeDeviceInfos: map[string]*nodeDevice{
+				node.Name: {
+					deviceTotal: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy(), 1: wholeGPU.DeepCopy()},
+					},
+					deviceUsed: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy()},
+					},
+					deviceFree: map[schedulingv1alpha1.DeviceType]deviceResources{
+						schedulingv1alpha1.GPU: {1: wholeGPU.DeepCopy()},
+					},
+					allocateSet:   map[schedulingv1alpha1.DeviceType]map[types.NamespacedName]deviceResources{},
+					vfAllocations: map[schedulingv1alpha1.DeviceType]*VFAllocation{},
+					numaTopology:  &NUMATopology{},
+					deviceInfos: map[schedulingv1alpha1.DeviceType][]*schedulingv1alpha1.DeviceInfo{
+						schedulingv1alpha1.GPU: {
+							{Type: schedulingv1alpha1.GPU, Health: true, UUID: "gpu-0", Minor: ptr.To[int32](0), Resources: wholeGPU.DeepCopy()},
+							{Type: schedulingv1alpha1.GPU, Health: true, UUID: "gpu-1", Minor: ptr.To[int32](1), Resources: wholeGPU.DeepCopy()},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	rInfoB := newRInfo("reservation-b", "reservation-b-uid")
+
+	tests := []struct {
+		name         string
+		restoreState *nodeReservationRestoreStateData
+		// wantMinor is the expected allocated GPU minor, or -1 to not assert the concrete allocation.
+		wantMinor int32
+	}{
+		{
+			// The node ledger knows no reservation at all, exactly what the DispenseWithLRNDeviceAllocation
+			// feature gate produces: the LRN reservation requested devices but its allocation was discarded.
+			name:         "no reservation in the ledger",
+			restoreState: &nodeReservationRestoreStateData{},
+			wantMinor:    1,
+		},
+		{
+			// The nominated reservation really reserves no device while another reservation does.
+			// The pod must not be rejected by the nominated-reservation guard; which devices the legacy
+			// fallback eventually grants is out of the guard's scope.
+			name: "another reservation holds devices",
+			restoreState: &nodeReservationRestoreStateData{
+				matched: []reusableAlloc{
+					{rInfo: newRInfo("reservation-a", "reservation-a-uid"),
+						allocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy()},
+						},
+						remained: map[schedulingv1alpha1.DeviceType]deviceResources{
+							schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy()},
+						}},
+				},
+				mergedMatchedAllocatable: map[schedulingv1alpha1.DeviceType]deviceResources{
+					schedulingv1alpha1.GPU: {0: wholeGPU.DeepCopy()},
+				},
+			},
+			wantMinor: -1,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t, []*corev1.Node{node})
+			p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			pl.nodeDeviceCache = newNodeDeviceCache()
+
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default", Name: "gpu-pod", UID: "gpu-pod-uid",
+			}}
+			state := &preFilterState{
+				skip: false,
+				podRequests: map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+					schedulingv1alpha1.GPU: wholeGPU.DeepCopy(),
+				},
+			}
+			state.gpuRequirements, err = parseGPURequirements(pod, state.podRequests, nil,
+				testGPUSharedResourceTemplatesCache, testGPUSharedResourceTemplatesMatchedResources)
+			assert.NoError(t, err)
+
+			cycleState := framework.NewCycleState()
+			cycleState.Write(stateKey, state)
+			cycleState.Write(reservationRestoreStateKey, &reservationRestoreStateData{
+				nodeToState: frameworkext.NodeReservationRestoreStates{node.Name: tt.restoreState},
+			})
+			// the reservation plugin has already nominated reservation-b for this pod
+			pl.handle.GetReservationNominator().AddNominatedReservation(pod, node.Name, rInfoB)
+
+			status := pl.Reserve(context.TODO(), cycleState, pod, node.Name)
+
+			assert.True(t, status.IsSuccess(), "the pod must fall back to the node unallocated resources, got status %v", status)
+			if tt.wantMinor < 0 {
+				return
+			}
+			gpuAllocations := state.allocationResult[schedulingv1alpha1.GPU]
+			if assert.Len(t, gpuAllocations, 1) {
+				// only GPU 1 is unallocated, so the fallback allocation must pick it
+				assert.Equal(t, tt.wantMinor, gpuAllocations[0].Minor)
+			}
 		})
 	}
 }
