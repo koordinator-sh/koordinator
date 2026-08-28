@@ -32,13 +32,14 @@ import (
 	// Blank imports trigger each scenario's init() registration.
 	// Add a new line here for each new scenario package.
 	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/basic"
+	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/elasticquota"
 	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/gang"
 )
 
 func main() {
-	configPath  := flag.String("config", "", "Path to scenario YAML config (required)")
-	outputPath  := flag.String("output", "results/result.json", "Path for JSON result output")
-	kubeconfig  := flag.String("kubeconfig", "", "Path to kubeconfig (default: ~/.kube/config)")
+	configPath := flag.String("config", "", "Path to scenario YAML config (required)")
+	outputPath := flag.String("output", "results/result.json", "Path for JSON result output")
+	kubeconfig := flag.String("kubeconfig", "", "Path to kubeconfig (default: ~/.kube/config)")
 	baselinePath := flag.String("baseline", "", "Path to baseline JSON for regression detection (optional)")
 	flag.Parse()
 

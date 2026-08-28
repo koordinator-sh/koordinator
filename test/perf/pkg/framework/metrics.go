@@ -61,6 +61,37 @@ func ComputeThroughput(podCount int, total time.Duration) float64 {
 	return float64(podCount) / total.Seconds()
 }
 
+// ComputeThroughputWindow returns pods/sec measured over the actual scheduling
+// window of the recorded pods: from the earliest CreatedAt to the latest
+// ScheduledAt among them. Both endpoints are server-side timestamps, so the
+// result is insensitive to client-side send pacing (clientQPS/clientBurst)
+// and reflects only the recorded (i.e. actually scheduled) population.
+//
+// For basic/gang (ExpectedScheduledPodCount == PodCount), this window
+// coincides with totalDuration, so reported numbers are unchanged compared to
+// ComputeThroughput. The window is clamped to 1s because CreationTimestamp
+// and LastTransitionTime are second-granular — a sub-second window would
+// divide by near-zero and produce an implausible spike.
+func ComputeThroughputWindow(pods []types.PodLatency) float64 {
+	if len(pods) == 0 {
+		return 0
+	}
+	minCreated, maxScheduled := pods[0].CreatedAt, pods[0].ScheduledAt
+	for _, p := range pods[1:] {
+		if p.CreatedAt.Before(minCreated) {
+			minCreated = p.CreatedAt
+		}
+		if p.ScheduledAt.After(maxScheduled) {
+			maxScheduled = p.ScheduledAt
+		}
+	}
+	window := maxScheduled.Sub(minCreated)
+	if window < time.Second {
+		window = time.Second
+	}
+	return float64(len(pods)) / window.Seconds()
+}
+
 // ComputeGangCompletionPercentiles groups pods by GangID and computes the
 // latency of the last pod scheduled in each gang (gang completion time), then
 // returns P50 and P99 over all gangs. Returns ok=false when no gang pods exist.

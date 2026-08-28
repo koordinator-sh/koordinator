@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 
 	v1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
 	"github.com/koordinator-sh/koordinator/test/perf/pkg/types"
@@ -37,6 +38,13 @@ type Watcher struct {
 	namespace string
 	runID     string
 	podCount  int
+
+	// expectedScheduled is the number of pods Start() waits for before
+	// returning successfully. Equal to podCount unless the scenario config
+	// set ExpectedScheduledPodCount (e.g. elasticquota, where only a
+	// subset of podCount pods can ever be admitted under the configured
+	// quota — the rest are expected to stay Pending for the run).
+	expectedScheduled int
 
 	// ready is closed by Start() once the watch stream is established,
 	// so the caller can block until it is safe to begin the pod burst.
@@ -51,14 +59,22 @@ type Watcher struct {
 }
 
 // NewWatcher creates a Watcher for pods labelled with runID in namespace.
-func NewWatcher(client kubernetes.Interface, namespace, runID string, podCount int) *Watcher {
+// expectedScheduled is how many pods Start() waits for; pass podCount for
+// the "all pods should schedule" case (basic/gang), or a smaller number for
+// scenarios with intentional partial scheduling (elasticquota). A value
+// <= 0 falls back to podCount.
+func NewWatcher(client kubernetes.Interface, namespace, runID string, podCount, expectedScheduled int) *Watcher {
+	if expectedScheduled <= 0 {
+		expectedScheduled = podCount
+	}
 	return &Watcher{
-		client:    client,
-		namespace: namespace,
-		runID:     runID,
-		podCount:  podCount,
-		ready:     make(chan struct{}),
-		seen:      make(map[string]struct{}),
+		client:            client,
+		namespace:         namespace,
+		runID:             runID,
+		podCount:          podCount,
+		expectedScheduled: expectedScheduled,
+		ready:             make(chan struct{}),
+		seen:              make(map[string]struct{}),
 	}
 }
 
@@ -120,14 +136,21 @@ func (w *Watcher) Start(ctx context.Context) error {
 				// Latency is measured from pod creation to scheduler decision.
 				latency := cond.LastTransitionTime.Time.Sub(pod.CreationTimestamp.Time)
 				w.latencies = append(w.latencies, PodLatency{
-					PodName: pod.Name,
-					GangID:  pod.Labels[v1alpha1.PodGroupLabel], // empty for non-gang scenarios
-					Latency: latency,
+					PodName:     pod.Name,
+					GangID:      pod.Labels[v1alpha1.PodGroupLabel], // empty for non-gang scenarios
+					Latency:     latency,
+					CreatedAt:   pod.CreationTimestamp.Time,
+					ScheduledAt: cond.LastTransitionTime.Time,
 				})
-				done := len(w.latencies) >= w.podCount
+				scheduledNow := len(w.latencies)
+				done := scheduledNow >= w.expectedScheduled
 				w.mu.Unlock()
 
 				if done {
+					klog.InfoS("Expected pod count reached",
+						"scheduled", scheduledNow,
+						"podCount", w.podCount,
+						"expectedPending", w.podCount-w.expectedScheduled)
 					return nil
 				}
 				break

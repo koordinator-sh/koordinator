@@ -70,12 +70,21 @@ jobs:
             BASELINE=baselines/gang-1k.json \
             OUTPUT=results/gang-result.json
 
+      - name: Run benchmark (elasticquota)
+        if: always()
+        id: elasticquota
+        run: |
+          make -C test/perf benchmark \
+            CONFIG=configs/scenarios/elasticquota-1k.yaml \
+            BASELINE=baselines/elasticquota-1k.json \
+            OUTPUT=results/elasticquota-result.json
+
       - name: Fail on regression
         if: always()
         run: |
           failed=false
           found=false
-          for result in test/perf/results/basic-result.json test/perf/results/gang-result.json; do
+          for result in test/perf/results/basic-result.json test/perf/results/gang-result.json test/perf/results/elasticquota-result.json; do
             if [ -f "$result" ]; then
               found=true
               breached=$(jq -r '.thresholdBreached' "$result")
@@ -83,6 +92,16 @@ jobs:
               if [ "$breached" = "true" ]; then
                 echo "::error::Benchmark regression detected in $(basename $result) — see uploaded results"
                 failed=true
+              fi
+              # Elasticquota must demonstrate real quota throttling — a zero count
+              # means the settle loop never fired or the plugin config is broken.
+              if [[ "$result" == *"elasticquota"* ]]; then
+                quota_blocked=$(jq -r '.quotaBlockedPodCount // 0' "$result")
+                echo "$(basename $result): quotaBlockedPodCount=$quota_blocked"
+                if ! jq -e '.quotaBlockedPodCount > 0' "$result" > /dev/null; then
+                  echo "::error::quotaBlockedPodCount is 0 in $(basename $result) — throttling did not occur"
+                  failed=true
+                fi
               fi
             fi
           done
@@ -107,7 +126,7 @@ jobs:
       # pure threshold breaches — a regression is already reported by the result
       # JSON and uploading 30+ kubectl commands on every slow run adds noise.
       - name: Debug on failure
-        if: steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure'
+        if: always() && (steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure' || steps.elasticquota.outcome == 'failure')
         run: |
           echo "=== kind clusters ==="
           kind get clusters || true
@@ -138,6 +157,10 @@ jobs:
           echo "=== benchmark namespace pods and events ==="
           kubectl get pods -n benchmark -o wide 2>/dev/null || true
           kubectl get events -n benchmark --sort-by=.lastTimestamp 2>/dev/null | tail -40 || true
+          echo "=== elasticquota-benchmark pods and FailedScheduling events ==="
+          kubectl get pods -n elasticquota-benchmark -o wide 2>/dev/null || true
+          kubectl get events -n elasticquota-benchmark --field-selector=reason=FailedScheduling \
+            --sort-by=.lastTimestamp 2>/dev/null | tail -40 || true
           echo "=== koord-scheduler-config ConfigMap ==="
           kubectl get configmap koord-scheduler-config -n koordinator-system -o yaml || true
 
