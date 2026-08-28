@@ -55,12 +55,18 @@ func CompareToBaseline(result types.BenchmarkResult, baselinePath string, thresh
 	// Gate on scheduling failure rate rather than absolute count: a handful of
 	// transient FailedScheduling events (retries that clear on the next cycle)
 	// are normal; a rate above 1% indicates a systematic problem such as quota
-	// throttle or resource exhaustion.
-	const failureRateThreshold = 0.01
+	// throttle or resource exhaustion. Scenarios that deliberately produce a
+	// high failure rate (e.g. elasticquota) override this via
+	// thresholds.failureRatePct so the gate reflects intent rather than
+	// treating expected throttling as a regression.
+	failureRateThreshold := 0.01
+	if thresholds.FailureRatePct != nil {
+		failureRateThreshold = *thresholds.FailureRatePct / 100
+	}
 	if result.SchedulingFailureRate > failureRateThreshold {
 		klog.InfoS("Threshold breached: scheduling failure rate too high",
 			"rate", fmt.Sprintf("%.2f%%", result.SchedulingFailureRate*100),
-			"threshold", fmt.Sprintf("%.0f%%", failureRateThreshold*100),
+			"threshold", fmt.Sprintf("%.2f%%", failureRateThreshold*100),
 			"count", result.SchedulingFailureCount)
 		return true, nil
 	}

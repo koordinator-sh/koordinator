@@ -339,3 +339,21 @@ func ValidateSchedulingHintArgs(path *field.Path, args *config.SchedulingHintArg
 	}
 	return allErrs.ToAggregate()
 }
+
+// ValidateDefaultPreBindArgs validates that DefaultPreBindArgs are correct.
+func ValidateDefaultPreBindArgs(args *config.DefaultPreBindArgs) error {
+	var allErrs field.ErrorList
+	if args.MaxAttempts < 1 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("maxAttempts"), args.MaxAttempts, "must be greater than or equal to 1"))
+	}
+	if args.RetryInitialBackoff.Duration <= 0 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("retryInitialBackoff"), args.RetryInitialBackoff, "must be greater than 0"))
+	}
+	if args.RetryMaxBackoff.Duration < args.RetryInitialBackoff.Duration {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("retryMaxBackoff"), args.RetryMaxBackoff, "must be greater than or equal to retryInitialBackoff"))
+	}
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
+}

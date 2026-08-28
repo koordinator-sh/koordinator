@@ -1,0 +1,42 @@
+name: elasticquota
+description: >
+  1,000 pods vs an ElasticQuota max of 150 CPU on 100 kwok nodes. Aggregate
+  demand is 1,000 × 500m = 500 CPU, deliberately exceeding the 150 CPU quota.
+  CPU binds first (150000m / 500m = 300), so ~300 pods are admitted and the
+  remaining ~700 stay Pending on "Insufficient quotas" for the entire run —
+  kwok pause pods never terminate, so used quota is never released and no space
+  opens up. expectedScheduledPodCount is set to 300 so the harness treats this
+  as the expected outcome instead of timing out.
+schedulerName: koord-scheduler
+namespace: elasticquota-benchmark
+nodeCount: 100
+nodeCreationWorkers: 20
+podCount: 1000
+expectedScheduledPodCount: 300
+concurrency: 50
+clientQPS: 100
+clientBurst: 200
+qosClass: LS
+resourceRequests:
+  cpu: "500m"
+  memory: "512Mi"
+labels:
+  koordinator.sh/priority: "100"
+quotaCPU: "150"
+quotaMemory: "300Gi"
+timeout: 10m
+thresholds:
+  # Widened relative to basic/gang: this scenario's ~10s window and integer-
+  # second timestamps mean a single second of quantization is ~10% of the
+  # window (vs. ~2.6% for basic-1k's ~38s window). 10%/20% (basic/gang's
+  # values) would flap on timestamp quantization alone, before any real
+  # regression. 25%/40% leaves headroom for that quantization plus normal
+  # CI-runner jitter while still catching a meaningful regression (e.g. the
+  # 2x-slowdown case the round-4 review verified: ~47% throughput drop).
+  throughputDropPct: 25
+  p99IncreasePct: 40
+  # ~700/1000 pods failing is the expected, by-design outcome for this scenario.
+  # The default 1% gate (meant for basic/gang) would trip on every run. 75%
+  # gives a small margin above the expected ~70% so a genuine worsening (e.g.
+  # quota sized even tighter than intended) still trips it.
+  failureRatePct: 75

@@ -100,7 +100,7 @@ func (s *GangScenario) Setup(
 		minMember = gangSize
 	}
 
-	runIDPrefix := shortID(runID)
+	runIDPrefix := types.ShortID(runID)
 	numGroups := (cfg.PodCount + gangSize - 1) / gangSize
 	s.groupNames = make([]string, 0, numGroups)
 
@@ -162,7 +162,7 @@ func (s *GangScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.P
 		podResources = corev1.ResourceRequirements{Requests: rl, Limits: rl}
 	}
 
-	runIDPrefix := shortID(runID)
+	runIDPrefix := types.ShortID(runID)
 	pods := make([]*corev1.Pod, 0, cfg.PodCount)
 	for i := 0; i < cfg.PodCount; i++ {
 		groupIdx := i / gangSize
@@ -171,14 +171,16 @@ func (s *GangScenario) Pods(cfg types.ScenarioConfig, runID string) ([]*corev1.P
 		}
 		groupName := s.groupNames[groupIdx]
 
-		labels := map[string]string{
-			types.RunIDLabel:    runID,
-			v1alpha1.PodGroupLabel: groupName,
-			"app":               "kwok-bench-gang",
-		}
+		// Apply cfg.Labels first so the built-in labels set below can never
+		// be overwritten by a config-supplied value. A clobbered RunIDLabel
+		// would make Watcher/FailureWatcher select nothing and hang the run.
+		labels := make(map[string]string, len(cfg.Labels)+3)
 		for k, v := range cfg.Labels {
 			labels[k] = v
 		}
+		labels[types.RunIDLabel] = runID
+		labels[v1alpha1.PodGroupLabel] = groupName
+		labels["app"] = "kwok-bench-gang"
 		if cfg.QoSClass != "" {
 			labels["koordinator.sh/qosClass"] = cfg.QoSClass
 		}
@@ -234,11 +236,4 @@ func (s *GangScenario) Teardown(
 		metav1.DeleteOptions{PropagationPolicy: &policy},
 		metav1.ListOptions{LabelSelector: labelSel},
 	)
-}
-
-func shortID(runID string) string {
-	if len(runID) > 8 {
-		return runID[:8]
-	}
-	return runID
 }

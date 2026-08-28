@@ -44,6 +44,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&ScarceResourceAvoidanceArgs{},
 		&SchedulingHintArgs{},
 		&ScheduleAdmissionArgs{},
+		&DefaultPreBindArgs{},
 	)
 	return nil
 }
