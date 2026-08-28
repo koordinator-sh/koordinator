@@ -486,8 +486,9 @@ func (p *Plugin) allocateWithNominated(
 		return nil, nominated, status
 	}
 
-	// The pod is going to be bound to the nominated reservation, so its devices have to be allocated from the
-	// reserved ones. Reject the allocation instead of falling back if the reserved devices are unsatisfied.
+	// The pod is going to be bound to the nominated reservation which reserves tracked device resources, so its
+	// devices have to be allocated from the reserved ones. Reject the allocation instead of falling back if the
+	// reserved devices are unsatisfied.
 	result, status := p.tryAllocateFromReusable(
 		allocator,
 		state,
@@ -538,8 +539,10 @@ func (p *Plugin) scoreWithNominatedReservation(
 
 // getNominatedReusableAlloc returns the reusable allocation of the reservation, or of the pre-allocatable pod,
 // nominated for the pod.
-// The second return value reports whether a reservation or a pre-allocatable pod has been nominated, no matter
-// whether it reserves any device resource.
+// The second return value reports whether the nominated reservation or pre-allocatable pod reserves any device
+// resource tracked in the restore state. A nomination whose target reserves no tracked device resource (e.g.
+// the reservation really reserves no device) reports false, so that the caller allocates the pod's devices
+// from the node unallocated resources instead of rejecting the pod.
 func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreStateData, pod *corev1.Pod, node *corev1.Node) ([]reusableAlloc, bool, *fwktype.Status) {
 	if !reservationutil.IsReservePod(pod) {
 		reservation := p.handle.GetReservationNominator().GetNominatedReservation(pod, node.Name)
@@ -552,10 +555,10 @@ func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreS
 				return restoreState.matched[i : i+1], true, nil
 			}
 		}
-		klog.V(4).InfoS("nominated reservation doesn't reserve any device resource",
+		klog.V(4).InfoS("nominated reservation reserves no tracked device resource",
 			"reservation", reservation.GetName(), "reservationUID", reservation.UID(),
 			"pod", klog.KObj(pod), "node", node.Name, "matched", dumpReusableAllocs(restoreState.matched))
-		return nil, true, nil
+		return nil, false, nil
 	}
 
 	if !reservationutil.IsReservePodPreAllocation(pod) {
@@ -577,10 +580,10 @@ func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreS
 			return restoreState.matched[i : i+1], true, nil
 		}
 	}
-	klog.V(4).InfoS("nominated pre-allocatable pod doesn't reserve any device resource",
+	klog.V(4).InfoS("nominated pre-allocatable pod reserves no tracked device resource",
 		"preAllocatable", klog.KObj(preAllocatable), "preAllocatableUID", preAllocatable.GetUID(),
 		"pod", klog.KObj(pod), "node", node.Name, "matched", dumpReusableAllocs(restoreState.matched))
-	return nil, true, nil
+	return nil, false, nil
 }
 
 // dumpReusableAllocs summarizes the reserved and the still remained device minors of the reusable allocations,

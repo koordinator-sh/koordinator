@@ -617,9 +617,11 @@ func (p *Plugin) allocate(ctx context.Context, cycleState fwktype.CycleState, po
 		return status
 	}
 	if len(result) == 0 {
-		// If a reservation has been nominated to the pod, its devices MUST come from that reservation.
-		// Silently spilling into other matched reservations' reserved devices would violate the reservation
-		// contract (e.g. Restricted) and let the pod occupy devices reserved for another owner.
+		// If the pod is nominated to a reservation reserving tracked device resources, its devices MUST come from
+		// that reservation. Silently spilling into other matched reservations' reserved devices would violate the
+		// reservation contract (e.g. Restricted) and let the pod occupy devices reserved for another owner.
+		// A nomination whose target reserves no tracked device resource reports nominated=false and falls back to
+		// the node unallocated resources below.
 		if nominated {
 			klog.V(4).InfoS("failed to allocate devices from the nominated reservation",
 				"pod", klog.KObj(pod), "node", node.Name,
