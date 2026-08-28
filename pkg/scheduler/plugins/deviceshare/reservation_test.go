@@ -1976,9 +1976,8 @@ func Test_Plugin_Reserve_NominatedReservationMustNotSpill(t *testing.T) {
 // must-not-spill fix: when the nominated reservation reserves no tracked device resource, the pod was
 // rejected with ErrInsufficientDevicesInNominatedReservation instead of falling back to the node resources.
 // The nomination carries no device reservation either because the reservation really reserves no device, or
-// because its device allocation is dispensed with by the DispenseWithLRNDeviceAllocation feature gate, which
-// keeps LRN reservations out of the scheduling ledger even though they requested devices. In both cases the
-// pod must be allocated from the node unallocated resources.
+// because its device allocation is not tracked in the restore state. In both cases the pod must be allocated
+// from the node unallocated resources.
 func Test_Plugin_Reserve_NominatedReservationReservesNoDevice(t *testing.T) {
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}}
 
@@ -2035,8 +2034,8 @@ func Test_Plugin_Reserve_NominatedReservationReservesNoDevice(t *testing.T) {
 		wantMinor int32
 	}{
 		{
-			// The node ledger knows no reservation at all, exactly what the DispenseWithLRNDeviceAllocation
-			// feature gate produces: the LRN reservation requested devices but its allocation was discarded.
+			// The node ledger knows no reservation at all: the nominated target requested devices but its
+			// allocation is not tracked in the restore state.
 			name:         "no reservation in the ledger",
 			restoreState: &nodeReservationRestoreStateData{},
 			wantMinor:    1,
