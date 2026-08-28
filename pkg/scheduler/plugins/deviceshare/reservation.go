@@ -541,8 +541,7 @@ func (p *Plugin) scoreWithNominatedReservation(
 // nominated for the pod.
 // The second return value reports whether the nominated reservation or pre-allocatable pod reserves any device
 // resource tracked in the restore state. A nomination whose target reserves no tracked device resource (e.g.
-// the reservation really reserves no device, or its device allocation is dispensed with by the
-// DispenseWithLRNDeviceAllocation feature gate) reports false, so that the caller allocates the pod's devices
+// the reservation really reserves no device) reports false, so that the caller allocates the pod's devices
 // from the node unallocated resources instead of rejecting the pod.
 func (p *Plugin) getNominatedReusableAlloc(restoreState *nodeReservationRestoreStateData, pod *corev1.Pod, node *corev1.Node) ([]reusableAlloc, bool, *fwktype.Status) {
 	if !reservationutil.IsReservePod(pod) {
