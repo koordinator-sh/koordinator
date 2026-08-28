@@ -70,16 +70,19 @@ fields below live under `pkg/types.ScenarioConfig`.
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `name` | string | yes | — | Scenario name; must match a registered scenario (currently only `basic`) |
+| `name` | string | yes | — | Scenario name; must match a registered scenario (`basic`, `gang`, `elasticquota`) |
 | `description` | string | no | — | Free-text note, not used by the engine |
 | `schedulerName` | string | no | `koord-scheduler` | Scheduler that processes the benchmark pods |
-| `namespace` | string | no | `benchmark` | Namespace pods and (for `basic`) the namespace itself are created in |
+| `namespace` | string | no | `benchmark` | Namespace for pods; `elasticquota` requires this to be set explicitly (no implicit default) |
 | `nodeCount` | int | yes (>0) | — | Number of simulated kwok nodes to create |
 | `podCount` | int | yes (>0) | — | Number of pods fired in the burst |
 | `concurrency` | int | yes (>0) | — | Max in-flight pod-create requests at once |
 | `clientQPS` | float | yes (>0) | — | client-go QPS for the k8s client used by the engine |
 | `clientBurst` | int | yes (>0) | — | client-go burst for the same client |
 | `qosClass` | string | no | — | If set, applied as a `koordinator.sh/qosClass` pod label |
+| `quotaCPU` | string | no | — | ElasticQuota max/min CPU (required for `elasticquota`), e.g. `"150"` |
+| `quotaMemory` | string | no | — | ElasticQuota max/min memory (required for `elasticquota`), e.g. `"300Gi"` |
+| `expectedScheduledPodCount` | int | no | `podCount` | How many pods Watcher waits for; use when a subset is expected to stay Pending (elasticquota). Must match `floor(min(quotaCPU/cpu, quotaMemory/memory))` — `Validate()` enforces consistency. |
 | `resourceRequests` | map[string]string | no | none | e.g. `{cpu: "100m", memory: "128Mi"}` — applied as both requests and limits |
 | `labels` | map[string]string | no | none | Extra labels merged onto every benchmark pod |
 | `annotations` | map[string]string | no | none | Extra annotations applied to every benchmark pod |
@@ -88,7 +91,8 @@ fields below live under `pkg/types.ScenarioConfig`.
 | `timeout` | string (Go duration, e.g. `"10m"`) | no | `10m` | Hard ceiling on total run time; the run is aborted and reported with `timedOut: true` if exceeded |
 | `thresholds.throughputDropPct` | float | no (0-100) | 0 | Max allowed throughput drop vs baseline, as a percentage |
 | `thresholds.p99IncreasePct` | float | no (>=0) | 0 | Max allowed P99 latency increase vs baseline, as a percentage |
-| `gangSize` / `minMember` | int | no | 0 | Reserved for the Phase 2 gang-scheduling scenario; unused by `basic` |
+| `thresholds.failureRatePct` | float | no (0-100) | 1 | Max allowed scheduling-failure rate as a percentage. Override for scenarios that deliberately produce throttling (e.g. `elasticquota` uses 75). |
+| `gangSize` / `minMember` | int | no | 0 | PodGroup size for the `gang` scenario; unused by `basic`/`elasticquota` |
 | `extra` | map[string]interface{} | no | none | Free-form field reserved for future scenario-specific options |
 
 `Validate()` is called immediately after parsing and rejects missing
@@ -121,15 +125,17 @@ plus a human-readable summary to stdout.
 | `timestamp` | UTC timestamp the run completed (or aborted) |
 | `koordinatorVersion` | Git tag or short commit SHA the binary was built from (`-dirty` suffix if uncommitted changes were present) |
 | `nodeCount` / `podCount` | Echoed from the config |
-| `throughputPodsPerSec` | `podCount / totalDurationSec` |
-| `apiCreationDurationSec` | Time to POST all pods to the API server |
-| `totalDurationSec` | Time from burst start until every pod was observed scheduled |
-| `latencyP50Sec` / `latencyP90Sec` / `latencyP99Sec` | Pod scheduling latency percentiles (pod creation timestamp → `PodScheduled` condition) |
-| `thresholdBreached` | `true` if `--baseline` was given and throughput/P99 exceeded the configured thresholds |
-| `timedOut` | `true` if the run was aborted by `timeout` — treat other numeric fields as partial, not a completed run, when this is `true` |
+| `throughputPodsPerSec` | Pods scheduled per second, measured over the actual scheduling window of the recorded pods (earliest `creationTimestamp` → latest `PodScheduled` transition among the admitted set). For `basic`/`gang` this window coincides with `totalDurationSec`. Note: this is bounded by `clientQPS`/`clientBurst`, not the scheduler's own ceiling — see `apiCreationDurationSec` to verify. |
+| `apiCreationDurationSec` | Time to POST all `podCount` pods to the API server. When `throughputPodsPerSec ≈ clientQPS`, the client rate-limit rather than the scheduler is the bottleneck. |
+| `totalDurationSec` | Time from burst start until the settle condition was satisfied (all pods accounted for, or quiet period elapsed) |
+| `latencyP50Sec` / `latencyP90Sec` / `latencyP99Sec` | Per-pod scheduling latency percentiles (`creationTimestamp` → `PodScheduled` condition) |
+| `thresholdBreached` | `true` if `--baseline` was given and throughput/P99/failure-rate exceeded the configured thresholds |
+| `timedOut` | `true` if the run was aborted by `timeout` — treat other numeric fields as partial when this is `true` |
 | `schedulingFailureCount` | Total `FailedScheduling` events seen across all pods (a pod can retry and emit several) |
 | `schedulingFailureRate` | Fraction (0.0-1.0) of pods that received at least one `FailedScheduling` event |
-| `gangCompletionP50Sec` / `gangCompletionP99Sec` | Reserved for the Phase 2 gang-scheduling scenario; always `null` for `basic` |
+| `gangCompletionP50Sec` / `gangCompletionP99Sec` | Populated for the `gang` scenario (time for an entire PodGroup to complete admission); `null` for `basic`/`elasticquota` |
+| `quotaBlockedPodCount` | Populated for `elasticquota` (distinct pods that received an `Insufficient quotas` event); `null` for scenarios with no quota configured |
+| `createFailureCount` | Pods whose Create failed after retries and were excluded from the run rather than aborting it; usually 0 |
 | `pprofCPUArtifact` / `pprofHeapArtifact` | Reserved for future pprof capture; always empty for now |
 
 ---

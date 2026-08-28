@@ -700,3 +700,72 @@ func TestValidateSchedulingHintArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateDefaultPreBindArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    *config.DefaultPreBindArgs
+		wantErr bool
+	}{
+		{
+			name: "valid args",
+			args: &config.DefaultPreBindArgs{
+				MaxAttempts:         4,
+				RetryInitialBackoff: metav1.Duration{Duration: 200 * time.Millisecond},
+				RetryMaxBackoff:     metav1.Duration{Duration: 3 * time.Second},
+			},
+			wantErr: false,
+		},
+		{
+			name: "single attempt without backoff window",
+			args: &config.DefaultPreBindArgs{
+				MaxAttempts:         1,
+				RetryInitialBackoff: metav1.Duration{Duration: 200 * time.Millisecond},
+				RetryMaxBackoff:     metav1.Duration{Duration: 200 * time.Millisecond},
+			},
+			wantErr: false,
+		},
+		{
+			name: "zero maxAttempts",
+			args: &config.DefaultPreBindArgs{
+				MaxAttempts:         0,
+				RetryInitialBackoff: metav1.Duration{Duration: 200 * time.Millisecond},
+				RetryMaxBackoff:     metav1.Duration{Duration: 3 * time.Second},
+			},
+			wantErr: true,
+		},
+		{
+			name: "negative retryInitialBackoff",
+			args: &config.DefaultPreBindArgs{
+				MaxAttempts:         4,
+				RetryInitialBackoff: metav1.Duration{Duration: -time.Millisecond},
+				RetryMaxBackoff:     metav1.Duration{Duration: 3 * time.Second},
+			},
+			wantErr: true,
+		},
+		{
+			name: "retryMaxBackoff less than retryInitialBackoff",
+			args: &config.DefaultPreBindArgs{
+				MaxAttempts:         4,
+				RetryInitialBackoff: metav1.Duration{Duration: 3 * time.Second},
+				RetryMaxBackoff:     metav1.Duration{Duration: 200 * time.Millisecond},
+			},
+			wantErr: true,
+		},
+		{
+			name:    "all fields invalid",
+			args:    &config.DefaultPreBindArgs{},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateDefaultPreBindArgs(tt.args)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
