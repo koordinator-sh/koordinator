@@ -30,17 +30,23 @@ import (
 // All generated defaulters are covering - they call all nested defaulters.
 func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&CoschedulingArgs{}, func(obj interface{}) { SetObjectDefaults_CoschedulingArgs(obj.(*CoschedulingArgs)) })
+	scheme.AddTypeDefaultingFunc(&DefaultPreBindArgs{}, func(obj interface{}) { SetObjectDefaults_DefaultPreBindArgs(obj.(*DefaultPreBindArgs)) })
 	scheme.AddTypeDefaultingFunc(&DeviceShareArgs{}, func(obj interface{}) { SetObjectDefaults_DeviceShareArgs(obj.(*DeviceShareArgs)) })
 	scheme.AddTypeDefaultingFunc(&ElasticQuotaArgs{}, func(obj interface{}) { SetObjectDefaults_ElasticQuotaArgs(obj.(*ElasticQuotaArgs)) })
 	scheme.AddTypeDefaultingFunc(&LoadAwareSchedulingArgs{}, func(obj interface{}) { SetObjectDefaults_LoadAwareSchedulingArgs(obj.(*LoadAwareSchedulingArgs)) })
 	scheme.AddTypeDefaultingFunc(&NodeNUMAResourceArgs{}, func(obj interface{}) { SetObjectDefaults_NodeNUMAResourceArgs(obj.(*NodeNUMAResourceArgs)) })
 	scheme.AddTypeDefaultingFunc(&ReservationArgs{}, func(obj interface{}) { SetObjectDefaults_ReservationArgs(obj.(*ReservationArgs)) })
+	scheme.AddTypeDefaultingFunc(&ScheduleAdmissionArgs{}, func(obj interface{}) { SetObjectDefaults_ScheduleAdmissionArgs(obj.(*ScheduleAdmissionArgs)) })
 	scheme.AddTypeDefaultingFunc(&SchedulingHintArgs{}, func(obj interface{}) { SetObjectDefaults_SchedulingHintArgs(obj.(*SchedulingHintArgs)) })
 	return nil
 }
 
 func SetObjectDefaults_CoschedulingArgs(in *CoschedulingArgs) {
 	SetDefaults_CoschedulingArgs(in)
+}
+
+func SetObjectDefaults_DefaultPreBindArgs(in *DefaultPreBindArgs) {
+	SetDefaults_DefaultPreBindArgs(in)
 }
 
 func SetObjectDefaults_DeviceShareArgs(in *DeviceShareArgs) {
@@ -61,6 +67,10 @@ func SetObjectDefaults_NodeNUMAResourceArgs(in *NodeNUMAResourceArgs) {
 
 func SetObjectDefaults_ReservationArgs(in *ReservationArgs) {
 	SetDefaults_ReservationArgs(in)
+}
+
+func SetObjectDefaults_ScheduleAdmissionArgs(in *ScheduleAdmissionArgs) {
+	SetDefaults_ScheduleAdmissionArgs(in)
 }
 
 func SetObjectDefaults_SchedulingHintArgs(in *SchedulingHintArgs) {

@@ -94,6 +94,8 @@ var (
 	}
 
 	defaultMaxHintNodes = ptr.To[int32](100)
+
+	defaultEnablePrefixMatch = ptr.To(false)
 )
 
 // SetDefaults_LoadAwareSchedulingArgs sets the default parameters for LoadAwareScheduling plugin.
@@ -285,5 +287,31 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 func SetDefaults_SchedulingHintArgs(obj *SchedulingHintArgs) {
 	if obj.MaxHintNodes == nil {
 		obj.MaxHintNodes = defaultMaxHintNodes
+	}
+}
+
+// SetDefaults_ScheduleAdmissionArgs sets the default parameters for ScheduleAdmission plugin.
+func SetDefaults_ScheduleAdmissionArgs(obj *ScheduleAdmissionArgs) {
+	if obj.EnablePrefixMatch == nil {
+		obj.EnablePrefixMatch = defaultEnablePrefixMatch
+	}
+}
+
+var (
+	defaultPreBindMaxAttempts         = ptr.To(int32(4))
+	defaultPreBindRetryInitialBackoff = &metav1.Duration{Duration: 200 * time.Millisecond}
+	defaultPreBindRetryMaxBackoff     = &metav1.Duration{Duration: 3 * time.Second}
+)
+
+// SetDefaults_DefaultPreBindArgs sets the default parameters for DefaultPreBind plugin.
+func SetDefaults_DefaultPreBindArgs(obj *DefaultPreBindArgs) {
+	if obj.MaxAttempts == nil {
+		obj.MaxAttempts = defaultPreBindMaxAttempts
+	}
+	if obj.RetryInitialBackoff == nil {
+		obj.RetryInitialBackoff = defaultPreBindRetryInitialBackoff
+	}
+	if obj.RetryMaxBackoff == nil {
+		obj.RetryMaxBackoff = defaultPreBindRetryMaxBackoff
 	}
 }

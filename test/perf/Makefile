@@ -12,7 +12,7 @@ BASELINE   ?=
 GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 VERSION_FLAG := -X github.com/koordinator-sh/koordinator/test/perf/pkg/framework.Version=$(GIT_VERSION)
 
-.PHONY: benchmark setup teardown clean test help
+.PHONY: benchmark setup teardown clean test fmt-check help
 
 ## Run a single scenario benchmark. Override CONFIG directly to use any
 ## config file, e.g. `make benchmark CONFIG=configs/scenarios/basic-100.yaml`
@@ -36,8 +36,15 @@ teardown:
 clean:
 	rm -rf results/
 
-## Run unit tests
-test:
+## Fail if any .go file under test/perf is not gofmt-formatted
+fmt-check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "Not gofmt-formatted:"; echo "$$unformatted"; exit 1; \
+	fi
+
+## Run unit tests (includes format check)
+test: fmt-check
 	go test ./...
 
 ## Show available targets

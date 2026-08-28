@@ -1,0 +1,169 @@
+name: scheduler-benchmark
+
+on:
+  # Not a required PR gate yet — runtime + kind/kwok/Koordinator flakiness
+  # makes it unsuitable as a blocking check on every PR. Run on demand and
+  # nightly until the benchmark is stable enough to promote to a PR gate.
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 3 * * *"   # nightly at 03:00 UTC
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Free up ~14 GB of pre-installed tooling the benchmark doesn't need
+      # (Android SDK, .NET, Haskell). Without this, building three Docker
+      # images + running a kind cluster exhausts the runner's 14 GB disk.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          swap-storage: false
+          large-packages: false
+          docker-images: false
+          android: true
+          dotnet: true
+          haskell: true
+
+      # Install the kind CLI only — setup-cluster.sh creates the cluster
+      # itself so only one place owns cluster lifecycle.
+      - name: Install kind
+        uses: helm/kind-action@v1.9.0
+        with:
+          install_only: true
+          version: "v0.22.0"
+
+      - name: Set up cluster
+        run: make -C test/perf setup
+
+      - name: Run benchmark (basic)
+        id: basic
+        run: |
+          make -C test/perf benchmark \
+            CONFIG=configs/scenarios/basic-1k.yaml \
+            BASELINE=baselines/basic-1k.json \
+            OUTPUT=results/basic-result.json
+
+      - name: Drain benchmark namespace
+        if: always()
+        run: |
+          # Wait for all pods from the basic run to terminate before starting
+          # gang — terminating pods still count against node allocatable in the
+          # scheduler cache and inflate gang latency if not drained first.
+          kubectl delete pods -n benchmark --all --timeout=120s 2>/dev/null || true
+          kubectl wait pod --for=delete -n benchmark --all --timeout=120s 2>/dev/null || true
+
+      - name: Run benchmark (gang)
+        if: always()
+        id: gang
+        run: |
+          make -C test/perf benchmark \
+            CONFIG=configs/scenarios/gang-1k.yaml \
+            BASELINE=baselines/gang-1k.json \
+            OUTPUT=results/gang-result.json
+
+      - name: Run benchmark (elasticquota)
+        if: always()
+        id: elasticquota
+        run: |
+          make -C test/perf benchmark \
+            CONFIG=configs/scenarios/elasticquota-1k.yaml \
+            BASELINE=baselines/elasticquota-1k.json \
+            OUTPUT=results/elasticquota-result.json
+
+      - name: Fail on regression
+        if: always()
+        run: |
+          failed=false
+          found=false
+          for result in test/perf/results/basic-result.json test/perf/results/gang-result.json test/perf/results/elasticquota-result.json; do
+            if [ -f "$result" ]; then
+              found=true
+              breached=$(jq -r '.thresholdBreached' "$result")
+              echo "$(basename $result): thresholdBreached=$breached"
+              if [ "$breached" = "true" ]; then
+                echo "::error::Benchmark regression detected in $(basename $result) — see uploaded results"
+                failed=true
+              fi
+              # Elasticquota must demonstrate real quota throttling — a zero count
+              # means the settle loop never fired or the plugin config is broken.
+              if [[ "$result" == *"elasticquota"* ]]; then
+                quota_blocked=$(jq -r '.quotaBlockedPodCount // 0' "$result")
+                echo "$(basename $result): quotaBlockedPodCount=$quota_blocked"
+                if ! jq -e '.quotaBlockedPodCount > 0' "$result" > /dev/null; then
+                  echo "::error::quotaBlockedPodCount is 0 in $(basename $result) — throttling did not occur"
+                  failed=true
+                fi
+              fi
+            fi
+          done
+          if [ "$found" = "false" ]; then
+            echo "::error::No result files produced — benchmark did not run"
+            exit 1
+          fi
+          if [ "$failed" = "true" ]; then
+            exit 1
+          fi
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: test/perf/results/*.json
+
+      # Debug BEFORE teardown — teardown deletes the kind cluster, after which
+      # every kubectl command fails with "connection refused to localhost:8080".
+      # Scoped to infrastructure failures (setup or benchmark step failed), not
+      # pure threshold breaches — a regression is already reported by the result
+      # JSON and uploading 30+ kubectl commands on every slow run adds noise.
+      - name: Debug on failure
+        if: always() && (steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure' || steps.elasticquota.outcome == 'failure')
+        run: |
+          echo "=== kind clusters ==="
+          kind get clusters || true
+          echo "=== docker containers (exit code reveals OOM-kill vs clean exit) ==="
+          docker ps -a || true
+          echo "=== control-plane container logs (last 100 lines) ==="
+          docker logs "${CLUSTER_NAME:-koordinator-bench}-control-plane" --tail=100 2>&1 || true
+          echo "=== disk space ==="
+          df -h || true
+          echo "=== memory ==="
+          free -h || true
+          echo "=== Pods (wide) ==="
+          kubectl get pods -A -o wide || true
+          echo "=== koord-scheduler logs (last 12 min — covers full benchmark window) ==="
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --since=12m || true
+          kubectl logs -n koordinator-system -l koord-app=koord-scheduler --previous --tail=200 2>/dev/null || true
+          echo "=== koord-scheduler pod describe ==="
+          kubectl describe pods -n koordinator-system -l koord-app=koord-scheduler || true
+          echo "=== koordlet logs (crash detection) ==="
+          kubectl logs -n koordinator-system -l koord-app=koordlet --tail=50 2>/dev/null || true
+          kubectl logs -n koordinator-system -l koord-app=koordlet --previous --tail=50 2>/dev/null || true
+          echo "=== koordlet pod describe ==="
+          kubectl describe pods -n koordinator-system -l koord-app=koordlet 2>/dev/null || true
+          echo "=== cluster events (all namespaces, sorted) ==="
+          kubectl get events -A --sort-by=.lastTimestamp | tail -80 || true
+          echo "=== FailedScheduling events (all namespaces) ==="
+          kubectl get events -A --field-selector=reason=FailedScheduling --sort-by=.lastTimestamp | tail -40 || true
+          echo "=== benchmark namespace pods and events ==="
+          kubectl get pods -n benchmark -o wide 2>/dev/null || true
+          kubectl get events -n benchmark --sort-by=.lastTimestamp 2>/dev/null | tail -40 || true
+          echo "=== elasticquota-benchmark pods and FailedScheduling events ==="
+          kubectl get pods -n elasticquota-benchmark -o wide 2>/dev/null || true
+          kubectl get events -n elasticquota-benchmark --field-selector=reason=FailedScheduling \
+            --sort-by=.lastTimestamp 2>/dev/null | tail -40 || true
+          echo "=== koord-scheduler-config ConfigMap ==="
+          kubectl get configmap koord-scheduler-config -n koordinator-system -o yaml || true
+
+      - name: Teardown cluster
+        if: always()
+        run: make -C test/perf teardown
