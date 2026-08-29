@@ -80,7 +80,7 @@ func testingPrepareResctrlL3CatGroups(t *testing.T, cbmStr, rootSchemataStr stri
 	if len(schemataData) >= 1 {
 		beSchemataData = []byte(schemataData[0])
 	}
-	beSchemataDir := filepath.Join(resctrlDir, BEResctrlGroup)
+	beSchemataDir := filepath.Join(resctrlDir, system.BEResctrlGroup)
 	err := os.MkdirAll(beSchemataDir, 0700)
 	assert.NoError(t, err)
 	beSchemataPath := filepath.Join(beSchemataDir, system.ResctrlSchemataName)
@@ -94,7 +94,7 @@ func testingPrepareResctrlL3CatGroups(t *testing.T, cbmStr, rootSchemataStr stri
 	if len(schemataData) >= 2 {
 		lsSchemataData = []byte(schemataData[1])
 	}
-	lsSchemataDir := filepath.Join(resctrlDir, LSResctrlGroup)
+	lsSchemataDir := filepath.Join(resctrlDir, system.LSResctrlGroup)
 	err = os.MkdirAll(lsSchemataDir, 0700)
 	assert.NoError(t, err)
 	lsSchemataPath := filepath.Join(lsSchemataDir, system.ResctrlSchemataName)
@@ -108,7 +108,7 @@ func testingPrepareResctrlL3CatGroups(t *testing.T, cbmStr, rootSchemataStr stri
 	if len(schemataData) >= 3 {
 		lsrSchemataData = []byte(schemataData[2])
 	}
-	lsrSchemataDir := filepath.Join(resctrlDir, LSRResctrlGroup)
+	lsrSchemataDir := filepath.Join(resctrlDir, system.LSRResctrlGroup)
 	err = os.MkdirAll(lsrSchemataDir, 0700)
 	assert.NoError(t, err)
 	lsrSchemataPath := filepath.Join(lsrSchemataDir, system.ResctrlSchemataName)
@@ -272,8 +272,8 @@ func Test_initCatResctrl(t *testing.T) {
 		assert.NoError(t, err)
 
 		resctrlDirPath = filepath.Join(system.Conf.SysFSRootDir, system.ResctrlDir)
-		beResctrlGroupPath := filepath.Join(resctrlDirPath, BEResctrlGroup)
-		lsResctrlGroupPath := filepath.Join(resctrlDirPath, LSResctrlGroup)
+		beResctrlGroupPath := filepath.Join(resctrlDirPath, system.BEResctrlGroup)
+		lsResctrlGroupPath := filepath.Join(resctrlDirPath, system.LSResctrlGroup)
 		_, err = os.Stat(beResctrlGroupPath)
 		assert.NoError(t, err)
 		_, err = os.Stat(lsResctrlGroupPath)
@@ -549,7 +549,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 		{
 			name: "throw an error for write on invalid path",
 			args: args{
-				group: LSResctrlGroup,
+				group: system.LSResctrlGroup,
 				cbm:   0xf,
 				l3Num: 2,
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -570,7 +570,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 		{
 			name: "warning to empty policy",
 			args: args{
-				group: LSResctrlGroup,
+				group: system.LSResctrlGroup,
 				cbm:   0xf,
 				l3Num: 2,
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -590,7 +590,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 		{
 			name: "throw an error for calculating schemata failed",
 			args: args{
-				group: LSResctrlGroup,
+				group: system.LSResctrlGroup,
 				cbm:   0x4,
 				l3Num: 2,
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -610,7 +610,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 		{
 			name: "apply policy correctly",
 			args: args{
-				group: LSResctrlGroup,
+				group: system.LSResctrlGroup,
 				cbm:   0xf,
 				l3Num: 2,
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -633,7 +633,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 		{
 			name: "apply policy correctly 1",
 			args: args{
-				group: LSResctrlGroup,
+				group: system.LSResctrlGroup,
 				cbm:   0x7ff,
 				l3Num: 2,
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -664,7 +664,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 		{
 			name: "apply policy correctly 2",
 			args: args{
-				group: LSRResctrlGroup,
+				group: system.LSRResctrlGroup,
 				cbm:   0x7ff,
 				l3Num: 2,
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -695,7 +695,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3PolicyForGroup(t *testing.T) {
 		{
 			name: "calculate the policy but no need to update",
 			args: args{
-				group: BEResctrlGroup,
+				group: system.BEResctrlGroup,
 				cbm:   0x7ff,
 				l3Num: 1,
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -803,7 +803,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 		{
 			name: "throw an error for write on invalid path",
 			args: args{
-				group:        LSResctrlGroup,
+				group:        system.LSResctrlGroup,
 				l3Num:        2,
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -823,7 +823,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 		{
 			name: "warning to empty policy",
 			args: args{
-				group:        LSResctrlGroup,
+				group:        system.LSResctrlGroup,
 				l3Num:        2,
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -842,7 +842,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 		{
 			name: "apply policy correctly on intel",
 			args: args{
-				group:        LSResctrlGroup,
+				group:        system.LSResctrlGroup,
 				l3Num:        2,
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -868,7 +868,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 				mockSchemata: "    L3:0=f;1=f;2=f;3=f\n    MB:0=2048;1=2048;2=2048;3=2048",
 			},
 			args: args{
-				group:        BEResctrlGroup,
+				group:        system.BEResctrlGroup,
 				l3Num:        4,
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -892,7 +892,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 				mockSchemata: "    L3:0=f;1=f;2=f;3=f\n    MB:0=2048;1=2048;2=2048;3=2048",
 			},
 			args: args{
-				group:        BEResctrlGroup,
+				group:        system.BEResctrlGroup,
 				l3Num:        4,
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: system.AMD_VENDOR_ID},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -911,7 +911,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 		{
 			name: "calculate the policy but no need to update",
 			args: args{
-				group:        BEResctrlGroup,
+				group:        system.BEResctrlGroup,
 				l3Num:        2,
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -942,7 +942,7 @@ func TestResctrlReconcile_calculateAndApplyRDTMbPolicyForGroup(t *testing.T) {
 		{
 			name: "calculate the policy but no need to update 1",
 			args: args{
-				group:        BEResctrlGroup,
+				group:        system.BEResctrlGroup,
 				l3Num:        1,
 				basicCPUInfo: extension.CPUBasicInfo{VendorID: "GenuineIntel"},
 				qosStrategy: &slov1alpha1.ResourceQOSStrategy{
@@ -1034,14 +1034,14 @@ func TestResctrlReconcile_calculateAndApplyRDTL3GroupTasks(t *testing.T) {
 	}{
 		{
 			name:    "write nothing",
-			args:    args{group: LSResctrlGroup},
+			args:    args{group: system.LSResctrlGroup},
 			want:    "",
 			wantErr: false,
 		},
 		{
 			name: "abort writing for invalid path",
 			args: args{
-				group:   LSResctrlGroup,
+				group:   system.LSResctrlGroup,
 				taskIds: []int32{0, 1, 2, 5, 7, 9},
 			},
 			fields: fields{
@@ -1053,7 +1053,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3GroupTasks(t *testing.T) {
 		{
 			name: "write successfully",
 			args: args{
-				group:   BEResctrlGroup,
+				group:   system.BEResctrlGroup,
 				taskIds: []int32{0, 1, 2, 5, 7, 9},
 			},
 			want:    "012579", // the real content of resctrl tasks file would be "0\n\1\n2\n..."
@@ -1062,7 +1062,7 @@ func TestResctrlReconcile_calculateAndApplyRDTL3GroupTasks(t *testing.T) {
 		{
 			name: "write successfully 1",
 			args: args{
-				group:   BEResctrlGroup,
+				group:   system.BEResctrlGroup,
 				taskIds: []int32{0, 1, 2, 4, 5, 6},
 			},
 			want:    "012456", // the real content of resctrl tasks file would be "0\n\1\n2\n..."
@@ -1172,18 +1172,18 @@ func TestResctrlReconcile_reconcileRDTResctrlPolicy(t *testing.T) {
 		// reconcile and check if the result is correct
 		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
-		beSchemataPath := filepath.Join(resctrlDirPath, BEResctrlGroup, system.ResctrlSchemataName)
+		beSchemataPath := filepath.Join(resctrlDirPath, system.BEResctrlGroup, system.ResctrlSchemataName)
 		expectBESchemataStr := "L3:0=3f;1=3f;\n"
 		got, _ := os.ReadFile(beSchemataPath)
 		assert.Equal(t, expectBESchemataStr, string(got))
 
-		lsSchemataPath := filepath.Join(resctrlDirPath, LSResctrlGroup, system.ResctrlSchemataName)
+		lsSchemataPath := filepath.Join(resctrlDirPath, system.LSResctrlGroup, system.ResctrlSchemataName)
 		expectLSSchemataStr := "MB:0=90;1=90;\n"
 		got, _ = os.ReadFile(lsSchemataPath)
 		assert.Equal(t, expectLSSchemataStr, string(got))
 
 		// log error for invalid be resctrl path
-		err = os.RemoveAll(filepath.Join(resctrlDirPath, BEResctrlGroup))
+		err = os.RemoveAll(filepath.Join(resctrlDirPath, system.BEResctrlGroup))
 		assert.NoError(t, err)
 		r.reconcileRDTResctrlPolicy(nodeSLO.Spec.ResourceQOSStrategy)
 
@@ -1320,15 +1320,15 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		r.reconcileResctrlGroups(testQOSStrategy)
 
 		// check if the reconciliation is a success
-		out, err := os.ReadFile(system.ResctrlTasks.Path(BEResctrlGroup))
+		out, err := os.ReadFile(system.ResctrlTasks.Path(system.BEResctrlGroup))
 		assert.NoError(t, err)
 		assert.Equal(t, wantResctrlBETaskStr, string(out))
 
-		out, err = os.ReadFile(system.ResctrlTasks.Path(LSRResctrlGroup))
+		out, err = os.ReadFile(system.ResctrlTasks.Path(system.LSRResctrlGroup))
 		assert.NoError(t, err)
 		assert.Equal(t, wantResctrlLSRTaskStr, string(out))
 
-		beTasksPath := filepath.Join(system.ResctrlTasks.Path(BEResctrlGroup))
+		beTasksPath := filepath.Join(system.ResctrlTasks.Path(system.BEResctrlGroup))
 		err = os.WriteFile(beTasksPath, []byte(testingBEResctrlTasksStr), 0666)
 		assert.NoError(t, err)
 
@@ -1336,7 +1336,7 @@ func TestResctrlReconcile_reconcileResctrlGroups(t *testing.T) {
 		r.reconcileResctrlGroups(testQOSStrategy)
 
 		// check if the reconciliation is a success
-		out, err = os.ReadFile(system.ResctrlTasks.Path(BEResctrlGroup))
+		out, err = os.ReadFile(system.ResctrlTasks.Path(system.BEResctrlGroup))
 		assert.NoError(t, err)
 		assert.Equal(t, wantResctrlBETaskStr, string(out))
 	})

@@ -23,7 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
-	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
@@ -91,9 +90,9 @@ func (r *resctrlCollector) collectQoSResctrlStat() {
 	resctrlMetrics := make([]metriccache.MetricSample, 0)
 	collectTime := time.Now()
 	for _, qos := range []string{
-		string(extension.QoSLSR),
-		string(extension.QoSLS),
-		string(extension.QoSBE)} {
+		system.LSRResctrlGroup,
+		system.LSResctrlGroup,
+		system.BEResctrlGroup} {
 		l3Map, err := r.resctrlReader.ReadResctrlL3Stat(qos)
 		if err != nil {
 			klog.V(4).Infof("collect QoS %s resctrl llc data error: %v", qos, err)

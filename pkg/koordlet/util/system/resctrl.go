@@ -59,6 +59,15 @@ const (
 	// other cpu vendor like "GenuineIntel"
 	AMD_VENDOR_ID   = "AuthenticAMD"
 	INTEL_VENDOR_ID = "GenuineIntel"
+
+	// LSRResctrlGroup is the name of LSR resctrl group
+	LSRResctrlGroup = "LSR"
+	// LSResctrlGroup is the name of LS resctrl group
+	LSResctrlGroup = "LS"
+	// BEResctrlGroup is the name of BE resctrl group
+	BEResctrlGroup = "BE"
+	// UnknownResctrlGroup is the resctrl group which is unknown to reconcile
+	UnknownResctrlGroup = "Unknown"
 )
 
 var (
