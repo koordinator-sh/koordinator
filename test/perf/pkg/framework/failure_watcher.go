@@ -193,11 +193,19 @@ func (f *FailureWatcher) LastEventTime() time.Time {
 }
 
 // ResetLastEventTime sets lastEventTime to now. Called by waitForSettle at
-// settle start so the quiet-period clock begins from when settling starts,
-// not from when NewFailureWatcher was called. Without this, a scenario that
-// reaches expectedScheduledPodCount in under settleQuietPeriod seconds could
-// exit the settle loop immediately — lastEventTime from watcher creation
-// would already be stale by the time waitForSettle is invoked.
+// settle start so the quiet-period clock is anchored to when settling begins,
+// not to when NewFailureWatcher was created.
+//
+// Without this, the gap between NewFailureWatcher (engine.go:234) and
+// waitForSettle (engine.go:308) — which spans failureWatcher.Ready() plus the
+// entire pod-burst phase — can exceed settleQuietPeriod (5 s) before a single
+// FailedScheduling event has been processed. The committed elasticquota-1k
+// baseline records apiCreationDurationSec ≈ 8.64 s, so on that config the gap
+// already exceeds 5 s. If the first quota-blocked event arrives after
+// waitForSettle starts, the predicate at engine.go:502 fires on the very first
+// loop iteration (before the first 250 ms tick) and waitForSettle returns
+// immediately — leaving quotaBlockedPodCount at ~0 and tripping the CI gate at
+// scheduler-benchmark.yaml:101.
 func (f *FailureWatcher) ResetLastEventTime() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
