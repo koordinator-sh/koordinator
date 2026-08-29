@@ -1,0 +1,276 @@
+# Optimize Kueue AdmissionCheck with Koordinator Reservation
+
+## Summary
+
+This proposal outlines a mechanism to integrate Kueue with Koordinator's Reservation system to address the issue where workloads admitted by Kueue based on Topology Aware Scheduling (TAS) and quota checks may still be unschedulable by the scheduler. The integration will leverage Koordinator's Reservation mechanism to ensure that resources are actually available and schedulable before Kueue finally admits a workload.
+
+## Motivation
+
+Currently, Kueue admits workloads based on:
+1. Quota reservation against ClusterQueue
+2. Topology Aware Scheduling (TAS) checks for hierarchical resource allocation
+3. ProvisioningRequest mechanism for Cluster Autoscaler integration
+
+However, after admission, the pods may still fail to schedule due to:
+- Scheduling constraints not considered during admission (affinities, taints, node selectors)
+- Resource fragmentation that wasn't detected during quota checks
+- Node topology constraints not fully captured by TAS
+- Other scheduler plugins or predicates that prevent scheduling
+
+This leads to admitted workloads that cannot run, wasting quota reservation time and creating scheduling deadlocks.
+
+## Goals
+
+- Provide a mechanism to validate actual schedulability before workload admission
+- Introduce a new AdmissionCheck controller that integrates with Koordinator
+- Ensure admitted workloads have a high probability of successful scheduling
+- Maintain compatibility with existing Kueue workflows
+
+## Non-Goals
+
+- Replace existing TAS or ProvisionRequest mechanisms
+- Modify Koordinator's core Reservation functionality
+- Handle non-Koordinator scheduler integrations in this proposal
+- Address issues with other scheduler implementations
+
+## Proposal
+
+### Architecture Overview
+
+The solution involves creating a new AdmissionCheck controller that:
+
+1. When a Workload has quota reservation, creates a corresponding Koordinator Reservation
+2. Monitors the Reservation status to determine if resources can be scheduled
+3. Updates the AdmissionCheck status based on Reservation outcome
+4. Only allows admission when the Reservation is successfully created and confirmed
+
+### Detailed Design
+
+#### New AdmissionCheck Controller
+
+We will introduce a new AdmissionCheck controller named `reservation-admission-controller` that:
+
+- Watches Workloads that have quota reservation and require reservation validation
+- Creates Koordinator Reservation objects when the Workload passes initial quota checks
+- Monitors Reservation status and updates the AdmissionCheck accordingly
+- Handles Reservation cleanup after workload admission or failure
+
+#### Reservation CRD Integration
+
+The controller will interact with the Koordinator Reservation CRD:
+
+```go
+// Example Reservation object created by the controller
+apiVersion: scheduling.koordinator.sh/v1alpha1
+kind: Reservation
+metadata:
+  name: workload-reservation-<workload-uid>
+  ownerReferences:
+  - apiVersion: kueue.x-k8s.io/v1beta2
+    kind: Workload
+    name: <workload-name>
+    uid: <workload-uid>
+spec:
+  template:
+    spec:
+      containers:
+      - name: placeholder
+        resources:
+          requests:
+            cpu: <cpu-request>
+            memory: <memory-request>
+          limits:
+            cpu: <cpu-request>
+            memory: <memory-request>
+      nodeSelector: <flavor-labels-from-admission>
+      affinity: <topology-constraints>
+  owners:
+  - object:
+      apiVersion: kueue.x-k8s.io/v1beta2
+      kind: Workload
+      name: <workload-name>
+      namespace: <workload-namespace>
+```
+
+#### Admission Flow
+
+1. Workload is created and goes through normal Kueue scheduling process
+2. Quota is reserved based on ClusterQueue and ResourceFlavor assignments
+3. If the `ReservationAdmissionCheck` is configured for the ClusterQueue, the admission is held
+4. The Reservation AdmissionCheck controller creates a Reservation object with the same resource requirements and constraints as the admitted workload
+5. Koordinator's scheduler attempts to schedule the Reservation and marks it as available if successful
+6. The AdmissionCheck controller updates the AdmissionCheck status to `Ready` when Reservation is confirmed
+7. Kueue proceeds with workload admission once all AdmissionChecks are ready
+8. After admission, the Reservation is used by the workload pods or converted to actual pod scheduling
+
+#### Configuration
+
+The integration will be configurable through:
+
+1. **ClusterQueue Configuration**: Add reservation admission check references
+```yaml
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: cluster-queue
+spec:
+  admissionChecks:
+  - name: reservation-check
+    controller: "kueue.x-k8s.io/reservation-admission-controller"
+```
+
+2. **AdmissionCheck Definition**: Define the reservation admission check
+```yaml
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: AdmissionCheck
+metadata:
+  name: reservation-check
+spec:
+  controllerName: "kueue.x-k8s.io/reservation-admission-controller"
+  parameters:
+    apiGroup: kueue.x-k8s.io
+    kind: ReservationAdmissionCheckConfig
+    name: reservation-config
+```
+
+3. **Configuration Parameters**: Configure reservation behavior
+```yaml
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ReservationAdmissionCheckConfig
+metadata:
+  name: reservation-config
+spec:
+  timeoutSeconds: 300  # How long to wait for reservation confirmation
+  reservationTemplate: # Template for reservation objects
+    ttl: 300s          # Time-to-live for reservations
+  cleanupStrategy: "OnAdmission"  # When to clean up reservations
+```
+
+### API Changes
+
+#### New CRDs (Optional)
+
+If needed, we could introduce configuration CRDs:
+
+```go
+// ReservationAdmissionCheckConfig defines configuration for reservation admission
+type ReservationAdmissionCheckConfig struct {
+  metav1.TypeMeta   `json:",inline"`
+  metav1.ObjectMeta `json:"metadata,omitempty"`
+
+  Spec ReservationAdmissionCheckConfigSpec `json:"spec,omitempty"`
+}
+
+type ReservationAdmissionCheckConfigSpec struct {
+  TimeoutSeconds    *int32                    `json:"timeoutSeconds,omitempty"`
+  ReservationTemplate ReservationTemplateSpec `json:"reservationTemplate,omitempty"`
+  CleanupStrategy   CleanupStrategy           `json:"cleanupStrategy,omitempty"`
+}
+
+type ReservationTemplateSpec struct {
+  TTL *metav1.Duration `json:"ttl,omitempty"`
+  // Additional reservation-specific parameters
+}
+
+type CleanupStrategy string
+const (
+  CleanupOnAdmission CleanupStrategy = "OnAdmission"
+  CleanupOnWorkloadSchedule CleanupStrategy = "OnWorkloadSchedule"
+  CleanupOnWorkloadDelete CleanupStrategy = "OnWorkloadDelete"
+)
+```
+
+### Implementation Plan
+
+#### Phase 1: Basic Integration
+1. Create the Reservation AdmissionCheck controller
+2. Implement basic Reservation creation and monitoring
+3. Add configuration options for the controller
+4. Basic cleanup of Reservation resources
+
+#### Phase 2: Advanced Features
+1. Support for multi-PodSet workloads
+2. Topology-aware Reservation creation
+3. Reservation reuse optimization
+4. Metrics and monitoring
+
+#### Phase 3: Production Readiness
+1. Comprehensive testing with various scheduler configurations
+2. Performance optimization
+3. Error handling and retry mechanisms
+4. Documentation and examples
+
+### Security Considerations
+
+- The controller will run with minimal required permissions to create and monitor Reservation objects
+- Reservation objects will be properly namespaced and owner-referenced to prevent cross-tenant interference
+- Resource limits will be enforced to prevent resource exhaustion attacks
+
+### Performance Implications
+
+- Additional latency during admission process due to Reservation scheduling
+- Increased API server load from Reservation object creation and monitoring
+- Potential resource overhead from Reservation placeholder resources (minimal with proper sizing)
+
+### Migration Path
+
+- The feature will be opt-in through AdmissionCheck configuration
+- Existing workloads without reservation AdmissionChecks will continue to work unchanged
+- Gradual rollout possible by configuring the check only for specific ClusterQueues
+
+## Alternatives Considered
+
+### Alternative 1: Direct Scheduler Integration
+Instead of using Reservation CRD, directly integrate with kube-scheduler through webhooks or plugins. This approach would require modifying the scheduler itself, which is outside Kueue's control.
+
+### Alternative 2: Pod Scheduling Simulation
+Simulate pod scheduling in-memory to validate schedulability. This approach would be complex and potentially inaccurate compared to actual scheduler behavior.
+
+### Alternative 3: Enhanced ProvisioningRequest
+Extend the existing ProvisioningRequest mechanism to include scheduler validation. However, this would require changes to Cluster Autoscaler and may not address non-autoscaling scenarios.
+
+## Testing Plan
+
+### Unit Tests
+- Controller logic for Reservation creation and monitoring
+- AdmissionCheck status updates
+- Configuration validation
+- Error handling scenarios
+
+### Integration Tests
+- End-to-end workflow with Koordinator Reservation
+- Multi-PodSet workload handling
+- Reservation cleanup scenarios
+- Timeout and failure handling
+
+### E2E Tests
+- Complete admission flow with Reservation validation
+- Integration with existing TAS and ProvisionRequest flows
+- Performance benchmarking
+- Failure recovery scenarios
+
+## Graduation Criteria
+
+### Alpha
+- Basic functionality working in test environments
+- Unit and integration tests covering core functionality
+- Documentation for developers
+
+### Beta
+- E2E tests passing consistently
+- Performance benchmarks showing acceptable overhead
+- User documentation available
+- Error handling and monitoring in place
+
+### GA
+- Production usage in multiple environments
+- Performance optimization completed
+- Comprehensive documentation and examples
+- Migration guide for existing users
+
+## Implementation Timeline
+
+- Phase 1: 4-6 weeks
+- Phase 2: 2-3 weeks
+- Phase 3: 2-3 weeks
+- Total: 8-12 weeks for complete implementation
