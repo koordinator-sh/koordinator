@@ -563,6 +563,11 @@ func (in *ReservationArgs) DeepCopyInto(out *ReservationArgs) {
 		*out = new(ReservationSelectorIndexArgs)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.EnableQueueHint != nil {
+		in, out := &in.EnableQueueHint, &out.EnableQueueHint
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 
