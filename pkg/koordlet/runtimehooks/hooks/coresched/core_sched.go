@@ -24,6 +24,7 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 	"go.uber.org/atomic"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -116,9 +117,9 @@ func (p *Plugin) Register(op hooks.Options) {
 	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.VirtualCoreSchedCookie,
 		"set core sched cookie to process groups of sandbox container specified",
 		p.SetContainerCookie, reconciler.PodQOSFilter(), podQOSConditions...)
-	// TODO: support host application
-	reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUIdle, "reconcile QoS level cpu idle",
-		p.SetKubeQOSCPUIdle, reconciler.NoneFilter())
+	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUIdle,
+		"set pod level cpu.idle ", p.SetPodQOSCPUIdle, reconciler.NoneFilter())
+	p.Setup(op)
 	p.Setup(op)
 }
 
@@ -163,6 +164,27 @@ func (p *Plugin) SetKubeQOSCPUIdle(proto protocol.HooksProtocol) error {
 		kubeQOSCtx.Response.Resources.CPUIdle = ptr.To[int64](0)
 	}
 
+	return nil
+}
+
+func (p *Plugin) SetPodQOSCPUIdle(proto protocol.HooksProtocol) error {
+	podCtx := proto.(*protocol.PodContext)
+	if podCtx == nil {
+		return fmt.Errorf("podCtx protocol is nil for plugin %s", name)
+	}
+	podQOS := extension.GetQoSClassByAttrs(podCtx.Request.Labels, podCtx.Request.Annotations)
+	if !p.rule.IsInited() {
+		klog.V(5).Infof("plugin %s has not been inited, rule inited %v, aborted to set cpu idle for QoS %s",
+			name, p.rule.IsInited(), podQOS)
+		return nil
+	}
+
+	isCPUIdle := p.rule.IsPodQOSCPUIdle(podQOS)
+	if isCPUIdle {
+		podCtx.Response.Resources.CPUIdle = pointer.Int64(1)
+	} else {
+		podCtx.Response.Resources.CPUIdle = pointer.Int64(0)
+	}
 	return nil
 }
 
