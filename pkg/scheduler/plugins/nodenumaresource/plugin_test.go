@@ -1249,6 +1249,133 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 	}
 }
 
+func TestFilterAmplifiedCPUsWithReservation(t *testing.T) {
+	cpuTopology := buildCPUTopologyForTest(2, 1, 8, 2)
+	numCPUs := cpuTopology.NumCPUs // 32
+
+	tests := []struct {
+		name                      string
+		pod                       *corev1.Pod
+		existingPods              []*corev1.Pod
+		reservationCPUs           cpuset.CPUSet // CPUs reserved by the reservation
+		nodeCPUAmplificationRatio extension.Ratio
+		wantStatus                *fwktype.Status
+	}{
+		{
+			name:                      "owner pod fits with reservation reserved cpus and amplification",
+			pod:                       makePod(map[corev1.ResourceName]string{"cpu": "4"}, true),
+			existingPods:              []*corev1.Pod{makePodOnNode(map[corev1.ResourceName]string{"cpu": "4"}, "node-1", true)},
+			reservationCPUs:           cpuset.MustParse("4-7"),
+			nodeCPUAmplificationRatio: 2.0,
+		},
+		{
+			name: "owner pod fits when all non-reserved cpus occupied",
+			pod:  makePod(map[corev1.ResourceName]string{"cpu": "4"}, true),
+			// Existing cpuset pod occupies 28 CPUs (0-27), reservation holds 28-31
+			existingPods:              []*corev1.Pod{makePodOnNode(map[corev1.ResourceName]string{"cpu": "28"}, "node-1", true)},
+			reservationCPUs:           cpuset.MustParse("28-31"),
+			nodeCPUAmplificationRatio: 2.0,
+		},
+		{
+			name: "owner cpushare pod fits with reservation and amplification",
+			pod:  makePod(map[corev1.ResourceName]string{"cpu": "4"}, false),
+			// Existing cpuset pod occupies 28 CPUs, reservation holds 4 CPUs
+			existingPods:              []*corev1.Pod{makePodOnNode(map[corev1.ResourceName]string{"cpu": "28"}, "node-1", true)},
+			reservationCPUs:           cpuset.MustParse("28-31"),
+			nodeCPUAmplificationRatio: 2.0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cpu := fmt.Sprintf("%d", numCPUs)
+			node := makeNode("node-1", map[corev1.ResourceName]string{"cpu": cpu, "memory": "40Gi"}, tt.nodeCPUAmplificationRatio)
+
+			// Include the reservation pod in existing pods so it's counted
+			// in nodeInfo.GetRequested().
+			reservationUID := types.UID("test-reservation-uid")
+			reservePod := st.MakePod().
+				Req(map[corev1.ResourceName]string{"cpu": fmt.Sprintf("%d", tt.reservationCPUs.Size())}).
+				Node("node-1").
+				UID(string(reservationUID)).
+				Obj()
+			allPods := append(tt.existingPods, reservePod)
+
+			suit := newPluginTestSuit(t, allPods, []*corev1.Node{node})
+
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
+			assert.NoError(t, err)
+
+			topologyOptions := TopologyOptions{
+				CPUTopology: cpuTopology,
+			}
+			for i := 0; i < cpuTopology.NumNodes; i++ {
+				topologyOptions.NUMANodeResources = append(topologyOptions.NUMANodeResources, NUMANodeResource{
+					Node: i,
+					Resources: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse(fmt.Sprintf("%d", extension.Amplify(int64(cpuTopology.CPUsPerNode()), tt.nodeCPUAmplificationRatio))),
+						corev1.ResourceMemory: resource.MustParse("20Gi"),
+					}})
+			}
+			pl := p.(*Plugin)
+			pl.topologyOptionsManager.UpdateTopologyOptions(node.Name, func(options *TopologyOptions) {
+				*options = topologyOptions
+			})
+
+			suit.start(t)
+
+			handler := &podEventHandler{resourceManager: pl.resourceManager}
+			for _, v := range tt.existingPods {
+				handler.OnAdd(v, true)
+			}
+
+			// Simulate reservation by allocating its CPUs in the resource manager
+			reservationAlloc := &PodAllocation{
+				UID:    reservationUID,
+				CPUSet: tt.reservationCPUs,
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewQuantity(int64(tt.reservationCPUs.Size()), resource.DecimalSI),
+						},
+					},
+				},
+			}
+			pl.resourceManager.Update(node.Name, reservationAlloc)
+
+			// Set up reservation restore state in the cycle state to indicate
+			// the reservation's CPUs are reusable by the owner pod.
+			cycleState := framework.NewCycleState()
+			_, preFilterStatus := pl.PreFilter(context.TODO(), cycleState, tt.pod, nil)
+			assert.True(t, preFilterStatus.IsSuccess() || preFilterStatus.IsSkip())
+
+			restoreState := &nodeReservationRestoreStateData{
+				matched: map[types.UID]reusableAlloc{
+					reservationUID: {
+						allocatableCPUs: tt.reservationCPUs,
+						allocatedCPUs:   tt.reservationCPUs,
+						remainedCPUs:    tt.reservationCPUs,
+					},
+				},
+			}
+			restoreState.mergeReservationAllocations()
+			reservationState := &reservationRestoreStateData{
+				nodeToState: frameworkext.NodeReservationRestoreStates{
+					node.Name: restoreState,
+				},
+			}
+			cycleState.Write(reservationRestoreStateKey, reservationState)
+
+			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get("node-1")
+			assert.NoError(t, err)
+
+			gotStatus := pl.Filter(context.TODO(), cycleState, tt.pod, nodeInfo)
+			assert.Equal(t, tt.wantStatus, gotStatus)
+		})
+	}
+}
+
 func TestPlugin_FilterNominateReservation(t *testing.T) {
 	skipState := framework.NewCycleState()
 	skipState.Write(stateKey, &preFilterState{
