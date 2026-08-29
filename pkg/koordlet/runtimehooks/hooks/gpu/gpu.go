@@ -33,7 +33,21 @@ import (
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 )
 
-const GpuAllocEnv = "NVIDIA_VISIBLE_DEVICES"
+const (
+	GpuAllocEnv = "NVIDIA_VISIBLE_DEVICES"
+
+	nvidiaDevicePrefix   = "/dev/nvidia"
+	nvidiaCtlDevice      = "/dev/nvidiactl"
+	nvidiaUVMDevice      = "/dev/nvidia-uvm"
+	nvidiaUVMToolsDevice = "/dev/nvidia-uvm-tools"
+)
+
+// nvidiaControlDevices are common NVIDIA control devices shared by all GPU containers.
+var nvidiaControlDevices = []string{nvidiaCtlDevice, nvidiaUVMDevice, nvidiaUVMToolsDevice}
+
+// getDeviceNumbers is a function variable for getting device major/minor numbers,
+// allowing substitution in tests.
+var getDeviceNumbers = system.GetDeviceNumbers
 
 type gpuPlugin struct{}
 
@@ -66,68 +80,131 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 		klog.V(5).Infof("no gpu alloc info in pod anno, %s", containerReq.PodMeta.Name)
 		return nil
 	}
-	gpuIDs := []string{}
-	for _, d := range devices {
-		gpuIDs = append(gpuIDs, fmt.Sprintf("%d", d.Minor))
-	}
+
 	if containerCtx.Response.AddContainerEnvs == nil {
 		containerCtx.Response.AddContainerEnvs = make(map[string]string)
 	}
-	containerCtx.Response.AddContainerEnvs[GpuAllocEnv] = strings.Join(gpuIDs, ",")
+
+	injectGPUEnv(containerCtx, devices)
+	if err := injectGPUDevices(containerCtx, devices); err != nil {
+		return err
+	}
 	if containerReq.PodLabels[ext.LabelGPUIsolationProvider] == string(ext.GPUIsolationProviderHAMICore) {
-		gpuResources := devices[0].Resources
-		gpuMemoryRatio, ok := gpuResources[ext.ResourceGPUMemoryRatio]
-		if !ok {
-			return fmt.Errorf("gpu memory ratio not found in gpu resource")
-		}
-		if gpuMemoryRatio.Value() < 100 {
-			gpuMemory, ok := gpuResources[ext.ResourceGPUMemory]
-			if !ok {
-				return fmt.Errorf("gpu memory not found in gpu resource")
-			}
-			containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_MEMORY_LIMIT"] = fmt.Sprintf("%d", gpuMemory.Value())
-			gpuCore, ok := gpuResources[ext.ResourceGPUCore]
-			if ok {
-				containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_SM_LIMIT"] = fmt.Sprintf("%d", gpuCore.Value())
-			}
-			containerCtx.Response.AddContainerEnvs["LD_PRELOAD"] = system.Conf.HAMICoreLibraryDirectoryPath
-
-			containerCtx.Response.AddContainerMounts = append(containerCtx.Response.AddContainerMounts,
-				&protocol.Mount{
-					Destination: system.Conf.HAMICoreLibraryDirectoryPath,
-					Type:        "bind",
-					Source:      system.Conf.HAMICoreLibraryDirectoryPath,
-					Options:     []string{"rbind"},
-				},
-				// Because https://github.com/Project-HAMi/HAMi/issues/696, we create the directory in pod.
-				&protocol.Mount{
-					Destination: "/tmp/vgpulock",
-					Type:        "bind",
-					Source:      "/tmp/vgpulock",
-					Options:     []string{"rbind"},
-				},
-			)
-
-			if features.DefaultKoordletFeatureGate.Enabled(features.HamiCoreVGPUMonitor) {
-				hamiDirPath := filepath.Dir(system.Conf.HAMICoreLibraryDirectoryPath)
-				containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_MEMORY_SHARED_CACHE"] = fmt.Sprintf("%s/%s_%s.cache", hamiDirPath, containerReq.PodMeta.UID, containerReq.ContainerMeta.Name)
-				cacheFileHostDirectory := fmt.Sprintf("%s/containers/%s_%s", hamiDirPath, containerReq.PodMeta.UID, containerReq.ContainerMeta.Name)
-				// TODO: Move this operation into the pkg resource-executor.​
-				klog.V(5).Infof("​​create a vgpu monitoring data directory [%s] and grant it 0777 permissions", cacheFileHostDirectory)
-				os.RemoveAll(cacheFileHostDirectory)
-				os.MkdirAll(cacheFileHostDirectory, 0777)
-				os.Chmod(cacheFileHostDirectory, 0777)
-				containerCtx.Response.AddContainerMounts = append(containerCtx.Response.AddContainerMounts,
-					&protocol.Mount{
-						Destination: hamiDirPath,
-						Type:        "bind",
-						Source:      cacheFileHostDirectory,
-						Options:     []string{"rbind"},
-					},
-				)
-			}
+		if err := injectHAMiResources(containerCtx, devices); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
+// injectGPUEnv sets the NVIDIA_VISIBLE_DEVICES environment variable with allocated GPU minor numbers.
+func injectGPUEnv(containerCtx *protocol.ContainerContext, devices []*ext.DeviceAllocation) {
+	gpuIDs := make([]string, 0, len(devices))
+	for _, d := range devices {
+		gpuIDs = append(gpuIDs, fmt.Sprintf("%d", d.Minor))
+	}
+	containerCtx.Response.AddContainerEnvs[GpuAllocEnv] = strings.Join(gpuIDs, ",")
+}
+
+// injectGPUDevices adds GPU device information to the OCI spec so that runc can persist device
+// cgroup rules in systemd transient units. Without this, a `systemctl daemon-reload` would reset
+// the device cgroup and cause GPU permission loss for containers using the nvidia-container-runtime
+// legacy mode.
+func injectGPUDevices(containerCtx *protocol.ContainerContext, devices []*ext.DeviceAllocation) error {
+	var gpuDevices []*protocol.LinuxDevice
+
+	for _, d := range devices {
+		devicePath := fmt.Sprintf("%s%d", nvidiaDevicePrefix, d.Minor)
+		deviceInfo, err := getDeviceNumbers(devicePath)
+		if err != nil {
+			klog.Warningf("injectGPUDevices: GetDeviceNumbers from %s error: %v, skip device injection", devicePath, err)
+			return nil
+		}
+		gpuDevices = append(gpuDevices, &protocol.LinuxDevice{
+			Path:          devicePath,
+			Type:          "c",
+			Major:         deviceInfo[0],
+			Minor:         deviceInfo[1],
+			FileModeValue: 0666,
+		})
+	}
+
+	for _, ctlDevice := range nvidiaControlDevices {
+		deviceInfo, err := getDeviceNumbers(ctlDevice)
+		if err != nil {
+			klog.V(5).Infof("injectGPUDevices: skip control device %s, GetDeviceNumbers error: %v", ctlDevice, err)
+			continue
+		}
+		gpuDevices = append(gpuDevices, &protocol.LinuxDevice{
+			Path:          ctlDevice,
+			Type:          "c",
+			Major:         deviceInfo[0],
+			Minor:         deviceInfo[1],
+			FileModeValue: 0666,
+		})
+	}
+
+	containerCtx.Response.AddContainerDevices = append(containerCtx.Response.AddContainerDevices, gpuDevices...)
+	klog.V(4).Infof("injectGPUDevices: AddContainerDevices: %v", containerCtx.Response.AddContainerDevices)
+	return nil
+}
+
+// injectHAMiResources injects HAMi-specific environment variables and mounts for GPU memory/SM isolation.
+func injectHAMiResources(containerCtx *protocol.ContainerContext, devices []*ext.DeviceAllocation) error {
+	gpuResources := devices[0].Resources
+	gpuMemoryRatio, ok := gpuResources[ext.ResourceGPUMemoryRatio]
+	if !ok {
+		return fmt.Errorf("gpu memory ratio not found in gpu resource")
+	}
+	if gpuMemoryRatio.Value() >= 100 {
+		return nil
+	}
+
+	gpuMemory, ok := gpuResources[ext.ResourceGPUMemory]
+	if !ok {
+		return fmt.Errorf("gpu memory not found in gpu resource")
+	}
+	containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_MEMORY_LIMIT"] = fmt.Sprintf("%d", gpuMemory.Value())
+	gpuCore, ok := gpuResources[ext.ResourceGPUCore]
+	if ok {
+		containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_SM_LIMIT"] = fmt.Sprintf("%d", gpuCore.Value())
+	}
+	containerCtx.Response.AddContainerEnvs["LD_PRELOAD"] = system.Conf.HAMICoreLibraryDirectoryPath
+
+	containerCtx.Response.AddContainerMounts = append(containerCtx.Response.AddContainerMounts,
+		&protocol.Mount{
+			Destination: system.Conf.HAMICoreLibraryDirectoryPath,
+			Type:        "bind",
+			Source:      system.Conf.HAMICoreLibraryDirectoryPath,
+			Options:     []string{"rbind"},
+		},
+		// Because https://github.com/Project-HAMi/HAMi/issues/696, we create the directory in pod.
+		&protocol.Mount{
+			Destination: "/tmp/vgpulock",
+			Type:        "bind",
+			Source:      "/tmp/vgpulock",
+			Options:     []string{"rbind"},
+		},
+	)
+
+	if features.DefaultKoordletFeatureGate.Enabled(features.HamiCoreVGPUMonitor) {
+		containerReq := containerCtx.Request
+		hamiDirPath := filepath.Dir(system.Conf.HAMICoreLibraryDirectoryPath)
+		containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_MEMORY_SHARED_CACHE"] = fmt.Sprintf("%s/%s_%s.cache", hamiDirPath, containerReq.PodMeta.UID, containerReq.ContainerMeta.Name)
+		cacheFileHostDirectory := fmt.Sprintf("%s/containers/%s_%s", hamiDirPath, containerReq.PodMeta.UID, containerReq.ContainerMeta.Name)
+		// TODO: Move this operation into the pkg resource-executor.
+		klog.V(5).Infof("create a vgpu monitoring data directory [%s] and grant it 0777 permissions", cacheFileHostDirectory)
+		os.RemoveAll(cacheFileHostDirectory)
+		os.MkdirAll(cacheFileHostDirectory, 0777)
+		os.Chmod(cacheFileHostDirectory, 0777)
+		containerCtx.Response.AddContainerMounts = append(containerCtx.Response.AddContainerMounts,
+			&protocol.Mount{
+				Destination: hamiDirPath,
+				Type:        "bind",
+				Source:      cacheFileHostDirectory,
+				Options:     []string{"rbind"},
+			},
+		)
+	}
 	return nil
 }
