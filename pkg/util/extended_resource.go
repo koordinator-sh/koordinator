@@ -24,10 +24,11 @@ import (
 
 // NOTE: functions in this file can be overwritten for extension
 
-// ExtendedResourceNames todo: add mid resource
 var ExtendedResourceNames = []corev1.ResourceName{
 	extension.BatchCPU,
 	extension.BatchMemory,
+	extension.MidCPU,
+	extension.MidMemory,
 }
 
 func GetBatchMilliCPUFromResourceList(r corev1.ResourceList) int64 {
