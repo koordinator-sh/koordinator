@@ -638,15 +638,6 @@ func (f *FrameworkExtenderFactory) SharedCachesStarted() bool {
 
 // dispatchCaches returns the immutable snapshot of registered shared caches published by
 // StartSharedCaches. Read lock-free on every event — no mutex, no allocation.
-//
-// TODO: the dispatch* methods below invoke each cache's handler sequentially. The end-state
-// goal is parallel-by-default dispatch with an opt-in serial mode, so the shared dispatcher
-// does not regress event-handling latency compared to the original per-profile handler
-// pattern. Deferred to the unified event-dispatcher phase (PR-3).
-//
-// TODO: instrument per-handler dispatch latency (e.g. a histogram labeled by cache key and
-// event type) so the dispatcher's handler performance is observable and regressions are
-// caught once serial/parallel execution modes land. Deferred to the same PR-3 phase.
 func (f *FrameworkExtenderFactory) dispatchCaches() []SharedPluginCache {
 	if p := f.startedCaches.Load(); p != nil {
 		return *p
@@ -654,6 +645,15 @@ func (f *FrameworkExtenderFactory) dispatchCaches() []SharedPluginCache {
 	return nil
 }
 
+// The dispatch* methods below invoke each registered cache's handler sequentially.
+//
+// TODO: the end-state goal is parallel-by-default dispatch with an opt-in serial mode, so the
+// shared dispatcher does not regress event-handling latency compared to the original per-profile
+// handler pattern. Deferred to the unified event-dispatcher phase (PR-3).
+//
+// TODO: instrument per-handler dispatch latency (e.g. a histogram labeled by cache key and event
+// type) so the dispatcher's handler performance is observable and regressions are caught once
+// serial/parallel execution modes land. Deferred to the same PR-3 phase.
 func (f *FrameworkExtenderFactory) dispatchPodAdd(obj interface{}) {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
