@@ -26,9 +26,12 @@ import (
 // merge-order fix. A config-supplied RunIDLabel must not override the
 // engine-set run ID — a clobbered RunIDLabel causes Watcher/FailureWatcher to
 // select no pods and hang the run until timeout.
+//
+// Setup is deliberately not called: BasicScenario.Pods reads s.namespace
+// (populated by Setup), not cfg.Namespace, so namespace resolution is not
+// under test here. Pods falls back to "benchmark" when s.namespace is empty.
 func TestPods_LabelMergeOrder(t *testing.T) {
 	cfg := types.ScenarioConfig{
-		Namespace:     "benchmark",
 		PodCount:      2,
 		SchedulerName: "koord-scheduler",
 		Labels: map[string]string{

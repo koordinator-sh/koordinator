@@ -9,12 +9,13 @@ KUBECONFIG ?= $(HOME)/.kube/config
 BASELINE   ?=
 
 # Use the short commit SHA directly rather than git describe --dirty.
-# hack/setup-cluster.sh runs hack/deploy_kind.sh, which unconditionally
-# rewrites two tracked files — config/manager/kustomization.yaml (via
-# "kustomize edit set image") and config/manager/scheduler.yaml (via sed
-# on the feature-gates line) — making the working tree deterministically
-# dirty from the setup step onward. --dirty would therefore always fire,
-# poisoning the koordinatorVersion field stamped into every baseline JSON.
+# hack/setup-cluster.sh runs hack/deploy_kind.sh, which rewrites tracked
+# files under config/manager/ (kustomization.yaml unconditionally via
+# "kustomize edit set image"; scheduler.yaml via sed on the feature-gates
+# line when KUBERNETES_VERSION < 1.34), making the working tree
+# deterministically dirty from the setup step onward. --dirty would
+# therefore always fire, poisoning the koordinatorVersion field stamped
+# into every baseline JSON.
 GIT_VERSION := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
 VERSION_FLAG := -X github.com/koordinator-sh/koordinator/test/perf/pkg/framework.Version=$(GIT_VERSION)
 

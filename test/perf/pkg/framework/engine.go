@@ -493,8 +493,8 @@ func waitForSettle(ctx context.Context, watcher *Watcher, failureWatcher *Failur
 	// full pod-burst phase; on elasticquota-1k that gap is ≥ 8.64 s (the
 	// recorded apiCreationDurationSec), which already exceeds settleQuietPeriod
 	// (5 s). Without the reset, if no FailedScheduling event has been processed
-	// yet, the predicate at line 502 fires on the first loop iteration and
-	// waitForSettle returns immediately with quotaBlockedPodCount ~0.
+	// yet, the settleQuietPeriod check below fires on the first loop iteration
+	// and waitForSettle returns immediately with quotaBlockedPodCount ~0.
 	failureWatcher.ResetLastEventTime()
 	ticker := time.NewTicker(settlePollInterval)
 	defer ticker.Stop()
