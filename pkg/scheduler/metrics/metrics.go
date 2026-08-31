@@ -179,9 +179,10 @@ var (
 	// endpoint) against live pods rather than by watching the raw count.
 	SharedCacheAssumedPods = metrics.NewGaugeVec(
 		&metrics.GaugeOpts{
-			Subsystem: schedulermetrics.SchedulerSubsystem,
-			Name:      "shared_cache_assumed_pods",
-			Help:      "Size of a shared plugin cache's assumed-allocation ledger (labeled by cache name); tracks assumed pods still alive, not a pure leak gauge.",
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "shared_cache_assumed_pods",
+			Help:           "Size of a shared plugin cache's assumed-allocation ledger (labeled by cache name); tracks assumed pods still alive, not a pure leak gauge.",
+			StabilityLevel: metrics.ALPHA,
 		},
 		[]string{sharedCacheNameKey},
 	)
