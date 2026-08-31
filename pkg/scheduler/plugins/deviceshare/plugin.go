@@ -104,6 +104,12 @@ type preFilterState struct {
 	preemptibleDevices                map[string]map[schedulingv1alpha1.DeviceType]deviceResources
 	preemptibleInRRs                  map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
 
+	// deviceCacheReserved records that Reserve wrote this pod's allocation into the shared device
+	// cache and published an assumed marker. Unreserve reverts the cache write only when this is
+	// set — a same-ns/name collision that skipped the add (and the marker) must not be subtracted,
+	// or it would evict the other pod's allocateSet entry (the set is keyed by ns/name, not UID).
+	deviceCacheReserved bool
+
 	isReservationRequired bool
 
 	// designatedAllocation is parsed from the Pod Annotation during the PreFilter phase. In this case, we should assume that the Node has already been selected. That is, all Score-related plug-ins will not be executed. Instead, we only need to call Filter to confirm whether the designatedAllocation is still valid and use it as the allocation result during actual allocation.
@@ -549,8 +555,33 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 	}
 	logAllocationContext(pod, nodeName, nodeDeviceInfo, state.designatedAllocation, state.allocationResult)
 	nodeDeviceInfo.lock.Lock()
-	defer nodeDeviceInfo.lock.Unlock()
-	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
+	applied := nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
+	nodeDeviceInfo.lock.Unlock()
+	if !applied {
+		// The add did not land: a pod with the same ns/name still holds the allocateSet slot
+		// (e.g. a StatefulSet replica recreated before the old pod's delete reached the cache).
+		// Publishing an assumed marker here would snapshot the OTHER pod's allocation (the marker
+		// is keyed by UID but the snapshot is read by name); once the old pod's delete frees the
+		// slot, this pod's positive events would be suppressed and its usage never re-added. Skip
+		// the marker and degrade to annotation semantics — the informer re-add credits this pod
+		// once the slot frees.
+		return nil
+	}
+	if err := p.nodeDeviceCache.AssumePod(pod, nodeName); err != nil {
+		// AssumePod only fails when the node's cache entry vanished (a benign GC race between
+		// the write above and here). Roll back the cache write — the framework does not
+		// guarantee Unreserve for a Reserve plugin that returns an error at the Reserve
+		// extension point, so we clean up rather than rely on it (safe if Unreserve also runs:
+		// the isValid guard skips the second subtract) — then degrade to annotation semantics
+		// (no marker; informer events repopulate the cache) instead of failing the pod over a
+		// transient race.
+		nodeDeviceInfo.lock.Lock()
+		nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
+		nodeDeviceInfo.lock.Unlock()
+		klog.InfoS("skip assuming pod in device cache, relying on informer events", "pod", klog.KObj(pod), "node", nodeName, "err", err)
+		return nil
+	}
+	state.deviceCacheReserved = true
 	return nil
 }
 
@@ -670,15 +701,25 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState fwktype.CycleState, p
 		return
 	}
 
+	// Clear the assumed marker unconditionally, before the nil check. ForgetPod is idempotent,
+	// and if the node's cache entry has since vanished the subtract below is a no-op anyway — but
+	// the marker must still be cleared here, or it would dangle (with this pod's positive events
+	// suppressed) until the pod's terminal event.
+	_ = p.nodeDeviceCache.ForgetPod(pod)
+
 	nodeDeviceInfo := p.nodeDeviceCache.getNodeDevice(nodeName, false)
 	if nodeDeviceInfo == nil {
 		return
 	}
 
-	nodeDeviceInfo.lock.Lock()
-	defer nodeDeviceInfo.lock.Unlock()
-
-	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
+	// Revert the cache write only if Reserve actually made one. When the add collided with a
+	// same-ns/name pod's slot Reserve skipped it (deviceCacheReserved stays false); subtracting
+	// here would evict that other pod's allocateSet entry, since the set is keyed by ns/name.
+	if state.deviceCacheReserved {
+		nodeDeviceInfo.lock.Lock()
+		nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
+		nodeDeviceInfo.lock.Unlock()
+	}
 	state.allocationResult = nil
 }
 
@@ -844,20 +885,29 @@ func New(ctx context.Context, obj runtime.Object, handle fwktype.Handle) (fwktyp
 		return nil, fmt.Errorf("expect handle to be type frameworkext.ExtendedHandle, got %T", handle)
 	}
 
-	deviceCache := newNodeDeviceCache()
-	registerDeviceEventHandler(deviceCache, extendedHandle.KoordinatorSharedInformerFactory())
-	registerPodEventHandler(deviceCache, handle.SharedInformerFactory(), extendedHandle.KoordinatorSharedInformerFactory())
-	extendedHandle.RegisterForgetPodHandler(deviceCache.deletePod)
-	// Register the node informer synchronously during New so that the registration
-	// is visible to the framework's WaitForHandlersSync. If we registered it inside
-	// the gcNodeDevice goroutine, the framework might start scheduling before the
-	// handler registration is collected. Using a no-op handler because gcNodeDevice
-	// only reads from the node lister.
+	sharedCache := extendedHandle.GetOrRegisterSharedCache(Name, func(h frameworkext.ExtendedHandle) frameworkext.SharedPluginCache {
+		return newNodeDeviceCache(h)
+	})
+	deviceCache, ok := sharedCache.(*nodeDeviceCache)
+	if !ok {
+		return nil, fmt.Errorf("unexpected shared cache type %T for key %q, want *nodeDeviceCache", sharedCache, Name)
+	}
+	// Register the ForgetPod handler per profile: forgetPodHandlers is per-extender state, so
+	// registering only on the profile that constructed the shared cache would miss ForgetPod
+	// invoked through any other profile's extender (e.g. multi-scheduler arbitration failure),
+	// leaving Reserve's write un-reverted and the assumed marker dangling. forgetPod is
+	// idempotent, so registering it on every profile's extender is safe.
+	extendedHandle.RegisterForgetPodHandler(deviceCache.forgetPod)
+	// Ensure the node informer is instantiated and its initial list is awaited during
+	// startup. Registering it here (per profile, during New) makes it visible to the
+	// framework's WaitForHandlersSync, so the scheduler waits for the node cache to finish
+	// its initial sync before accepting scheduling cycles. A no-op handler suffices:
+	// DeviceShare reads the node lister directly (in gcNodeDevice) rather than reacting to
+	// node events.
 	nodeInformer := handle.SharedInformerFactory().Core().V1().Nodes().Informer()
 	if _, err := frameworkexthelper.ForceSyncFromInformer(ctx.Done(), handle.SharedInformerFactory(), nodeInformer, nil); err != nil {
 		return nil, err
 	}
-	go deviceCache.gcNodeDevice(ctx, handle.SharedInformerFactory(), defaultGCPeriod)
 
 	gpuSharedResourceTemplatesCache := newGPUSharedResourceTemplatesCache()
 	registerGPUSharedResourceTemplatesConfigMapEventHandler(gpuSharedResourceTemplatesCache,

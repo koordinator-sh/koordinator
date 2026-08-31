@@ -83,7 +83,7 @@ func Test_nodeDevice_getUsed(t *testing.T) {
 }
 
 func Test_gcNodeDevices(t *testing.T) {
-	cache := newNodeDeviceCache()
+	cache := newNodeDeviceCache(nil)
 	fakeClient := kubefake.NewSimpleClientset()
 	expectedNodeNames := sets.NewString()
 	for i := 0; i < 10; i++ {

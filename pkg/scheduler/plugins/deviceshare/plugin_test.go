@@ -40,6 +40,7 @@ import (
 	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
@@ -155,13 +156,28 @@ func (f *testSharedLister) Get(nodeName string) (fwktype.NodeInfo, error) {
 
 type pluginTestSuit struct {
 	framework.Framework
+	t                                testing.TB
 	koordClientSet                   koordclientset.Interface
 	koordinatorSharedInformerFactory koordinatorinformers.SharedInformerFactory
 	proxyNew                         runtime.PluginFactory
+	extenderFactory                  *frameworkext.FrameworkExtenderFactory
+}
+
+// start drives the framework's shared-cache startup path (FrameworkExtenderFactory.
+// StartSharedCaches), which invokes Start(ctx) on each registered SharedPluginCache —
+// registering DeviceShare's Device/Reservation CRD handlers and the GC goroutine. In
+// production this is called by cmd/koord-scheduler after all plugins are built; plugin
+// unit tests that rely on cache population must call it after proxyNew and before starting
+// the shared informer factory, matching the four-phase initialization order.
+func (s *pluginTestSuit) start(ctx context.Context) {
+	assert.NoError(s.t, s.extenderFactory.StartSharedCaches(ctx, s.Framework.SharedInformerFactory()))
 }
 
 func newPluginTestSuit(t testing.TB, nodes []*corev1.Node) *pluginTestSuit {
 	frameworkexthelper.ResetRegistrations()
+	// suit.start() -> nodeDeviceCache.Start() registers an AfterAllInformersSynced hook in a
+	// package-global registry; reset it per suite so hooks don't accumulate across tests.
+	frameworkexthelper.ResetStartupHooks()
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
@@ -206,9 +222,11 @@ func newPluginTestSuit(t testing.TB, nodes []*corev1.Node) *pluginTestSuit {
 	assert.Nil(t, err)
 	return &pluginTestSuit{
 		Framework:                        fh,
+		t:                                t,
 		koordClientSet:                   koordClientSet,
 		koordinatorSharedInformerFactory: koordSharedInformerFactory,
 		proxyNew:                         proxyNew,
+		extenderFactory:                  extenderFactory,
 	}
 }
 
@@ -250,6 +268,291 @@ func Test_New(t *testing.T) {
 	assert.NotNil(t, p)
 	assert.Nil(t, err)
 	assert.Equal(t, Name, p.Name())
+}
+
+// Test_New_SharedCacheAcrossProfiles verifies the core P1 goal for DeviceShare: two scheduler
+// profiles that both load the plugin from the same FrameworkExtenderFactory share a single
+// nodeDeviceCache instance, rather than allocating one cache (and one handler set) per profile.
+func Test_New_SharedCacheAcrossProfiles(t *testing.T) {
+	frameworkexthelper.ResetRegistrations()
+	frameworkexthelper.ResetStartupHooks()
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
+
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+
+	newProfile := func(schedulerName string) framework.Framework {
+		cs := kubefake.NewSimpleClientset()
+		informerFactory := informers.NewSharedInformerFactory(cs, 0)
+		snapshot := newTestSharedLister(nil, nil)
+		fh, err := schedulertesting.NewFramework(
+			context.TODO(),
+			registeredPlugins,
+			schedulerName,
+			runtime.WithClientSet(cs),
+			runtime.WithInformerFactory(informerFactory),
+			runtime.WithSnapshotSharedLister(snapshot),
+		)
+		assert.NoError(t, err)
+		return fh
+	}
+
+	p1, err := proxyNew(context.TODO(), getDefaultArgs(), newProfile("koord-scheduler"))
+	assert.NoError(t, err)
+	p2, err := proxyNew(context.TODO(), getDefaultArgs(), newProfile("secondary-scheduler"))
+	assert.NoError(t, err)
+
+	assert.Same(t, p1.(*Plugin).nodeDeviceCache, p2.(*Plugin).nodeDeviceCache,
+		"DeviceShare must share a single nodeDeviceCache across scheduler profiles")
+}
+
+// Test_ForgetPodHandler_RegisteredPerProfile pins ZiMengSheng review item 1: the ForgetPod
+// handler must be registered per profile in New(), not once in Start() on the constructing
+// profile's handle. Invoking ForgetPod through a SECOND profile's extender must still reach the
+// shared cache and clear the assumed marker; if it were registered only on the first profile,
+// the marker would dangle and the reserved node keep a phantom allocation.
+func Test_ForgetPodHandler_RegisteredPerProfile(t *testing.T) {
+	frameworkexthelper.ResetRegistrations()
+	frameworkexthelper.ResetStartupHooks()
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+	newProfile := func(schedulerName string) framework.Framework {
+		cs := kubefake.NewSimpleClientset()
+		fh, err := schedulertesting.NewFramework(
+			context.TODO(), registeredPlugins, schedulerName,
+			runtime.WithClientSet(cs),
+			runtime.WithInformerFactory(informers.NewSharedInformerFactory(cs, 0)),
+			runtime.WithSnapshotSharedLister(newTestSharedLister(nil, nil)))
+		assert.NoError(t, err)
+		return fh
+	}
+
+	// p1 (constructed first) creates the shared cache; p2 is a second profile.
+	p1, err := proxyNew(context.TODO(), getDefaultArgs(), newProfile("koord-scheduler"))
+	assert.NoError(t, err)
+	p2, err := proxyNew(context.TODO(), getDefaultArgs(), newProfile("secondary-scheduler"))
+	assert.NoError(t, err)
+	cache := p1.(*Plugin).nodeDeviceCache
+
+	pod := assumeTestPod("1", "node-1")
+	reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	// Forget through the SECOND profile's extender (not the one that constructed the cache).
+	_ = p2.(*Plugin).handle.ForgetPod(klog.Background(), pod)
+
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "ForgetPod via a second profile must clear the shared cache's assumed marker")
+	nd := cache.getNodeDevice("node-1", false)
+	assert.Empty(t, gpuMinors(nd, pod.Namespace, pod.Name), "ForgetPod via a second profile must roll back the assumed allocation")
+}
+
+// Test_SharedDispatcher_PopulatesCacheFromInitialList exercises the production wiring end to end
+// (ZiMengSheng review item 5, coverage): StartSharedCaches registers the unified pod dispatcher
+// on the shared informer factory, and a pre-existing bound pod carrying an allocation annotation
+// must flow dispatcher → OnPodAdd → updatePod into the shared cache via the informer initial-list
+// path — the path the legacy per-plugin test wiring never exercised.
+func Test_SharedDispatcher_PopulatesCacheFromInitialList(t *testing.T) {
+	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node-1"}}
+	suit := newPluginTestSuit(t, []*corev1.Node{node})
+
+	_, err := suit.koordClientSet.SchedulingV1alpha1().Devices().Create(context.TODO(), fakeDeviceCRWithoutTopology, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	boundPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "existing-gpu-pod", UID: types.UID("existing-gpu-pod")},
+		Spec:       corev1.PodSpec{NodeName: "test-node-1"},
+	}
+	assert.NoError(t, apiext.SetDeviceAllocations(boundPod, gpuAllocations(0, 100)))
+	_, err = suit.ClientSet().CoreV1().Pods(boundPod.Namespace).Create(context.TODO(), boundPod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+
+	// Four-phase startup: StartSharedCaches (registers the dispatcher) → informer Start → sync.
+	suit.start(context.TODO())
+	suit.Framework.SharedInformerFactory().Start(nil)
+	suit.koordinatorSharedInformerFactory.Start(nil)
+	suit.Framework.SharedInformerFactory().WaitForCacheSync(nil)
+	suit.koordinatorSharedInformerFactory.WaitForCacheSync(nil)
+
+	cache := pl.(*Plugin).nodeDeviceCache
+	assert.Eventually(t, func() bool {
+		nd := cache.getNodeDevice("test-node-1", false)
+		return nd != nil && len(gpuMinors(nd, boundPod.Namespace, boundPod.Name)) == 1
+	}, 10*time.Second, 20*time.Millisecond, "dispatcher must populate the shared cache from the informer initial list")
+
+	nd := cache.getNodeDevice("test-node-1", false)
+	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, boundPod.Namespace, boundPod.Name))
+}
+
+// Test_Plugin_Reserve_SameNameRecreation_NoStaleMarker pins the same-name recreation regression
+// (@saintube review, high priority): allocateSet is keyed by ns/name but the marker by UID, and
+// copyPodAllocations reads by name. If a same-ns/name pod (e.g. a StatefulSet replica) is Reserved
+// before the previous pod's delete reaches the cache, its add is skipped by isValid (name slot
+// held), so Reserve must NOT publish a marker over the stale snapshot — otherwise, once the old
+// pod's delete frees the slot, the new pod's positive events are suppressed and its usage never
+// enters the cache (double allocation). With the fix, Reserve skips AssumePod when the add did not
+// land, and the informer re-add credits the new pod once the slot frees.
+func Test_Plugin_Reserve_SameNameRecreation_NoStaleMarker(t *testing.T) {
+	suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}})
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	cache := pl.nodeDeviceCache
+	cache.getNodeDevice("node-1", true) // seed an (empty) nodeDevice so Reserve's lookup is non-nil
+
+	reserve := func(uid, name string, alloc apiext.DeviceAllocations) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID(uid), Namespace: "default", Name: name}}
+		cs := framework.NewCycleState()
+		cs.Write(stateKey, &preFilterState{skip: false, allocationResult: alloc})
+		assert.True(t, pl.Reserve(context.TODO(), cs, pod, "node-1").IsSuccess())
+	}
+
+	// UID1 reserved on node-1 (ns/name default/sts-0): cache credited, marker for UID1.
+	reserve("uid-1", "sts-0", gpuAllocations(0, 100))
+	_, ok := assumedEntry(cache, types.UID("uid-1"))
+	assert.True(t, ok, "UID1 must be assumed")
+
+	// UID2 recreated with the SAME ns/name before UID1's delete lands: the add collides with the
+	// held slot, so no marker may be published for UID2.
+	reserve("uid-2", "sts-0", gpuAllocations(1, 100))
+	_, ok = assumedEntry(cache, types.UID("uid-2"))
+	assert.False(t, ok, "Reserve must not publish a stale marker when the add did not land")
+
+	// UID1's delete arrives: releaseAssumed clears its marker and frees the ns/name slot.
+	cache.OnPodDelete(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-1", Namespace: "default", Name: "sts-0"}})
+	_, ok = assumedEntry(cache, types.UID("uid-1"))
+	assert.False(t, ok)
+
+	// UID2's bound event: not assumed → updatePod credits alloc2 (self-heal), so its usage is visible.
+	pod2 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-2", Namespace: "default", Name: "sts-0"}}
+	cache.OnPodAdd(eventPodFrom(pod2, "node-1", gpuAllocations(1, 100)))
+	nd := cache.getNodeDevice("node-1", false)
+	assert.ElementsMatch(t, []int{1}, gpuMinors(nd, "default", "sts-0"),
+		"UID2's allocation must become visible after the slot frees")
+}
+
+// Test_Plugin_Reserve_SameNameRecreation_PartialCollision_NoStaleMarker pins @ZiMengSheng review
+// item 1: updateCacheUsed must report all-or-nothing, not "any device type landed". A recreated
+// pod that requests a superset of device types ({gpu, rdma}) where only the gpu slot is still held
+// by the previous pod must NOT get a marker — the gpu add is skipped but the rdma add lands, and a
+// marker published here would snapshot the previous pod's gpu allocation (copyPodAllocations reads
+// by ns/name). Fails against the "any" return; passes once the return is all-or-nothing.
+func Test_Plugin_Reserve_SameNameRecreation_PartialCollision_NoStaleMarker(t *testing.T) {
+	suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}})
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	cache := pl.nodeDeviceCache
+	cache.getNodeDevice("node-1", true)
+
+	reserve := func(uid, name string, alloc apiext.DeviceAllocations) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID(uid), Namespace: "default", Name: name}}
+		cs := framework.NewCycleState()
+		cs.Write(stateKey, &preFilterState{skip: false, allocationResult: alloc})
+		assert.True(t, pl.Reserve(context.TODO(), cs, pod, "node-1").IsSuccess())
+	}
+
+	// UID1 holds only the gpu slot for default/sts-0.
+	reserve("uid-1", "sts-0", gpuAllocations(0, 100))
+	_, ok := assumedEntry(cache, types.UID("uid-1"))
+	assert.True(t, ok, "UID1 must be assumed")
+
+	// UID2 recreated with the same ns/name requests {gpu, rdma}: gpu collides (skipped), rdma lands.
+	// The add is a partial collision, so no marker may be published for UID2.
+	reserve("uid-2", "sts-0", gpuRdmaAllocations(0, 100, 0))
+	_, ok = assumedEntry(cache, types.UID("uid-2"))
+	assert.False(t, ok, "Reserve must not publish a marker when only part of the add landed")
+}
+
+// Test_Plugin_Unreserve_SkipsSubtractOnCollision pins @ZiMengSheng review item 2: when Reserve
+// skipped the cache add because a same-ns/name pod still held the slot, Unreserve must not run the
+// subtract — doing so would evict the other pod's allocateSet entry (the set is keyed by ns/name,
+// not UID), after which that pod's own delete is skipped by isValid and its usage leaks forever.
+func Test_Plugin_Unreserve_SkipsSubtractOnCollision(t *testing.T) {
+	suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}})
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	cache := pl.nodeDeviceCache
+	cache.getNodeDevice("node-1", true)
+
+	reserve := func(uid, name string, alloc apiext.DeviceAllocations) *framework.CycleState {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID(uid), Namespace: "default", Name: name}}
+		cs := framework.NewCycleState()
+		cs.Write(stateKey, &preFilterState{skip: false, allocationResult: alloc})
+		assert.True(t, pl.Reserve(context.TODO(), cs, pod, "node-1").IsSuccess())
+		return cs
+	}
+
+	// UID1 reserved on default/sts-0 holds the gpu slot; its allocateSet entry must survive.
+	reserve("uid-1", "sts-0", gpuAllocations(0, 100))
+
+	// UID2 recreated with the same ns/name: Reserve's add collides and is skipped (no marker).
+	cs2 := reserve("uid-2", "sts-0", gpuAllocations(0, 100))
+	if _, ok := assumedEntry(cache, types.UID("uid-2")); ok {
+		t.Fatal("precondition: UID2 must not be assumed (add collided)")
+	}
+
+	// UID2's Unreserve must be a no-op on the cache — UID1's slot must remain.
+	pod2 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-2", Namespace: "default", Name: "sts-0"}}
+	pl.Unreserve(context.TODO(), cs2, pod2, "node-1")
+
+	nd := cache.getNodeDevice("node-1", false)
+	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, "default", "sts-0"),
+		"Unreserve of the colliding pod must not evict the other pod's allocateSet entry")
+}
+
+// Test_Plugin_Unreserve_ClearsMarkerWhenNodeGone pins @saintube review medium item: Unreserve must
+// clear the assumed marker even when the node's cache entry has vanished (GC), instead of returning
+// early on the nil check and leaving the marker dangling (with positive events suppressed) until
+// the pod's terminal event.
+func Test_Plugin_Unreserve_ClearsMarkerWhenNodeGone(t *testing.T) {
+	suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}})
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	cache := pl.nodeDeviceCache
+
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-1", Namespace: "default", Name: "pod-1"}}
+	alloc := gpuAllocations(0, 100)
+	nd := cache.getNodeDevice("node-1", true)
+	nd.lock.Lock()
+	nd.updateCacheUsed(alloc, pod, true)
+	nd.lock.Unlock()
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+	_, ok := assumedEntry(cache, pod.UID)
+	assert.True(t, ok, "pod must be assumed")
+
+	// The node's cache entry vanishes (GC) between Reserve and Unreserve.
+	cache.removeNodeDevice("node-1")
+	assert.Nil(t, cache.getNodeDevice("node-1", false))
+
+	cs := framework.NewCycleState()
+	cs.Write(stateKey, &preFilterState{skip: false, allocationResult: alloc})
+	pl.Unreserve(context.TODO(), cs, pod, "node-1")
+
+	_, ok = assumedEntry(cache, pod.UID)
+	assert.False(t, ok, "Unreserve must clear the assumed marker even when the node's cache entry is gone")
 }
 
 func Test_Plugin_PreFilterExtensions(t *testing.T) {
@@ -1200,7 +1503,7 @@ func Test_Plugin_Filter(t *testing.T) {
 		{
 			name:            "error missing nodecache",
 			state:           &preFilterState{skip: false},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			nodeInfo:        testNodeInfo,
 			want:            nil,
 		},
@@ -2662,7 +2965,7 @@ func Test_Plugin_Filter(t *testing.T) {
 					gpuShared: true,
 				},
 			},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			nodeInfo:        testNodeInfo,
 			want:            fwktype.NewStatus(fwktype.Error, "GPUIsolationProviderHAMICore not found on the node"),
 		},
@@ -2674,7 +2977,7 @@ func Test_Plugin_Filter(t *testing.T) {
 					gpuShared: true,
 				},
 			},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			nodeInfo:        testNodeInfoHami,
 			want:            nil,
 		},
@@ -2686,7 +2989,7 @@ func Test_Plugin_Filter(t *testing.T) {
 					gpuShared: true,
 				},
 			},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			nodeInfo:        testHuawei300IDuoNodeInfo,
 			want:            fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, `model "Ascend-310P3-300I-DUO" of vendor "huawei" does not support GPU Share`),
 		},
@@ -3427,7 +3730,7 @@ func Test_Plugin_Reserve(t *testing.T) {
 		{
 			name: "error missing node cache",
 			args: args{
-				nodeDeviceCache: newNodeDeviceCache(),
+				nodeDeviceCache: newNodeDeviceCache(nil),
 				pod:             &corev1.Pod{},
 				node:            testNode,
 				state: &preFilterState{
@@ -5248,7 +5551,7 @@ func Test_Plugin_Unreserve(t *testing.T) {
 				state: &preFilterState{
 					skip: false,
 				},
-				nodeDeviceCache: newNodeDeviceCache(),
+				nodeDeviceCache: newNodeDeviceCache(nil),
 			},
 		},
 		{
@@ -5262,7 +5565,8 @@ func Test_Plugin_Unreserve(t *testing.T) {
 					},
 				},
 				state: &preFilterState{
-					skip: false,
+					skip:                false,
+					deviceCacheReserved: true,
 					allocationResult: apiext.DeviceAllocations{
 						schedulingv1alpha1.GPU: {
 							{
@@ -5799,6 +6103,7 @@ func Test_Plugin_PreBind(t *testing.T) {
 			pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 			assert.NoError(t, err)
 
+			suit.start(context.TODO())
 			suit.Framework.SharedInformerFactory().Start(nil)
 			suit.koordinatorSharedInformerFactory.Start(nil)
 			suit.Framework.SharedInformerFactory().WaitForCacheSync(nil)
@@ -5877,6 +6182,7 @@ func Test_Plugin_PreBindReservation(t *testing.T) {
 	pl, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 
+	suit.start(context.TODO())
 	suit.Framework.SharedInformerFactory().Start(nil)
 	suit.koordinatorSharedInformerFactory.Start(nil)
 	suit.Framework.SharedInformerFactory().WaitForCacheSync(nil)

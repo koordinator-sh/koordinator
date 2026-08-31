@@ -18,6 +18,7 @@ package deviceshare
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/util"
@@ -128,18 +130,54 @@ func (n *nodeDevice) resetDeviceTotal(resources map[schedulingv1alpha1.DeviceTyp
 	}
 }
 
-// updateCacheUsed is used to update deviceUsed when there is a new pod created/deleted
-func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) {
-	if len(deviceAllocations) > 0 {
-		for deviceType, allocations := range deviceAllocations {
-			if !n.isValid(deviceType, pod.Namespace, pod.Name, add) {
-				continue
-			}
-			n.updateDeviceUsed(deviceType, allocations, add)
-			n.resetDeviceFree(deviceType)
-			n.updateAllocateSet(deviceType, allocations, pod, add)
-		}
+// updateCacheUsed updates deviceUsed when a pod is created/deleted, and reports whether the
+// operation landed for every requested device type (all-or-nothing). A type is skipped by isValid
+// when the pod's ns/name slot in allocateSet is already held — e.g. a same-ns/name pod (a
+// StatefulSet replica) not yet deleted. Callers that publish an assumed marker (keyed by UID, but
+// snapshotted by name) must not do so unless every type landed, or the marker would snapshot the
+// other pod's allocation for the colliding type. The return value is "all", not "any": a partial
+// collision returns false even though the non-colliding types were applied.
+func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) bool {
+	if len(deviceAllocations) == 0 {
+		return false
 	}
+	applied := true
+	for deviceType, allocations := range deviceAllocations {
+		if !n.isValid(deviceType, pod.Namespace, pod.Name, add) {
+			applied = false
+			continue
+		}
+		n.updateDeviceUsed(deviceType, allocations, add)
+		n.resetDeviceFree(deviceType)
+		n.updateAllocateSet(deviceType, allocations, pod, add)
+	}
+	return applied
+}
+
+// copyPodAllocations returns the DeviceAllocations recorded in allocateSet for pod. The
+// caller must hold n.lock.RLock or n.lock.Lock. The returned allocations are a snapshot
+// safe to hold beyond the lock; the underlying resource maps are shallow-copied.
+func (n *nodeDevice) copyPodAllocations(pod *corev1.Pod) apiext.DeviceAllocations {
+	podNamespacedName := types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}
+	var result apiext.DeviceAllocations
+	for deviceType, allocations := range n.allocateSet {
+		res, ok := allocations[podNamespacedName]
+		if !ok || len(res) == 0 {
+			continue
+		}
+		if result == nil {
+			result = apiext.DeviceAllocations{}
+		}
+		list := make([]*apiext.DeviceAllocation, 0, len(res))
+		for minor, resources := range res {
+			list = append(list, &apiext.DeviceAllocation{
+				Minor:     int32(minor),
+				Resources: resources.DeepCopy(),
+			})
+		}
+		result[deviceType] = list
+	}
+	return result
 }
 
 func (n *nodeDevice) getUsed(namespace, name string) map[schedulingv1alpha1.DeviceType]deviceResources {
@@ -452,16 +490,313 @@ func (n *nodeDevice) split(requestsPerInstance corev1.ResourceList, deviceType s
 	return r
 }
 
+var (
+	_ frameworkext.SharedPluginCache = &nodeDeviceCache{}
+	_ frameworkext.CacheReserver     = &nodeDeviceCache{}
+)
+
+// assumedAllocation snapshots what Plugin.Reserve wrote to the cache for one pod: the
+// node the write went to and the allocation itself. Held only until the authoritative
+// pod informer event arrives (or Unreserve fires). Used to reconcile the cache when the
+// event's pod object diverges from what Reserve assumed (different node, mutated
+// annotations, or deletion before binding).
+type assumedAllocation struct {
+	nodeName    string
+	allocations apiext.DeviceAllocations
+}
+
 type nodeDeviceCache struct {
 	lock sync.RWMutex
 	// nodeDeviceInfos stores nodeDevice for each node.
 	nodeDeviceInfos map[string]*nodeDevice
+	// assumedPods records what Reserve wrote to nodeDeviceInfos, keyed by pod UID. Used
+	// by OnPodAdd/OnPodUpdate/OnPodDelete to reconcile with the authoritative informer
+	// event: the assumed write is rolled back and the event's state is applied.
+	assumedPods map[types.UID]*assumedAllocation
+	handle      frameworkext.ExtendedHandle
 }
 
-func newNodeDeviceCache() *nodeDeviceCache {
+func newNodeDeviceCache(handle frameworkext.ExtendedHandle) *nodeDeviceCache {
 	return &nodeDeviceCache{
 		nodeDeviceInfos: make(map[string]*nodeDevice),
+		assumedPods:     make(map[types.UID]*assumedAllocation),
+		handle:          handle,
 	}
+}
+
+// Start implements frameworkext.SharedPluginCache. Called exactly once per scheduler
+// instance after all profiles are built and before the shared informer factory starts.
+// Registers Device CRD handlers (plugin-specific, not centrally dispatched) and starts
+// the single GC goroutine.
+func (n *nodeDeviceCache) Start(context.Context) {
+	registerDeviceEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
+	registerReservationEventHandler(n, n.handle.KoordinatorSharedInformerFactory())
+	// NOTE: the ForgetPod handler is registered per profile in Plugin.New(), NOT here.
+	// forgetPodHandlers is per-extender state, and n.handle is only the profile that first
+	// constructed the shared cache — registering here would miss ForgetPod invoked through
+	// any other profile's extender. Start() may only use factory-scoped dependencies (the
+	// koord/shared informer factories above are singletons); per-extender registration belongs
+	// in New(). See the SharedPluginCache doc.
+	// Launch GC only after all informer factories have started and synced, so its first
+	// tick reads a fully populated node lister. Registering it behind an
+	// AfterAllInformersSynced hook gives an explicit happens-after-sync guarantee that does
+	// not depend on the WaitForHandlersSync guard in gcNodeDevice lining up with the node
+	// handler registration collected in Plugin.New(). The hook's ctx is the scheduler's
+	// run-time context, so GC lives for the scheduler's lifetime.
+	frameworkexthelper.RegisterAfterAllInformersSynced(func(ctx context.Context) error {
+		go n.gcNodeDevice(ctx, n.handle.SharedInformerFactory(), defaultGCPeriod)
+		return nil
+	})
+}
+
+// The OnPod* handlers below are invoked serially by the shared pod informer (one event at a
+// time), so they never race one another. The event path does not hold the cache-wide n.lock in
+// write mode across a whole event: assumedPods is accessed under n.lock (AssumePod/ForgetPod/
+// takeAssumed/isAssumed hold it briefly — AssumePod in write mode for the snapshot+publish, the
+// event path only via isAssumed's read lock), the node map under n.lock (getNodeDevice/
+// gcNodeDevice), and per-node allocation state under the per-node nodeDevice.lock — the same
+// lock discipline every other caller uses, so a concurrent Reserve/Unreserve (scheduling
+// goroutine), Device event, GC, or framework ForgetPod stays race-free. The only cache-wide
+// write-lock holders are the per-Reserve/Unreserve assume/forget calls, not the per-event path.
+//
+// The assumed marker is a pure rollback record. It is consumed only by NEGATIVE events — a
+// delete, a bound->unassigned transition (multi-scheduler arbitration clears spec.nodeName back
+// to ""), a termination, or the framework ForgetPod — and never by a POSITIVE (assigned) event.
+// A pod's spec.nodeName is not a trustworthy "real bind" signal: arbitration fakes it via a
+// client-go transform, so a positive event for an assumed pod must not re-add the pod (Reserve
+// already accounted it) and must leave the marker in place, because ext.ForgetPod fires
+// asynchronously on arbitration failure and needs the marker to roll back. Rolling back via the
+// marker snapshot also works before PreBind wrote the allocation annotation, which the
+// annotation-based deletePod cannot. The negative paths are idempotent against a racing
+// ForgetPod: whichever runs second finds the pod already gone from allocateSet (isValid guard)
+// and subtracts nothing.
+//
+// This mirrors preemption nomination (per @saintube): the assumed node is accounted for
+// immediately, and resetting spec.nodeName back to "" is the negative event that forgets the
+// pod — the arbitrating node always equals the Reserve node, so a positive event never diverges.
+
+// OnPodAdd implements frameworkext.SharedPluginCache.
+func (n *nodeDeviceCache) OnPodAdd(pod *corev1.Pod) {
+	// A terminated pod is a negative event even on Add: a watch reconnect can relist an
+	// already-terminated Reserved pod, and the marker lives until a terminal event, so this
+	// must roll it back (from the snapshot) rather than fall through to the positive handling.
+	if util.IsPodTerminated(pod) {
+		if !n.releaseAssumed(pod) {
+			n.updatePod(nil, pod)
+		}
+		return
+	}
+	if pod.Spec.NodeName != "" && n.isAssumed(pod.UID) {
+		return
+	}
+	n.updatePod(nil, pod)
+}
+
+// OnPodUpdate implements frameworkext.SharedPluginCache.
+func (n *nodeDeviceCache) OnPodUpdate(oldPod, newPod *corev1.Pod) {
+	unassigned := oldPod != nil && oldPod.Spec.NodeName != "" && newPod.Spec.NodeName == ""
+	if unassigned || util.IsPodTerminated(newPod) {
+		if !n.releaseAssumed(newPod) {
+			n.updatePod(oldPod, newPod)
+		}
+		return
+	}
+	if newPod.Spec.NodeName != "" && n.isAssumed(newPod.UID) {
+		return
+	}
+	n.updatePod(oldPod, newPod)
+}
+
+// OnPodDelete implements frameworkext.SharedPluginCache.
+func (n *nodeDeviceCache) OnPodDelete(pod *corev1.Pod) {
+	if !n.releaseAssumed(pod) {
+		n.deletePod(pod)
+	}
+}
+
+// forgetPod is the framework ForgetPodHandler (registered in Start). Unlike the CacheReserver
+// ForgetPod — which clears only the marker because Plugin.Unreserve has already reverted the
+// ledger — the framework path must revert the ledger too. It mirrors OnPodDelete so the two
+// forget paths are symmetric and idempotent. This closes the leak where a Reserved pod forgotten
+// via the framework (e.g. multi-scheduler arbitration failure) left its marker dangling and its
+// Reserve write un-reverted.
+func (n *nodeDeviceCache) forgetPod(pod *corev1.Pod) {
+	if !n.releaseAssumed(pod) {
+		n.deletePod(pod)
+	}
+}
+
+// OnNodeAdd implements frameworkext.SharedPluginCache. nodeDeviceInfos is keyed by node
+// name and populated lazily by Device CRD events; the GC goroutine's node lister handles
+// stale-entry removal, so node events are no-ops here.
+func (n *nodeDeviceCache) OnNodeAdd(*corev1.Node) {}
+
+// OnNodeUpdate implements frameworkext.SharedPluginCache.
+func (n *nodeDeviceCache) OnNodeUpdate(_, _ *corev1.Node) {}
+
+// OnNodeDelete implements frameworkext.SharedPluginCache.
+func (n *nodeDeviceCache) OnNodeDelete(*corev1.Node) {}
+
+// AssumePod implements frameworkext.CacheReserver. Called by Plugin.Reserve after
+// allocations have been written to the per-node cache. Snapshots what Reserve wrote so a
+// later informer event or Unreserve can reconcile against it — the naive "remember the
+// UID only" approach cannot roll back Reserve's write if the informer event's pod object
+// disagrees with what Reserve assumed.
+func (n *nodeDeviceCache) AssumePod(pod *corev1.Pod, nodeName string) error {
+	// Snapshot the pod's cache contribution and publish the marker under a single n.lock hold,
+	// so no event handler can mutate the pod's per-node allocation between the two. A handler
+	// reaches the cache only via getNodeDevice (n.lock) and mutates under nodeDevice.lock, so
+	// holding n.lock here makes snapshot+publish atomic against it — the marker always equals
+	// the pod's current cache contribution at publish time, closing the ledger-desync window.
+	// Lock order is n-before-node, matching invalidateNodeDevice/updateNodeDevice.
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	info := n.nodeDeviceInfos[nodeName]
+	if info == nil {
+		return fmt.Errorf("nodeDevice for %s is missing when assuming pod %s", nodeName, klog.KObj(pod))
+	}
+	info.lock.RLock()
+	allocations := info.copyPodAllocations(pod)
+	info.lock.RUnlock()
+	if len(allocations) == 0 {
+		// A concurrent event removed the pod's allocation before we published the marker;
+		// there is nothing to roll back later, so do not publish a stale/empty marker.
+		return nil
+	}
+	if n.assumedPods == nil {
+		n.assumedPods = make(map[types.UID]*assumedAllocation)
+	}
+	n.assumedPods[pod.UID] = &assumedAllocation{nodeName: nodeName, allocations: allocations}
+	n.recordAssumedPodsSizeLocked()
+	return nil
+}
+
+// recordAssumedPodsSizeLocked publishes the current assumedPods ledger size to the shared-cache
+// metric so a leak is observable. Caller must hold n.lock.
+func (n *nodeDeviceCache) recordAssumedPodsSizeLocked() {
+	metrics.RecordSharedCacheAssumedPods(Name, len(n.assumedPods))
+}
+
+// AssumedAllocationSummary is the JSON-serializable view of one assumed-allocation ledger
+// entry, exposed by the DeviceShare debug service for live inspection.
+type AssumedAllocationSummary struct {
+	NodeName    string                   `json:"nodeName"`
+	Allocations apiext.DeviceAllocations `json:"allocations"`
+}
+
+// getAssumedAllocationsSummary returns a point-in-time snapshot of the assumedPods ledger,
+// keyed by pod UID, for the debug endpoint.
+func (n *nodeDeviceCache) getAssumedAllocationsSummary() map[string]*AssumedAllocationSummary {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
+	out := make(map[string]*AssumedAllocationSummary, len(n.assumedPods))
+	for uid, a := range n.assumedPods {
+		out[string(uid)] = &AssumedAllocationSummary{NodeName: a.nodeName, Allocations: deepCopyDeviceAllocations(a.allocations)}
+	}
+	return out
+}
+
+// deepCopyDeviceAllocations returns a deep copy of allocations so the lock-protected assumedPods
+// ledger state does not escape by reference to a caller reading it after the lock is released.
+func deepCopyDeviceAllocations(allocations apiext.DeviceAllocations) apiext.DeviceAllocations {
+	if allocations == nil {
+		return nil
+	}
+	out := make(apiext.DeviceAllocations, len(allocations))
+	for deviceType, list := range allocations {
+		cp := make([]*apiext.DeviceAllocation, 0, len(list))
+		for _, a := range list {
+			if a == nil {
+				cp = append(cp, nil)
+				continue
+			}
+			c := &apiext.DeviceAllocation{Minor: a.Minor, ID: a.ID, Resources: a.Resources.DeepCopy()}
+			if a.Extension != nil {
+				c.Extension = &apiext.DeviceAllocationExtension{
+					VirtualFunctions:          append([]apiext.VirtualFunction(nil), a.Extension.VirtualFunctions...),
+					GPUSharedResourceTemplate: a.Extension.GPUSharedResourceTemplate,
+				}
+			}
+			cp = append(cp, c)
+		}
+		out[deviceType] = cp
+	}
+	return out
+}
+
+// ForgetPod implements frameworkext.CacheReserver. Called by Plugin.Unreserve. Idempotent
+// — safe to call even if AssumePod was never called for this pod. Only clears the assumed
+// marker; Plugin.Unreserve's existing updateCacheUsed(..., add=false) reverts the cache
+// write itself so behavior for non-CacheReserver code paths is unchanged.
+func (n *nodeDeviceCache) ForgetPod(pod *corev1.Pod) error {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	delete(n.assumedPods, pod.UID)
+	n.recordAssumedPodsSizeLocked()
+	return nil
+}
+
+// isAssumed reports whether pod uid currently has an assumed marker, without consuming it.
+// Used by the positive (assigned) event paths, which must not re-add an assumed pod nor
+// disturb its marker.
+func (n *nodeDeviceCache) isAssumed(uid types.UID) bool {
+	n.lock.RLock()
+	defer n.lock.RUnlock()
+	_, ok := n.assumedPods[uid]
+	return ok
+}
+
+func (n *nodeDeviceCache) takeAssumed(uid types.UID) (*assumedAllocation, bool) {
+	// Fast path: the vast majority of pod events are for pods that were never assumed, so
+	// peek under a read lock and avoid taking the write lock (which blocks all readers) on
+	// the common miss.
+	n.lock.RLock()
+	_, present := n.assumedPods[uid]
+	n.lock.RUnlock()
+	if !present {
+		return nil, false
+	}
+
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	assumed, ok := n.assumedPods[uid]
+	if !ok {
+		// Another goroutine claimed it between the RUnlock and the Lock.
+		return nil, false
+	}
+	delete(n.assumedPods, uid)
+	n.recordAssumedPodsSizeLocked()
+	return assumed, true
+}
+
+// releaseAssumed claims and rolls back the assumed marker for a negative event (delete,
+// bound->unassigned, terminate, or framework ForgetPod), reverting Reserve's write from the
+// snapshot. It reports whether a marker was present so callers fall back to the annotation-based
+// updatePod/deletePod for pods this scheduler never assumed. Idempotent against a racing negative
+// path: takeAssumed atomically claims the marker and rollbackAssumed's isValid guard makes a
+// second subtract a no-op.
+func (n *nodeDeviceCache) releaseAssumed(pod *corev1.Pod) bool {
+	assumed, ok := n.takeAssumed(pod.UID)
+	if ok {
+		n.rollbackAssumed(assumed, pod)
+	}
+	return ok
+}
+
+// rollbackAssumed subtracts the assumed allocation from assumed.nodeName. Shared by every
+// negative path (delete, unassign, terminate, framework ForgetPod) — it reverts Reserve's
+// write from the snapshot, so it works even before PreBind wrote the allocation annotation.
+func (n *nodeDeviceCache) rollbackAssumed(assumed *assumedAllocation, pod *corev1.Pod) {
+	if len(assumed.allocations) == 0 {
+		return
+	}
+	info := n.getNodeDevice(assumed.nodeName, false)
+	if info == nil {
+		return
+	}
+	info.lock.Lock()
+	defer info.lock.Unlock()
+	info.updateCacheUsed(assumed.allocations, pod, false)
 }
 
 func (n *nodeDeviceCache) getNodeDevice(nodeName string, needInit bool) *nodeDevice {
@@ -591,18 +926,13 @@ func (n *nodeDeviceCache) getAllNodeDeviceSummary() map[string]*NodeDeviceSummar
 }
 
 func (n *nodeDeviceCache) gcNodeDevice(ctx context.Context, informerFactory informers.SharedInformerFactory, period time.Duration) {
-	// Wait for all koord plugin event handlers (pod / device / reservation /
-	// node, etc.) to finish processing their initial list before starting GC.
-	// A bare cache.WaitForCacheSync(nodeInformer.HasSynced) only guarantees the
-	// underlying store is populated; it does NOT guarantee that OnAdd callbacks
-	// (which build nodeDeviceInfos) have run to completion. Without this wait
-	// the first GC tick may operate on a half-populated nodeDeviceInfos map
-	// (or, worse, see a warm nodeDeviceInfos but an empty node lister) and
-	// mistakenly evict entries that are about to be recreated.
-	// WaitForHandlersSync defers on ResourceEventHandlerRegistration.HasSynced
-	// for every registration collected by ForceSyncFromInformer, which is the
-	// same signal the scheduler's Run() waits on before accepting scheduling
-	// cycles -- effectively delaying GC until "after scheduler Run".
+	// gcNodeDevice is launched from an AfterAllInformersSynced hook (see Start), so by the
+	// time it runs all informer factories have already started and their caches and handler
+	// registrations have synced. This WaitForHandlersSync call is therefore a defense-in-depth
+	// secondary guard, not the primary gate: it ensures every koord plugin event handler
+	// (pod / device / reservation / node) has drained its initial list before the first GC
+	// tick, so GC never observes a warm nodeDeviceInfos against a not-yet-populated node
+	// lister and evicts entries that are about to be recreated.
 	if err := frameworkexthelper.WaitForHandlersSync(ctx); err != nil {
 		return
 	}
