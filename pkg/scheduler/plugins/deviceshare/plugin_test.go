@@ -451,6 +451,77 @@ func Test_Plugin_Reserve_SameNameRecreation_NoStaleMarker(t *testing.T) {
 		"UID2's allocation must become visible after the slot frees")
 }
 
+// Test_Plugin_Reserve_SameNameRecreation_PartialCollision_NoStaleMarker pins @ZiMengSheng review
+// item 1: updateCacheUsed must report all-or-nothing, not "any device type landed". A recreated
+// pod that requests a superset of device types ({gpu, rdma}) where only the gpu slot is still held
+// by the previous pod must NOT get a marker — the gpu add is skipped but the rdma add lands, and a
+// marker published here would snapshot the previous pod's gpu allocation (copyPodAllocations reads
+// by ns/name). Fails against the "any" return; passes once the return is all-or-nothing.
+func Test_Plugin_Reserve_SameNameRecreation_PartialCollision_NoStaleMarker(t *testing.T) {
+	suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}})
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	cache := pl.nodeDeviceCache
+	cache.getNodeDevice("node-1", true)
+
+	reserve := func(uid, name string, alloc apiext.DeviceAllocations) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID(uid), Namespace: "default", Name: name}}
+		cs := framework.NewCycleState()
+		cs.Write(stateKey, &preFilterState{skip: false, allocationResult: alloc})
+		assert.True(t, pl.Reserve(context.TODO(), cs, pod, "node-1").IsSuccess())
+	}
+
+	// UID1 holds only the gpu slot for default/sts-0.
+	reserve("uid-1", "sts-0", gpuAllocations(0, 100))
+	_, ok := assumedEntry(cache, types.UID("uid-1"))
+	assert.True(t, ok, "UID1 must be assumed")
+
+	// UID2 recreated with the same ns/name requests {gpu, rdma}: gpu collides (skipped), rdma lands.
+	// The add is a partial collision, so no marker may be published for UID2.
+	reserve("uid-2", "sts-0", gpuRdmaAllocations(0, 100, 0))
+	_, ok = assumedEntry(cache, types.UID("uid-2"))
+	assert.False(t, ok, "Reserve must not publish a marker when only part of the add landed")
+}
+
+// Test_Plugin_Unreserve_SkipsSubtractOnCollision pins @ZiMengSheng review item 2: when Reserve
+// skipped the cache add because a same-ns/name pod still held the slot, Unreserve must not run the
+// subtract — doing so would evict the other pod's allocateSet entry (the set is keyed by ns/name,
+// not UID), after which that pod's own delete is skipped by isValid and its usage leaks forever.
+func Test_Plugin_Unreserve_SkipsSubtractOnCollision(t *testing.T) {
+	suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}})
+	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+	cache := pl.nodeDeviceCache
+	cache.getNodeDevice("node-1", true)
+
+	reserve := func(uid, name string, alloc apiext.DeviceAllocations) *framework.CycleState {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID(uid), Namespace: "default", Name: name}}
+		cs := framework.NewCycleState()
+		cs.Write(stateKey, &preFilterState{skip: false, allocationResult: alloc})
+		assert.True(t, pl.Reserve(context.TODO(), cs, pod, "node-1").IsSuccess())
+		return cs
+	}
+
+	// UID1 reserved on default/sts-0 holds the gpu slot; its allocateSet entry must survive.
+	reserve("uid-1", "sts-0", gpuAllocations(0, 100))
+
+	// UID2 recreated with the same ns/name: Reserve's add collides and is skipped (no marker).
+	cs2 := reserve("uid-2", "sts-0", gpuAllocations(0, 100))
+	if _, ok := assumedEntry(cache, types.UID("uid-2")); ok {
+		t.Fatal("precondition: UID2 must not be assumed (add collided)")
+	}
+
+	// UID2's Unreserve must be a no-op on the cache — UID1's slot must remain.
+	pod2 := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: "uid-2", Namespace: "default", Name: "sts-0"}}
+	pl.Unreserve(context.TODO(), cs2, pod2, "node-1")
+
+	nd := cache.getNodeDevice("node-1", false)
+	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, "default", "sts-0"),
+		"Unreserve of the colliding pod must not evict the other pod's allocateSet entry")
+}
+
 // Test_Plugin_Unreserve_ClearsMarkerWhenNodeGone pins @saintube review medium item: Unreserve must
 // clear the assumed marker even when the node's cache entry has vanished (GC), instead of returning
 // early on the nil check and leaving the marker dangling (with positive events suppressed) until
@@ -5494,7 +5565,8 @@ func Test_Plugin_Unreserve(t *testing.T) {
 					},
 				},
 				state: &preFilterState{
-					skip: false,
+					skip:                false,
+					deviceCacheReserved: true,
 					allocationResult: apiext.DeviceAllocations{
 						schedulingv1alpha1.GPU: {
 							{

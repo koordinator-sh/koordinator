@@ -104,6 +104,12 @@ type preFilterState struct {
 	preemptibleDevices                map[string]map[schedulingv1alpha1.DeviceType]deviceResources
 	preemptibleInRRs                  map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources
 
+	// deviceCacheReserved records that Reserve wrote this pod's allocation into the shared device
+	// cache and published an assumed marker. Unreserve reverts the cache write only when this is
+	// set — a same-ns/name collision that skipped the add (and the marker) must not be subtracted,
+	// or it would evict the other pod's allocateSet entry (the set is keyed by ns/name, not UID).
+	deviceCacheReserved bool
+
 	isReservationRequired bool
 
 	// designatedAllocation is parsed from the Pod Annotation during the PreFilter phase. In this case, we should assume that the Node has already been selected. That is, all Score-related plug-ins will not be executed. Instead, we only need to call Filter to confirm whether the designatedAllocation is still valid and use it as the allocation result during actual allocation.
@@ -575,6 +581,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 		klog.InfoS("skip assuming pod in device cache, relying on informer events", "pod", klog.KObj(pod), "node", nodeName, "err", err)
 		return nil
 	}
+	state.deviceCacheReserved = true
 	return nil
 }
 
@@ -705,9 +712,14 @@ func (p *Plugin) Unreserve(ctx context.Context, cycleState fwktype.CycleState, p
 		return
 	}
 
-	nodeDeviceInfo.lock.Lock()
-	nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
-	nodeDeviceInfo.lock.Unlock()
+	// Revert the cache write only if Reserve actually made one. When the add collided with a
+	// same-ns/name pod's slot Reserve skipped it (deviceCacheReserved stays false); subtracting
+	// here would evict that other pod's allocateSet entry, since the set is keyed by ns/name.
+	if state.deviceCacheReserved {
+		nodeDeviceInfo.lock.Lock()
+		nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, false)
+		nodeDeviceInfo.lock.Unlock()
+	}
 	state.allocationResult = nil
 }
 

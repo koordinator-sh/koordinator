@@ -131,23 +131,25 @@ func (n *nodeDevice) resetDeviceTotal(resources map[schedulingv1alpha1.DeviceTyp
 }
 
 // updateCacheUsed updates deviceUsed when a pod is created/deleted, and reports whether the
-// operation actually landed for this pod. An add is skipped by isValid when the pod's ns/name
-// slot in allocateSet is already held — e.g. a same-ns/name pod (a StatefulSet replica) not yet
-// deleted. Callers that publish an assumed marker (keyed by UID, but snapshotted by name) must
-// not do so when the add did not land, or the marker would snapshot the other pod's allocation.
-// Same-ns/name pods request the same device types in practice, so the add is all-or-nothing.
+// operation landed for every requested device type (all-or-nothing). A type is skipped by isValid
+// when the pod's ns/name slot in allocateSet is already held — e.g. a same-ns/name pod (a
+// StatefulSet replica) not yet deleted. Callers that publish an assumed marker (keyed by UID, but
+// snapshotted by name) must not do so unless every type landed, or the marker would snapshot the
+// other pod's allocation for the colliding type. The return value is "all", not "any": a partial
+// collision returns false even though the non-colliding types were applied.
 func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) bool {
-	applied := false
-	if len(deviceAllocations) > 0 {
-		for deviceType, allocations := range deviceAllocations {
-			if !n.isValid(deviceType, pod.Namespace, pod.Name, add) {
-				continue
-			}
-			n.updateDeviceUsed(deviceType, allocations, add)
-			n.resetDeviceFree(deviceType)
-			n.updateAllocateSet(deviceType, allocations, pod, add)
-			applied = true
+	if len(deviceAllocations) == 0 {
+		return false
+	}
+	applied := true
+	for deviceType, allocations := range deviceAllocations {
+		if !n.isValid(deviceType, pod.Namespace, pod.Name, add) {
+			applied = false
+			continue
 		}
+		n.updateDeviceUsed(deviceType, allocations, add)
+		n.resetDeviceFree(deviceType)
+		n.updateAllocateSet(deviceType, allocations, pod, add)
 	}
 	return applied
 }
@@ -689,7 +691,35 @@ func (n *nodeDeviceCache) getAssumedAllocationsSummary() map[string]*AssumedAllo
 	defer n.lock.RUnlock()
 	out := make(map[string]*AssumedAllocationSummary, len(n.assumedPods))
 	for uid, a := range n.assumedPods {
-		out[string(uid)] = &AssumedAllocationSummary{NodeName: a.nodeName, Allocations: a.allocations}
+		out[string(uid)] = &AssumedAllocationSummary{NodeName: a.nodeName, Allocations: deepCopyDeviceAllocations(a.allocations)}
+	}
+	return out
+}
+
+// deepCopyDeviceAllocations returns a deep copy of allocations so the lock-protected assumedPods
+// ledger state does not escape by reference to a caller reading it after the lock is released.
+func deepCopyDeviceAllocations(allocations apiext.DeviceAllocations) apiext.DeviceAllocations {
+	if allocations == nil {
+		return nil
+	}
+	out := make(apiext.DeviceAllocations, len(allocations))
+	for deviceType, list := range allocations {
+		cp := make([]*apiext.DeviceAllocation, 0, len(list))
+		for _, a := range list {
+			if a == nil {
+				cp = append(cp, nil)
+				continue
+			}
+			c := &apiext.DeviceAllocation{Minor: a.Minor, ID: a.ID, Resources: a.Resources.DeepCopy()}
+			if a.Extension != nil {
+				c.Extension = &apiext.DeviceAllocationExtension{
+					VirtualFunctions:          append([]apiext.VirtualFunction(nil), a.Extension.VirtualFunctions...),
+					GPUSharedResourceTemplate: a.Extension.GPUSharedResourceTemplate,
+				}
+			}
+			cp = append(cp, c)
+		}
+		out[deviceType] = cp
 	}
 	return out
 }

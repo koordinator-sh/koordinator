@@ -44,6 +44,19 @@ func gpuAllocations(minor int32, core int64) apiext.DeviceAllocations {
 	}
 }
 
+func gpuRdmaAllocations(gpuMinor int32, gpuCore int64, rdmaMinor int32) apiext.DeviceAllocations {
+	alloc := gpuAllocations(gpuMinor, gpuCore)
+	alloc[schedulingv1alpha1.RDMA] = []*apiext.DeviceAllocation{
+		{
+			Minor: rdmaMinor,
+			Resources: corev1.ResourceList{
+				apiext.ResourceRDMA: *resource.NewQuantity(100, resource.DecimalSI),
+			},
+		},
+	}
+	return alloc
+}
+
 func assumeTestPod(uid, node string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
