@@ -17,9 +17,12 @@ limitations under the License.
 package metrics
 
 import (
+	"sync"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	k8smetrics "k8s.io/component-base/metrics"
 )
 
 // TestInternalRegistryGathersAllInternalMetrics asserts that every koordlet internal metric is registered
@@ -134,6 +137,30 @@ func TestInternalRegistryGathersAllInternalMetrics(t *testing.T) {
 		}},
 	}
 
+	// The table above is maintained by hand, so on its own it only catches a metric that is removed from a
+	// slice, not one that is added. Every internal collector is a single Vec, i.e. exactly one metric family,
+	// so the collector count across the registered slices must equal the number of names covered here.
+	internalCollectorSlices := [][]prometheus.Collector{
+		CommonCollectors,
+		CPUSuppressCollector,
+		CPUBurstCollector,
+		CPUSetCollector,
+		PredictionCollectors,
+		CoreSchedCollector,
+		NodeMetricCollectors,
+		OOMScoreAdjCollector,
+		ResourceExecutorCollector,
+		KubeletStubCollector,
+		RuntimeHookCollectors,
+		HostApplicationCollectors,
+	}
+	registered := 0
+	for _, slice := range internalCollectorSlices {
+		registered += len(slice)
+	}
+	assert.Len(t, internalMetrics, registered, "a collector was added to an internal slice but not to this test")
+
+	t.Cleanup(func() { resetCollectors(internalCollectorSlices) })
 	for _, m := range internalMetrics {
 		m.record()
 	}
@@ -148,5 +175,57 @@ func TestInternalRegistryGathersAllInternalMetrics(t *testing.T) {
 
 	for _, m := range internalMetrics {
 		assert.True(t, gathered[m.name], "metric %s is not registered on InternalRegistry", m.name)
+	}
+}
+
+var (
+	// registrationProbe is a test-only metric used to exercise the Registerable path. It is defined with
+	// component-base and ALPHA stability, exactly as the metrics migrated in the follow-up PRs will be.
+	registrationProbe = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "registration_probe",
+		Help:           "test-only metric asserting internalMustRegister publishes to InternalRegistry",
+		StabilityLevel: k8smetrics.ALPHA,
+	}, []string{NodeKey})
+
+	// Registration is global and one-way, so it must happen once even when the test binary repeats a test.
+	registrationProbeOnce sync.Once
+)
+
+// TestInternalMustRegisterPublishesToInternalRegistry exercises the Registerable registration path that the
+// per-file migration will move each collector slice onto, so the path is proven before anything depends on it.
+// The check is worth making because failure here is silent: a component-base metric that never reaches the
+// registry is not created, and an uncreated metric returns a no-op from With() rather than an error, so it
+// would simply stop being reported.
+func TestInternalMustRegisterPublishesToInternalRegistry(t *testing.T) {
+	registrationProbeOnce.Do(func() { internalMustRegister(registrationProbe) })
+
+	t.Cleanup(registrationProbe.Reset)
+	registrationProbe.WithLabelValues("node").Set(1)
+
+	families, err := InternalRegistry.Gather()
+	assert.NoError(t, err)
+
+	gathered := map[string]bool{}
+	for _, family := range families {
+		gathered[family.GetName()] = true
+	}
+	assert.True(t, gathered["koordlet_registration_probe"],
+		"a component-base metric registered via internalMustRegister is not reported by InternalRegistry")
+}
+
+// resetCollectors clears the series written by a test so later tests in the package do not inherit them.
+func resetCollectors(slices [][]prometheus.Collector) {
+	for _, slice := range slices {
+		for _, collector := range slice {
+			switch vec := collector.(type) {
+			case *prometheus.GaugeVec:
+				vec.Reset()
+			case *prometheus.CounterVec:
+				vec.Reset()
+			case *prometheus.HistogramVec:
+				vec.Reset()
+			}
+		}
 	}
 }
