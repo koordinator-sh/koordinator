@@ -38,9 +38,9 @@ func internalMustRegister(metrics ...k8smetrics.Registerable) {
 	legacyregistry.MustRegister(metrics...)
 }
 
-// internalRawMustRegister bypasses the stability framework and is only for collectors that cannot implement
-// k8smetrics.Registerable, i.e. the pkg/util/metrics GC wrappers, which expose the wrapped
-// prometheus.Collector rather than the component-base type.
+// internalRawMustRegister bypasses the stability framework. Its long-term use is the pkg/util/metrics GC
+// wrappers, which expose the wrapped prometheus.Collector rather than the component-base type. Until the
+// per-file migration in #2971 completes, all collector slices still use this path.
 func internalRawMustRegister(collectors ...prometheus.Collector) {
 	legacyregistry.RawMustRegister(collectors...)
 }
