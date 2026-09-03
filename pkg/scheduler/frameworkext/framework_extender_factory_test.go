@@ -506,3 +506,17 @@ func TestFrameworkExtenderFactory_updatePlugins_NextPodPlugin(t *testing.T) {
 		})
 	}
 }
+
+func TestInterceptSchedulerErrorWiresSchedulingQueue(t *testing.T) {
+	f := &FrameworkExtenderFactory{
+		errorHandlerDispatcher: newErrorHandlerDispatcher(),
+	}
+	mockSched := &scheduler.Scheduler{}
+	f.InterceptSchedulerError(mockSched)
+	// the failure handler is replaced by the dispatcher wrapper
+	assert.NotNil(t, mockSched.FailureHandler)
+	// the dispatcher is wired with the scheduler queue so that it can release
+	// the pod's in-flight bookkeeping when a filter suppresses the default
+	// failure handler (see TestErrorHandlerDispatcherReleasesInFlightPodOnSuppression)
+	assert.NotNil(t, f.errorHandlerDispatcher.schedulingQueue)
+}
