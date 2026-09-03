@@ -44,6 +44,7 @@ func Test_newPreemptionMgr(t *testing.T) {
 			nil,
 			func(args *config.ReservationArgs) {
 				args.EnablePreemption = true
+				args.EnableAsyncPreemption = true
 			})
 		p, err := suit.pluginFactory()
 		assert.NoError(t, err)
@@ -52,6 +53,7 @@ func Test_newPreemptionMgr(t *testing.T) {
 		assert.True(t, ok)
 		assert.NotNil(t, pl.preemptionMgr)
 		assert.Equal(t, Name, pl.preemptionMgr.Name())
+		assert.True(t, pl.preemptionMgr.enableAsyncPreemption)
 	})
 }
 

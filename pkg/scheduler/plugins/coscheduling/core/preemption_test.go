@@ -1700,7 +1700,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				_, _ = extendedFramework.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 			}
 
-			ev := NewPreemptionEvaluator(extendedFramework, gangCache, gangSchedulingContextHolder, nil).(*preemptionEvaluatorImpl)
+			ev := NewPreemptionEvaluator(extendedFramework, gangCache, gangSchedulingContextHolder, nil, false).(*preemptionEvaluatorImpl)
 			preemptionState := &JobPreemptionState{
 				TerminatingPodOnNominatedNode: map[string]string{},
 				ClearNominatedNodeFailedMsg:   map[string]string{},
@@ -1903,5 +1903,89 @@ func TestJobPreemptionState_addMoreDetailForStateToMarshal(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantJSONStr, string(jsonStr))
 		})
+	}
+}
+
+func Test_preemptionEvaluatorImpl_placeToSchedulePods(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:  resource.MustParse("20"),
+				corev1.ResourcePods: resource.MustParse("110"),
+			},
+		},
+	}
+	pod1 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "default", UID: "pod1"},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+				},
+			}},
+		},
+	}
+	pod2 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "default", UID: "pod2"},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+				},
+			}},
+		},
+	}
+	pod3 := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod3", Namespace: "default", UID: "pod3"},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+				},
+			}},
+		},
+	}
+
+	fh := NewFakeExtendedFramework(t, []*corev1.Node{node}, nil, nil, nil, nil)
+
+	ev := &preemptionEvaluatorImpl{
+		handle: fh.(frameworkext.ExtendedHandle),
+	}
+
+	nodeInfo := framework.NewNodeInfo()
+	nodeInfo.SetNode(node)
+
+	toSchedulePods := []*corev1.Pod{pod1, pod2, pod3}
+	cycleStates := map[string]fwktype.CycleState{
+		"node1": framework.NewCycleState(),
+	}
+	potentialNodes := []fwktype.NodeInfo{nodeInfo}
+	preemptionCosts := map[string]int{"node1": 0}
+
+	addPod := func(cycleState fwktype.CycleState, podToSchedule *corev1.Pod, podInfoToAdd fwktype.PodInfo, nodeInfo fwktype.NodeInfo) error {
+		if n, ok := nodeInfo.(*framework.NodeInfo); ok {
+			t.Logf("Before AddPod %s. Requested MilliCPU: %v", podInfoToAdd.GetPod().Name, n.Requested.MilliCPU)
+		}
+		nodeInfo.AddPodInfo(podInfoToAdd)
+		if n, ok := nodeInfo.(*framework.NodeInfo); ok {
+			t.Logf("Added pod %s. Requested MilliCPU: %v", podInfoToAdd.GetPod().Name, n.Requested.MilliCPU)
+		}
+		return nil
+	}
+
+	statusMap := map[string]*fwktype.Status{}
+	ctx := contextWithJobPreemptionState(context.Background(), &JobPreemptionState{})
+
+	podToNominatedNode, _, unschedulablePods := ev.placeToSchedulePods(ctx, toSchedulePods, cycleStates, potentialNodes, preemptionCosts, addPod, statusMap)
+
+	for k, v := range statusMap {
+		t.Logf("Node %s status: %v", k, v.Reasons())
+	}
+
+	assert.Equal(t, map[string]string{"default/pod1": "node1", "default/pod2": "node1"}, podToNominatedNode)
+	assert.Equal(t, 1, len(unschedulablePods))
+	if len(unschedulablePods) > 0 {
+		assert.Equal(t, "pod3", unschedulablePods[0].Name)
 	}
 }
