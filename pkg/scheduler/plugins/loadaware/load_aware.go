@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 
@@ -49,6 +50,13 @@ const (
 	ErrReasonUsageExceedThreshold           = "node(s) %s usage exceed threshold"
 	ErrReasonAggregatedUsageExceedThreshold = "node(s) %s aggregated usage exceed threshold"
 	ErrReasonFailedEstimatePod
+)
+
+const (
+	// NodeUsageSourceMetric uses real-time NodeMetric usage (default behavior).
+	NodeUsageSourceMetric = "metric"
+	// NodeUsageSourceProfile uses long-window aggregated percentile as a peak approximation.
+	NodeUsageSourceProfile = "profile"
 )
 
 const (
@@ -182,7 +190,9 @@ func (p *Plugin) Filter(ctx context.Context, state fwktype.CycleState, pod *core
 
 	var aggDuration metav1.Duration
 	var aggType extension.AggregationType
-	if !prodPod && isAgg {
+	if p.isProfileMode() && p.args.ProfileFilterEnabled {
+		aggDuration, aggType = p.args.ProfileAggregatedDuration, p.args.ProfileAggregationType
+	} else if !prodPod && isAgg {
 		agg := filterProfile.AggregatedUsage
 		aggDuration, aggType = agg.UsageAggregatedDuration, agg.UsageAggregationType
 	}
@@ -216,7 +226,8 @@ func (p *Plugin) Filter(ctx context.Context, state fwktype.CycleState, pod *core
 			"estimated", klog.Format(p.vectorizer.ToList(estimated)),
 			"estimatedExistingPods", klog.KObjSlice(estimatedPods))
 	}
-	return p.filterNodeUsage(node.Name, pod, usageThresholds, estimated, allocatable, isAgg)
+	ignoreResources := extension.GetIgnoreLoadAwareResources(pod)
+	return p.filterNodeUsage(node.Name, pod, usageThresholds, estimated, allocatable, isAgg, ignoreResources)
 }
 
 func (p *Plugin) ScoreExtensions() fwktype.ScoreExtensions {
@@ -257,7 +268,9 @@ func (p *Plugin) Score(ctx context.Context, state fwktype.CycleState, pod *corev
 	prodPod := p.args.ScoreAccordingProdUsage && extension.GetPodPriorityClassWithDefault(pod) == extension.PriorityProd
 	var aggDuration metav1.Duration
 	var aggType extension.AggregationType
-	if agg := p.args.Aggregated; !prodPod && agg != nil && agg.ScoreAggregationType != "" {
+	if p.isProfileMode() {
+		aggDuration, aggType = p.args.ProfileAggregatedDuration, p.args.ProfileAggregationType
+	} else if agg := p.args.Aggregated; !prodPod && agg != nil && agg.ScoreAggregationType != "" {
 		aggDuration, aggType = agg.ScoreAggregatedDuration, agg.ScoreAggregationType
 	}
 
@@ -313,13 +326,17 @@ func (p *Plugin) addEstimatedOfIncoming(estimated ResourceVector, cycleState fwk
 	return nil
 }
 
-func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThresholds, estimatedUsed, allocatable ResourceVector, isAgg bool) *fwktype.Status {
+func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThresholds, estimatedUsed, allocatable ResourceVector, isAgg bool, ignoreResources sets.Set[corev1.ResourceName]) *fwktype.Status {
 	for i, value := range usageThresholds {
 		if value == 0 {
 			continue
 		}
 		total := allocatable[i]
 		if total == 0 {
+			continue
+		}
+		resourceName := p.vectorizer[i]
+		if ignoreResources.Has(resourceName) {
 			continue
 		}
 		estimated := estimatedUsed[i]
@@ -332,7 +349,6 @@ func (p *Plugin) filterNodeUsage(nodeName string, pod *corev1.Pod, usageThreshol
 		if isAgg {
 			reason = ErrReasonAggregatedUsageExceedThreshold
 		}
-		resourceName := p.vectorizer[i]
 		if klog.V(5).Enabled() {
 			klog.InfoS("Node is unschedulable since usage exceeds threshold", "pod", klog.KObj(pod), "node", nodeName,
 				"resource", resourceName, "usage", usage, "threshold", value,
@@ -373,4 +389,8 @@ func leastUsedScore(used, capacity int64) int64 {
 	}
 
 	return ((capacity - used) * fwktype.MaxNodeScore) / capacity
+}
+
+func (p *Plugin) isProfileMode() bool {
+	return p.args.NodeUsageSource == NodeUsageSourceProfile && p.args.ProfileAggregationType != ""
 }

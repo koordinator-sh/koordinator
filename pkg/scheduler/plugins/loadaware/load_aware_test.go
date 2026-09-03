@@ -1358,6 +1358,108 @@ func TestFilterUsage(t *testing.T) {
 			testPod:    st.MakePod().Namespace("default").Name("mid-pod-3").Req(map[corev1.ResourceName]string{extension.MidCPU: "20k", extension.MidMemory: "200Gi"}).Priority(extension.PriorityMidValueMax).Obj(),
 			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
 		},
+		{
+			name:     "ignore memory resource, cpu still blocks",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 80,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: ptr.To[int64](60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("70"),    // cpu usage: 72.9% > 65%
+								corev1.ResourceMemory: resource.MustParse("450Gi"), // memory usage: 87.9% > 80%
+							},
+						},
+					},
+				},
+			},
+			testPod: st.MakePod().Namespace("default").Name("test-pod").
+				Annotation(extension.AnnotationIgnoreLoadAwareResources, `["memory"]`).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
+		{
+			name:     "ignore all resources, pod not blocked",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 80,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: ptr.To[int64](60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("70"),    // cpu usage: 72.9% > 65%
+								corev1.ResourceMemory: resource.MustParse("450Gi"), // memory usage: 87.9% > 80%
+							},
+						},
+					},
+				},
+			},
+			testPod: st.MakePod().Namespace("default").Name("test-pod").
+				Annotation(extension.AnnotationIgnoreLoadAwareResources, `["cpu","memory"]`).Obj(),
+			wantStatus: nil,
+		},
+		{
+			name:     "invalid annotation json falls back to no ignore",
+			nodeName: "test-node-1",
+			usageThresholds: map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 100,
+			},
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: ptr.To[int64](60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("70"),
+								corev1.ResourceMemory: resource.MustParse("256Gi"),
+							},
+						},
+					},
+				},
+			},
+			testPod: st.MakePod().Namespace("default").Name("test-pod").
+				Annotation(extension.AnnotationIgnoreLoadAwareResources, `{"cpu"}`).Obj(),
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2483,6 +2585,227 @@ func TestScore(t *testing.T) {
 
 			score, status := p.(*Plugin).Score(context.TODO(), cycleState, tt.pod, nodeInfo)
 			assert.Equal(t, tt.wantScore, score)
+			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
+		})
+	}
+}
+
+func TestFilterUsageProfileMode(t *testing.T) {
+	tests := []struct {
+		name                 string
+		nodeName             string
+		nodeMetric           *slov1alpha1.NodeMetric
+		profileFilterEnabled bool
+		wantStatus           *fwktype.Status
+	}{
+		{
+			name:                 "profile filter enabled blocks on p99 1h peak",
+			nodeName:             "test-node-1",
+			profileFilterEnabled: true,
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: ptr.To[int64](60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						// real-time usage is low (30/96 = 31%)
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("30"),
+								corev1.ResourceMemory: resource.MustParse("100Gi"),
+							},
+						},
+						// but p99 1h peak is high (70/96 = 72.9% > 65%)
+						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
+							{
+								Duration: metav1.Duration{Duration: 1 * time.Hour},
+								Usage: map[extension.AggregationType]slov1alpha1.ResourceMap{
+									extension.P99: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("70"),
+											corev1.ResourceMemory: resource.MustParse("200Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(ErrReasonUsageExceedThreshold, corev1.ResourceCPU)),
+		},
+		{
+			name:                 "profile filter disabled does not block despite high peak",
+			nodeName:             "test-node-1",
+			profileFilterEnabled: false,
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: ptr.To[int64](60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("30"),
+								corev1.ResourceMemory: resource.MustParse("100Gi"),
+							},
+						},
+						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
+							{
+								Duration: metav1.Duration{Duration: 1 * time.Hour},
+								Usage: map[extension.AggregationType]slov1alpha1.ResourceMap{
+									extension.P99: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("70"),
+											corev1.ResourceMemory: resource.MustParse("200Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			// real-time usage 30/96=31% < 65%, so Filter passes when profile filter is disabled
+			wantStatus: nil,
+		},
+		{
+			name:                 "profile filter enabled passes when peak below threshold",
+			nodeName:             "test-node-1",
+			profileFilterEnabled: true,
+			nodeMetric: &slov1alpha1.NodeMetric{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node-1",
+				},
+				Spec: slov1alpha1.NodeMetricSpec{
+					CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+						ReportIntervalSeconds: ptr.To[int64](60),
+					},
+				},
+				Status: slov1alpha1.NodeMetricStatus{
+					UpdateTime: &metav1.Time{
+						Time: time.Now(),
+					},
+					NodeMetric: &slov1alpha1.NodeMetricInfo{
+						NodeUsage: slov1alpha1.ResourceMap{
+							ResourceList: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("30"),
+								corev1.ResourceMemory: resource.MustParse("100Gi"),
+							},
+						},
+						AggregatedNodeUsages: []slov1alpha1.AggregatedUsage{
+							{
+								Duration: metav1.Duration{Duration: 1 * time.Hour},
+								Usage: map[extension.AggregationType]slov1alpha1.ResourceMap{
+									extension.P99: {
+										ResourceList: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("50"),
+											corev1.ResourceMemory: resource.MustParse("200Gi"),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			wantStatus: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var v1args v1.LoadAwareSchedulingArgs
+			v1args.FilterExpiredNodeMetrics = ptr.To[bool](false)
+			v1args.UsageThresholds = map[corev1.ResourceName]int64{
+				corev1.ResourceCPU:    65,
+				corev1.ResourceMemory: 95,
+			}
+			v1args.NodeUsageSource = "profile"
+			v1args.ProfileAggregationType = extension.P99
+			v1args.ProfileAggregatedDuration = metav1.Duration{Duration: 1 * time.Hour}
+			v1args.ProfileFilterEnabled = tt.profileFilterEnabled
+			v1.SetDefaults_LoadAwareSchedulingArgs(&v1args)
+			var loadAwareSchedulingArgs config.LoadAwareSchedulingArgs
+			err := v1.Convert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(&v1args, &loadAwareSchedulingArgs, nil)
+			assert.NoError(t, err)
+
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+				frameworkext.WithKoordinatorClientSet(koordClientSet),
+				frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			proxyNew := frameworkext.PluginFactoryProxy(extenderFactory, New)
+
+			cs := kubefake.NewSimpleClientset()
+			informerFactory := informers.NewSharedInformerFactory(cs, 0)
+
+			if tt.nodeMetric != nil {
+				_, err = koordClientSet.SloV1alpha1().NodeMetrics().Create(context.TODO(), tt.nodeMetric, metav1.CreateOptions{})
+				assert.NoError(t, err)
+			}
+
+			nodes := []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: tt.nodeName,
+					},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("96"),
+							corev1.ResourceMemory: resource.MustParse("512Gi"),
+						},
+					},
+				},
+			}
+
+			registeredPlugins := []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+			}
+
+			snapshot := newTestSharedLister(nil, nodes)
+			fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "koord-scheduler",
+				frameworkruntime.WithClientSet(cs),
+				frameworkruntime.WithInformerFactory(informerFactory),
+				frameworkruntime.WithSnapshotSharedLister(snapshot),
+			)
+			assert.Nil(t, err)
+
+			p, err := proxyNew(context.TODO(), &loadAwareSchedulingArgs, fh)
+			assert.NotNil(t, p)
+			assert.Nil(t, err)
+
+			informerFactory.Start(context.TODO().Done())
+			informerFactory.WaitForCacheSync(context.TODO().Done())
+
+			koordSharedInformerFactory.Start(context.TODO().Done())
+			koordSharedInformerFactory.WaitForCacheSync(context.TODO().Done())
+
+			cycleState := framework.NewCycleState()
+
+			nodeInfo, err := snapshot.Get(tt.nodeName)
+			assert.NoError(t, err)
+			assert.NotNil(t, nodeInfo)
+
+			testPod := st.MakePod().Namespace("default").Name("test-pod").Obj()
+			status := p.(*Plugin).Filter(context.TODO(), cycleState, testPod, nodeInfo)
 			assert.True(t, tt.wantStatus.Equal(status), "want status: %s, but got %s", tt.wantStatus.Message(), status.Message())
 		})
 	}

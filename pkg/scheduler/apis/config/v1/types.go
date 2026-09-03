@@ -79,6 +79,17 @@ type LoadAwareSchedulingArgs struct {
 	// and only set up in custom node annotations,
 	// we should pass these resource names in plugin args explicitly.
 	SupportedResources []corev1.ResourceName `json:"supportedResources,omitempty"`
+	// NodeUsageSource selects the node usage data source for Filter and Score.
+	// "metric" (default): use real-time NodeMetric usage.
+	// "profile": use long-window aggregated percentile as a peak approximation.
+	NodeUsageSource string `json:"nodeUsageSource,omitempty"`
+	// ProfileAggregationType is the aggregation type used in profile mode (e.g. p99).
+	ProfileAggregationType extension.AggregationType `json:"profileAggregationType,omitempty"`
+	// ProfileAggregatedDuration is the aggregation window used in profile mode (e.g. 1h).
+	ProfileAggregatedDuration metav1.Duration `json:"profileAggregatedDuration,omitempty"`
+	// ProfileFilterEnabled controls whether profile mode participates in Filter (hard rejection).
+	// When false (default), profile mode only affects Score (soft guidance).
+	ProfileFilterEnabled bool `json:"profileFilterEnabled,omitempty"`
 }
 
 type LoadAwareSchedulingAggregatedArgs struct {
