@@ -980,14 +980,15 @@ func getDiagnosisTaintKey(taint *corev1.Taint) string {
 }
 
 func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (*corev1.Pod, fwktype.NodeInfo, bool, *fwktype.Status) {
-	// Both the reserve pod or the normal pod should consider the nominated reserve pods.
-	nominatedReservationInfos := pl.nominator.NominatedReservePodForNode(nodeInfo.Node().Name)
-	if len(nominatedReservationInfos) == 0 {
+	node := nodeInfo.Node()
+	if node == nil {
+		// This may happen only in tests.
 		return pod, nodeInfo, false, nil
 	}
 
-	if nodeInfo.Node() == nil {
-		// This may happen only in tests.
+	// Both the reserve pod or the normal pod should consider the nominated reserve pods.
+	nominatedReservationInfos := pl.nominator.NominatedReservePodForNode(node.Name)
+	if len(nominatedReservationInfos) == 0 {
 		return pod, nodeInfo, false, nil
 	}
 
@@ -998,14 +999,16 @@ func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState fwktype.CycleStat
 	for _, rInfo := range nominatedReservationInfos {
 		if schedulingcorev1.PodPriority(rInfo.Pod) >= schedulingcorev1.PodPriority(pod) && rInfo.Pod.UID != pod.UID &&
 			(podsOfSameJob == nil || !podsOfSameJob.Has(string(rInfo.Pod.UID))) {
-			pInfo, _ := framework.NewPodInfo(rInfo.Pod)
-			nodeInfoOut.AddPodInfo(pInfo)
-			status := pl.handle.RunPreFilterExtensionAddPod(ctx, cycleState, pod, pInfo, nodeInfoOut)
+			// The nominator already returns a caller-owned PodInfo built from
+			// the reservation's current state; rebuilding it here would parse
+			// the affinity terms a second time on this per-pod-per-node path.
+			nodeInfoOut.AddPodInfo(rInfo)
+			status := pl.handle.RunPreFilterExtensionAddPod(ctx, cycleState, pod, rInfo, nodeInfoOut)
 			if !status.IsSuccess() {
 				return pod, nodeInfo, false, status
 			}
 			klog.V(4).Infof("nodeName %s, to schedule pod %s (reserve pod %s) with nominated reservation %s",
-				nodeInfo.Node().Name, klog.KObj(pod),
+				node.Name, klog.KObj(pod),
 				reservationutil.GetReservationNameFromReservePod(pod),
 				reservationutil.GetReservationNameFromReservePod(rInfo.Pod))
 		}

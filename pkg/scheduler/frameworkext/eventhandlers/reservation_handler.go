@@ -122,7 +122,14 @@ func MakeReservationErrorHandler(
 	}
 }
 
-func addNominatedReservation(f framework.Framework, podInfo *framework.QueuedPodInfo, nominatingInfo *fwktype.NominatingInfo) {
+// addNominatedReservation records the node the failed cycle nominated.
+//
+// cycleReservePod must be the reserve pod that cycle actually ran with, not the
+// one rebuilt from the current reservation before requeuing: the nominator
+// validates the node decision against the shape it was made for, and handing it
+// the current shape would make that check compare the current object with
+// itself and accept a node chosen for a shape the reservation no longer has.
+func addNominatedReservation(f framework.Framework, cycleReservePod *corev1.Pod, nominatingInfo *fwktype.NominatingInfo) {
 	frameworkExtender, ok := f.(frameworkext.FrameworkExtender)
 	if !ok {
 		return
@@ -136,9 +143,9 @@ func addNominatedReservation(f framework.Framework, podInfo *framework.QueuedPod
 	if nominatingInfo.Mode() == fwktype.ModeOverride {
 		nodeName = nominatingInfo.NominatedNodeName
 	} else if nominatingInfo.Mode() == fwktype.ModeNoop {
-		nodeName = podInfo.Pod.Status.NominatedNodeName
+		nodeName = cycleReservePod.Status.NominatedNodeName
 	}
-	reservationNominator.AddNominatedReservePod(podInfo.Pod, nodeName)
+	reservationNominator.AddNominatedReservePod(cycleReservePod, nodeName)
 }
 
 // input:
@@ -292,7 +299,16 @@ func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
 				"pod", klog.KObj(pod), "reservation", rName, "node", nodeName)
 			// We need to call DonePod here because we don't call AddUnschedulableIfNotPresent in this case.
 		} else {
-			podInfo.PodInfo, _ = framework.NewPodInfo(reservationutil.NewReservePod(cachedR))
+			currentPodInfo, buildErr := framework.NewPodInfo(reservationutil.NewReservePod(cachedR))
+			if buildErr != nil {
+				// Requeued anyway: dropping it here would leave the reservation
+				// with nothing in the queue until some other event arrives,
+				// which is worse than one more attempt on a partially parsed
+				// pod. The nominator refuses such a pod separately.
+				klog.ErrorS(buildErr, "Reserve pod for the current reservation could not be fully parsed",
+					"pod", klog.KObj(pod), "reservation", rName)
+			}
+			podInfo.PodInfo = currentPodInfo
 			if e = schedAdapter.GetSchedulingQueue().AddUnschedulableIfNotPresent(logger, podInfo, schedAdapter.GetSchedulingQueue().SchedulingCycle()); e != nil {
 				klog.ErrorS(e, "Error occurred")
 			}
@@ -300,10 +316,15 @@ func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
 		}
 
 		// nominate for the reserve pod if it is
+		// NOTE: pod, not podInfo.Pod. The branch above may have replaced
+		// podInfo.PodInfo with the current reservation, while the nominated node
+		// still comes from the cycle that failed, so the nominator has to be
+		// given the reserve pod that cycle ran with to be able to tell the two
+		// revisions apart.
 		// FIXME: We expect use the default nominator for a nominated reserve pod, since it makes no benefit to
 		//   maintain another nominator. However, the default nominator relies the podLister to fetch the real pod
 		//   from the informer cache.
-		addNominatedReservation(fwk, podInfo, nominatingInfo)
+		addNominatedReservation(fwk, pod, nominatingInfo)
 
 		errMsg := status.Message()
 		msg := truncateMessage(errMsg)
