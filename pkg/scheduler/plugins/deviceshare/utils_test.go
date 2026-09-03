@@ -834,3 +834,50 @@ func Test_parseGPURequirements(t *testing.T) {
 		})
 	}
 }
+
+func Test_preparePod_DRA_skip(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		wantSkip bool
+	}{
+		{
+			name: "pod without resource claims",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									apiext.ResourceGPU: resource.MustParse("100"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantSkip: false,
+		},
+		{
+			name: "pod with resource claims",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					ResourceClaims: []corev1.PodResourceClaim{
+						{
+							Name: "test-claim",
+						},
+					},
+				},
+			},
+			wantSkip: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, status := preparePod(tt.pod, nil, nil)
+			assert.True(t, status.IsSuccess())
+			assert.Equal(t, tt.wantSkip, state.skip)
+		})
+	}
+}

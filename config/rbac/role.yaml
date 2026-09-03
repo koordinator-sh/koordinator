@@ -165,3 +165,26 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - resource.k8s.io
+  resources:
+  - resourceclaims
+  - resourceclaimtemplates
+  - resourceslices
+  - deviceclasses
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - delete
+  - patch
+  - update
+- apiGroups:
+  - resource.k8s.io
+  resources:
+  - resourceclaims/status
+  verbs:
+  - get
+  - patch
+  - update
