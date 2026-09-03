@@ -1171,3 +1171,34 @@ func TestTolerateUnschedulable(t *testing.T) {
 		})
 	}
 }
+
+func TestSetReservationAvailableClearsNominatedNodeName(t *testing.T) {
+	r := &schedulingv1alpha1.Reservation{
+		Status: schedulingv1alpha1.ReservationStatus{
+			NominatedNodeName: "node-1",
+		},
+	}
+	SetReservationAvailable(r, "node-2")
+	assert.Equal(t, "", r.Status.NominatedNodeName) // Always cleared
+}
+
+func TestSetReservationExpiredClearsNominatedNodeName(t *testing.T) {
+	r := &schedulingv1alpha1.Reservation{
+		Status: schedulingv1alpha1.ReservationStatus{
+			NominatedNodeName: "node-1",
+		},
+	}
+	SetReservationExpired(r)
+	assert.Equal(t, "", r.Status.NominatedNodeName) // Always cleared
+}
+
+func TestSetReservationSucceededClearsNominatedNodeName(t *testing.T) {
+	r := &schedulingv1alpha1.Reservation{
+		Status: schedulingv1alpha1.ReservationStatus{
+			NominatedNodeName: "node-1",
+		},
+	}
+	SetReservationSucceeded(r)
+	assert.Equal(t, "", r.Status.NominatedNodeName) // Always cleared
+}
+
