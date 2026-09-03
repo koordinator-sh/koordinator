@@ -19,6 +19,7 @@ package cpuburst
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 
 	"math/rand"
 	"strconv"
@@ -217,6 +218,15 @@ func (b *cpuBurst) start() {
 	b.nodeCPUBurstStrategy = nodeSLO.Spec.CPUBurstStrategy
 	podsMeta := b.statesInformer.GetAllPods()
 
+	cpuNormalizationRatio := 1.0
+	if node := b.statesInformer.GetNode(); node != nil {
+		if ratio, err := apiext.GetCPUNormalizationRatio(node); err != nil {
+			klog.V(4).Infof("get cpu normalization ratio failed, err: %v", err)
+		} else if ratio > 1.0 {
+			cpuNormalizationRatio = ratio
+		}
+	}
+
 	// get node state by node share pool usage
 	nodeState := b.getNodeStateForBurst(*b.nodeCPUBurstStrategy.SharePoolThresholdPercent, podsMeta)
 	klog.V(5).Infof("get node state %v for cpu burst", nodeState)
@@ -246,7 +256,7 @@ func (b *cpuBurst) start() {
 		// set cpu.cfs_burst_us for pod and containers
 		b.applyCPUBurst(cpuBurstCfg, podMeta)
 		// scale cpu.cfs_quota_us for pod and containers
-		b.applyCFSQuotaBurst(cpuBurstCfg, podMeta, nodeState)
+		b.applyCFSQuotaBurst(cpuBurstCfg, podMeta, nodeState, cpuNormalizationRatio)
 	}
 	b.Recycle()
 }
@@ -336,7 +346,7 @@ func (b *cpuBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 
 // scale cpu.cfs_quota_us for pod/containers by container throttled state and node state
 func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *statesinformer.PodMeta,
-	nodeState nodeStateForBurst) {
+	nodeState nodeStateForBurst, cpuNormalizationRatio float64) {
 	pod := podMeta.Pod
 	containerMap := make(map[string]*corev1.Container)
 	for i := range pod.Spec.Containers {
@@ -361,6 +371,7 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 		if containerBaseCFS <= 0 {
 			continue
 		}
+		containerBaseCFS = normalizeCFSQuota(containerBaseCFS, cpuNormalizationRatio)
 		containerPath, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, containerStat)
 		if err != nil {
 			klog.Infof("get container %s/%s/%s cgroup path failed, err %v",
@@ -379,7 +390,9 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 		}
 		containerCeilCFS := containerBaseCFS
 		if burstCfg.CFSQuotaBurstPercent != nil && *burstCfg.CFSQuotaBurstPercent > 100 {
-			containerCeilCFS = int64(float64(containerBaseCFS) * float64(*burstCfg.CFSQuotaBurstPercent) / 100)
+			originalBaseCFS := koordletutil.GetContainerBaseCFSQuota(container)
+			rawCeilCFS := int64(float64(originalBaseCFS) * float64(*burstCfg.CFSQuotaBurstPercent) / 100)
+			containerCeilCFS = normalizeCFSQuota(rawCeilCFS, cpuNormalizationRatio)
 		}
 
 		originOperation := b.genOperationByContainer(burstCfg, pod, container, containerStat)
@@ -411,7 +424,7 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 			continue
 		}
 		deltaContainerCFS := containerTargetCFS - containerCurCFS
-		err = b.applyContainerCFSQuota(podMeta, containerStat, containerCurCFS, deltaContainerCFS)
+		err = b.applyContainerCFSQuota(podMeta, containerStat, containerCurCFS, deltaContainerCFS, burstCfg, cpuNormalizationRatio)
 		if err != nil {
 			klog.Infof("scale container %v/%v/%v cfs quota failed, operation %v, delta cfs quota %v, reason %v",
 				pod.Namespace, pod.Name, containerStat.Name, finalOperation, deltaContainerCFS, err)
@@ -502,7 +515,7 @@ func (b *cpuBurst) genOperationByContainer(burstCfg *slov1alpha1.CPUBurstConfig,
 }
 
 func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, containerStat *corev1.ContainerStatus,
-	curContaienrCFS, deltaContainerCFS int64) error {
+	curContaienrCFS, deltaContainerCFS int64, burstCfg *slov1alpha1.CPUBurstConfig, cpuNormalizationRatio float64) error {
 	podDir := podMeta.CgroupDir
 	curPodCFS, podPathErr := b.cgroupReader.ReadCPUQuota(podDir)
 	if podPathErr != nil {
@@ -520,8 +533,19 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 		if curPodCFS <= 0 {
 			return nil
 		}
+		podBaseMilli := util.GetPodMilliCPULimit(podMeta.Pod)
+		podBaseCFS := system.MilliCPUToQuota(podBaseMilli)
+		podBaseCFS = normalizeCFSQuota(podBaseCFS, cpuNormalizationRatio)
+		podCeilCFS := podBaseCFS
+		if burstCfg != nil && burstCfg.CFSQuotaBurstPercent != nil && *burstCfg.CFSQuotaBurstPercent > 100 {
+			rawCeilCFS := int64(float64(system.MilliCPUToQuota(podBaseMilli)) * float64(*burstCfg.CFSQuotaBurstPercent) / 100)
+			podCeilCFS = normalizeCFSQuota(rawCeilCFS, cpuNormalizationRatio)
+		}
 
 		targetPodCFS := curPodCFS + deltaContainerCFS
+		if podBaseCFS > 0 {
+			targetPodCFS = util.MaxInt64(podBaseCFS, util.MinInt64(targetPodCFS, podCeilCFS))
+		}
 		podCFSValStr := strconv.FormatInt(targetPodCFS, 10)
 		eventHelper := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason("CFSQuotaBurst").Message("update pod CFSQuota: %v", podCFSValStr)
 		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr, eventHelper)
@@ -558,6 +582,13 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 	}
 
 	return nil
+}
+
+func normalizeCFSQuota(cfsQuota int64, cpuNormalizationRatio float64) int64 {
+	if cfsQuota <= 0 || cpuNormalizationRatio <= 1.0 {
+		return cfsQuota
+	}
+	return int64(math.Ceil(float64(cfsQuota) / cpuNormalizationRatio))
 }
 
 // set cpu.cfs_burst_us for containers

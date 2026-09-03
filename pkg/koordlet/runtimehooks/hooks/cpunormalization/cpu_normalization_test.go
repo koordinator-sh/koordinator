@@ -23,8 +23,10 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/hooks"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func TestPlugin(t *testing.T) {
@@ -42,6 +44,7 @@ func TestPlugin_Register(t *testing.T) {
 }
 
 func TestPluginAdjustPodCFSQuota(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.CPUBurst, false)()
 	type fields struct {
 		rule *Rule
 	}
@@ -265,6 +268,7 @@ func TestPluginAdjustPodCFSQuota(t *testing.T) {
 }
 
 func TestPluginAdjustContainerCFSQuota(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, features.DefaultMutableKoordletFeatureGate, features.CPUBurst, false)()
 	type fields struct {
 		rule *Rule
 	}
