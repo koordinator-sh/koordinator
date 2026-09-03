@@ -98,6 +98,7 @@ func (r *hostReconciler) reconcile(stopCh <-chan struct{}) {
 			timer.Reset(r.reconcileInterval)
 		case <-stopCh:
 			klog.V(1).Infof("stop reconcile for host application")
+			return
 		}
 	}
 }
