@@ -322,6 +322,9 @@ func autoConvert_v1_DeviceShareArgs_To_config_DeviceShareArgs(in *DeviceShareArg
 	out.DisableDeviceNUMATopologyAlignment = in.DisableDeviceNUMATopologyAlignment
 	out.GPUSharedResourceTemplatesConfig = (*config.GPUSharedResourceTemplatesConfig)(unsafe.Pointer(in.GPUSharedResourceTemplatesConfig))
 	out.GPUShareUnsupportedModels = *(*[]config.GPUShareUnsupportedModel)(unsafe.Pointer(&in.GPUShareUnsupportedModels))
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -336,6 +339,9 @@ func autoConvert_config_DeviceShareArgs_To_v1_DeviceShareArgs(in *config.DeviceS
 	out.DisableDeviceNUMATopologyAlignment = in.DisableDeviceNUMATopologyAlignment
 	out.GPUSharedResourceTemplatesConfig = (*GPUSharedResourceTemplatesConfig)(unsafe.Pointer(in.GPUSharedResourceTemplatesConfig))
 	out.GPUShareUnsupportedModels = *(*[]GPUShareUnsupportedModel)(unsafe.Pointer(&in.GPUShareUnsupportedModels))
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -557,6 +563,9 @@ func autoConvert_v1_LoadAwareSchedulingArgs_To_config_LoadAwareSchedulingArgs(in
 		out.Aggregated = nil
 	}
 	out.SupportedResources = *(*[]corev1.ResourceName)(unsafe.Pointer(&in.SupportedResources))
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -592,6 +601,9 @@ func autoConvert_config_LoadAwareSchedulingArgs_To_v1_LoadAwareSchedulingArgs(in
 		out.Aggregated = nil
 	}
 	out.SupportedResources = *(*[]corev1.ResourceName)(unsafe.Pointer(&in.SupportedResources))
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -604,6 +616,9 @@ func autoConvert_v1_NodeNUMAResourceArgs_To_config_NodeNUMAResourceArgs(in *Node
 	// WARNING: in.DefaultCPUBindPolicy requires manual conversion: inconvertible types (*github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1.CPUBindPolicy vs string)
 	out.ScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	out.NUMAScoringStrategy = (*config.ScoringStrategy)(unsafe.Pointer(in.NUMAScoringStrategy))
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -611,6 +626,9 @@ func autoConvert_config_NodeNUMAResourceArgs_To_v1_NodeNUMAResourceArgs(in *conf
 	// WARNING: in.DefaultCPUBindPolicy requires manual conversion: inconvertible types (string vs *github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1.CPUBindPolicy)
 	out.ScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.ScoringStrategy))
 	out.NUMAScoringStrategy = (*ScoringStrategy)(unsafe.Pointer(in.NUMAScoringStrategy))
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -681,6 +699,9 @@ func autoConvert_v1_ReservationArgs_To_config_ReservationArgs(in *ReservationArg
 	out.IgnoredResources = *(*[]string)(unsafe.Pointer(&in.IgnoredResources))
 	out.IgnoredResourceGroups = *(*[]string)(unsafe.Pointer(&in.IgnoredResourceGroups))
 	out.ReservationSelectorIndex = (*config.ReservationSelectorIndexArgs)(unsafe.Pointer(in.ReservationSelectorIndex))
+	if err := metav1.Convert_Pointer_bool_To_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -710,6 +731,9 @@ func autoConvert_config_ReservationArgs_To_v1_ReservationArgs(in *config.Reserva
 	out.IgnoredResources = *(*[]string)(unsafe.Pointer(&in.IgnoredResources))
 	out.IgnoredResourceGroups = *(*[]string)(unsafe.Pointer(&in.IgnoredResourceGroups))
 	out.ReservationSelectorIndex = (*ReservationSelectorIndexArgs)(unsafe.Pointer(in.ReservationSelectorIndex))
+	if err := metav1.Convert_bool_To_Pointer_bool(&in.EnableQueueHint, &out.EnableQueueHint, s); err != nil {
+		return err
+	}
 	return nil
 }
 

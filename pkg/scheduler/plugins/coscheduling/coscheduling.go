@@ -110,7 +110,8 @@ func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.
 }
 
 func (cs *Coscheduling) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWithHint, error) {
-	// indicates that we are not interested in any events
+	// Coscheduling plugin does not benefit from QueueingHints as gang pods are managed by the controller
+	// and re-queued together. Returning nil indicates we don't register any custom events for re-queuing individual pods.
 	return nil, nil
 }
 
