@@ -1794,3 +1794,162 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 	}
 	framework.UnregisterQOSGreyCtrlPlugin(p.name())
 }
+
+// createPodMetaWithInitContainers builds a PodMeta with both regular and init containers.
+func createPodMetaWithInitContainers(
+	podName string,
+	containersRes map[string]corev1.ResourceRequirements,
+	initContainersRes map[string]corev1.ResourceRequirements,
+) *statesinformer.PodMeta {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: podName, UID: types.UID(podName + "-uid")},
+		Spec: corev1.PodSpec{
+			Containers:     []corev1.Container{},
+			InitContainers: []corev1.Container{},
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses:     []corev1.ContainerStatus{},
+			InitContainerStatuses: []corev1.ContainerStatus{},
+		},
+	}
+	for name, res := range containersRes {
+		pod.Spec.Containers = append(pod.Spec.Containers, corev1.Container{Name: name, Resources: res})
+		pod.Status.ContainerStatuses = append(pod.Status.ContainerStatuses, corev1.ContainerStatus{
+			Name:        name,
+			ContainerID: genTestContainerIDByName(name),
+			State:       corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+		})
+	}
+	for name, res := range initContainersRes {
+		pod.Spec.InitContainers = append(pod.Spec.InitContainers, corev1.Container{Name: name, Resources: res})
+		pod.Status.InitContainerStatuses = append(pod.Status.InitContainerStatuses, corev1.ContainerStatus{
+			Name:        name,
+			ContainerID: genTestContainerIDByName(name),
+			State:       corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+		})
+	}
+	return &statesinformer.PodMeta{Pod: pod, CgroupDir: util.GetPodCgroupParentDir(pod)}
+}
+
+// initAllContainerCPUBurst initialises cpu.cfs_burst_us for regular and init containers.
+func initAllContainerCPUBurst(podMeta *statesinformer.PodMeta, value int64, helper *system.FileTestUtil) {
+	for i := range podMeta.Pod.Status.ContainerStatuses {
+		cs := &podMeta.Pod.Status.ContainerStatuses[i]
+		p, _ := util.GetContainerCgroupParentDir(podMeta.CgroupDir, cs)
+		helper.WriteCgroupFileContents(p, system.CPUBurst, strconv.FormatInt(value, 10))
+	}
+	for i := range podMeta.Pod.Status.InitContainerStatuses {
+		cs := &podMeta.Pod.Status.InitContainerStatuses[i]
+		p, _ := util.GetContainerCgroupParentDir(podMeta.CgroupDir, cs)
+		helper.WriteCgroupFileContents(p, system.CPUBurst, strconv.FormatInt(value, 10))
+	}
+}
+
+// TestCPUBurst_applyCPUBurst_initContainers verifies that applyCPUBurst writes
+// cpu.cfs_burst_us to init-container cgroups in addition to regular containers.
+func TestCPUBurst_applyCPUBurst_initContainers(t *testing.T) {
+	res := corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{
+			corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+		},
+	}
+	// burst = 2 cores * (1000/100) * CFSBasePeriodValue
+	wantPerContainer := int64(2 * 10 * system.CFSBasePeriodValue)
+
+	podMeta := createPodMetaWithInitContainers(
+		"test-pod-init",
+		map[string]corev1.ResourceRequirements{"regular-c": res},
+		map[string]corev1.ResourceRequirements{"init-c": res},
+	)
+
+	testHelper := system.NewFileTestUtil(t)
+	initAllContainerCPUBurst(podMeta, 0, testHelper)
+	initPodCPUBurst(podMeta, 0, testHelper)
+
+	b := &cpuBurst{executor: newTestExecutor()}
+	stop := make(chan struct{})
+	b.init(stop)
+	defer func() { stop <- struct{}{} }()
+
+	b.applyCPUBurst(&defaultAutoBurstCfg, podMeta)
+
+	for i := range podMeta.Pod.Status.ContainerStatuses {
+		cs := &podMeta.Pod.Status.ContainerStatuses[i]
+		got := getContainerCPUBurst(podMeta.CgroupDir, cs, testHelper)
+		assert.Equal(t, wantPerContainer, got, "regular container %s cpu burst", cs.Name)
+	}
+	// init container must also receive burst — regression guard for the bug fix
+	for i := range podMeta.Pod.Status.InitContainerStatuses {
+		cs := &podMeta.Pod.Status.InitContainerStatuses[i]
+		got := getContainerCPUBurst(podMeta.CgroupDir, cs, testHelper)
+		assert.Equal(t, wantPerContainer, got, "init container %s cpu burst", cs.Name)
+	}
+	// pod-level value sums regular + init containers
+	wantPod := wantPerContainer * 2
+	gotPod := getPodCPUBurst(podMeta.CgroupDir, testHelper)
+	assert.Equal(t, wantPod, gotPod, "pod-level cpu burst must include init containers")
+}
+
+// TestCPUBurst_applyCFSQuotaBurst_initContainers verifies that applyCFSQuotaBurst
+// scales cpu.cfs_quota_us for init-container cgroups, not just regular containers.
+func TestCPUBurst_applyCFSQuotaBurst_initContainers(t *testing.T) {
+	res := corev1.ResourceRequirements{
+		Limits:   corev1.ResourceList{corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI)},
+		Requests: corev1.ResourceList{corev1.ResourceCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI)},
+	}
+	baseCFS := int64(2 * system.CFSBasePeriodValue)
+	scaledCFS := baseCFS * 2 // start at 2x base so overload forces a measurable scale-down
+
+	podMeta := createPodMetaWithInitContainers(
+		"test-pod-init-cfs",
+		map[string]corev1.ResourceRequirements{"regular-c": res},
+		map[string]corev1.ResourceRequirements{"init-c": res},
+	)
+
+	testHelper := system.NewFileTestUtil(t)
+	initPodCFSQuota(podMeta, scaledCFS, testHelper)
+
+	writeContainerCFS := func(statuses []corev1.ContainerStatus, val int64) {
+		for i := range statuses {
+			cs := &statuses[i]
+			p, _ := util.GetContainerCgroupParentDir(podMeta.CgroupDir, cs)
+			testHelper.WriteCgroupFileContents(p, system.CPUCFSQuota, strconv.FormatInt(val, 10))
+		}
+	}
+	writeContainerCFS(podMeta.Pod.Status.ContainerStatuses, scaledCFS)
+	writeContainerCFS(podMeta.Pod.Status.InitContainerStatuses, scaledCFS)
+
+	b := &cpuBurst{
+		executor:         newTestExecutor(),
+		cgroupReader:     resourceexecutor.NewCgroupReader(),
+		containerLimiter: make(map[string]*burstLimiter),
+	}
+	stop := make(chan struct{})
+	b.init(stop)
+	defer func() { stop <- struct{}{} }()
+
+	// Use CPUBurstOnly so cfsQuotaBurstEnabled()=false → genOperationByContainer
+	// returns cfsReset without accessing metricCache (nil in this unit test).
+	// Regression guard: without the fix, init containers stay at scaledCFS;
+	// with the fix they are reset to baseCFS.
+	cfgNoMetricCache := slov1alpha1.CPUBurstConfig{
+		Policy:                     slov1alpha1.CPUBurstOnly,
+		CPUBurstPercent:            ptr.To[int64](1000),
+		CFSQuotaBurstPercent:       ptr.To[int64](300),
+		CFSQuotaBurstPeriodSeconds: ptr.To[int64](-1),
+	}
+	b.applyCFSQuotaBurst(&cfgNoMetricCache, podMeta, nodeBurstIdle)
+
+	// cfsReset brings containers back to baseCFS
+	for i := range podMeta.Pod.Status.ContainerStatuses {
+		cs := &podMeta.Pod.Status.ContainerStatuses[i]
+		got := getContainerCFSQuota(podMeta.CgroupDir, cs, testHelper)
+		assert.Equal(t, baseCFS, got, "regular container %s cfs quota after cfsReset", cs.Name)
+	}
+	// regression guard: init container must also be reset (stays at scaledCFS without the fix)
+	for i := range podMeta.Pod.Status.InitContainerStatuses {
+		cs := &podMeta.Pod.Status.InitContainerStatuses[i]
+		got := getContainerCFSQuota(podMeta.CgroupDir, cs, testHelper)
+		assert.Equal(t, baseCFS, got, "init container %s cfs quota after cfsReset", cs.Name)
+	}
+}
