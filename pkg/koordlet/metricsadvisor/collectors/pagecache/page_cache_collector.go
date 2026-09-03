@@ -34,22 +34,22 @@ import (
 )
 
 const (
-	CollectorName = "PageCacheCollector"
+	CollectorName = "UsageWithCacheCollector"
 )
 
 var (
 	timeNow = time.Now
 )
 
-type pageCacheCollector struct {
-	collectInterval       time.Duration
-	started               *atomic.Bool
-	appendableDB          metriccache.Appendable
-	metricDB              metriccache.MetricCache
-	statesInformer        statesinformer.StatesInformer
-	cgroupReader          resourceexecutor.CgroupReader
-	podFilter             framework.PodFilter
-	coldPageCollectorGate bool
+type usageWithCacheCollector struct {
+	collectInterval             time.Duration
+	started                     *atomic.Bool
+	appendableDB                metriccache.Appendable
+	metricDB                    metriccache.MetricCache
+	statesInformer              statesinformer.StatesInformer
+	cgroupReader                resourceexecutor.CgroupReader
+	podFilter                   framework.PodFilter
+	usageWithCacheCollectorGate bool
 }
 
 func New(opt *framework.Options) framework.Collector {
@@ -57,54 +57,54 @@ func New(opt *framework.Options) framework.Collector {
 	if filter, ok := opt.PodFilters[CollectorName]; ok {
 		podFilter = filter
 	}
-	return &pageCacheCollector{
-		collectInterval:       opt.Config.CollectResUsedInterval,
-		started:               atomic.NewBool(false),
-		appendableDB:          opt.MetricCache,
-		metricDB:              opt.MetricCache,
-		statesInformer:        opt.StatesInformer,
-		cgroupReader:          opt.CgroupReader,
-		podFilter:             podFilter,
-		coldPageCollectorGate: opt.Config.EnablePageCacheCollector,
+	return &usageWithCacheCollector{
+		collectInterval:             opt.Config.CollectResUsedInterval,
+		started:                     atomic.NewBool(false),
+		appendableDB:                opt.MetricCache,
+		metricDB:                    opt.MetricCache,
+		statesInformer:              opt.StatesInformer,
+		cgroupReader:                opt.CgroupReader,
+		podFilter:                   podFilter,
+		usageWithCacheCollectorGate: opt.Config.EnableUsageWithCacheCollector,
 	}
 }
 
-func (p *pageCacheCollector) Enabled() bool {
-	return p.coldPageCollectorGate
+func (p *usageWithCacheCollector) Enabled() bool {
+	return p.usageWithCacheCollectorGate
 }
 
-func (p *pageCacheCollector) Setup(c *framework.Context) {}
+func (p *usageWithCacheCollector) Setup(c *framework.Context) {}
 
-func (p *pageCacheCollector) Run(stopCh <-chan struct{}) {
-	go wait.Until(p.collectPageCache, p.collectInterval, stopCh)
+func (p *usageWithCacheCollector) Run(stopCh <-chan struct{}) {
+	go wait.Until(p.collectUsageWithCache, p.collectInterval, stopCh)
 }
 
-func (p *pageCacheCollector) Started() bool {
+func (p *usageWithCacheCollector) Started() bool {
 	return p.started.Load()
 }
 
-func (p *pageCacheCollector) FilterPod(meta *statesinformer.PodMeta) (bool, string) {
+func (p *usageWithCacheCollector) FilterPod(meta *statesinformer.PodMeta) (bool, string) {
 	return p.podFilter.FilterPod(meta)
 }
 
-func (p *pageCacheCollector) collectPageCache() {
+func (p *usageWithCacheCollector) collectUsageWithCache() {
 	if p.statesInformer == nil {
 		return
 	}
-	p.collectNodePageCache()
-	p.collectPodPageCache()
+	p.collectNodeUsageWithCache()
+	p.collectPodUsageWithCache()
 	p.started.Store(true)
 }
 
-func (p *pageCacheCollector) collectNodePageCache() {
-	klog.V(6).Info("start collect node PageCache")
+func (p *usageWithCacheCollector) collectNodeUsageWithCache() {
+	klog.V(6).Info("start collect node memory usage with cache")
 	nodeMetrics := make([]metriccache.MetricSample, 0)
 	collectTime := timeNow()
 
 	// NOTE: The collected memory usage is in kilobytes not bytes.
 	memInfo, err := koordletutil.GetMemInfo()
 	if err != nil {
-		klog.Warningf("failed to collect page cache of node err: %s", err)
+		klog.Warningf("failed to collect memory usage with cache of node, err: %s", err)
 		return
 	}
 
@@ -127,12 +127,12 @@ func (p *pageCacheCollector) collectNodePageCache() {
 		return
 	}
 
-	klog.V(4).Infof("collectNodePageCache finished, count %v, memUsageWithPageCache[%v]",
+	klog.V(4).Infof("collectNodeUsageWithCache finished, count %v, memUsageWithPageCache[%v]",
 		len(nodeMetrics), memUsageWithPageCacheValue)
 }
 
-func (p *pageCacheCollector) collectPodPageCache() {
-	klog.V(6).Info("start collect pods PageCache")
+func (p *usageWithCacheCollector) collectPodUsageWithCache() {
+	klog.V(6).Info("start collect pods memory usage with cache")
 	podMetas := p.statesInformer.GetAllPods()
 	count := 0
 	metrics := make([]metriccache.MetricSample, 0)
@@ -151,10 +151,10 @@ func (p *pageCacheCollector) collectPodPageCache() {
 		if err != nil {
 			// higher verbosity for probably non-running pods
 			if pod.Status.Phase != corev1.PodRunning && pod.Status.Phase != corev1.PodPending {
-				klog.V(6).Infof("failed to collect non-running pod page cache for %s, page cache err: %s",
+				klog.V(6).Infof("failed to collect non-running pod memory usage with cache for %s, page cache err: %s",
 					podKey, err)
 			} else {
-				klog.Warningf("failed to collect pod page cache for %s, page cache err: %s", podKey, err)
+				klog.Warningf("failed to collect pod memory usage with cache for %s, page cache err: %s", podKey, err)
 			}
 			continue
 		}
@@ -171,7 +171,7 @@ func (p *pageCacheCollector) collectPodPageCache() {
 		klog.V(6).Infof("collect pod %s, uid %s finished, metric %+v", podKey, pod.UID, metrics)
 
 		count++
-		containerMetrics := p.collectContainerPageCache(meta)
+		containerMetrics := p.collectContainerUsageWithCache(meta)
 		metrics = append(metrics, containerMetrics...)
 	}
 
@@ -186,11 +186,11 @@ func (p *pageCacheCollector) collectPodPageCache() {
 		return
 	}
 
-	klog.V(4).Infof("collectPodPageCache finished, pod num %d, collected %d", len(podMetas), count)
+	klog.V(4).Infof("collectPodUsageWithCache finished, pod num %d, collected %d", len(podMetas), count)
 }
 
-func (p *pageCacheCollector) collectContainerPageCache(meta *statesinformer.PodMeta) []metriccache.MetricSample {
-	klog.V(6).Infof("start collect containers pagecache")
+func (p *usageWithCacheCollector) collectContainerUsageWithCache(meta *statesinformer.PodMeta) []metriccache.MetricSample {
+	klog.V(6).Infof("start collect containers memory usage with cache")
 	pod := meta.Pod
 	count := 0
 	containerMetrics := make([]metriccache.MetricSample, 0)
@@ -215,10 +215,10 @@ func (p *pageCacheCollector) collectContainerPageCache(meta *statesinformer.PodM
 		if err != nil {
 			// higher verbosity for probably non-running pods
 			if containerStat.State.Running == nil {
-				klog.V(6).Infof("failed to collect non-running container page cache for %s, page cache err: %s",
+				klog.V(6).Infof("failed to collect non-running container memory usage with cache for %s, page cache err: %s",
 					containerKey, err)
 			} else {
-				klog.V(4).Infof("failed to collect container page cache for %s, page cache err: %s",
+				klog.V(4).Infof("failed to collect container memory usage with cache for %s, page cache err: %s",
 					containerKey, err)
 			}
 			continue
@@ -237,7 +237,7 @@ func (p *pageCacheCollector) collectContainerPageCache(meta *statesinformer.PodM
 		klog.V(6).Infof("collect container %s, id %s finished, metric %+v", containerKey, pod.UID, containerMetrics)
 		count++
 	}
-	klog.V(5).Infof("collectContainerPageCache for pod %s/%s finished, container num %d, collected %d",
+	klog.V(5).Infof("collectContainerUsageWithCache for pod %s/%s finished, container num %d, collected %d",
 		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses), count)
 	return containerMetrics
 }
