@@ -96,6 +96,7 @@ type frameworkExtenderImpl struct {
 	reservationPreBindPlugins              map[string]ReservationPreBindPlugin
 	reservationRestorePlugins              []ReservationRestorePlugin
 	reservationPreAllocationRestorePlugins []ReservationPreAllocationRestorePlugin
+	equivalenceCapacityPlugins             []EquivalenceCapacityPlugin
 
 	resizePodPlugins         []ResizePodPlugin
 	preBindExtensionsPlugins map[string]PreBindExtensions
@@ -201,6 +202,9 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 	if r, ok := pl.(ReservationPreAllocationRestorePlugin); ok {
 		ext.reservationPreAllocationRestorePlugins = append(ext.reservationPreAllocationRestorePlugins, r)
 	}
+	if p, ok := pl.(EquivalenceCapacityPlugin); ok {
+		ext.equivalenceCapacityPlugins = append(ext.equivalenceCapacityPlugins, p)
+	}
 	if r, ok := pl.(ResizePodPlugin); ok {
 		ext.resizePodPlugins = append(ext.resizePodPlugins, r)
 	}
@@ -224,6 +228,18 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 		} else {
 			klog.Warningf("framework extender got multiple PreferNodesPlugin registered, using the first one with name: %s", ext.preferNodesPlugin.Name())
 		}
+	}
+}
+
+func (ext *frameworkExtenderImpl) EquivalenceCapacityPlugins() []EquivalenceCapacityPlugin {
+	return append([]EquivalenceCapacityPlugin(nil), ext.equivalenceCapacityPlugins...)
+}
+
+// StartMonitoring starts Koordinator's scheduling monitor for a pod. Custom
+// workflows call this before bypassing FrameworkExtenderFactory.scheduleOne.
+func (ext *frameworkExtenderImpl) StartMonitoring(pod *corev1.Pod) {
+	if ext.monitor != nil {
+		ext.monitor.StartMonitoring(pod)
 	}
 }
 

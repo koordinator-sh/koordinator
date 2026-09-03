@@ -19,6 +19,7 @@ package app
 import (
 	"context"
 
+	"github.com/spf13/pflag"
 	"k8s.io/client-go/informers"
 	kubeclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -41,6 +42,10 @@ type CustomWorkflow interface {
 	Run(ctx context.Context)
 }
 
+type customWorkflowFlagProvider interface {
+	AddFlags(fs *pflag.FlagSet)
+}
+
 type CustomWorkflowOptions struct {
 	Sched                      *scheduler.Scheduler
 	SharedInformerFactory      informers.SharedInformerFactory
@@ -49,6 +54,7 @@ type CustomWorkflowOptions struct {
 	KoordClient                koordclientset.Interface
 	RecorderFactory            func(name string) events.EventRecorder
 	KubeConfig                 *rest.Config
+	PercentageOfNodesToScore   *int32
 }
 
 func RunWorkflow(

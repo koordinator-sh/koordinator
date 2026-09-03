@@ -123,6 +123,11 @@ for cost reduction and efficiency enhancement.
 	globalflag.AddGlobalFlags(nfs.FlagSet("global"), cmd.Name(), logs.SkipLoggingConfigurationFlags())
 	workloadauditor.AddFlags(nfs.FlagSet("extend"))
 	frameworkext.AddFlags(nfs.FlagSet("extend"))
+	for _, workflow := range KnownWorkflowList {
+		if flagProvider, ok := workflow.(customWorkflowFlagProvider); ok {
+			flagProvider.AddFlags(nfs.FlagSet(workflow.Name() + " workflow"))
+		}
+	}
 	fs := cmd.Flags()
 	for _, f := range nfs.FlagSets {
 		fs.AddFlagSet(f)
@@ -569,6 +574,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 				KoordClient:                cc.KoordinatorClient,
 				RecorderFactory:            recorderFactory,
 				KubeConfig:                 cc.KubeConfig,
+				PercentageOfNodesToScore:   cc.ComponentConfig.PercentageOfNodesToScore,
 			})
 			if err != nil {
 				return nil, nil, nil, nil, err

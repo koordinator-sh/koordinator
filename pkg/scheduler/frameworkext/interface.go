@@ -70,6 +70,9 @@ type ExtendedHandle interface {
 type FrameworkExtender interface {
 	framework.Framework
 	ExtendedHandle
+	// EquivalenceCapacityPlugins returns plugins that can provide a conservative
+	// per-node reuse capacity for Sandbox equivalence-class scheduling.
+	EquivalenceCapacityPlugins() []EquivalenceCapacityPlugin
 
 	// RunFindOneNodePlugin invokes the registered FindOneNodePlugin (if any) during the PreFilter phase.
 	// The plugin's FindOneNode method attempts to deterministically compute a placement plan for the whole job
@@ -153,6 +156,15 @@ type PreferNodesPlugin interface {
 	fwktype.Plugin
 	// PreferNodes is used to provide preferred nodes for the scheduler to try scheduling first.
 	PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status)
+}
+
+// EquivalenceCapacityPlugin lets a plugin refine the default resource-based
+// equivalence-class capacity. A plugin can return handled=false when it has no
+// opinion for the pod/node pair. When handled is true, reusable=false disables
+// cache reuse for the pair; otherwise quota caps the resource-based capacity.
+type EquivalenceCapacityPlugin interface {
+	fwktype.Plugin
+	EquivalenceCapacity(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (quota int64, reusable bool, handled bool)
 }
 
 // FilterTransformer is executed before Filter.
