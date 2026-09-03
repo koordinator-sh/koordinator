@@ -272,6 +272,7 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 	}
 	type wants struct {
 		CPUSet      *string
+		CPUSetMems  *string
 		CPUShares   *int64
 		CFSQuota    *int64
 		MemoryLimit *int64
@@ -308,6 +309,25 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 				CPUBvt:      ptr.To[int64](10),
 			},
 		},
+		{
+			name: "origin resource with cpuset.mems",
+			fields: fields{
+				Resources: Resources{
+					CPUSet:     ptr.To[string]("0-3"),
+					CPUSetMems: ptr.To[string]("0,1"),
+				},
+				ContainerEnvs: make(map[string]string, 0),
+			},
+			args: args{
+				resp: &runtimeapi.ContainerResourceHookResponse{
+					ContainerResources: nil,
+				},
+			},
+			wants: wants{
+				CPUSet:     ptr.To[string]("0-3"),
+				CPUSetMems: ptr.To[string]("0,1"),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -317,6 +337,7 @@ func TestContainerResponse_ProxyDone(t *testing.T) {
 			}
 			c.ProxyDone(tt.args.resp)
 			assert.Equal(t, tt.wants.CPUSet, c.Resources.CPUSet, "cpu set equal")
+			assert.Equal(t, tt.wants.CPUSetMems, c.Resources.CPUSetMems, "cpu set mems equal")
 			assert.Equal(t, tt.wants.CPUBvt, c.Resources.CPUBvt, "cpu bvt equal")
 			assert.Equal(t, tt.wants.CPUShares, c.Resources.CPUShares, "cpu shares equal")
 			assert.Equal(t, tt.wants.CFSQuota, c.Resources.CFSQuota, "cfs quota equal")
