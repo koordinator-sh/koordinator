@@ -116,9 +116,10 @@ func (p *Plugin) Register(op hooks.Options) {
 	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.VirtualCoreSchedCookie,
 		"set core sched cookie to process groups of sandbox container specified",
 		p.SetContainerCookie, reconciler.PodQOSFilter(), podQOSConditions...)
-	// TODO: support host application
-	reconciler.RegisterCgroupReconciler(reconciler.KubeQOSLevel, sysutil.CPUIdle, "reconcile QoS level cpu idle",
-		p.SetKubeQOSCPUIdle, reconciler.NoneFilter())
+	// Register pod-level cpu.idle reconciler to avoid conflicting with kubelet's
+	// cpu.shares writes at the QoS-class root cgroup directory.
+	reconciler.RegisterCgroupReconciler(reconciler.PodLevel, sysutil.CPUIdle,
+		"reconcile pod level cpu idle", p.SetPodQOSCPUIdle, reconciler.NoneFilter())
 	p.Setup(op)
 }
 
@@ -163,6 +164,32 @@ func (p *Plugin) SetKubeQOSCPUIdle(proto protocol.HooksProtocol) error {
 		kubeQOSCtx.Response.Resources.CPUIdle = ptr.To[int64](0)
 	}
 
+	return nil
+}
+
+// SetPodQOSCPUIdle reconciles the cpu.idle setting for a pod cgroup.
+// Unlike SetKubeQOSCPUIdle which operates at the QoS-class root level,
+// this function operates at the individual pod level, which avoids conflicting
+// with kubelet's cpu.shares writes at the QoS-class root cgroup directory.
+// See: https://github.com/koordinator-sh/koordinator/issues/2732
+func (p *Plugin) SetPodQOSCPUIdle(proto protocol.HooksProtocol) error {
+	podCtx := proto.(*protocol.PodContext)
+	if podCtx == nil {
+		return fmt.Errorf("podCtx protocol is nil for plugin %s", name)
+	}
+	podQOS := extension.GetQoSClassByAttrs(podCtx.Request.Labels, podCtx.Request.Annotations)
+	if !p.rule.IsInited() {
+		klog.V(5).Infof("plugin %s has not been inited, rule inited %v, aborted to set cpu idle for QoS %s",
+			name, p.rule.IsInited(), podQOS)
+		return nil
+	}
+
+	isCPUIdle := p.rule.IsPodQOSCPUIdle(podQOS)
+	if isCPUIdle {
+		podCtx.Response.Resources.CPUIdle = ptr.To[int64](1)
+	} else {
+		podCtx.Response.Resources.CPUIdle = ptr.To[int64](0)
+	}
 	return nil
 }
 
