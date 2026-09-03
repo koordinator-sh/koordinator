@@ -32,12 +32,15 @@ const (
 	IXVendorID          = "0x1e3e"
 	MXVendorID          = "0x9999"
 	MXRealVendorID      = "9999"
+	HYGONVendorID       = "0x1d94"
+	HYGONRealVendorID   = "1d94"
 	GPU                 = "gpu"
 	NPU                 = "npu"
 	XPU                 = "xpu"
 	IX                  = "ix"
 	MLU                 = "mlu"
 	MX                  = "mx"
+	HY                  = "hy"
 
 	//The host root directory for the cnotainer
 	HostRootDir = "/hostfs"
@@ -75,4 +78,6 @@ const (
 	QueryXPUDeivceIDQueryArgs  = "-d"
 
 	MXSmiCmd = "mx-smi"
+
+	HYSmiCmd = "hy-smi"
 )
