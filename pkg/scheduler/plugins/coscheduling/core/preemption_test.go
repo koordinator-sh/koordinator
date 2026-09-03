@@ -1671,7 +1671,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 			podStore := extendedFramework.SharedInformerFactory().Core().V1().Pods().Informer().GetStore()
 			logger := klog.FromContext(context.TODO())
 			gangSchedulingContextHolder := &GangSchedulingContextHolder{gangSchedulingContext: tt.gangSchedulingContext}
-			gangCache := NewGangCache(nil, nil, nil, nil, nil)
+			gangCache := NewGangCache(nil, nil, nil, nil, nil, nil)
 			for i := range tt.allPendingPods {
 				pod := tt.allPendingPods[i]
 				gangCache.onPodAdd(pod)
