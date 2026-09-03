@@ -45,8 +45,14 @@ func (g *Plugin) OnPodAdd(obj interface{}) {
 }
 
 func (g *Plugin) OnPodUpdate(oldObj, newObj interface{}) {
-	oldPod := oldObj.(*corev1.Pod)
-	newPod := newObj.(*corev1.Pod)
+	oldPod, ok := oldObj.(*corev1.Pod)
+	if !ok {
+		return
+	}
+	newPod, ok := newObj.(*corev1.Pod)
+	if !ok {
+		return
+	}
 
 	if oldPod.ResourceVersion == newPod.ResourceVersion {
 		return
