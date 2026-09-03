@@ -159,6 +159,7 @@ const (
 	MemoryHighName             = "memory.high" // anolis os or cgroups-v2
 	MemoryMaxName              = "memory.max"
 	MemoryCurrentName          = "memory.current"
+	MemoryReclaimName          = "memory.reclaim"
 	MemoryPriorityName         = "memory.priority"
 	MemoryUsePriorityOomName   = "memory.use_priority_oom"
 	MemoryOomGroupName         = "memory.oom.group"
@@ -327,6 +328,7 @@ var (
 	MemoryPriorityV2         = DefaultFactory.NewV2(MemoryPriorityName, MemoryPriorityName).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryUsePriorityOomV2   = DefaultFactory.NewV2(MemoryUsePriorityOomName, MemoryUsePriorityOomName).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryOomGroupV2         = DefaultFactory.NewV2(MemoryOomGroupName, MemoryOomGroupName).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExists)
+	MemoryReclaimV2          = DefaultFactory.NewV2(MemoryReclaimName, MemoryReclaimName).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExists).WithCheckOnce(true)
 	// Alinux memcg page cache limit resources (v2, same filename as v1 since it's a kernel extension interface)
 	MemoryPageCacheLimitEnableV2   = DefaultFactory.NewV2(MemoryPageCacheLimitEnableName, MemoryPageCacheLimitEnableName).WithValidator(MemoryPageCacheLimitEnableValidator).WithCheckSupported(SupportedIfFileExists)
 	MemoryPageCacheLimitSizeV2     = DefaultFactory.NewV2(MemoryPageCacheLimitSizeName, MemoryPageCacheLimitSizeName).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExists)
@@ -362,6 +364,7 @@ var (
 		MemoryPriorityV2,
 		MemoryUsePriorityOomV2,
 		MemoryOomGroupV2,
+		MemoryReclaimV2,
 		// Alinux memcg page cache limit
 		MemoryPageCacheLimitEnableV2,
 		MemoryPageCacheLimitSizeV2,

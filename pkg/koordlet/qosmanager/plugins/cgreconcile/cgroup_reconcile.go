@@ -17,8 +17,10 @@ limitations under the License.
 package cgreconcile
 
 import (
+	"errors"
 	"math"
 	"strconv"
+	"syscall"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -43,6 +45,9 @@ import (
 
 const (
 	CgroupReconcileName = "CgroupReconcile"
+	// memoryReclaimMaxBatch caps the bytes written to memory.reclaim in a single reconcile tick, to bound the
+	// synchronous reclaim cost per pod.
+	memoryReclaimMaxBatch = int64(32 * 1024 * 1024)
 )
 
 var _ framework.QOSStrategy = &cgroupResourcesReconcile{}
@@ -112,7 +117,81 @@ func (m *cgroupResourcesReconcile) reconcile() {
 	// apply CgroupReconcile: calculate resources to update, and then update them by a leveled order to avoid dynamic
 	// resource overcommitment/leak
 	m.calculateAndUpdateResources(nodeSLO)
+	m.reclaimBEMemory(nodeSLO)
 	klog.V(5).Infof("finish reconciling Cgroups!")
+}
+
+// reclaimBEMemory proactively reclaims BE pod memory on cgroups-v2 by writing a bounded amount to memory.reclaim
+// when the pod's memory usage exceeds its watermark. This is the userspace loop alternative to the Alinux-private
+// memory.wmark_ratio async reclaim on standard kernels. It only touches BE pods and never modifies memory QoS knobs.
+func (m *cgroupResourcesReconcile) reclaimBEMemory(nodeSLO *slov1alpha1.NodeSLO) {
+	if !system.UseCgroupsV2.Load() {
+		return
+	}
+	if supported, _ := system.MemoryReclaimV2.IsSupported(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)); !supported {
+		klog.V(5).Infof("skip reclaiming BE memory since memory.reclaim is unsupported")
+		return
+	}
+	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil || nodeSLO.Spec.ResourceQOSStrategy.BEClass == nil ||
+		nodeSLO.Spec.ResourceQOSStrategy.BEClass.MemoryQOS == nil {
+		return
+	}
+	beMemQoS := nodeSLO.Spec.ResourceQOSStrategy.BEClass.MemoryQOS
+	if beMemQoS.Enable != nil && !*beMemQoS.Enable {
+		return
+	}
+	// reuse the wmarkRatio semantics as the reclaim watermark; wmarkRatio <= 0 (e.g. policy None) disables reclaim
+	wmarkRatio := int64(95)
+	if beMemQoS.WmarkRatio != nil {
+		wmarkRatio = *beMemQoS.WmarkRatio
+	}
+	if wmarkRatio <= 0 {
+		return
+	}
+
+	reader := &resourceexecutor.CgroupV2Reader{}
+	for _, podMeta := range m.statesInformer.GetAllPods() {
+		pod := podMeta.Pod
+		if util.IsPodInactive(pod) || apiext.GetPodQoSClassRaw(pod) != apiext.QoSBE {
+			continue
+		}
+		podDir := podMeta.CgroupDir
+		usage, err := reader.ReadMemoryUsage(podDir)
+		if err != nil {
+			klog.V(5).Infof("failed to read memory.current for BE pod %s, err: %v", util.GetPodKey(pod), err)
+			continue
+		}
+		limit, err := reader.ReadMemoryLimit(podDir)
+		if err != nil {
+			klog.V(5).Infof("failed to read memory.max for BE pod %s, err: %v", util.GetPodKey(pod), err)
+			continue
+		}
+		// skip pods with no (or unlimited) memory limit
+		if limit <= 0 {
+			continue
+		}
+		watermark := limit * wmarkRatio / 100
+		if int64(usage) <= watermark {
+			continue
+		}
+		reclaimBytes := int64(usage) - watermark
+		if reclaimBytes > memoryReclaimMaxBatch {
+			reclaimBytes = memoryReclaimMaxBatch
+		}
+		updater, err := resourceexecutor.NewCommonCgroupUpdater(system.MemoryReclaimName, podDir, strconv.FormatInt(reclaimBytes, 10), nil)
+		if err != nil {
+			klog.V(5).Infof("skip reclaiming BE pod %s, err: %v", util.GetPodKey(pod), err)
+			continue
+		}
+		if _, err := m.executor.Update(false, updater); err != nil {
+			// EAGAIN means the kernel reclaimed as much as possible without reaching the target; treat as success
+			if errors.Is(err, syscall.EAGAIN) {
+				klog.V(5).Infof("reclaimed BE pod %s partially, err: %v", util.GetPodKey(pod), err)
+				continue
+			}
+			klog.V(5).Infof("failed to reclaim BE pod %s, err: %v", util.GetPodKey(pod), err)
+		}
+	}
 }
 
 func (m *cgroupResourcesReconcile) calculateAndUpdateResources(nodeSLO *slov1alpha1.NodeSLO) {
