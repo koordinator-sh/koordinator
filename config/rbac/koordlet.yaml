@@ -32,6 +32,7 @@ rules:
     - nodes
     - nodes/status
     - nodes/proxy
+    - nodes/finalizers
     - pods
     - pods/status
     - persistentvolumeclaims
