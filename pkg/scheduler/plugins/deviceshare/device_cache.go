@@ -327,6 +327,13 @@ func (n *nodeDevice) calcFreeWithPreemptible(deviceType schedulingv1alpha1.Devic
 	if len(preemptible) > 0 {
 		mergedFreeDevices = make(deviceResources)
 		for minor, v := range preemptible {
+			// Skip minors absent from the device inventory. A minor present in
+			// preemptible but not in deviceTotal is a phantom entry (e.g., the
+			// device was removed after the preemptible snapshot was taken);
+			// including it would pollute mergedFreeDevices with stale capacity.
+			if _, ok := deviceTotal[minor]; !ok {
+				continue
+			}
 			used := quotav1.SubtractWithNonNegativeResult(deviceUsed[minor], v)
 			remaining := quotav1.SubtractWithNonNegativeResult(deviceTotal[minor], used)
 			if !quotav1.IsZero(remaining) {
