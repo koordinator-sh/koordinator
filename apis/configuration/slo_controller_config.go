@@ -394,7 +394,7 @@ data:
     {
       "clusterStrategy": {
         "policy": "none",
-        "cpuBurstPercent": 1000,
+        "cpuBurstPercent": 100,
         "cfsQuotaBurstPercent": 300,
         "cfsQuotaBurstPeriodSeconds": -1,
         "sharePoolThresholdPercent": 50

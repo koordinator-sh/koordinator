@@ -509,199 +509,6 @@ func Test_genPodBurstConfig(t *testing.T) {
 	}
 }
 
-func TestCPUBurst_applyCPUBurst(t *testing.T) {
-	type fields struct {
-		podName      string
-		containerRes map[string]corev1.ResourceRequirements
-	}
-	type args struct {
-		burstCfg slov1alpha1.CPUBurstConfig
-	}
-	type want struct {
-		containerBurstVal map[string]int64
-		podBurstVal       int64
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   want
-	}{
-		{
-			name: "apply-by-default-burst-config",
-			fields: fields{
-				podName: "test-pod-1",
-				containerRes: map[string]corev1.ResourceRequirements{
-					"test-container-1": {
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(3000, resource.DecimalSI),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(5000, resource.DecimalSI),
-						},
-					},
-					"test-container-2": {
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(3000, resource.DecimalSI),
-						},
-					},
-				},
-			},
-			args: args{
-				burstCfg: defaultAutoBurstCfg,
-			},
-			want: want{
-				containerBurstVal: map[string]int64{
-					"test-container-1": 5 * 10 * system.CFSBasePeriodValue,
-					"test-container-2": 3 * 10 * system.CFSBasePeriodValue,
-				},
-				podBurstVal: (5 + 3) * 10 * system.CFSBasePeriodValue,
-			},
-		},
-		{
-			name: "apply-by-specified-burst-config",
-			fields: fields{
-				podName: "test-pod-1",
-				containerRes: map[string]corev1.ResourceRequirements{
-					"test-container-1": {
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(3000, resource.DecimalSI),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(5000, resource.DecimalSI),
-						},
-					},
-					"test-container-2": {
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(3000, resource.DecimalSI),
-						},
-					},
-				},
-			},
-			args: args{
-				burstCfg: slov1alpha1.CPUBurstConfig{
-					Policy:          slov1alpha1.CPUBurstAuto,
-					CPUBurstPercent: ptr.To[int64](500),
-				},
-			},
-			want: want{
-				containerBurstVal: map[string]int64{
-					"test-container-1": 5 * 5 * system.CFSBasePeriodValue,
-					"test-container-2": 3 * 5 * system.CFSBasePeriodValue,
-				},
-				podBurstVal: (5 + 3) * 5 * system.CFSBasePeriodValue,
-			},
-		},
-		{
-			name: "apply-by-disabled-burst-config",
-			fields: fields{
-				podName: "test-pod-1",
-				containerRes: map[string]corev1.ResourceRequirements{
-					"test-container-1": {
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(3000, resource.DecimalSI),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(5000, resource.DecimalSI),
-						},
-					},
-					"test-container-2": {
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
-						},
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(3000, resource.DecimalSI),
-						},
-					},
-				},
-			},
-			args: args{
-				burstCfg: slov1alpha1.CPUBurstConfig{
-					Policy:          slov1alpha1.CFSQuotaBurstOnly,
-					CPUBurstPercent: ptr.To[int64](500),
-				},
-			},
-			want: want{
-				containerBurstVal: map[string]int64{
-					"test-container-1": 0,
-					"test-container-2": 0,
-				},
-				podBurstVal: 0,
-			},
-		},
-		{
-			name: "apply-by-unlimited-container",
-			fields: fields{
-				podName: "test-pod-1",
-				containerRes: map[string]corev1.ResourceRequirements{
-					"test-container-1": {
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(3000, resource.DecimalSI),
-						},
-						Limits: corev1.ResourceList{},
-					},
-					"test-container-2": {
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
-						},
-						Limits: corev1.ResourceList{},
-					},
-				},
-			},
-			args: args{
-				burstCfg: defaultAutoBurstCfg,
-			},
-			want: want{
-				containerBurstVal: map[string]int64{
-					"test-container-1": 0,
-					"test-container-2": 0,
-				},
-				podBurstVal: 0,
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testHelper := system.NewFileTestUtil(t)
-
-			b := &cpuBurst{
-				executor: newTestExecutor(),
-			}
-
-			stop := make(chan struct{})
-			b.init(stop)
-			defer func() { stop <- struct{}{} }()
-
-			podMeta := createPodMetaByResource(tt.fields.podName, tt.fields.containerRes)
-
-			initPodCPUBurst(podMeta, 0, testHelper)
-			initContainerCPUBurst(podMeta, 0, testHelper)
-
-			b.applyCPUBurst(&tt.args.burstCfg, podMeta)
-
-			for i := range podMeta.Pod.Status.ContainerStatuses {
-				containerStat := &podMeta.Pod.Status.ContainerStatuses[i]
-				want := tt.want.containerBurstVal[containerStat.Name]
-				got := getContainerCPUBurst(podMeta.CgroupDir, containerStat, testHelper)
-				if !reflect.DeepEqual(got, want) {
-					t.Errorf("container %v applyCPUBurst() = %v, want = %v", containerStat.Name, got, want)
-				}
-			}
-
-			gotPod := getPodCPUBurst(podMeta.CgroupDir, testHelper)
-			if !reflect.DeepEqual(gotPod, tt.want.podBurstVal) {
-				t.Errorf("pod %v applyCPUBurst() = %v, want = %v", podMeta.Pod.Name, gotPod, tt.want.podBurstVal)
-			}
-		})
-	}
-}
-
 func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 	testPodName1 := "test-pod-1"
 	testContainerName1 := "test-container-1"
@@ -1535,7 +1342,7 @@ func TestCPUBurst_start(t *testing.T) {
 			want: want{
 				podBurstVal: map[string]int64{
 					lsrPodName: 0,
-					lsPodName:  1 * 10 * system.CFSBasePeriodValue,
+					lsPodName:  int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 				},
 				podCFSQuotaVal: map[string]int64{
 					lsrPodName: -1,
@@ -1543,7 +1350,7 @@ func TestCPUBurst_start(t *testing.T) {
 				},
 				containerBurstVal: map[string]int64{
 					lsrContainerName: 0,
-					lsContainerName:  1 * 10 * system.CFSBasePeriodValue,
+					lsContainerName:  int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 				},
 				containerCFSQuotaVal: map[string]int64{
 					lsrContainerName: -1,
@@ -1771,7 +1578,7 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 			},
 			want: &slov1alpha1.CPUBurstConfig{
 				Policy:                     slov1alpha1.CPUBurstAuto,
-				CPUBurstPercent:            ptr.To[int64](1000),
+				CPUBurstPercent:            ptr.To[int64](100),
 				CFSQuotaBurstPercent:       ptr.To[int64](300),
 				CFSQuotaBurstPeriodSeconds: ptr.To[int64](-1),
 			},
@@ -1793,4 +1600,146 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 		})
 	}
 	framework.UnregisterQOSGreyCtrlPlugin(p.name())
+}
+
+func Test_calcSafeCPUBurstVal(t *testing.T) {
+	type args struct {
+		container    *corev1.Container
+		burstCfg     *slov1alpha1.CPUBurstConfig
+		currentQuota int64
+	}
+	tests := []struct {
+		name string
+		args args
+		want int64
+	}{
+		{
+			name: "burst disabled - policy none",
+			args: args{
+				container: &corev1.Container{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+				burstCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstNone,
+					CPUBurstPercent: ptr.To[int64](1000),
+				},
+				currentQuota: 200000,
+			},
+			want: 0,
+		},
+		{
+			name: "burst capped at quota - 1000% burst with 2 core quota",
+			args: args{
+				container: &corev1.Container{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+				burstCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent: ptr.To[int64](1000), // 10x = 20 cores
+				},
+				currentQuota: 200000, // 2 cores
+			},
+			want: 200000,
+		},
+		{
+			name: "burst not capped - 100% burst equals quota",
+			args: args{
+				container: &corev1.Container{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+				burstCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent: ptr.To[int64](100), // 1x = 2 cores
+				},
+				currentQuota: 200000, // 2 cores
+			},
+			want: 200000,
+		},
+		{
+			name: "burst not capped - 50% burst less than quota",
+			args: args{
+				container: &corev1.Container{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+				burstCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent: ptr.To[int64](50), // 0.5x = 1 core
+				},
+				currentQuota: 200000, // 2 cores
+			},
+			want: 100000, // 1 core
+		},
+		{
+			name: "unlimited quota - no capping",
+			args: args{
+				container: &corev1.Container{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+				burstCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent: ptr.To[int64](1000), // 10x = 20 cores
+				},
+				currentQuota: -1,
+			},
+			want: 2000000, // 20 cores
+		},
+		{
+			name: "zero quota - no capping",
+			args: args{
+				container: &corev1.Container{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("2"),
+						},
+					},
+				},
+				burstCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent: ptr.To[int64](1000),
+				},
+				currentQuota: 0,
+			},
+			want: 2000000,
+		},
+		{
+			name: "container without cpu limit",
+			args: args{
+				container: &corev1.Container{
+					Resources: corev1.ResourceRequirements{},
+				},
+				burstCfg: &slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstAuto,
+					CPUBurstPercent: ptr.To[int64](1000),
+				},
+				currentQuota: 200000,
+			},
+			want: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := calcSafeCPUBurstVal(tt.args.container, tt.args.burstCfg, tt.args.currentQuota)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

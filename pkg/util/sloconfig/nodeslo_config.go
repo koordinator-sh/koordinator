@@ -417,7 +417,7 @@ func DefaultCPUBurstStrategy() *slov1alpha1.CPUBurstStrategy {
 func DefaultCPUBurstConfig() slov1alpha1.CPUBurstConfig {
 	return slov1alpha1.CPUBurstConfig{
 		Policy:                     slov1alpha1.CPUBurstNone,
-		CPUBurstPercent:            ptr.To[int64](1000),
+		CPUBurstPercent:            ptr.To[int64](100),
 		CFSQuotaBurstPercent:       ptr.To[int64](300),
 		CFSQuotaBurstPeriodSeconds: ptr.To[int64](-1),
 	}
