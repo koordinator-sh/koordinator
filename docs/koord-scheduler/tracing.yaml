@@ -1,0 +1,17 @@
+# Sample OpenTelemetry tracing configuration for koord-scheduler.
+#
+# Enable it by starting koord-scheduler with:
+#   koord-scheduler --tracing-config-file=/path/to/tracing.yaml
+#
+# The schema is k8s.io/component-base/tracing/api/v1.TracingConfiguration, the same one
+# used by the API server and kubelet (KEP-1454). When --tracing-config-file is omitted,
+# tracing stays disabled and there is no behavior change.
+
+# endpoint is the address of the OTLP gRPC collector that receives spans.
+# Defaults to localhost:4317 when unset.
+endpoint: localhost:4317
+
+# samplingRatePerMillion is the number of samples collected per million spans.
+# Must be between 0 and 1000000. 1000 means 0.1% of scheduling cycles are traced;
+# set it to 1000000 to trace every cycle (useful for local debugging only).
+samplingRatePerMillion: 1000

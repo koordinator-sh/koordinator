@@ -37,6 +37,9 @@ import (
 type Options struct {
 	*scheduleroptions.Options
 	CombinedInsecureServing *CombinedInsecureServingOptions
+	// TracingConfigFile is the path to an OpenTelemetry tracing configuration file.
+	// When empty, distributed tracing stays disabled and there is no behavior change.
+	TracingConfigFile string
 }
 
 // NewOptions returns default scheduler app options.
@@ -50,6 +53,8 @@ func NewOptions() *Options {
 		},
 	}
 	options.CombinedInsecureServing.AddFlags(options.Flags.FlagSet("insecure serving"))
+	options.Flags.FlagSet("tracing").StringVar(&options.TracingConfigFile, "tracing-config-file", options.TracingConfigFile,
+		"The path to an OpenTelemetry tracing configuration file. When empty, distributed tracing is disabled.")
 	return options
 }
 
@@ -95,6 +100,7 @@ func (o *Options) Config(ctx context.Context) (*schedulerappconfig.Config, error
 
 	appConfig := &schedulerappconfig.Config{
 		Config:                              config,
+		TracingConfigFile:                   o.TracingConfigFile,
 		ServicesEngine:                      services.NewEngine(gin.New()),
 		KoordinatorClient:                   koordinatorClient,
 		KoordinatorSharedInformerFactory:    koordinatorSharedInformerFactory,
