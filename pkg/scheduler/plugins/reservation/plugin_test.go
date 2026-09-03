@@ -4573,6 +4573,88 @@ func TestUnreserveWhenReservationDeleted(t *testing.T) {
 	assert.Nil(t, rInfo)
 }
 
+// TestUnreserve_PreAllocationCleanup exercises the reserve-pod + pre-allocation
+// branch of Unreserve (TF-021): when a reserve pod that was involved in a
+// pre-allocation flow fails binding and Unreserve is called, the plugin must
+//  1. remove the nominated pre-allocation state via nominator.RemoveNominatedPreAllocation
+//  2. call unreservePod for every pod in state.preAllocated to strip the
+//     reservation-allocated annotation from those pods
+//
+// Previously this cleanup path was entirely untested; a regression in either
+// the RemoveNominatedPreAllocation call or the unreservePod loop would cause
+// nominator state corruption and leaked reservation-allocated annotations,
+// both of which poison subsequent scheduling decisions.
+func TestUnreserve_PreAllocationCleanup(t *testing.T) {
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:  uuid.NewUUID(),
+			Name: "pre-alloc-reservation",
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{},
+			},
+		},
+	}
+
+	suit := newPluginTestSuit(t)
+	client := suit.extenderFactory.KoordinatorClientSet()
+	_, err := client.SchedulingV1alpha1().Reservations().Create(context.TODO(), reservation, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	p, err := suit.pluginFactory()
+	assert.NoError(t, err)
+	pl := p.(*Plugin)
+
+	// Build the pre-allocated pod BEFORE starting informers so the initial list
+	// picks it up. This avoids async-watch races with the fake clientset.
+	preAllocatedPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "pre-allocated-pod",
+			UID:       uuid.NewUUID(),
+		},
+	}
+	apiext.SetReservationAllocated(preAllocatedPod, reservation)
+	_, err = suit.fw.ClientSet().CoreV1().Pods("default").Create(context.TODO(), preAllocatedPod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	suit.start(t)
+
+	// Manually assume the reservation so that Unreserve sees it via rLister.
+	assumedReservation := reservation.DeepCopy()
+	assumedReservation.Status.NodeName = "test-node"
+	pl.reservationCache.assumeReservation(assumedReservation)
+
+	reservePod := reservationutil.NewReservePod(reservation)
+	state := &stateData{
+		// Non-empty preAllocated is what triggers the cleanup branch.
+		preAllocated:            []*corev1.Pod{preAllocatedPod},
+		hasReservationAllocated: true,
+		assumed:                 frameworkext.NewReservationInfo(reservation),
+	}
+	cycleState := framework.NewCycleState()
+	cycleState.Write(stateKey, state)
+
+	// Exercise Unreserve; this must:
+	//  - call pl.nominator.RemoveNominatedPreAllocation(reservePod)
+	//  - call pl.unreservePod for each entry in state.preAllocated, which
+	//    removes the reservation-allocated annotation from the pod.
+	assert.NotPanics(t, func() {
+		pl.Unreserve(context.TODO(), cycleState, reservePod, "test-node")
+	})
+
+	// Reservation must be removed from the cache (forgetReservation path).
+	assert.Nil(t, pl.reservationCache.getReservationInfoByUID(reservation.UID))
+
+	// The pre-allocated pod must still exist and its reservation-allocated
+	// annotation must have been stripped by unreservePod.
+	gotPod, err := suit.fw.ClientSet().CoreV1().Pods("default").Get(context.TODO(), preAllocatedPod.Name, metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Empty(t, gotPod.Annotations[apiext.AnnotationReservationAllocated],
+		"reservation-allocated annotation must be removed during pre-allocation cleanup")
+}
+
 func TestPreBind(t *testing.T) {
 	tests := []struct {
 		name               string
