@@ -34,6 +34,9 @@ type errorHandlerDispatcher struct {
 	preHandlerFilters  []PreErrorHandlerFilter
 	postHandlerFilters []PostErrorHandlerFilter
 	defaultHandler     scheduler.FailureHandlerFn
+	// schedulingQueue is used to release the pod's in-flight bookkeeping when a
+	// pre-handler filter suppresses the default failure handler.
+	schedulingQueue SchedulingQueue
 }
 
 func newErrorHandlerDispatcher() *errorHandlerDispatcher {
@@ -42,6 +45,10 @@ func newErrorHandlerDispatcher() *errorHandlerDispatcher {
 
 func (d *errorHandlerDispatcher) setDefaultHandler(handler scheduler.FailureHandlerFn) {
 	d.defaultHandler = handler
+}
+
+func (d *errorHandlerDispatcher) setSchedulingQueue(queue SchedulingQueue) {
+	d.schedulingQueue = queue
 }
 
 func (d *errorHandlerDispatcher) RegisterErrorHandlerFilters(preFilter PreErrorHandlerFilter, postFilter PostErrorHandlerFilter) {
@@ -67,6 +74,17 @@ func (d *errorHandlerDispatcher) Error(ctx context.Context, fwk framework.Framew
 
 	for _, handlerFilter := range d.preHandlerFilters {
 		if handlerFilter(ctx, fwk, podInfo, status, nominatingInfo, start) {
+			// The filter suppresses the default failure handler, which is the only
+			// code path calling SchedulingQueue.Done() on the scheduling-cycle
+			// failure path. Release the pod's in-flight bookkeeping explicitly,
+			// otherwise the pod stays in inFlightPods forever, disables the
+			// pruning of inFlightEvents, and all subsequent cluster events
+			// accumulate unboundedly (memory leak). Done() is idempotent, so it
+			// is also safe on the binding-cycle path where Done() has already
+			// been called before Bind.
+			if d.schedulingQueue != nil {
+				d.schedulingQueue.Done(podInfo.Pod.UID)
+			}
 			return
 		}
 	}
