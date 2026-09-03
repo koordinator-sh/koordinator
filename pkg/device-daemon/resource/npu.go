@@ -151,6 +151,5 @@ func (manager *npuManager) GetDevices() ([]Device, error) {
 }
 
 func (manager *npuManager) GetDriverVersion() (string, error) {
-	//TODO implement me
-	panic("implement me")
+	return "", nil
 }
