@@ -26,8 +26,10 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
@@ -40,11 +42,13 @@ var (
 )
 
 type systemResourceCollector struct {
-	collectInterval  time.Duration
-	outdatedInterval time.Duration
-	started          *atomic.Bool
-	appendableDB     metriccache.Appendable
-	sharedState      *framework.SharedState
+	collectInterval           time.Duration
+	outdatedInterval          time.Duration
+	started                   *atomic.Bool
+	metricCache               metriccache.MetricCache
+	sharedState               *framework.SharedState
+	statesInformer            statesinformer.StatesInformer
+	pageCacheCollectorEnabled bool
 }
 
 func New(opt *framework.Options) framework.Collector {
@@ -52,7 +56,8 @@ func New(opt *framework.Options) framework.Collector {
 		collectInterval:  opt.Config.CollectResUsedInterval,
 		outdatedInterval: opt.Config.CollectSysMetricOutdatedInterval,
 		started:          atomic.NewBool(false),
-		appendableDB:     opt.MetricCache,
+		metricCache:      opt.MetricCache,
+		statesInformer:   opt.StatesInformer,
 	}
 }
 
@@ -62,6 +67,10 @@ func (s *systemResourceCollector) Enabled() bool {
 
 func (s *systemResourceCollector) Setup(c *framework.Context) {
 	s.sharedState = c.State
+	// ponytail: log once at setup, not every collect cycle
+	if _, ok := c.Collectors["PageCacheCollector"]; ok {
+		s.pageCacheCollectorEnabled = true
+	}
 }
 
 func (s *systemResourceCollector) Run(stopCh <-chan struct{}) {
@@ -120,10 +129,27 @@ func (s *systemResourceCollector) collectSysResUsed() {
 		return
 	}
 
-	// calculate system resource usage
+	// adjust node/pod memory values based on NodeMemoryCollectPolicy
 	collectTime := timeNow()
+	nodeMemoryValue := nodeMemory.Value
+	podsMemoryValue := podsMemoryUsage
+	hostAppMemoryValue := hostAppMemory.Value
+	if s.statesInformer != nil {
+		nodeMetricSpec := s.statesInformer.GetNodeMetricSpec()
+		if nodeMetricSpec != nil && nodeMetricSpec.CollectPolicy != nil && nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy != nil {
+			policy := *nodeMetricSpec.CollectPolicy.NodeMemoryCollectPolicy
+			if policy == slov1alpha1.UsageWithPageCache || policy == slov1alpha1.UsageWithHotPageCache {
+				if !s.pageCacheCollectorEnabled {
+					klog.Warning("NodeMemoryCollectPolicy is set to UsageWithPageCache or UsageWithHotPageCache but page-cache collector is not enabled, policy will have no effect")
+				}
+				nodeMemoryValue, podsMemoryValue, hostAppMemoryValue = s.queryMemoryWithPolicy(policy, collectTime, nodeMemory, podsMemoryUsage, hostAppMemory)
+			}
+		}
+	}
+
+	// calculate system resource usage
 	systemCPUUsage := util.MaxFloat64(nodeCPU.Value-podsCPUUsage-hostAppCPU.Value, 0)
-	systemMemoryUsage := util.MaxFloat64(nodeMemory.Value-podsMemoryUsage-hostAppMemory.Value, 0)
+	systemMemoryUsage := util.MaxFloat64(nodeMemoryValue-podsMemoryValue-hostAppMemoryValue, 0)
 	systemCPUMetric, err := metriccache.SystemCPUUsageMetric.GenerateSample(nil, collectTime, systemCPUUsage)
 	if err != nil {
 		klog.Warningf("generate system cpu metric failed, err %v", err)
@@ -136,7 +162,7 @@ func (s *systemResourceCollector) collectSysResUsed() {
 	}
 
 	// commit metric sample
-	appender := s.appendableDB.Appender()
+	appender := s.metricCache.Appender()
 	if err := appender.Append([]metriccache.MetricSample{systemCPUMetric, systemMemoryMetric}); err != nil {
 		klog.ErrorS(err, "append system metrics error")
 		return
@@ -151,6 +177,51 @@ func (s *systemResourceCollector) collectSysResUsed() {
 
 	klog.V(4).Infof("collect system resource usage finished, cpu %v, memory %v", systemCPUUsage, systemMemoryUsage)
 	s.started.Store(true)
+}
+
+func (s *systemResourceCollector) queryMemoryWithPolicy(policy slov1alpha1.NodeMemoryCollectPolicy, collectTime time.Time,
+	nodeMemory *metriccache.Point, podsMemory float64, hostAppMemory *metriccache.Point) (float64, float64, float64) {
+	// Query the correct node memory metric from the metric cache based on the policy.
+	// - SharedState nodeMemory is always Usage() (no page cache) from NodeResourceCollector.
+	// - SharedState podsMemory is always Usage() (no page cache) — PodResourceCollector
+	//   does not support NodeMemoryCollectPolicy, which is intentional: pods' page cache
+	//   is not actively used by their processes and is correctly attributed to "system".
+	// - SharedState hostAppMemory is already policy-aware — HostApplicationCollector
+	//   reads the policy and writes the appropriate value.
+	// Therefore we only need to adjust the node memory to match the policy.
+	querier, err := s.metricCache.Querier(collectTime.Add(-s.outdatedInterval), collectTime)
+	if err != nil {
+		klog.Warningf("create querier for policy-aware memory query failed, err %v", err)
+		return nodeMemory.Value, podsMemory, hostAppMemory.Value
+	}
+	defer querier.Close()
+
+	var nodeMemoryMetric metriccache.MetricMeta
+	var metaErr error
+	switch policy {
+	case slov1alpha1.UsageWithPageCache:
+		nodeMemoryMetric, metaErr = metriccache.NodeMemoryUsageWithPageCacheMetric.BuildQueryMeta(nil)
+	case slov1alpha1.UsageWithHotPageCache:
+		nodeMemoryMetric, metaErr = metriccache.NodeMemoryWithHotPageUsageMetric.BuildQueryMeta(nil)
+	}
+	if metaErr != nil {
+		klog.Warningf("build query meta for policy-aware node memory metric failed, err %v", metaErr)
+		return nodeMemory.Value, podsMemory, hostAppMemory.Value
+	}
+
+	var nodeMemResult metriccache.AggregateResult = metriccache.DefaultAggregateResultFactory.New(nodeMemoryMetric)
+	if err := querier.Query(nodeMemoryMetric, nil, nodeMemResult); err != nil {
+		klog.Warningf("query policy-aware node memory metric failed, err %v", err)
+		return nodeMemory.Value, podsMemory, hostAppMemory.Value
+	}
+
+	nodeMemVal, err := nodeMemResult.Value(metriccache.AggregationTypeLast)
+	if err != nil {
+		klog.Warningf("get policy-aware node memory value failed, err %v", err)
+		return nodeMemory.Value, podsMemory, hostAppMemory.Value
+	}
+
+	return nodeMemVal, podsMemory, hostAppMemory.Value
 }
 
 // collectSysNUMAResUsed calculates and commits the per-NUMA system usage.
@@ -234,7 +305,7 @@ func (s *systemResourceCollector) collectSysNUMAResUsed(collectTime time.Time, s
 	if len(numaMetrics) <= 0 {
 		return
 	}
-	appender := s.appendableDB.Appender()
+	appender := s.metricCache.Appender()
 	if err := appender.Append(numaMetrics); err != nil {
 		klog.ErrorS(err, "append system NUMA metrics error")
 		return
