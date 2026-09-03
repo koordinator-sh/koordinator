@@ -250,6 +250,11 @@ func TestSyncStatus(t *testing.T) {
 	metricsResourceRegistry := basemetrics.NewKubeRegistry()
 	metrics.ReservationResource.Reset()
 	metricsResourceRegistry.Registerer().MustRegister(metrics.ReservationResource)
+	// ReservationResource is a package-level collector and Start() below appends
+	// to the package-level handler registrations, so leave neither behind for
+	// whichever test runs next.
+	t.Cleanup(metrics.ReservationResource.Reset)
+	t.Cleanup(frameworkexthelper.ResetRegistrations)
 
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
@@ -319,9 +324,32 @@ func TestSyncStatus(t *testing.T) {
 	}
 
 	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{ControllerWorkers: 2, GCDurationSeconds: 3600, GCIntervalSeconds: 60})
+	// This test drives sync() itself and then asserts on ReservationResource,
+	// which is a process-wide gauge. resyncReservations() would write that same
+	// gauge from a background loop: it resets the gauge and re-records every
+	// reservation from a lister snapshot that can lag the status update sync()
+	// performs below, which reports allocated=0 for a reservation just recorded
+	// as allocated=8. The workers are disabled as well so that the test has
+	// exactly one sync writer. Start() already guards all three loops, and
+	// Start() itself is covered by TestControllerStart.
+	controller.numWorker = 0
+	controller.isGCDisabled = true
+	controller.resyncInterval = 0
 	controller.Start()
 
-	time.Sleep(100 * time.Millisecond)
+	// Start() registers the pod handlers but does not wait for them:
+	// ForceSyncFromInformer only adds the handler, and the WaitForCacheSync
+	// inside Start() covers the listers rather than handler delivery. sync()
+	// derives the allocation from the index those handlers maintain, so wait
+	// for the owner pods to actually land in it instead of sleeping for a
+	// fixed interval and hoping. This is a precondition, not an assertion:
+	// continuing without it only produces confusing secondary failures.
+	if err := wait.PollUntilContextTimeout(context.TODO(), 10*time.Millisecond, wait.ForeverTestTimeout, true,
+		func(ctx context.Context) (done bool, err error) {
+			return len(controller.getPodsOnReservation(reservation.UID)) == len(owners), nil
+		}); err != nil {
+		t.Fatalf("timed out waiting for the reservation's owner pods to be indexed: %v", err)
+	}
 
 	r, err := controller.sync(getReservationKey(reservation))
 	assert.NoError(t, err)
@@ -1127,9 +1155,19 @@ func TestControllerStart(t *testing.T) {
 	_, err = fakeClientSet.CoreV1().Pods(testPod.Namespace).Create(context.TODO(), testPod, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	// Create controller with GC and resync disabled to keep the test focused.
+	// Create controller with GC, resync and workers disabled to keep the test
+	// focused: it only checks handler registration and the resulting pod index.
+	// Neither args field disables the loops on its own. New() falls back to
+	// defaultResyncInterval for any ResyncIntervalSeconds that is not positive,
+	// and to a single worker when ControllerWorkers is not positive, so both are
+	// set on the controller directly. That matters beyond this test: Start()
+	// passes a nil stop channel to wait.Until and the queue is never shut down,
+	// so a loop or worker started here outlives the test and keeps writing the
+	// process-wide reservation metrics while other tests assert on them.
 	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet,
 		&config.ReservationArgs{DisableGarbageCollection: true, ResyncIntervalSeconds: 0})
+	controller.numWorker = 0
+	controller.resyncInterval = 0
 
 	// Start() calls ForceSyncFromInformer for the pod informer, which should add a registration.
 	controller.Start()
@@ -1151,4 +1189,83 @@ func TestControllerStart(t *testing.T) {
 
 	podsOnReservation := controller.getPodsOnReservation("res-uid-start-test")
 	assert.Len(t, podsOnReservation, 1, "expected test pod to be indexed by reservation UID")
+}
+
+// TestProcessNextWorkItem covers the queue machinery directly. It used to be
+// exercised only as a side effect of worker goroutines that the tests above
+// started and never stopped, which is precisely the coupling those tests now
+// avoid, so it needs a test of its own.
+func TestProcessNextWorkItem(t *testing.T) {
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	// Not assigned to a node yet, so sync() reaches syncAssignedReservation and
+	// returns without touching the status.
+	unassigned := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:               uuid.NewUUID(),
+			Name:              "unassignedReservation",
+			CreationTimestamp: metav1.Now(),
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			TTL:      &metav1.Duration{Duration: time.Hour},
+			Template: &corev1.PodTemplateSpec{},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationAvailable,
+		},
+	}
+	// Already terminated, so sync() returns without asking for a retry.
+	terminated := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:               uuid.NewUUID(),
+			Name:              "terminatedReservation",
+			CreationTimestamp: metav1.Now(),
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationSucceeded,
+		},
+	}
+	for _, r := range []*schedulingv1alpha1.Reservation{unassigned, terminated} {
+		_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), r, metav1.CreateOptions{})
+		assert.NoError(t, err)
+	}
+
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+	sharedInformerFactory.Start(nil)
+	koordSharedInformerFactory.Start(nil)
+	sharedInformerFactory.WaitForCacheSync(nil)
+	koordSharedInformerFactory.WaitForCacheSync(nil)
+
+	// Not assigned to a node, so sync() asks to be retried later and the key
+	// leaves the ready queue.
+	controller.queue.Add(getReservationKey(unassigned))
+	assert.True(t, controller.processNextWorkItem())
+	assert.Equal(t, 0, controller.queue.Len())
+
+	// Already terminated, so sync() wants no retry and the key is forgotten.
+	controller.queue.Add(getReservationKey(terminated))
+	assert.True(t, controller.processNextWorkItem())
+	assert.Equal(t, 0, controller.queue.Len())
+
+	// worker() has to return once the queue is shut down. Nothing shuts the
+	// queue down today, which is why the workers Start() launches outlive
+	// whatever started them, so assert at least that the loop itself is not
+	// what keeps them alive.
+	workerReturned := make(chan struct{})
+	go func() {
+		controller.worker()
+		close(workerReturned)
+	}()
+	controller.queue.ShutDown()
+	select {
+	case <-workerReturned:
+	case <-time.After(wait.ForeverTestTimeout):
+		t.Fatal("worker did not return after the queue was shut down")
+	}
+
+	// The same condition, seen from the loop's perspective.
+	assert.False(t, controller.processNextWorkItem())
 }
