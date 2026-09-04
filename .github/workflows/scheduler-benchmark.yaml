@@ -79,12 +79,48 @@ jobs:
             BASELINE=baselines/elasticquota-1k.json \
             OUTPUT=results/elasticquota-result.json
 
+      - name: Drain elasticquota-benchmark namespace
+        if: always()
+        run: |
+          kubectl delete pods -n elasticquota-benchmark --all --timeout=120s 2>/dev/null || true
+          kubectl wait pod --for=delete -n elasticquota-benchmark --all --timeout=120s 2>/dev/null || true
+
+      - name: Run benchmark (reservation)
+        if: always()
+        id: reservation
+        run: |
+          make -C test/perf benchmark \
+            CONFIG=configs/scenarios/reservation-1k.yaml \
+            BASELINE=baselines/reservation-1k.json \
+            OUTPUT=results/reservation-result.json
+
+      - name: Drain reservation-benchmark namespace
+        if: always()
+        run: |
+          kubectl delete pods -n reservation-benchmark --all --timeout=120s 2>/dev/null || true
+          kubectl wait pod --for=delete -n reservation-benchmark --all --timeout=120s 2>/dev/null || true
+          kubectl delete reservations -l app=kwok-bench-reservation --timeout=60s 2>/dev/null || true
+
+      - name: Run benchmark (loadaware)
+        if: always()
+        id: loadaware
+        run: |
+          make -C test/perf benchmark \
+            CONFIG=configs/scenarios/loadaware-1k.yaml \
+            BASELINE=baselines/loadaware-1k.json \
+            OUTPUT=results/loadaware-result.json
+
       - name: Fail on regression
         if: always()
         run: |
           failed=false
           found=false
-          for result in test/perf/results/basic-result.json test/perf/results/gang-result.json test/perf/results/elasticquota-result.json; do
+          for result in \
+            test/perf/results/basic-result.json \
+            test/perf/results/gang-result.json \
+            test/perf/results/elasticquota-result.json \
+            test/perf/results/reservation-result.json \
+            test/perf/results/loadaware-result.json; do
             if [ -f "$result" ]; then
               found=true
               breached=$(jq -r '.thresholdBreached' "$result")
@@ -126,7 +162,7 @@ jobs:
       # pure threshold breaches — a regression is already reported by the result
       # JSON and uploading 30+ kubectl commands on every slow run adds noise.
       - name: Debug on failure
-        if: always() && (steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure' || steps.elasticquota.outcome == 'failure')
+        if: always() && (steps.basic.outcome == 'failure' || steps.gang.outcome == 'failure' || steps.elasticquota.outcome == 'failure' || steps.reservation.outcome == 'failure' || steps.loadaware.outcome == 'failure')
         run: |
           echo "=== kind clusters ==="
           kind get clusters || true
@@ -160,6 +196,16 @@ jobs:
           echo "=== elasticquota-benchmark pods and FailedScheduling events ==="
           kubectl get pods -n elasticquota-benchmark -o wide 2>/dev/null || true
           kubectl get events -n elasticquota-benchmark --field-selector=reason=FailedScheduling \
+            --sort-by=.lastTimestamp 2>/dev/null | tail -40 || true
+          echo "=== reservation-benchmark pods and Reservations ==="
+          kubectl get pods -n reservation-benchmark -o wide 2>/dev/null || true
+          kubectl get reservations -o wide 2>/dev/null || true
+          kubectl get events -n reservation-benchmark --field-selector=reason=FailedScheduling \
+            --sort-by=.lastTimestamp 2>/dev/null | tail -40 || true
+          echo "=== loadaware-benchmark pods and NodeMetrics ==="
+          kubectl get pods -n loadaware-benchmark -o wide 2>/dev/null || true
+          kubectl get nodemetrics 2>/dev/null || true
+          kubectl get events -n loadaware-benchmark --field-selector=reason=FailedScheduling \
             --sort-by=.lastTimestamp 2>/dev/null | tail -40 || true
           echo "=== koord-scheduler-config ConfigMap ==="
           kubectl get configmap koord-scheduler-config -n koordinator-system -o yaml || true
