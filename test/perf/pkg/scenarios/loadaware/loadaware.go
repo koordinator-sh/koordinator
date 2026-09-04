@@ -48,6 +48,7 @@ package loadaware
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -134,6 +135,12 @@ func (s *LoadAwareScenario) Setup(
 	if len(nodes.Items) == 0 {
 		return fmt.Errorf("no nodes found with label %s=%s — Setup must run after CreateNodes", types.RunIDLabel, runID)
 	}
+
+	// Sort by name so the high/low split is deterministic regardless of API
+	// server list ordering, which is not guaranteed to be stable across runs.
+	sort.Slice(nodes.Items, func(i, j int) bool {
+		return nodes.Items[i].Name < nodes.Items[j].Name
+	})
 
 	highPct := cfg.HighUtilCPUPct
 	if highPct == 0 {

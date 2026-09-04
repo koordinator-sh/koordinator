@@ -71,8 +71,9 @@ const (
 	// Reservation that pod is the owner of. Set on the first ReservationCount pods.
 	reservationIndexLabel = "benchmark.koordinator.sh/reservation-index"
 
-	// reservationAppLabel is a run-independent label added to every Reservation
-	// object. Used by the leftover guard to detect stale objects from crashed runs.
+	// reservationAppLabel is a run-independent label selector matching every
+	// Reservation object created by this scenario. Used by the leftover guard
+	// to detect stale objects from crashed runs.
 	reservationAppLabel = "app=kwok-bench-reservation"
 )
 
