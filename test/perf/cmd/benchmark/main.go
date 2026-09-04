@@ -34,6 +34,8 @@ import (
 	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/basic"
 	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/elasticquota"
 	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/gang"
+	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/loadaware"
+	_ "github.com/koordinator-sh/koordinator/test/perf/pkg/scenarios/reservation"
 )
 
 func main() {
