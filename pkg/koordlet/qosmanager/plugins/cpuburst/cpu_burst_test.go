@@ -370,6 +370,7 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 			ctl := gomock.NewController(t)
 			mockstatesinformer := mock_statesinformer.NewMockStatesInformer(ctl)
 			mockstatesinformer.EXPECT().GetAllPods().Return(testutil.GetPodMetas(tt.args.pods)).AnyTimes()
+			mockstatesinformer.EXPECT().GetNode().Return(nil).AnyTimes()
 
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
@@ -1243,7 +1244,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 
 			ctl := gomock.NewController(t)
 			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
-
+			mockStatesInformer.EXPECT().GetNode().Return(nil).AnyTimes()
 			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
 			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
@@ -1559,6 +1560,7 @@ func TestCPUBurst_start(t *testing.T) {
 			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
 			mockStatesInformer.EXPECT().GetAllPods().Return(testutil.GetPodMetas(tt.fields.pods)).AnyTimes()
 			mockStatesInformer.EXPECT().GetNodeSLO().Return(tt.fields.nodeSLO).AnyTimes()
+			mockStatesInformer.EXPECT().GetNode().Return(nil).AnyTimes()
 
 			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
