@@ -71,6 +71,23 @@ type ScenarioConfig struct {
 	// schedule" — the existing basic/gang behaviour, unchanged.
 	ExpectedScheduledPodCount *int `yaml:"expectedScheduledPodCount"`
 
+	// ReservationCount is the number of Reservation objects to pre-create in the
+	// reservation scenario. Defaults to 0 (no Reservations created). When set,
+	// the first ReservationCount pods returned by Pods() are labeled to bind to
+	// a pre-created Reservation; the remaining PodCount-ReservationCount pods
+	// schedule normally against raw node capacity.
+	ReservationCount int `yaml:"reservationCount"`
+
+	// HighUtilNodeCount is the number of nodes to seed with a high CPU
+	// utilization NodeMetric in the loadaware scenario. Defaults to 0 (every
+	// node is left at low/no seeded utilization).
+	HighUtilNodeCount int `yaml:"highUtilNodeCount"`
+
+	// HighUtilCPUPct is the CPU utilization percentage (0-100) written into the
+	// high-utilization nodes' NodeMetric.status.nodeMetric.nodeUsage.cpu.
+	// Defaults to 80 when HighUtilNodeCount > 0 and this is left unset (0).
+	HighUtilCPUPct int `yaml:"highUtilCPUPct"`
+
 	// Timeout bounds the total wall-clock duration of one benchmark run,
 	// expressed as a Go duration string (e.g. "10m", "90s"). A run that
 	// exceeds this is aborted and reported with TimedOut: true rather than
@@ -161,6 +178,17 @@ func (c ScenarioConfig) Validate() error {
 		if *c.Thresholds.FailureRatePct < 0 || *c.Thresholds.FailureRatePct > 100 {
 			return fmt.Errorf("thresholds.failureRatePct must be in [0, 100], got %g", *c.Thresholds.FailureRatePct)
 		}
+	}
+	if c.ReservationCount < 0 || c.ReservationCount > c.PodCount {
+		return fmt.Errorf("reservationCount must be in [0, podCount], got %d (podCount=%d)",
+			c.ReservationCount, c.PodCount)
+	}
+	if c.HighUtilNodeCount < 0 || c.HighUtilNodeCount > c.NodeCount {
+		return fmt.Errorf("highUtilNodeCount must be in [0, nodeCount], got %d (nodeCount=%d)",
+			c.HighUtilNodeCount, c.NodeCount)
+	}
+	if c.HighUtilCPUPct < 0 || c.HighUtilCPUPct > 100 {
+		return fmt.Errorf("highUtilCPUPct must be in [0, 100], got %d", c.HighUtilCPUPct)
 	}
 	return nil
 }
@@ -263,7 +291,14 @@ type BenchmarkResult struct {
 	GangCompletionP50Sec   *float64 `json:"gangCompletionP50Sec"`
 	GangCompletionP99Sec   *float64 `json:"gangCompletionP99Sec"`
 	QuotaBlockedPodCount   *int     `json:"quotaBlockedPodCount"`
-	PProfCPUArtifact       string   `json:"pprofCPUArtifact,omitempty"`
+	// ReservationBindCount is the number of pods that successfully consumed a
+	// Reservation during the run. nil for scenarios with no Reservations configured.
+	ReservationBindCount *int `json:"reservationBindCount"`
+	// LoadAwareRoutedPodCount is the number of pods scheduled onto
+	// low-utilization nodes in the loadaware scenario. nil for scenarios that
+	// don't seed NodeMetric utilization.
+	LoadAwareRoutedPodCount *int    `json:"loadAwareRoutedPodCount"`
+	PProfCPUArtifact        string  `json:"pprofCPUArtifact,omitempty"`
 	PProfHeapArtifact      string   `json:"pprofHeapArtifact,omitempty"`
 	ThresholdBreached      bool     `json:"thresholdBreached"`
 
