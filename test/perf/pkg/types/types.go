@@ -84,8 +84,8 @@ type ScenarioConfig struct {
 	HighUtilNodeCount int `yaml:"highUtilNodeCount"`
 
 	// HighUtilCPUPct is the CPU utilization percentage (0-100) written into the
-	// high-utilization nodes' NodeMetric.status.nodeMetric.nodeUsage.cpu.
-	// Defaults to 80 when HighUtilNodeCount > 0 and this is left unset (0).
+	// high-utilization nodes' NodeMetric.status.nodeMetric.nodeUsage.resources.cpu.
+	// 0 is treated as "unset" and defaults to 80 when HighUtilNodeCount > 0.
 	HighUtilCPUPct int `yaml:"highUtilCPUPct"`
 
 	// Timeout bounds the total wall-clock duration of one benchmark run,
