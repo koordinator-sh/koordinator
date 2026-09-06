@@ -193,6 +193,11 @@ func (s *LoadAwareScenario) Setup(
 		"lowUtilNodes", len(nodes.Items)-cfg.HighUtilNodeCount,
 		"highUtilCPUPct", highPct,
 	)
+	// Wait for the scheduler's NodeMetric informer to pick up the UpdateStatus
+	// writes before pods are submitted. The informer typically refreshes within
+	// ~1 s; without this pause the scheduler sees nil UpdateTime → Score = 0 for
+	// all nodes → LoadAware scoring is inert for the first scheduling cycle.
+	time.Sleep(2 * time.Second)
 	return nil
 }
 
