@@ -262,12 +262,14 @@ func (r *CPUSuppress) suppressBECPU() {
 		features.DefaultKoordletFeatureGate.Enabled(features.BECPUManager) {
 		r.recoverCFSQuotaIfNeed()
 		r.recoverCPUSetForBECPUManager()
+		r.recoverBECpuIdleIfNeed()
 		klog.V(5).Infof("suppressBECPU cannot work with BECPUManager together, suppress will be skipped, " +
 			"recover cpuset on all level if be pod does not specified numa node, and let be cpu set hook handle the others")
 		return
 	} else if disabled {
 		r.recoverCFSQuotaIfNeed()
 		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
+		r.recoverBECpuIdleIfNeed()
 		klog.V(5).Infof("suppressBECPU skipped, nodeSLO disable the featuregate")
 		return
 	}
@@ -321,11 +323,60 @@ func (r *CPUSuppress) suppressBECPU() {
 		r.adjustByCfsQuota(suppressCPUQuantity, node)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
 		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
+		r.suppressBECPUIdle()
 	} else {
 		r.adjustByCPUSet(suppressCPUQuantity, nodeCPUInfo)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
 		r.recoverCFSQuotaIfNeed()
+		r.suppressBECPUIdle()
 	}
+}
+
+// suppressBECPUIdle sets cpu.idle=1 for the BE root cgroup, enabling the kernel to
+// schedule BE tasks as low-priority/idle tasks when the cpu.idle cgroup file is available
+// (e.g. on kernels with the Alibaba cpu.idle feature or cgroup v2). This provides an
+// additional layer of CPU latency isolation beyond cpuset/cfs_quota.
+func (r *CPUSuppress) suppressBECPUIdle() {
+	beCgroupPath := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	eventHelper := audit.V(3).Reason("suppressBECPU").Message("set cpu.idle=1 for BE cgroup root")
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUIdleName, beCgroupPath, "1", eventHelper)
+	if err != nil {
+		klog.V(5).Infof("skip cpu.idle for BE cgroup, resource may not be supported, err: %v", err)
+		return
+	}
+	_, err = r.executor.Update(false, updater)
+	if err != nil {
+		klog.V(5).Infof("failed to set cpu.idle for BE cgroup, err: %v", err)
+		return
+	}
+	r.suppressPolicyStatuses[system.CPUIdleName] = policyUsing
+	klog.V(5).Infof("successfully set cpu.idle=1 for BE cgroup")
+}
+
+// recoverBECpuIdleIfNeed restores cpu.idle=0 for the BE root cgroup when BE CPU
+// suppression is no longer in use, undoing the latency-isolation setting applied
+// by suppressBECPUIdle. It is a no-op if the resource is unsupported or already
+// recovered.
+func (r *CPUSuppress) recoverBECpuIdleIfNeed() {
+	idlePolicyStatus, exist := r.suppressPolicyStatuses[system.CPUIdleName]
+	if exist && idlePolicyStatus == policyRecovered {
+		return
+	}
+
+	beCgroupPath := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	eventHelper := audit.V(3).Reason("suppressBECPU").Message("recover bestEffort cpu.idle, isUpdated %v", "0")
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUIdleName, beCgroupPath, "0", eventHelper)
+	if err != nil {
+		klog.V(4).Infof("failed to get be cpu.idle updater, err: %v", err)
+		return
+	}
+	isUpdated, err := r.executor.Update(false, updater)
+	if err != nil {
+		klog.Errorf("recover bestEffort cpu.idle err: %v", err)
+		return
+	}
+	klog.V(5).Infof("successfully recover bestEffort cpu.idle, isUpdated %v", isUpdated)
+	r.suppressPolicyStatuses[system.CPUIdleName] = policyRecovered
 }
 
 func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
