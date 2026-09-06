@@ -87,7 +87,7 @@ data:
           score:
             enabled:
               - name: LoadAwareScheduling
-                weight: 1
+                weight: 10
               - name: NodeNUMAResource
                 weight: 1
               - name: DeviceShare
