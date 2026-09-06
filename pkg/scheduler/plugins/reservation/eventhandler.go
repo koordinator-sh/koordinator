@@ -97,6 +97,7 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 		klog.V(4).InfoS("delete nominated reserve pod for terminating reservation",
 			"reservation", klog.KObj(newR), "uid", newR.UID)
 	} else if oldR.Generation != newR.Generation ||
+		oldR.Status.NodeName != newR.Status.NodeName ||
 		!apiequality.Semantic.DeepEqual(oldR.Labels, newR.Labels) ||
 		!apiequality.Semantic.DeepEqual(oldR.Annotations, newR.Annotations) {
 		// A scheduling-relevant update of a still-unscheduled reservation can
@@ -116,6 +117,9 @@ func (h *reservationEventHandler) OnUpdate(oldObj, newObj interface{}) {
 		// entry: the read path drops what no longer matches the store, but
 		// nothing recreates an entry that was deleted. This handler only makes
 		// the node available sooner - the read path is the guarantee.
+		//
+		// status.nodeName is a trigger but not part of the identity: a Pending
+		// reservation acquiring a node reaches none of the branches above.
 		h.rrNominator.DeleteReservePodIfStale(reservationutil.NewReservePod(newR))
 		klog.V(4).InfoS("reconciled the nominated reserve pod of an updated unscheduled reservation",
 			"reservation", klog.KObj(newR), "uid", newR.UID)

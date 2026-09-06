@@ -751,6 +751,27 @@ func TestAddNominatedReservePodRejectsStaleNodeDecision(t *testing.T) {
 // TestAddNominatedReservePodRejectsTerminating covers a cycle that finishes
 // after its reservation entered deletion: the reserve pod will never be
 // scheduled, so its node choice must not be recorded.
+// TestAddNominatedReservePodAcceptsAssignedNode covers the window
+// nominationStillValid is written for: a Pending reservation that has acquired
+// status.nodeName but whose reserve pod is not in the scheduler cache yet, so
+// the nomination is the only accounting for that node. NewReservePod copies
+// status.nodeName into Spec.NodeName, so a cycle that began before the
+// assignment must still be accepted for the node it is going to.
+func TestAddNominatedReservePodAcceptsAssignedNode(t *testing.T) {
+	r := newPendingReservationForNomination("r-assigned", "uid-assigned", "1", "1000m")
+	nm, indexer := newNominatorWithReservations(t, r)
+	stale, err := framework.NewPodInfo(reservation.NewReservePod(r))
+	assert.NoError(t, err)
+
+	assigned := r.DeepCopy()
+	assigned.Status.NodeName = "test-node"
+	assert.NoError(t, indexer.Update(assigned))
+
+	nm.AddNominatedReservePod(stale, "test-node")
+	assert.Len(t, nm.NominatedReservePodForNode("test-node"), 1,
+		"a cycle that started before status.nodeName was written still accounts for that node")
+}
+
 func TestAddNominatedReservePodRejectsTerminating(t *testing.T) {
 	r := newPendingReservationForNomination("r-term-add", "uid-term-add", "1", "2")
 	r.Finalizers = []string{"example.com/cleanup"}
@@ -1032,4 +1053,156 @@ func TestEventHandlerUpdateKeepsPreAllocationOfCurrentCycle(t *testing.T) {
 
 	assert.NotNil(t, nm.GetNominatedPreAllocation(rInfo, "test-node"),
 		"a reserve pod cleanup must not take the pre-allocation state of a cycle in progress")
+}
+
+// TestEventHandlerUpdateAssignedNodeReconcilesNomination covers the update no
+// lifecycle branch sees: a still Pending reservation acquiring status.nodeName
+// is neither active nor terminal nor terminating, and the write bumps neither
+// generation nor labels. The read path already filtered such an entry out (see
+// TestNominatedReservePodForNodeDropsForeignNode); asserting on the map itself
+// separates that from the event path actually retracting it.
+//
+// The store advances only after the nomination is recorded, which is the real
+// ordering: NewReservePod copies status.nodeName into the reserve pod, so a
+// cycle nominating against the pre-assignment revision is what
+// AddNominatedReservePod accepts.
+func TestEventHandlerUpdateAssignedNodeReconcilesNomination(t *testing.T) {
+	const nominatedNode = "test-node"
+
+	tests := []struct {
+		name        string
+		assignNode  string
+		mutate      func(*schedulingv1alpha1.Reservation)
+		wantRetains bool
+		reason      string
+	}{
+		{
+			name:        "assigned to another node retracts the nomination",
+			assignNode:  "another-node",
+			wantRetains: false,
+			reason:      "a reservation on its way to another node must stop holding this one",
+		},
+		{
+			name:        "assigned to the nominated node keeps it",
+			assignNode:  nominatedNode,
+			wantRetains: true,
+			reason:      "the nomination is the only accounting for the reserve pod until it is assumed",
+		},
+		{
+			name:       "status heartbeat keeps the nomination",
+			assignNode: "",
+			mutate: func(r *schedulingv1alpha1.Reservation) {
+				r.Status.Conditions = []schedulingv1alpha1.ReservationCondition{{
+					Reason:        schedulingv1alpha1.ReasonReservationUnschedulable,
+					LastProbeTime: metav1.Now(),
+				}}
+			},
+			wantRetains: true,
+			reason:      "the unschedulable condition this scheduler writes after every failed attempt must not drop a valid nomination",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldR := newPendingReservationForNomination("r-assigned", "uid-assigned", "1", "2")
+			nm, indexer := newNominatorWithReservations(t, oldR)
+			h := &reservationEventHandler{cache: newReservationCache(nil), rrNominator: nm}
+
+			// A cycle nominates a node while the reservation is still unassigned.
+			pi, err := framework.NewPodInfo(reservation.NewReservePod(oldR))
+			assert.NoError(t, err)
+			nm.AddNominatedReservePod(pi, nominatedNode)
+			assert.Equal(t, nominatedNode, nm.nominatedReservePodToNode[oldR.UID])
+
+			// The status write lands in the store, then the handler sees it.
+			newR := oldR.DeepCopy()
+			newR.ResourceVersion = "2"
+			newR.Status.NodeName = tt.assignNode
+			if tt.mutate != nil {
+				tt.mutate(newR)
+			}
+			assert.NoError(t, indexer.Update(newR))
+
+			h.OnUpdate(oldR, newR)
+
+			if tt.wantRetains {
+				assert.Equal(t, nominatedNode, nm.nominatedReservePodToNode[oldR.UID], tt.reason)
+				assert.Len(t, nm.NominatedReservePodForNode(nominatedNode), 1, tt.reason)
+				return
+			}
+			assert.NotContains(t, nm.nominatedReservePodToNode, oldR.UID, tt.reason)
+			assert.Empty(t, nm.NominatedReservePodForNode(nominatedNode), tt.reason)
+		})
+	}
+}
+
+// TestDeleteReservePodIfStaleKeepsNominationForCurrentNode is the unit-level
+// counterpart: the helper must not treat an assignment to the node it is
+// already holding as staleness, and must not delete a nomination the store
+// still agrees with when a delayed event arrives for an older revision.
+func TestDeleteReservePodIfStaleKeepsNominationForCurrentNode(t *testing.T) {
+	const nominatedNode = "test-node"
+
+	t.Run("assignment to the nominated node is not stale", func(t *testing.T) {
+		stored := newPendingReservationForNomination("r-same", "uid-same", "1", "2")
+		nm, indexer := newNominatorWithReservations(t, stored)
+		pi, err := framework.NewPodInfo(reservation.NewReservePod(stored))
+		assert.NoError(t, err)
+		nm.AddNominatedReservePod(pi, nominatedNode)
+
+		assigned := stored.DeepCopy()
+		assigned.ResourceVersion = "2"
+		assigned.Status.NodeName = nominatedNode
+		assert.NoError(t, indexer.Update(assigned))
+
+		nm.DeleteReservePodIfStale(reservation.NewReservePod(assigned))
+		assert.Equal(t, nominatedNode, nm.nominatedReservePodToNode[stored.UID])
+	})
+
+	t.Run("a delayed event does not retract a nomination the store agrees with", func(t *testing.T) {
+		// The store is at the current revision and a cycle nominated against
+		// it; the handler is only now catching up with an older event whose
+		// reserve pod happens to rebuild to the same shape.
+		current := newPendingReservationForNomination("r-delayed", "uid-delayed", "2", "2")
+		nm, _ := newNominatorWithReservations(t, current)
+		pi, err := framework.NewPodInfo(reservation.NewReservePod(current))
+		assert.NoError(t, err)
+		nm.AddNominatedReservePod(pi, nominatedNode)
+
+		stale := current.DeepCopy()
+		stale.ResourceVersion = "1"
+		nm.DeleteReservePodIfStale(reservation.NewReservePod(stale))
+
+		assert.Equal(t, nominatedNode, nm.nominatedReservePodToNode[current.UID],
+			"the newer nomination must survive a delayed event")
+	})
+}
+
+// TestEventHandlerUpdateSchedulerNameHandoverRetractsNomination pins down that
+// a schedulerName handover needs no cleanup path of its own. schedulerName
+// lives in the reservation's pod template, so changing it bumps
+// metadata.generation, which is part of the nomination identity, and the
+// existing scheduling-relevant branch retracts the hold.
+func TestEventHandlerUpdateSchedulerNameHandoverRetractsNomination(t *testing.T) {
+	oldR := newPendingReservationForNomination("r-handover", "uid-handover", "1", "2")
+	oldR.Spec.Template.Spec.SchedulerName = "koord-scheduler"
+
+	nm, indexer := newNominatorWithReservations(t, oldR)
+	h := &reservationEventHandler{cache: newReservationCache(nil), rrNominator: nm}
+	pi, err := framework.NewPodInfo(reservation.NewReservePod(oldR))
+	assert.NoError(t, err)
+	nm.AddNominatedReservePod(pi, "test-node")
+	assert.Equal(t, "test-node", nm.nominatedReservePodToNode[oldR.UID])
+
+	newR := oldR.DeepCopy()
+	newR.ResourceVersion = "2"
+	newR.Generation = 2
+	newR.Spec.Template.Spec.SchedulerName = "another-scheduler"
+	assert.NoError(t, indexer.Update(newR))
+
+	h.OnUpdate(oldR, newR)
+
+	assert.NotContains(t, nm.nominatedReservePodToNode, oldR.UID,
+		"a reservation handed to another scheduler must not keep holding a node here")
+	assert.Empty(t, nm.NominatedReservePodForNode("test-node"))
 }

@@ -38,7 +38,10 @@ import (
 
 type nominator struct {
 	podLister corelisters.PodLister
-	rLister   listerschedulingv1alpha1.ReservationLister
+	// rLister is always set in production: New builds it from the informer
+	// factory, which is the only call site of newNominator. The nil paths below
+	// exist for tests that construct a nominator without a store.
+	rLister listerschedulingv1alpha1.ReservationLister
 	// nominatedPodToNode is map keyed by a Pod UID to the node name where it is nominated to reserve.
 	nominatedPodToNode map[types.UID]map[string]types.UID
 	// nominatedPreAllocatable is map keyed by a Reservation UID to the node name where there are
@@ -110,12 +113,32 @@ func isReservationWaitingForScheduling(r *schedulingv1alpha1.Reservation) bool {
 	return phase == "" || phase == schedulingv1alpha1.ReservationPending
 }
 
-// sameSchedulingShape reports whether two reserve pods would be scheduled
-// identically. It compares what NewReservePod derives from a Reservation, and
-// deliberately ignores status, which the framework mutates on the copy it
-// carries through a scheduling cycle.
+// nominationStillValid reports whether a nomination recorded for nodeName is
+// still what the store describes: the same object, still waiting for a node,
+// still in the shape it was nominated from, and not already on its way
+// elsewhere. The read path and the event cleanup both go through it so the two
+// cannot drift apart.
+func nominationStillValid(r *schedulingv1alpha1.Reservation, uid types.UID, identity reserveIdentity, nodeName string) bool {
+	if r == nil || r.UID != uid || !isReservationWaitingForScheduling(r) ||
+		!identityOf(r).matches(identity) {
+		return false
+	}
+	// A Pending reservation may already carry status.nodeName. The nomination
+	// is still the only accounting for it, but only on the node it is going to.
+	assigned := reservationutil.GetReservationNodeName(r)
+	return assigned == "" || assigned == nodeName
+}
+
 // sameSchedulingShape reports whether two reserve pods describe the same
 // scheduling problem.
+//
+// Spec.NodeName is excluded. NewReservePod moves a node pinned by the template
+// into AnnotationReservationNode, compared below, and then fills Spec.NodeName
+// from status.nodeName, so what is left there records the assignment rather
+// than the shape. Comparing it would make a cycle that began before the
+// reservation acquired a node look like a different revision, and drop the
+// nomination that is the only accounting for that node until the reserve pod
+// is assumed into the scheduler cache.
 //
 // It can only compare what NewReservePod puts into the synthetic pod: the
 // template spec, and the reservation's labels and annotations. A reserve pod
@@ -128,8 +151,10 @@ func isReservationWaitingForScheduling(r *schedulingv1alpha1.Reservation) bool {
 // generation the cycle actually used to travel with it, which is tracked in
 // #3158.
 func sameSchedulingShape(a, b *corev1.Pod) bool {
+	aSpec, bSpec := a.Spec, b.Spec
+	aSpec.NodeName, bSpec.NodeName = "", ""
 	return a.Namespace == b.Namespace &&
-		apiequality.Semantic.DeepEqual(a.Spec, b.Spec) &&
+		apiequality.Semantic.DeepEqual(aSpec, bSpec) &&
 		apiequality.Semantic.DeepEqual(a.Labels, b.Labels) &&
 		apiequality.Semantic.DeepEqual(a.Annotations, b.Annotations)
 }
@@ -376,17 +401,7 @@ func (nm *nominator) revalidateNominatedPodInfo(pi *framework.PodInfo, identity 
 		return pi.DeepCopy(), true
 	}
 	r, err := nm.rLister.Get(reservationutil.GetReservationNameFromReservePod(pi.Pod))
-	if err != nil || r.UID != pi.Pod.UID ||
-		!isReservationWaitingForScheduling(r) ||
-		!identityOf(r).matches(identity) {
-		return nil, false
-	}
-	// A nomination holds a candidate node. isReservationWaitingForScheduling
-	// deliberately still accepts a reservation that already carries
-	// status.nodeName but has not become active yet, because the nomination is
-	// the only accounting for it during that window - but only on the node it
-	// is actually going to. Any other node it was holding is stale.
-	if assigned := reservationutil.GetReservationNodeName(r); assigned != "" && assigned != nodeName {
+	if err != nil || !nominationStillValid(r, pi.Pod.UID, identity, nodeName) {
 		return nil, false
 	}
 	return pi.DeepCopy(), true
@@ -425,7 +440,8 @@ func (nm *nominator) DeleteReservePodIfStale(pod *corev1.Pod) {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
-	if _, nominated := nm.nominatedReservePodToNode[pod.UID]; !nominated {
+	nodeName, nominated := nm.nominatedReservePodToNode[pod.UID]
+	if !nominated {
 		return
 	}
 	if nm.rLister == nil {
@@ -436,9 +452,7 @@ func (nm *nominator) DeleteReservePodIfStale(pod *corev1.Pod) {
 	}
 	stored, ok := nm.nominatedReserveIdentity[pod.UID]
 	r, err := nm.rLister.Get(reservationutil.GetReservationNameFromReservePod(pod))
-	if !ok || err != nil || r.UID != pod.UID ||
-		!isReservationWaitingForScheduling(r) ||
-		!identityOf(r).matches(stored) {
+	if !ok || err != nil || !nominationStillValid(r, pod.UID, stored, nodeName) {
 		nm.deleteNominatedReservePodOnly(pod)
 	}
 }
