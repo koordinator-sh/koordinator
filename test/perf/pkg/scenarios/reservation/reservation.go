@@ -30,13 +30,13 @@ limitations under the License.
 //   - The first cfg.ReservationCount pods carry reservation-index labels and bind
 //     to a Reservation. The remaining cfg.PodCount - cfg.ReservationCount pods
 //     carry no such label and schedule normally against raw node capacity.
-//   - Reservation co-scheduling: Koordinator's Reservation plugin co-schedules
-//     a Reservation and its matching pod in the same scheduling cycle. The
-//     Reservation does NOT need to be in phase Available before the pod arrives —
-//     pods are submitted immediately after Reservation creation, and the scheduler
-//     drives the Pending → Succeeded transition. Waiting for Available phase
-//     before submitting pods breaks this mechanism (Reservations never become
-//     Available without a matching pod in the queue).
+//   - schedulerName: spec.template.spec.schedulerName MUST be set to "koord-scheduler"
+//     (or cfg.SchedulerName). koord-scheduler's isResponsibleForReservation check
+//     calls GetReservationSchedulerName, which returns corev1.DefaultSchedulerName
+//     ("default-scheduler") when the field is absent. Since the koord-scheduler
+//     profile is named "koord-scheduler", a missing schedulerName causes the
+//     Reservation to be silently skipped — never enqueued, never scheduled, never
+//     Available — and reservationBindCount stays 0.
 //   - Leftover guard: if any Reservation with the run-independent app label
 //     (app=kwok-bench-reservation) already exists from a crashed prior run,
 //     Setup fails loudly with a cleanup instruction. The guard uses the
@@ -172,6 +172,11 @@ func (s *ReservationScenario) Setup(
 		resources = map[string]interface{}{"requests": rl, "limits": rl}
 	}
 
+	schedulerName := cfg.SchedulerName
+	if schedulerName == "" {
+		schedulerName = "koord-scheduler"
+	}
+
 	shortID := types.ShortID(runID)
 	for i := 0; i < cfg.ReservationCount; i++ {
 		name := fmt.Sprintf("bench-rsv-%s-%04d", shortID, i)
@@ -188,6 +193,13 @@ func (s *ReservationScenario) Setup(
 			"spec": map[string]interface{}{
 				"template": map[string]interface{}{
 					"spec": map[string]interface{}{
+						// The koord-scheduler checks spec.template.spec.schedulerName to
+						// decide whether it is responsible for scheduling the Reservation
+						// (GetReservationSchedulerName / isResponsibleForReservation).
+						// Without this field the default is "default-scheduler", which does
+						// not match the koord-scheduler profile — Reservations are never
+						// added to its queue and stay Pending forever.
+						"schedulerName": schedulerName,
 						"containers": []interface{}{
 							map[string]interface{}{
 								"name":      "pause",

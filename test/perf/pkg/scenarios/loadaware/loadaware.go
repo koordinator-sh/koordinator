@@ -23,13 +23,19 @@ limitations under the License.
 //   - Nodes are sorted by name before the high/low split so the tier
 //     classification is deterministic regardless of API server list ordering.
 //   - Nodes are split into two tiers controlled by cfg.HighUtilNodeCount:
-//     the first cfg.HighUtilNodeCount nodes are "high-utilization" (seeded at
-//     cfg.HighUtilCPUPct% of each node's allocatable CPU, defaulting to 80%),
-//     and the remaining nodes are "low-utilization" (fixed 10% of allocatable).
+//     the first cfg.HighUtilNodeCount nodes (alphabetically lowest) are
+//     "high-utilization" (seeded at cfg.HighUtilCPUPct% of each node's
+//     allocatable CPU, defaulting to 80%), and the remaining nodes are
+//     "low-utilization" (fixed 10% of allocatable).
 //   - The LoadAware plugin reads NodeMetric.status.nodeMetric.nodeUsage.resources.cpu
-//     and adjusts node scores so pods prefer low-utilization nodes. Setting 70 of
-//     100 nodes to 80% and 30 to 10% gives the plugin a clear routing signal:
-//     most pods should land on the 30 low-utilization nodes.
+//     and adjusts node scores so pods prefer low-utilization nodes (leastUsedScore).
+//     Setting 70 of 100 nodes to 80% and 30 to 10% gives the plugin a clear
+//     routing signal: most pods should land on the 30 low-utilization nodes.
+//   - Two-pass NodeMetric seeding: NodeMetric status is written for low-util nodes
+//     BEFORE high-util nodes. The scheduler's NodeMetric informer processes events
+//     in arrival order; nodes whose NodeMetric is not yet cached score 0. By
+//     flushing low-util status first, those nodes (score ~90) are cached before
+//     high-util ones (score ~20), so even a lagging informer routes pods correctly.
 //   - NodeMetric is cluster-scoped and has a status subresource. Create() drops
 //     the status field, so a separate UpdateStatus() call is required. The
 //     status payload MUST include updateTime — isNodeMetricExpired() in the
@@ -157,47 +163,67 @@ func (s *LoadAwareScenario) Setup(
 	s.lowUtilNodes = make(map[string]bool, len(nodes.Items))
 	var setupErrs []string
 
+	// Pass 1: create all NodeMetric objects (spec/metadata only, no status yet).
+	createdNMs := make([]*unstructured.Unstructured, len(nodes.Items))
 	for i, n := range nodes.Items {
-		cpuAllocatable := n.Status.Allocatable.Cpu()
-
-		var cpuUsageMilli int64
-		isHigh := i < cfg.HighUtilNodeCount
-		if isHigh {
-			cpuUsageMilli = cpuAllocatable.MilliValue() * int64(highPct) / 100
-		} else {
-			cpuUsageMilli = cpuAllocatable.MilliValue() * 10 / 100 // fixed 10%
-			s.lowUtilNodes[n.Name] = true
-		}
-
 		created, createErr := createNodeMetric(ctx, dynClient, n.Name, runID)
 		if createErr != nil {
 			setupErrs = append(setupErrs, createErr.Error())
 			continue
 		}
+		createdNMs[i] = created
+	}
+	if len(setupErrs) > 0 {
+		return fmt.Errorf("setup had %d NodeMetric create error(s): %s", len(setupErrs), strings.Join(setupErrs, "; "))
+	}
 
-		if _, statusErr := setNodeMetricStatus(ctx, dynClient, created, cpuUsageMilli); statusErr != nil {
-			// Log and continue: a missing NodeMetric status means the LoadAware plugin
-			// treats the node as zero utilization (no meaningful score difference from
-			// other unset nodes), degrading signal without aborting the run.
+	// Pass 2: UpdateStatus for LOW-utilization nodes first.
+	// The scheduler's NodeMetric informer processes events in arrival order. By
+	// flushing low-util status updates before high-util ones, the low-util
+	// NodeMetrics reach the informer cache first. During the subsequent pod burst,
+	// nodes whose NodeMetric is NOT yet in the cache score 0 — so writing low-util
+	// status first guarantees they are cached (scoring ~90) before high-util ones
+	// arrive (scoring ~20), steering pods toward the low-util set even if the
+	// informer lags behind a few status updates.
+	for i, n := range nodes.Items {
+		if i < cfg.HighUtilNodeCount || createdNMs[i] == nil {
+			continue // high-util handled in pass 3
+		}
+		cpuUsageMilli := n.Status.Allocatable.Cpu().MilliValue() * 10 / 100 // 10%
+		s.lowUtilNodes[n.Name] = true
+		if _, statusErr := setNodeMetricStatus(ctx, dynClient, createdNMs[i], cpuUsageMilli); statusErr != nil {
 			klog.ErrorS(statusErr, "failed to set NodeMetric status — node will score as zero utilization",
 				"node", n.Name)
 		}
 	}
 
-	if len(setupErrs) > 0 {
-		return fmt.Errorf("setup had %d NodeMetric create error(s): %s", len(setupErrs), strings.Join(setupErrs, "; "))
+	// Pass 3: UpdateStatus for HIGH-utilization nodes.
+	for i, n := range nodes.Items {
+		if i >= cfg.HighUtilNodeCount || createdNMs[i] == nil {
+			continue
+		}
+		cpuAllocatable := n.Status.Allocatable.Cpu()
+		cpuUsageMilli := cpuAllocatable.MilliValue() * int64(highPct) / 100
+		if _, statusErr := setNodeMetricStatus(ctx, dynClient, createdNMs[i], cpuUsageMilli); statusErr != nil {
+			klog.ErrorS(statusErr, "failed to set NodeMetric status — node will score as zero utilization",
+				"node", n.Name)
+		}
 	}
+
 	klog.InfoS("LoadAware setup complete",
 		"totalNodes", len(nodes.Items),
 		"highUtilNodes", cfg.HighUtilNodeCount,
 		"lowUtilNodes", len(nodes.Items)-cfg.HighUtilNodeCount,
 		"highUtilCPUPct", highPct,
 	)
-	// Wait for the scheduler's NodeMetric informer to pick up the UpdateStatus
-	// writes before pods are submitted. The informer typically refreshes within
-	// ~1 s; without this pause the scheduler sees nil UpdateTime → Score = 0 for
-	// all nodes → LoadAware scoring is inert for the first scheduling cycle.
-	time.Sleep(2 * time.Second)
+	// Give the scheduler's NodeMetric informer time to process all the UpdateStatus
+	// events before the pod burst starts. Low-util NodeMetrics are flushed first
+	// (pass 2 above) so they are cached first; high-util ones may still be in-flight
+	// but their absence only degrades the high-util score to 0 — pods still prefer
+	// the cached low-util nodes. The 5 s window provides extra headroom for slower
+	// CI environments (kind clusters on GitHub Actions can take longer than a local
+	// cluster to propagate informer events).
+	time.Sleep(5 * time.Second)
 	return nil
 }
 

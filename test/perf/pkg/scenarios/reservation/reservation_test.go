@@ -95,6 +95,13 @@ func TestSetup_FieldShape(t *testing.T) {
 		if got := rsv.GetLabels()["app"]; got != "kwok-bench-reservation" {
 			t.Errorf("reservation %d: app label = %q, want kwok-bench-reservation", i, got)
 		}
+		// schedulerName must be set in spec.template.spec so the koord-scheduler
+		// recognises it as responsible (isResponsibleForReservation) and adds the
+		// Reservation to its queue. Without this the Reservation stays Pending.
+		sched, _, _ := unstructured.NestedString(rsv.Object, "spec", "template", "spec", "schedulerName")
+		if sched == "" {
+			t.Errorf("reservation %d: spec.template.spec.schedulerName is empty — koord-scheduler will never schedule it", i)
+		}
 	}
 }
 
