@@ -72,8 +72,13 @@ func TestSetup_FieldShape(t *testing.T) {
 	fakeK8s := k8sfake.NewSimpleClientset()
 	fakeDyn := newFakeDynClient()
 
+	// Use a pre-cancelled context so waitForReservationsAvailable exits immediately
+	// (the fake dynamic client has no scheduler to set status.phase=Available).
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	s := &ReservationScenario{}
-	if err := s.Setup(context.Background(), fakeK8s, fakeDyn, cfg, "run-abc123"); err != nil {
+	if err := s.Setup(cancelledCtx, fakeK8s, fakeDyn, cfg, "run-abc123"); err != nil {
 		t.Fatalf("Setup() returned unexpected error: %v", err)
 	}
 
@@ -117,16 +122,19 @@ func TestSetup_LeftoverReservations(t *testing.T) {
 	cfg := validCfg()
 	fakeK8s := k8sfake.NewSimpleClientset()
 
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	// First run creates reservations.
 	s1 := &ReservationScenario{}
 	fakeDyn := newFakeDynClient()
-	if err := s1.Setup(context.Background(), fakeK8s, fakeDyn, cfg, "run-1"); err != nil {
+	if err := s1.Setup(cancelledCtx, fakeK8s, fakeDyn, cfg, "run-1"); err != nil {
 		t.Fatalf("first Setup() returned error: %v", err)
 	}
 
 	// Second run — Teardown never ran, stale Reservations still exist.
 	s2 := &ReservationScenario{}
-	err := s2.Setup(context.Background(), fakeK8s, fakeDyn, cfg, "run-2")
+	err := s2.Setup(cancelledCtx, fakeK8s, fakeDyn, cfg, "run-2")
 	if err == nil {
 		t.Fatal("Setup() with leftover Reservations should return error")
 	}
@@ -206,8 +214,11 @@ func TestPods_OwnerBinding(t *testing.T) {
 	fakeK8s := k8sfake.NewSimpleClientset()
 	fakeDyn := newFakeDynClient()
 
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	s := &ReservationScenario{}
-	if err := s.Setup(context.Background(), fakeK8s, fakeDyn, cfg, "run-1"); err != nil {
+	if err := s.Setup(cancelledCtx, fakeK8s, fakeDyn, cfg, "run-1"); err != nil {
 		t.Fatalf("Setup() error = %v", err)
 	}
 	pods, err := s.Pods(cfg, "run-1")
