@@ -30,6 +30,13 @@ limitations under the License.
 //   - The first cfg.ReservationCount pods carry reservation-index labels and bind
 //     to a Reservation. The remaining cfg.PodCount - cfg.ReservationCount pods
 //     carry no such label and schedule normally against raw node capacity.
+//   - Reservation co-scheduling: Koordinator's Reservation plugin co-schedules
+//     a Reservation and its matching pod in the same scheduling cycle. The
+//     Reservation does NOT need to be in phase Available before the pod arrives —
+//     pods are submitted immediately after Reservation creation, and the scheduler
+//     drives the Pending → Succeeded transition. Waiting for Available phase
+//     before submitting pods breaks this mechanism (Reservations never become
+//     Available without a matching pod in the queue).
 //   - Leftover guard: if any Reservation with the run-independent app label
 //     (app=kwok-bench-reservation) already exists from a crashed prior run,
 //     Setup fails loudly with a cleanup instruction. The guard uses the
@@ -219,11 +226,6 @@ func (s *ReservationScenario) Setup(
 		}
 	}
 
-	// Wait for all Reservations to reach Available before returning. A Reservation
-	// must be scheduled (phase == Available) before it can accept a pod binding —
-	// pods that arrive while a Reservation is still Pending will schedule against
-	// raw node capacity and never trigger a Succeeded transition.
-	waitForReservationsAvailable(ctx, dynClient, runID, cfg.ReservationCount)
 	return nil
 }
 
@@ -347,38 +349,6 @@ func (s *ReservationScenario) Augment(stats types.FailureStats, result *types.Be
 		n = waitForReservationsSucceeded(context.Background(), s.dynClient, s.runID, s.reservationCount)
 	}
 	result.ReservationBindCount = &n
-}
-
-// waitForReservationsAvailable polls until all want Reservations for this run
-// are in phase Available (or Succeeded). Bounded by 120 s — a timeout logs a
-// warning and returns rather than aborting Setup, because a partial Available
-// set degrades signal without making the run meaningless.
-func waitForReservationsAvailable(ctx context.Context, dynClient dynamic.Interface, runID string, want int) {
-	labelSel := fmt.Sprintf("%s=%s", types.RunIDLabel, runID)
-	deadline := time.Now().Add(120 * time.Second)
-	for time.Now().Before(deadline) {
-		list, err := dynClient.Resource(reservationGVR).List(ctx, metav1.ListOptions{LabelSelector: labelSel})
-		if err != nil {
-			klog.ErrorS(err, "waitForReservationsAvailable: list error")
-			time.Sleep(2 * time.Second)
-			continue
-		}
-		ready := 0
-		for i := range list.Items {
-			phase, _, _ := unstructured.NestedString(list.Items[i].Object, "status", "phase")
-			if phase == "Available" || phase == "Succeeded" {
-				ready++
-			}
-		}
-		if ready >= want {
-			klog.InfoS("All Reservations Available", "count", ready)
-			return
-		}
-		klog.V(4).InfoS("Waiting for Reservations to become Available", "ready", ready, "want", want)
-		time.Sleep(2 * time.Second)
-	}
-	klog.InfoS("waitForReservationsAvailable: timed out — some Reservations may still be Pending; reservationBindCount may be lower than expected",
-		"want", want)
 }
 
 // waitForReservationsSucceeded polls until all want Reservations reach phase
