@@ -1252,7 +1252,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 			},
-			wantScheduleStatus: fwktype.NewStatus(fwktype.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu."),
+			wantScheduleStatus: fwktype.NewStatus(fwktype.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, max offer slot among 2 must-gather topology nodes: 3, 0/8 nodes are available: 8 Insufficient cpu."),
 			wantDiagnosis: &frameworkext.Diagnosis{
 				TopologyKeyToExplain: "SpineLayer",
 				QuestionedKey:        "default/pending-pod-1",
@@ -1729,7 +1729,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 					},
 				},
 			},
-			wantScheduleStatus: fwktype.NewStatus(fwktype.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 2;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu."),
+			wantScheduleStatus: fwktype.NewStatus(fwktype.Unschedulable, "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, max offer slot among 2 must-gather topology nodes: 3, 0/8 nodes are available: 8 Insufficient cpu."),
 			wantDiagnosis: &frameworkext.Diagnosis{
 				QuestionedKey:        "default/pending-pod-1",
 				IsRootCausePod:       true,
@@ -1763,7 +1763,7 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				TriggerPodKey:                 "default/pending-pod-1",
 				PreemptorKey:                  "default/gangA",
 				Reason:                        ReasonPreemptionNotHelpful,
-				Message:                       "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.",
+				Message:                       "no candidate topology nodes can accommodate job, desiredOfferSlot: 4, max offer slot among 2 must-gather topology nodes: 3, 0/8 nodes are available: 8 Insufficient cpu.",
 				ClearNominatedNodeFailedMsg:   map[string]string{},
 				TerminatingPodOnNominatedNode: map[string]string{},
 				statusMap: map[string]*fwktype.Status{
@@ -1788,9 +1788,9 @@ func TestPodGroupManager_NetworkTopology(t *testing.T) {
 				},
 				SchedulingMode: frameworkext.JobSchedulingMode,
 			},
-			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.",
+			wantPreemptMessage: "preemption already attempted by default/pending-pod-1 with message no candidate topology nodes can accommodate job, desiredOfferSlot: 4, max offer slot among 2 must-gather topology nodes: 3, 0/8 nodes are available: 8 Insufficient cpu.",
 			wantPreempt:        framework.NewPostFilterResultWithNominatedNode(""),
-			wantPreemptStatus:  fwktype.NewStatus(fwktype.Unschedulable, `no candidate topology nodes can accommodate job, desiredOfferSlot: 4, topology topologyNode SpineLayer/s1: 3;topology topologyNode SpineLayer/s2: 3, 0/8 nodes are available: 8 Insufficient cpu.`),
+			wantPreemptStatus:  fwktype.NewStatus(fwktype.Unschedulable, `no candidate topology nodes can accommodate job, desiredOfferSlot: 4, max offer slot among 2 must-gather topology nodes: 3, 0/8 nodes are available: 8 Insufficient cpu.`),
 			wantPossibleVictims: []schedulingv1alpha1.PossibleVictim{
 				{NamespacedName: schedulingv1alpha1.NamespacedName{Name: "existing-pod-3", Namespace: "default"}},
 			},

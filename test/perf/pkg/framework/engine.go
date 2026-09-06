@@ -488,6 +488,14 @@ func createPodWithRetry(ctx context.Context, client kubernetes.Interface, pod *c
 // already waited for all podCount pods — so this returns immediately and
 // existing behaviour is unchanged.
 func waitForSettle(ctx context.Context, watcher *Watcher, failureWatcher *FailureWatcher, podCount int) error {
+	// Seed the quiet-period clock from settle start, not watcher creation.
+	// The gap between NewFailureWatcher and this call spans Ready() plus the
+	// full pod-burst phase; on elasticquota-1k that gap is ≥ 8.64 s (the
+	// recorded apiCreationDurationSec), which already exceeds settleQuietPeriod
+	// (5 s). Without the reset, if no FailedScheduling event has been processed
+	// yet, the settleQuietPeriod check below fires on the first loop iteration
+	// and waitForSettle returns immediately with quotaBlockedPodCount ~0.
+	failureWatcher.ResetLastEventTime()
 	ticker := time.NewTicker(settlePollInterval)
 	defer ticker.Stop()
 	for {

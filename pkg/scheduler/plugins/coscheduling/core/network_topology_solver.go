@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
@@ -20,6 +21,10 @@ import (
 
 const (
 	MessageNoCandidateTopologyNodes = "no candidate topology nodes can accommodate job, desiredOfferSlot: %d, %s, %s"
+	// maxDiagnosticTopologyNodeReasons bounds the per-topology-node breakdown emitted by the
+	// diagnostic log. A gang that cannot be placed is retried, so an unbounded breakdown
+	// (thousands of topology nodes in a large cluster) would be re-emitted on every attempt.
+	maxDiagnosticTopologyNodeReasons = 100
 )
 
 const (
@@ -79,16 +84,19 @@ func (solver *networkTopologySolverImpl) PlacePods(
 			orderedNodes, actualSlot := distributeOfferSlot(jobNetworkRequirements.DesiredOfferSlot, candidate, distribution, jobNetworkRequirements.LayerPodCountMultiple)
 			if actualSlot >= jobNetworkRequirements.DesiredOfferSlot {
 				podToNode := distributePods(toSchedulePods, orderedNodes, distribution)
+				placements := make([]string, 0, len(toSchedulePods))
+				for _, pod := range toSchedulePods {
+					podKey := framework.GetNamespacedName(pod.Namespace, pod.Name)
+					placements = append(placements, fmt.Sprintf("%s->%s", podKey, podToNode[podKey]))
+				}
+				klog.Infof("[NetworkTopology] %s/%s placed by must-gather topology on %s/%s: %s",
+					toSchedulePods[0].Namespace, toSchedulePods[0].Name, candidate.Layer, candidate.Name, strings.Join(placements, ", "))
 				return podToNode, nil
 			}
 		}
 	}
 
-	var reasons []string
-	for _, node := range topologyState.MustGatheredTopologyNode {
-		reasons = append(reasons, fmt.Sprintf("topology topologyNode %s/%s: %d", node.Layer, node.Name, node.OfferSlot))
-	}
-	sort.Strings(reasons)
+	topologyNodeSummary := buildTopologyNodeSummary(topologyState.MustGatheredTopologyNode)
 
 	// Append PodCountMultiple constraint information if present
 	var podCountMultipleInfo string
@@ -107,7 +115,66 @@ func (solver *networkTopologySolverImpl) PlacePods(
 			NodeToStatus: framework.NewNodeToStatus(topologyState.NodeToStatusMap, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable)),
 		},
 	}
-	return nil, fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf(MessageNoCandidateTopologyNodes, jobNetworkRequirements.DesiredOfferSlot, strings.Join(reasons, ";"), fitError.Error())+podCountMultipleInfo)
+	failureMessage := fmt.Sprintf(MessageNoCandidateTopologyNodes, jobNetworkRequirements.DesiredOfferSlot, topologyNodeSummary, fitError.Error()) + podCountMultipleInfo
+	// The failure message itself already reaches the Pod status/event and, once the diagnosis
+	// dump is turned on, the diagnosis as its preFilterMessage, so only the per-topology-node
+	// breakdown is logged here since no other channel carries it. It is emitted at a higher
+	// verbosity and bounded because a gang that cannot be placed is retried, which would
+	// otherwise re-emit the whole must-gather layer on every scheduling attempt.
+	if klog.V(4).Enabled() {
+		klog.V(4).Infof("[NetworkTopology] %s/%s cannot be placed by must-gather topology, must-gather topology nodes: %s",
+			toSchedulePods[0].Namespace, toSchedulePods[0].Name,
+			strings.Join(buildDiagnosticTopologyNodeReasons(topologyState.MustGatheredTopologyNode), ";"))
+	}
+	return nil, fwktype.NewStatus(fwktype.Unschedulable, failureMessage)
+}
+
+// buildTopologyNodeSummary reports how many topology nodes the must-gather layer holds and
+// the largest offer slot any of them can provide, which is all the job-level information
+// needed to tell how far the must-gather layer is from the desired offer slot. Enumerating
+// the topology nodes one by one is deliberately avoided: a large cluster may hold thousands
+// of them, which makes the status/event message huge. The per-topology-node breakdown is
+// emitted by the diagnostic log instead, and the underlying per-node filter failures are
+// already summarized by the FitError part.
+func buildTopologyNodeSummary(mustGatheredNodes []*networktopology.TreeNode) string {
+	maxOfferSlot := 0
+	for _, node := range mustGatheredNodes {
+		if node.OfferSlot > maxOfferSlot {
+			maxOfferSlot = node.OfferSlot
+		}
+	}
+	return fmt.Sprintf("max offer slot among %d must-gather topology nodes: %d", len(mustGatheredNodes), maxOfferSlot)
+}
+
+// buildDiagnosticTopologyNodeReasons enumerates the must-gathered topology nodes with their
+// offer slots for the diagnostic log, largest offer slot first so that the topology nodes
+// closest to satisfying the job are never truncated away, and caps the list to keep the log
+// bounded in large clusters.
+func buildDiagnosticTopologyNodeReasons(mustGatheredNodes []*networktopology.TreeNode) []string {
+	sortedTopologyNodes := make([]*networktopology.TreeNode, len(mustGatheredNodes))
+	copy(sortedTopologyNodes, mustGatheredNodes)
+	sort.Slice(sortedTopologyNodes, func(i, j int) bool {
+		a, b := sortedTopologyNodes[i], sortedTopologyNodes[j]
+		if a.OfferSlot != b.OfferSlot {
+			return a.OfferSlot > b.OfferSlot
+		}
+		if a.Layer != b.Layer {
+			return a.Layer < b.Layer
+		}
+		return a.Name < b.Name
+	})
+	listedNodes := len(sortedTopologyNodes)
+	if listedNodes > maxDiagnosticTopologyNodeReasons {
+		listedNodes = maxDiagnosticTopologyNodeReasons
+	}
+	reasons := make([]string, 0, listedNodes+1)
+	for _, node := range sortedTopologyNodes[:listedNodes] {
+		reasons = append(reasons, fmt.Sprintf("topology topologyNode %s/%s: %d", node.Layer, node.Name, node.OfferSlot))
+	}
+	if len(sortedTopologyNodes) > listedNodes {
+		reasons = append(reasons, fmt.Sprintf("and %d more topology nodes", len(sortedTopologyNodes)-listedNodes))
+	}
+	return reasons
 }
 
 func (solver *networkTopologySolverImpl) calculateNodeOfferSlot(

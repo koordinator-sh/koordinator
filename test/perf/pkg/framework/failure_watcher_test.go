@@ -29,6 +29,20 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 )
 
+// TestFailureWatcher_ResetLastEventTime verifies that ResetLastEventTime
+// advances lastEventTime, which is the property waitForSettle relies on to
+// anchor the quiet-period clock to settle start rather than watcher creation.
+func TestFailureWatcher_ResetLastEventTime(t *testing.T) {
+	fw := NewFailureWatcher(fake.NewSimpleClientset(), "ns", []string{"pod-a"})
+	before := fw.LastEventTime()
+	time.Sleep(10 * time.Millisecond)
+	fw.ResetLastEventTime()
+	after := fw.LastEventTime()
+	if !after.After(before) {
+		t.Errorf("ResetLastEventTime did not advance lastEventTime: before=%v after=%v", before, after)
+	}
+}
+
 func TestIsQuotaBlockedEvent(t *testing.T) {
 	cases := []struct {
 		message string

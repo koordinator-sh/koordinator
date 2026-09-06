@@ -192,6 +192,26 @@ func (f *FailureWatcher) LastEventTime() time.Time {
 	return f.lastEventTime
 }
 
+// ResetLastEventTime sets lastEventTime to now. Called by waitForSettle at
+// settle start so the quiet-period clock is anchored to when settling begins,
+// not to when NewFailureWatcher was created.
+//
+// Without this, the gap between NewFailureWatcher and waitForSettle — which
+// spans failureWatcher.Ready() plus the entire pod-burst phase — can exceed
+// settleQuietPeriod (5 s) before a single FailedScheduling event has been
+// processed. The committed elasticquota-1k baseline records
+// apiCreationDurationSec ≈ 8.64 s, so on that config the gap already exceeds
+// 5 s. If the first quota-blocked event arrives after waitForSettle starts,
+// the quiet-period check in waitForSettle fires on the very first loop
+// iteration (before the first 250 ms tick) and waitForSettle returns
+// immediately — leaving quotaBlockedPodCount at ~0 and tripping the
+// quotaBlockedPodCount gate in the benchmark workflow.
+func (f *FailureWatcher) ResetLastEventTime() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastEventTime = time.Now()
+}
+
 // isQuotaBlockedEvent reports whether the FailedScheduling event message
 // indicates the pod was throttled by an ElasticQuota limit. Extracted as a
 // named function so it can be unit-tested independently of the watch stream.
