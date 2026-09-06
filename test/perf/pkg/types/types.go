@@ -297,10 +297,10 @@ type BenchmarkResult struct {
 	// LoadAwareRoutedPodCount is the number of pods scheduled onto
 	// low-utilization nodes in the loadaware scenario. nil for scenarios that
 	// don't seed NodeMetric utilization.
-	LoadAwareRoutedPodCount *int    `json:"loadAwareRoutedPodCount"`
-	PProfCPUArtifact        string  `json:"pprofCPUArtifact,omitempty"`
-	PProfHeapArtifact      string   `json:"pprofHeapArtifact,omitempty"`
-	ThresholdBreached      bool     `json:"thresholdBreached"`
+	LoadAwareRoutedPodCount *int   `json:"loadAwareRoutedPodCount"`
+	PProfCPUArtifact        string `json:"pprofCPUArtifact,omitempty"`
+	PProfHeapArtifact       string `json:"pprofHeapArtifact,omitempty"`
+	ThresholdBreached       bool   `json:"thresholdBreached"`
 
 	// TimedOut is true when the run was aborted because it exceeded
 	// ScenarioConfig.Timeout. Throughput/latency fields reflect whatever

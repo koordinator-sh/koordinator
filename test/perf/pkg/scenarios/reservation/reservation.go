@@ -47,6 +47,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -94,9 +95,10 @@ func init() {
 // spec.owners label-selector matching. The remaining pods schedule normally,
 // so the metric captures "scheduling with Reservations present" overhead.
 type ReservationScenario struct {
-	namespace string
-	dynClient dynamic.Interface // stored in Setup, used by Augment
-	runID     string            // stored in Setup, used by Augment
+	namespace        string
+	dynClient        dynamic.Interface // stored in Setup, used by Augment
+	runID            string            // stored in Setup, used by Augment
+	reservationCount int               // stored in Setup, used by Augment's settle poll
 }
 
 func (s *ReservationScenario) Name() string { return "reservation" }
@@ -118,6 +120,7 @@ func (s *ReservationScenario) Setup(
 	s.namespace = ns
 	s.dynClient = dynClient
 	s.runID = runID
+	s.reservationCount = cfg.ReservationCount
 
 	if _, err := client.CoreV1().Namespaces().Get(ctx, ns, metav1.GetOptions{}); err != nil {
 		if !errors.IsNotFound(err) {
@@ -215,6 +218,12 @@ func (s *ReservationScenario) Setup(
 			return fmt.Errorf("failed to create Reservation %q: %w", name, createErr)
 		}
 	}
+
+	// Wait for all Reservations to reach Available before returning. A Reservation
+	// must be scheduled (phase == Available) before it can accept a pod binding —
+	// pods that arrive while a Reservation is still Pending will schedule against
+	// raw node capacity and never trigger a Succeeded transition.
+	waitForReservationsAvailable(ctx, dynClient, runID, cfg.ReservationCount)
 	return nil
 }
 
@@ -328,24 +337,74 @@ func (s *ReservationScenario) Teardown(
 // Augment implements scenarios.ResultAugmenter, populating ReservationBindCount.
 // Called by the engine before Teardown (Teardown runs via defer after WriteReport),
 // so Reservations are still present in the cluster — list and count here.
+//
+// A short bounded poll is used so the reservation controller has time to write
+// Succeeded for the last few pods (the controller lags pod binding by one
+// reconcile cycle, which can be a few seconds).
 func (s *ReservationScenario) Augment(stats types.FailureStats, result *types.BenchmarkResult) {
 	n := 0
 	if s.dynClient != nil && s.runID != "" {
-		labelSel := fmt.Sprintf("%s=%s", types.RunIDLabel, s.runID)
-		rsvList, err := s.dynClient.Resource(reservationGVR).List(
-			context.Background(),
-			metav1.ListOptions{LabelSelector: labelSel},
-		)
-		if err == nil {
-			for i := range rsvList.Items {
-				phase, _, _ := unstructured.NestedString(rsvList.Items[i].Object, "status", "phase")
-				if phase == "Succeeded" {
-					n++
-				}
-			}
-		} else {
-			klog.ErrorS(err, "Augment: failed to list Reservations for bind-count")
-		}
+		n = waitForReservationsSucceeded(context.Background(), s.dynClient, s.runID, s.reservationCount)
 	}
 	result.ReservationBindCount = &n
+}
+
+// waitForReservationsAvailable polls until all want Reservations for this run
+// are in phase Available (or Succeeded). Bounded by 120 s — a timeout logs a
+// warning and returns rather than aborting Setup, because a partial Available
+// set degrades signal without making the run meaningless.
+func waitForReservationsAvailable(ctx context.Context, dynClient dynamic.Interface, runID string, want int) {
+	labelSel := fmt.Sprintf("%s=%s", types.RunIDLabel, runID)
+	deadline := time.Now().Add(120 * time.Second)
+	for time.Now().Before(deadline) {
+		list, err := dynClient.Resource(reservationGVR).List(ctx, metav1.ListOptions{LabelSelector: labelSel})
+		if err != nil {
+			klog.ErrorS(err, "waitForReservationsAvailable: list error")
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		ready := 0
+		for i := range list.Items {
+			phase, _, _ := unstructured.NestedString(list.Items[i].Object, "status", "phase")
+			if phase == "Available" || phase == "Succeeded" {
+				ready++
+			}
+		}
+		if ready >= want {
+			klog.InfoS("All Reservations Available", "count", ready)
+			return
+		}
+		klog.V(4).InfoS("Waiting for Reservations to become Available", "ready", ready, "want", want)
+		time.Sleep(2 * time.Second)
+	}
+	klog.InfoS("waitForReservationsAvailable: timed out — some Reservations may still be Pending; reservationBindCount may be lower than expected",
+		"want", want)
+}
+
+// waitForReservationsSucceeded polls until all want Reservations reach phase
+// Succeeded, or up to 10 s. Returns the final Succeeded count.
+func waitForReservationsSucceeded(ctx context.Context, dynClient dynamic.Interface, runID string, want int) int {
+	labelSel := fmt.Sprintf("%s=%s", types.RunIDLabel, runID)
+	deadline := time.Now().Add(10 * time.Second)
+	last := 0
+	for {
+		rsvList, err := dynClient.Resource(reservationGVR).List(ctx, metav1.ListOptions{LabelSelector: labelSel})
+		if err != nil {
+			klog.ErrorS(err, "Augment: failed to list Reservations for bind-count")
+			break
+		}
+		count := 0
+		for i := range rsvList.Items {
+			phase, _, _ := unstructured.NestedString(rsvList.Items[i].Object, "status", "phase")
+			if phase == "Succeeded" {
+				count++
+			}
+		}
+		last = count
+		if count >= want || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return last
 }
