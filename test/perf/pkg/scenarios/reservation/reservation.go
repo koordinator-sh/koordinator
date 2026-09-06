@@ -242,6 +242,22 @@ func (s *ReservationScenario) Setup(
 		}
 	}
 
+	// Wait for Reservations to reach Available phase before returning.
+	// The Reservation plugin in koord-scheduler routes pods to Available Reservations only;
+	// if pods are submitted while Reservations are still Pending (in the scheduler queue but
+	// not yet placed on a node), the pods schedule normally and never bind to a Reservation
+	// — reservationBindCount stays 0. With schedulerName and ttl correctly set, Reservations
+	// reach Available within a few seconds. The 60 s timeout is a safety margin for slower
+	// CI environments.
+	//
+	// The wait is skipped when the context is already cancelled/expired (e.g., unit tests
+	// that pass a short-deadline context to avoid blocking on fake clients with no scheduler).
+	if ctx.Err() == nil {
+		if available := waitForReservationsAvailable(ctx, dynClient, runID, cfg.ReservationCount, 60*time.Second); available < cfg.ReservationCount {
+			klog.Warningf("Only %d/%d Reservations became Available within timeout — some pods may not bind", available, cfg.ReservationCount)
+		}
+	}
+
 	return nil
 }
 
@@ -365,6 +381,36 @@ func (s *ReservationScenario) Augment(stats types.FailureStats, result *types.Be
 		n = waitForReservationsSucceeded(context.Background(), s.dynClient, s.runID, s.reservationCount)
 	}
 	result.ReservationBindCount = &n
+}
+
+// waitForReservationsAvailable polls until all want Reservations reach phase
+// Available (scheduled to a node), or until deadline. Returns the count of
+// Available Reservations at the deadline. Callers treat a partial count as a
+// warning — all pods might still be scheduled, just without a Reservation.
+func waitForReservationsAvailable(ctx context.Context, dynClient dynamic.Interface, runID string, want int, timeout time.Duration) int {
+	labelSel := fmt.Sprintf("%s=%s", types.RunIDLabel, runID)
+	deadline := time.Now().Add(timeout)
+	last := 0
+	for {
+		rsvList, err := dynClient.Resource(reservationGVR).List(ctx, metav1.ListOptions{LabelSelector: labelSel})
+		if err != nil {
+			klog.ErrorS(err, "Setup: failed to list Reservations while waiting for Available")
+			break
+		}
+		count := 0
+		for i := range rsvList.Items {
+			phase, _, _ := unstructured.NestedString(rsvList.Items[i].Object, "status", "phase")
+			if phase == "Available" || phase == "Succeeded" {
+				count++
+			}
+		}
+		last = count
+		if count >= want || time.Now().After(deadline) || ctx.Err() != nil {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return last
 }
 
 // waitForReservationsSucceeded polls until all want Reservations reach phase

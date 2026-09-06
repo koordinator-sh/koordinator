@@ -60,6 +60,7 @@ package loadaware
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -71,6 +72,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
@@ -207,13 +209,12 @@ func (s *LoadAwareScenario) Setup(
 		if p.isLow {
 			s.lowUtilNodes[p.node.Name] = true
 		}
-		nm, createErr := createNodeMetric(ctx, dynClient, p.node.Name, runID)
-		if createErr != nil {
+		if _, createErr := createNodeMetric(ctx, dynClient, p.node.Name, runID); createErr != nil {
 			setupErrs = append(setupErrs, createErr.Error())
 			continue
 		}
-		if _, statusErr := setNodeMetricStatus(ctx, dynClient, nm, p.cpuMilli); statusErr != nil {
-			klog.ErrorS(statusErr, "failed to set NodeMetric status — node will score as zero utilization",
+		if _, statusErr := patchNodeMetricStatus(ctx, dynClient, p.node.Name, p.cpuMilli); statusErr != nil {
+			klog.ErrorS(statusErr, "failed to patch NodeMetric status — node will score as zero utilization",
 				"node", p.node.Name)
 		}
 	}
@@ -310,20 +311,24 @@ func buildNodeMetricStatus(cpuUsageMilli int64) map[string]interface{} {
 	}
 }
 
-// setNodeMetricStatus writes the simulated CPU usage into the NodeMetric's
-// status subresource. NodeMetric.status is a subresource — Create() drops the
-// status field, so an explicit UpdateStatus() is required.
-func setNodeMetricStatus(
+// patchNodeMetricStatus writes the simulated CPU usage into the NodeMetric's
+// status subresource using a merge patch. Unlike UpdateStatus, a merge patch
+// does NOT require a matching ResourceVersion, so it succeeds even when
+// koord-manager's NodeMetricReconciler has concurrently bumped the object
+// version (which would cause a 409 Conflict from UpdateStatus).
+func patchNodeMetricStatus(
 	ctx context.Context,
 	dynClient dynamic.Interface,
-	nm *unstructured.Unstructured,
+	nodeName string,
 	cpuUsageMilli int64,
 ) (*unstructured.Unstructured, error) {
 	status := buildNodeMetricStatus(cpuUsageMilli)
-	if err := unstructured.SetNestedField(nm.Object, status, "status"); err != nil {
-		return nil, fmt.Errorf("failed to build NodeMetric status for %q: %w", nm.GetName(), err)
+	patch := map[string]interface{}{"status": status}
+	patchBytes, err := json.Marshal(patch)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal NodeMetric status patch for %q: %w", nodeName, err)
 	}
-	return dynClient.Resource(nodeMetricGVR).UpdateStatus(ctx, nm, metav1.UpdateOptions{})
+	return dynClient.Resource(nodeMetricGVR).Patch(ctx, nodeName, k8stypes.MergePatchType, patchBytes, metav1.PatchOptions{}, "status")
 }
 
 // Pods returns cfg.PodCount plain pods — no reservation or quota labels needed
