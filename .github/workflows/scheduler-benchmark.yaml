@@ -139,6 +139,29 @@ jobs:
                   failed=true
                 fi
               fi
+              # Reservation must demonstrate actual Reservation binding — a count
+              # below 95% of reservationCount (300) means the binding path broke or
+              # reservations never reached Available before pods were scheduled.
+              if [[ "$result" == *"reservation"* ]]; then
+                bind_count=$(jq -r '.reservationBindCount // 0' "$result")
+                echo "$(basename $result): reservationBindCount=$bind_count"
+                if ! jq -e '.reservationBindCount >= 285' "$result" > /dev/null; then
+                  echo "::error::reservationBindCount < 285 in $(basename $result) — Reservation binding did not occur"
+                  failed=true
+                fi
+              fi
+              # LoadAware must route the large majority of pods to low-util nodes —
+              # a count <= 700 means the LoadAware plugin is not scoring correctly
+              # (e.g. NodeMetric status.updateTime was nil and isNodeMetricExpired
+              # returned true, causing Score to return 0 for every node).
+              if [[ "$result" == *"loadaware"* ]]; then
+                routed=$(jq -r '.loadAwareRoutedPodCount // 0' "$result")
+                echo "$(basename $result): loadAwareRoutedPodCount=$routed"
+                if ! jq -e '.loadAwareRoutedPodCount > 700' "$result" > /dev/null; then
+                  echo "::error::loadAwareRoutedPodCount <= 700 in $(basename $result) — LoadAware routing signal too weak or scoring inert"
+                  failed=true
+                fi
+              fi
             fi
           done
           if [ "$found" = "false" ]; then

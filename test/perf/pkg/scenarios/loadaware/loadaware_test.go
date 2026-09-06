@@ -20,10 +20,12 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -233,5 +235,32 @@ func TestPods_InvalidResourceQuantity(t *testing.T) {
 	s := &LoadAwareScenario{}
 	if _, err := s.Pods(cfg, "run-1"); err == nil {
 		t.Error("Pods() with invalid resource quantity should return error")
+	}
+}
+
+// TestBuildNodeMetricStatus_UpdateTime verifies that buildNodeMetricStatus
+// always stamps a non-empty RFC3339 updateTime. Without it the LoadAware
+// plugin's isNodeMetricExpired returns true and Score returns 0 for every
+// node, making the scenario a no-op.
+func TestBuildNodeMetricStatus_UpdateTime(t *testing.T) {
+	before := time.Now().Add(-time.Second)
+	status := buildNodeMetricStatus(16000) // 16 CPU cores in milli
+	after := time.Now().Add(time.Second)
+
+	ut, ok, err := unstructured.NestedString(status, "updateTime")
+	if err != nil || !ok || ut == "" {
+		t.Fatalf("buildNodeMetricStatus: updateTime missing or empty (ok=%v err=%v val=%q)", ok, err, ut)
+	}
+	parsed, parseErr := time.Parse(time.RFC3339, ut)
+	if parseErr != nil {
+		t.Fatalf("buildNodeMetricStatus: updateTime %q is not RFC3339: %v", ut, parseErr)
+	}
+	if parsed.Before(before) || parsed.After(after) {
+		t.Errorf("buildNodeMetricStatus: updateTime %v is outside expected range [%v, %v]", parsed, before, after)
+	}
+
+	cpu, _, _ := unstructured.NestedString(status, "nodeMetric", "nodeUsage", "resources", "cpu")
+	if cpu == "" {
+		t.Error("buildNodeMetricStatus: resources.cpu is empty")
 	}
 }

@@ -20,6 +20,8 @@ limitations under the License.
 //   - Setup lists the benchmark nodes (already created by the engine before
 //     Setup is called — engine.go order: CreateNodes → WaitReady → Setup) and
 //     creates one NodeMetric object (slo.koordinator.sh/v1alpha1) per node.
+//   - Nodes are sorted by name before the high/low split so the tier
+//     classification is deterministic regardless of API server list ordering.
 //   - Nodes are split into two tiers controlled by cfg.HighUtilNodeCount:
 //     the first cfg.HighUtilNodeCount nodes are "high-utilization" (seeded at
 //     cfg.HighUtilCPUPct% of each node's allocatable CPU, defaulting to 80%),
@@ -29,10 +31,17 @@ limitations under the License.
 //     100 nodes to 80% and 30 to 10% gives the plugin a clear routing signal:
 //     most pods should land on the 30 low-utilization nodes.
 //   - NodeMetric is cluster-scoped and has a status subresource. Create() drops
-//     the status field, so a separate UpdateStatus() call is required. If
-//     UpdateStatus fails, Setup logs a warning and continues — the node is then
-//     treated as having zero utilization, which degrades signal but does not
-//     abort the run.
+//     the status field, so a separate UpdateStatus() call is required. The
+//     status payload MUST include updateTime — isNodeMetricExpired() in the
+//     LoadAware plugin returns true (causing Score to return 0) whenever
+//     UpdateTime is nil. UpdateStatus failure logs a warning and continues —
+//     the node is treated as having zero utilization, degrading signal only.
+//   - Expiry ceiling: the scheduler-config sets nodeMetricExpirationSeconds=300.
+//     Runs that take longer than 5 minutes will see metrics go stale and
+//     LoadAware scoring degrade to no-op mid-run. At the current 1k-pod scale
+//     (~38s) this is not a concern, but it becomes a ceiling if the scenario is
+//     scaled to 10k pods. Static seeding with no re-stamp is deliberate for now
+//     (dynamic periodic updates are a stretch goal per the execution plan).
 //   - Augment (ResultAugmenter): the engine calls Augment before Teardown
 //     (Teardown runs via defer after WriteReport). Pods are still live at
 //     Augment time, so Augment lists them and counts those whose spec.nodeName
@@ -40,9 +49,6 @@ limitations under the License.
 //   - Teardown deletes NodeMetrics by run-id label and pods by the run-
 //     independent app label. Both are best-effort and independent.
 //   - NodeMetric is cluster-scoped: dynamic client calls use no namespace.
-//
-// Static seeding only: dynamic periodic NodeMetric updates are a Phase 3
-// stretch goal per the execution plan and mentor confirmation.
 package loadaware
 
 import (
@@ -50,6 +56,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -88,7 +95,7 @@ func init() {
 // clear signal to route pods toward the low-utilization nodes.
 type LoadAwareScenario struct {
 	namespace    string
-	lowUtilNodes map[string]bool     // populated in Setup, used in Augment
+	lowUtilNodes map[string]bool      // populated in Setup, used in Augment
 	client       kubernetes.Interface // stored in Setup, used by Augment
 }
 
@@ -143,8 +150,8 @@ func (s *LoadAwareScenario) Setup(
 	})
 
 	highPct := cfg.HighUtilCPUPct
-	if highPct == 0 {
-		highPct = 80 // default when HighUtilNodeCount > 0 and HighUtilCPUPct is unset
+	if highPct == 0 && cfg.HighUtilNodeCount > 0 {
+		highPct = 80 // 0 means "unset"; default to 80 only when high-util nodes are requested
 	}
 
 	s.lowUtilNodes = make(map[string]bool, len(nodes.Items))
@@ -229,24 +236,25 @@ func createNodeMetric(
 	return created, nil
 }
 
-// setNodeMetricStatus writes the simulated CPU usage into the NodeMetric's
-// status subresource. NodeMetric.status is a subresource — Create() drops the
-// status field, so an explicit UpdateStatus() is required.
+// buildNodeMetricStatus returns the status payload for a NodeMetric object.
 //
-// The JSON path for the LoadAware plugin to read:
+// updateTime is stamped with the current UTC time — isNodeMetricExpired() in
+// pkg/scheduler/plugins/loadaware/helper.go returns true (and Score short-
+// circuits to 0) whenever Status.UpdateTime is nil, making the scenario a
+// no-op without it.
+//
+// The JSON path read by the LoadAware plugin:
 //
 //	status.nodeMetric.nodeUsage.resources.cpu
 //
 // where "resources" is the JSON tag for ResourceMap.ResourceList (not
 // "resourceList" — see apis/slo/v1alpha1/resources.go).
-func setNodeMetricStatus(
-	ctx context.Context,
-	dynClient dynamic.Interface,
-	nm *unstructured.Unstructured,
-	cpuUsageMilli int64,
-) (*unstructured.Unstructured, error) {
+func buildNodeMetricStatus(cpuUsageMilli int64) map[string]interface{} {
 	cpuQty := resource.NewMilliQuantity(cpuUsageMilli, resource.DecimalSI)
-	status := map[string]interface{}{
+	return map[string]interface{}{
+		// updateTime is required — isNodeMetricExpired returns true when nil,
+		// causing Score to short-circuit and return 0 for every node.
+		"updateTime": time.Now().UTC().Format(time.RFC3339),
 		"nodeMetric": map[string]interface{}{
 			"nodeUsage": map[string]interface{}{
 				// "resources" is the JSON tag for ResourceMap.ResourceList —
@@ -258,6 +266,18 @@ func setNodeMetricStatus(
 			},
 		},
 	}
+}
+
+// setNodeMetricStatus writes the simulated CPU usage into the NodeMetric's
+// status subresource. NodeMetric.status is a subresource — Create() drops the
+// status field, so an explicit UpdateStatus() is required.
+func setNodeMetricStatus(
+	ctx context.Context,
+	dynClient dynamic.Interface,
+	nm *unstructured.Unstructured,
+	cpuUsageMilli int64,
+) (*unstructured.Unstructured, error) {
+	status := buildNodeMetricStatus(cpuUsageMilli)
 	if err := unstructured.SetNestedField(nm.Object, status, "status"); err != nil {
 		return nil, fmt.Errorf("failed to build NodeMetric status for %q: %w", nm.GetName(), err)
 	}
