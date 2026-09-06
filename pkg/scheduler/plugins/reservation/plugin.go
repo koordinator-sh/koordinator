@@ -317,22 +317,26 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 		return fwktype.Queue, nil
 	}
 	// A reservation is only matchable for allocation (ReservationInfo.IsMatchable)
-	// once it reaches the Available phase. Add consumes node resources rather
-	// than releasing them, so only waiters that can consume the new
-	// reservation benefit: affinity-annotated waiters, or waiters matched by
-	// its owner selectors.
+	// once it reaches the Available phase. An unallocated one adds consumable
+	// capacity rather than releasing anything, so only waiters that can consume
+	// it benefit: affinity-annotated waiters, or waiters its owner selectors
+	// match.
 	//
-	// The same-phase Available branch below deliberately does NOT gate on that
-	// relationship, because an update can grow the allocation this plugin
-	// subtracts from the node's requested total, which helps unrelated waiters
-	// too. An Add cannot: a reservation arriving with a non-empty
-	// status.allocated would have the same effect, but the informer only
-	// delivers an already-allocated reservation as an Add during the initial
-	// list (a relist arrives as Sync deltas, i.e. updates), and at that point
-	// this plugin has not rejected any waiter yet.
+	// An allocated one is different, and an Add can carry one. processDeltas
+	// turns a Sync, Replaced, Added or Updated delta into OnAdd whenever the
+	// object is absent from the local store, so a relist can deliver a
+	// reservation that has been allocated for a while, and its accounting
+	// reaches this plugin for the first time here. By the argument in the
+	// Available branch below, that can admit waiters which cannot consume this
+	// reservation at all.
 	if oldR == nil {
-		if reservationutil.IsReservationAvailable(newR) &&
-			(podUsesReservation(pod) || reservationOwnerMatches(pod, newR)) {
+		if !reservationutil.IsReservationAvailable(newR) {
+			return fwktype.QueueSkip, nil
+		}
+		if !quotav1.IsZero(newR.Status.Allocated) || len(newR.Status.CurrentOwners) > 0 {
+			return fwktype.Queue, nil
+		}
+		if podUsesReservation(pod) || reservationOwnerMatches(pod, newR) {
 			return fwktype.Queue, nil
 		}
 		return fwktype.QueueSkip, nil
@@ -393,16 +397,23 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 	if !apiequality.Semantic.DeepEqual(oldR.Status.Allocatable, newR.Status.Allocatable) {
 		return fwktype.Queue, nil
 	}
-	// A release of allocated capacity is deliberately not gated on consumer
-	// relevance. It is the only registered event that can report allocation
-	// released through Pod Update paths (terminal transitions, allocation
-	// annotation moves, in-place resizes), though the controller does not
-	// always shrink status.allocated promptly for those - see #3151. Under the
-	// restricted allocate policy the
-	// reservation's allocation accounting is masked to a subset of resource
-	// names, so a release does not necessarily cancel out against the
-	// node-level requests of the pod that released it.
-	if reservationFreeCapacityIncreased(oldR, newR) {
+	// Any change to the reservation's accounting requeues, in either
+	// direction and without gating on consumer relevance.
+	//
+	// A release frees reservation capacity for waiters matched to it. Growth
+	// helps waiters that cannot consume this reservation at all: once a bound
+	// pod is associated with it, restoreUnmatchedReservations subtracts the
+	// larger Allocated from the node's requested total
+	// (updateNodeInfoRequestedForUnmatched), which removes more of the double
+	// counting between the reservation and its owner pods and can turn a
+	// node-level rejection into a fit.
+	//
+	// CurrentOwners is compared separately because it is a separate limit.
+	// fitsReservation rejects on len(AssignedPods)+1 > allocatable pods, so a
+	// pod slot can be released while the allocated quantities stay equal. The
+	// controller compares the two the same way when it decides to write.
+	if !quotav1.Equals(oldR.Status.Allocated, newR.Status.Allocated) ||
+		!apiequality.Semantic.DeepEqual(oldR.Status.CurrentOwners, newR.Status.CurrentOwners) {
 		return fwktype.Queue, nil
 	}
 	// An update that keeps the reservation Available can still change the
@@ -425,12 +436,13 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 	//     grow Allocated - see #3155 - but the wake-up must not depend on that
 	//     bug). Growing that subtraction can make a
 	//     pod fit that has no relationship to this reservation at all - the same
-	//     reason reservationFreeCapacityIncreased above is ungated;
+	//     reason the accounting comparison above is ungated;
 	//   - an Available reservation's reserve pod is in the scheduler cache, and
 	//     it carries the reservation's labels, so other pods' inter-pod affinity
 	//     and topology spread are evaluated against them.
-	// Capacity release is handled ungated above; allocation growth and pure
-	// status heartbeats cannot help a pending pod, so they are skipped.
+	// Accounting changes are handled ungated above; a status write that moves
+	// neither Allocated nor CurrentOwners, such as the condition refresh this
+	// scheduler records after every attempt, is skipped.
 	if oldR.Generation != newR.Generation {
 		return fwktype.Queue, nil
 	}
@@ -439,38 +451,6 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 		return fwktype.Queue, nil
 	}
 	return fwktype.QueueSkip, nil
-}
-
-// reservationFreeCapacityIncreased reports whether any resource gained free
-// capacity (status.allocatable minus status.allocated) in the update. The
-// caller checks allocatable inequality first, so in practice this reduces to
-// status.allocated shrinking in some dimension. That field is not a Filter
-// input (the cache tracks allocation via pod events and the controller
-// derives status.allocated from it), and for actual Pod Delete events this
-// wake is redundant with the pod-deletion hint - but it is the only
-// registered wake-up for allocation released through Pod UPDATE paths
-// (terminal transitions, allocation annotation moves, in-place request
-// changes), which this plugin does not register directly.
-func reservationFreeCapacityIncreased(oldR, newR *schedulingv1alpha1.Reservation) bool {
-	oldFree := quotav1.Subtract(oldR.Status.Allocatable, oldR.Status.Allocated)
-	newFree := quotav1.Subtract(newR.Status.Allocatable, newR.Status.Allocated)
-	for name, newVal := range newFree {
-		oldVal := oldFree[name] // zero quantity when absent
-		if newVal.Cmp(oldVal) > 0 {
-			return true
-		}
-	}
-	for name, oldVal := range oldFree {
-		if _, ok := newFree[name]; ok {
-			continue
-		}
-		// The resource vanished from the new maps entirely: its free capacity
-		// went from oldVal to zero, an increase when oldVal was negative.
-		if oldVal.Sign() < 0 {
-			return true
-		}
-	}
-	return false
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.

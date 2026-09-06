@@ -492,8 +492,9 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 	availableAllocatedReleased.Status.Allocated = corev1.ResourceList{
 		corev1.ResourceCPU: resource.MustParse("1"),
 	}
-	// An allocated resource that is absent from allocatable carries negative
-	// free capacity; its disappearance is still a release.
+	// A resource present in allocated but not in allocatable. Its
+	// disappearance changes status.allocated, so it is still an accounting
+	// change.
 	availableExtraAllocated := availableFreeNone.DeepCopy()
 	availableExtraAllocated.Status.Allocated = corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("2"),
@@ -516,6 +517,17 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 	availableAllocatedLow.Status.Allocated = corev1.ResourceList{
 		corev1.ResourceCPU: resource.MustParse("2"),
 	}
+	availableAllocatedZero := availableReservation.DeepCopy()
+	// Two owners whose tracked requests are both zero, so releasing one frees a
+	// pod slot without moving any allocated quantity.
+	availableTwoOwners := availableReservation.DeepCopy()
+	availableTwoOwners.Status.Allocated = corev1.ResourceList{}
+	availableTwoOwners.Status.CurrentOwners = []corev1.ObjectReference{
+		{Kind: "Pod", Namespace: "default", Name: "owner-a", UID: "owner-a"},
+		{Kind: "Pod", Namespace: "default", Name: "owner-b", UID: "owner-b"},
+	}
+	availableOneOwner := availableTwoOwners.DeepCopy()
+	availableOneOwner.Status.CurrentOwners = availableTwoOwners.Status.CurrentOwners[:1]
 	// Owners widened while Available: the old spec targeted another app, the
 	// new spec targets the waiter's app, and the spec change bumped the
 	// generation.
@@ -697,7 +709,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "status.allocatable grew while Available, free capacity increased, requeue",
+			name: "status.allocatable grew while Available, requeue",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w-allocatable"),
 				oldObj:     availableFreeNone,
@@ -706,7 +718,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "allocatable and allocated both changed but net free capacity grew, requeue",
+			name: "allocatable and allocated both changed while Available, requeue",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w-netfree"),
 				oldObj:     availableFreeNone,
@@ -925,11 +937,51 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "allocated capacity only grew while Available, cannot help the waiter, skip",
+			// Growth is not a reason to skip. Associating an already-bound pod
+			// with a reservation raises Allocated without changing that pod's
+			// requests, and restoreUnmatchedReservations then subtracts the
+			// larger amount from the node's requested total, which can admit a
+			// waiter that has no relationship to this reservation at all.
+			name: "allocated capacity grew while Available, requeue an unrelated waiter",
 			args: args{
-				waitingPod: makeWaitingPodUsingReservation("w-grew"),
+				waitingPod: makeWaitingPodNoReservation("w-grew-unrelated"),
 				oldObj:     availableAllocatedLow,
 				newObj:     availableAllocatedHigh,
+			},
+			expectedHint: fwktype.Queue,
+		},
+		{
+			// A pod slot is a separate limit from the allocated quantities:
+			// fitsReservation rejects on len(AssignedPods)+1 > allocatable
+			// pods. The controller compares CurrentOwners and Allocated
+			// separately for the same reason.
+			name: "current owners changed while the allocated quantities did not, requeue",
+			args: args{
+				waitingPod: makeWaitingPodNoReservation("w-owner-slot"),
+				oldObj:     availableTwoOwners,
+				newObj:     availableOneOwner,
+			},
+			expectedHint: fwktype.Queue,
+		},
+		{
+			// A relist delivers OnAdd for an object the local store does not
+			// have, so an Add can carry a reservation that has been allocated
+			// for a while. Its accounting reaches this plugin for the first
+			// time here.
+			name: "add of an already allocated reservation requeues an unrelated waiter",
+			args: args{
+				waitingPod: makeWaitingPodNoReservation("w-late-add"),
+				oldObj:     nil,
+				newObj:     availableAllocatedHigh,
+			},
+			expectedHint: fwktype.Queue,
+		},
+		{
+			name: "add of an unallocated reservation still skips an unrelated waiter",
+			args: args{
+				waitingPod: makeWaitingPodNoReservation("w-plain-add"),
+				oldObj:     nil,
+				newObj:     availableAllocatedZero,
 			},
 			expectedHint: fwktype.QueueSkip,
 		},
@@ -1135,6 +1187,19 @@ func TestPlugin_QueueingHint_ReservationChange_UnstructuredParity(t *testing.T) 
 	now := metav1.Now()
 	deletingNew.DeletionTimestamp = &now
 
+	allocGrewOld := newReservation("r-alloc", schedulingv1alpha1.ReservationAvailable)
+	allocGrewOld.Status.Allocated = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}
+	allocGrewNew := allocGrewOld.DeepCopy()
+	allocGrewNew.Status.Allocated = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")}
+
+	ownersOld := newReservation("r-owners", schedulingv1alpha1.ReservationAvailable)
+	ownersOld.Status.CurrentOwners = []corev1.ObjectReference{
+		{Kind: "Pod", Namespace: "default", Name: "o-a", UID: "o-a"},
+		{Kind: "Pod", Namespace: "default", Name: "o-b", UID: "o-b"},
+	}
+	ownersNew := ownersOld.DeepCopy()
+	ownersNew.Status.CurrentOwners = ownersOld.Status.CurrentOwners[:1]
+
 	tests := []struct {
 		name   string
 		waiter *corev1.Pod
@@ -1150,6 +1215,10 @@ func TestPlugin_QueueingHint_ReservationChange_UnstructuredParity(t *testing.T) 
 		{"phase transition", unrelated, phaseOld, phaseNew, fwktype.Queue},
 		{"entering deletion", unrelated, deletingOld, deletingNew, fwktype.Queue},
 		{"delete", unrelated, availableOld, nil, fwktype.Queue},
+		{"allocation growth, unrelated waiter", unrelated, allocGrewOld, allocGrewNew, fwktype.Queue},
+		{"allocation release, unrelated waiter", unrelated, allocGrewNew, allocGrewOld, fwktype.Queue},
+		{"owners released, quantities unchanged", unrelated, ownersOld, ownersNew, fwktype.Queue},
+		{"add of an already allocated reservation", unrelated, nil, allocGrewNew, fwktype.Queue},
 	}
 
 	suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
@@ -1203,4 +1272,61 @@ func TestPlugin_QueueingHint_ReservationChange_UnstructuredParity(t *testing.T) 
 		assert.NoError(t, err)
 		assert.Equal(t, fwktype.Queue, got)
 	})
+}
+
+// The typed benchmarks above measure the predicate alone. These two add the
+// decoding the dynamic informer actually forces on every event: the fixtures
+// are converted outside the timer, so what is measured is the
+// FromUnstructured the callback itself performs.
+func BenchmarkIsSchedulableAfterReservationChange_UnstructuredHeartbeat(b *testing.B) {
+	pl := &Plugin{}
+	r := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-bench-u-hb", UID: "r-bench-u-hb", Generation: 1},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Owners: []schedulingv1alpha1.ReservationOwner{{
+				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "demo"}},
+			}},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationAvailable, NodeName: "node-1"},
+	}
+	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(r)
+	if err != nil {
+		b.Fatal(err)
+	}
+	event := &unstructured.Unstructured{Object: object}
+	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "w-u-hb", Namespace: "default", UID: "w-u-hb"}}
+	logger := klog.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, event, event)
+		if err != nil || hint != fwktype.QueueSkip {
+			b.Fatalf("unstructured heartbeat path not exercised: hint=%v, err=%v", hint, err)
+		}
+	}
+}
+
+func BenchmarkIsSchedulableAfterReservationChange_UnstructuredAllocatedAdd(b *testing.B) {
+	pl := &Plugin{}
+	r := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-bench-u-add", UID: "r-bench-u-add", Generation: 1},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:     schedulingv1alpha1.ReservationAvailable,
+			NodeName:  "node-1",
+			Allocated: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
+		},
+	}
+	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(r)
+	if err != nil {
+		b.Fatal(err)
+	}
+	event := &unstructured.Unstructured{Object: object}
+	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "w-u-add", Namespace: "default", UID: "w-u-add"}}
+	logger := klog.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, nil, event)
+		if err != nil || hint != fwktype.Queue {
+			b.Fatalf("unstructured allocated-add path not exercised: hint=%v, err=%v", hint, err)
+		}
+	}
 }
