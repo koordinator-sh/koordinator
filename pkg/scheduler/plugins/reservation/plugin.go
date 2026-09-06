@@ -29,6 +29,7 @@ import (
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -40,7 +41,6 @@ import (
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	schedutil "k8s.io/kubernetes/pkg/scheduler/util"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -244,51 +244,68 @@ func reservationOwnerMatches(pod *corev1.Pod, r *schedulingv1alpha1.Reservation)
 	return reservationutil.MatchReservationOwners(pod, matchers)
 }
 
-func (pl *Plugin) isSchedulableAfterPodDeletion(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	if _, isTombstone := oldObj.(clientcache.DeletedFinalStateUnknown); isTombstone {
-		// A tombstone carries the last object the store held, which can predate
-		// the pod's binding, so the placement fields below cannot be trusted to
-		// prove that the pod held nothing. Tombstones only appear on a missed
-		// delete, so being unconditional here costs almost nothing.
-		return fwktype.Queue, nil
-	}
-	deletedPod, _, err := schedutil.As[*corev1.Pod](oldObj, newObj)
-	if err != nil {
-		logger.Error(err, "Failed to convert oldObj to Pod in isSchedulableAfterPodDeletion", "oldObj", oldObj, "newObj", newObj)
-		return fwktype.Queue, nil
-	}
-	if deletedPod == nil {
-		return fwktype.Queue, nil
-	}
-	// A deleted reserve pod means its reservation stopped occupying node
-	// resources (deleted, expired, or moved out of Available). The freed
-	// capacity can lift this plugin's node-level fit rejections
-	// (fitsNodeAndReservation) even for waiters matched to a different
-	// reservation on the same node, and the terminal Reservation object may
-	// linger long before GC, so do not defer to the Reservation Delete event.
-	if reservationutil.IsReservePod(deletedPod) {
-		return fwktype.Queue, nil
-	}
-	if deletedPod.Spec.NodeName == "" && deletedPod.Status.NominatedNodeName == "" {
-		// A pod that neither bound nor got nominated held no node resources,
-		// no reservation capacity, and no preemptible accounting.
-		return fwktype.QueueSkip, nil
-	}
-	// Deleting a bound or nominated pod frees node-level resources that this
-	// plugin's Filter accounts for: fitsNodeAndReservation for waiters
-	// matched to a reservation on the node, and the nominated-pod
-	// (preemptible) branch of fitsNode, which can reject a waiter with no
-	// reservation relationship on a node without reservations. The latter
-	// leaves no signal the hint could re-check here (nominations may have
-	// been cleared since the rejection), so any narrower filter risks false
-	// QueueSkip; such deletions therefore always requeue.
+// isSchedulableAfterPodDeletion requeues every waiter this plugin rejected.
+//
+// The event object cannot narrow that down. The scheduler unwraps a
+// DeletedFinalStateUnknown before notifying the queue and passes the carried
+// pod on, which it documents as possibly stale, while cache.RemovePod removes
+// the pod the cache holds and treats an empty Spec.NodeName as a missed delete
+// rather than as proof the pod held nothing. Empty placement fields therefore
+// do not show that no node capacity was released.
+func (pl *Plugin) isSchedulableAfterPodDeletion(_ klog.Logger, _ *corev1.Pod, _, _ interface{}) (fwktype.QueueingHint, error) {
 	return fwktype.Queue, nil
 }
 
+// reservationForQueueingHint decodes an object delivered to the Reservation
+// QueueingHintFn. The scheduler resolves this plugin's event resource through
+// the dynamic informer, which hands out *unstructured.Unstructured, so a plain
+// type assertion never matches a real event. ElasticQuota decodes the same way
+// in toElasticQuota; this one keeps the error rather than collapsing to nil,
+// because the caller has to tell a genuinely absent old object, which is an
+// Add, apart from one it failed to decode.
+func reservationForQueueingHint(obj interface{}) (*schedulingv1alpha1.Reservation, error) {
+	var u *unstructured.Unstructured
+	switch t := obj.(type) {
+	case nil:
+		return nil, nil
+	case *schedulingv1alpha1.Reservation:
+		return t, nil
+	case *unstructured.Unstructured:
+		if t == nil {
+			return nil, nil
+		}
+		u = t
+	case clientcache.DeletedFinalStateUnknown:
+		switch inner := t.Obj.(type) {
+		case *schedulingv1alpha1.Reservation:
+			return inner, nil
+		case *unstructured.Unstructured:
+			u = inner
+		default:
+			return nil, fmt.Errorf("expected a Reservation in the tombstone, got %T", t.Obj)
+		}
+	default:
+		return nil, fmt.Errorf("expected a Reservation or an unstructured object, got %T", obj)
+	}
+	if u == nil || u.Object == nil {
+		return nil, errors.New("the reservation event carries no object content")
+	}
+	r := &schedulingv1alpha1.Reservation{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, r); err != nil {
+		return nil, fmt.Errorf("decode the reservation event: %w", err)
+	}
+	return r, nil
+}
+
 func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	oldR, newR, err := schedutil.As[*schedulingv1alpha1.Reservation](oldObj, newObj)
+	oldR, err := reservationForQueueingHint(oldObj)
 	if err != nil {
-		logger.Error(err, "Failed to convert obj to Reservation in isSchedulableAfterReservationChange", "oldObj", oldObj, "newObj", newObj)
+		logger.Error(err, "Failed to decode the old Reservation in isSchedulableAfterReservationChange", "oldObj", oldObj)
+		return fwktype.Queue, nil
+	}
+	newR, err := reservationForQueueingHint(newObj)
+	if err != nil {
+		logger.Error(err, "Failed to decode the new Reservation in isSchedulableAfterReservationChange", "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	// Delete removes the reserve pod from the scheduler cache and returns its

@@ -22,9 +22,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientcache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
@@ -87,13 +90,36 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 			assert.Equal(t, fwktype.Delete, podEvent.Event.ActionType)
 			assert.Equal(t, fwktype.Add|fwktype.Update|fwktype.Delete, reservationEvent.Event.ActionType)
 
-			if tt.expectHintFn {
-				assert.NotNil(t, podEvent.QueueingHintFn)
-				assert.NotNil(t, reservationEvent.QueueingHintFn)
-			} else {
+			if !tt.expectHintFn {
 				assert.Nil(t, podEvent.QueueingHintFn)
 				assert.Nil(t, reservationEvent.QueueingHintFn)
+				return
 			}
+			require.NotNil(t, podEvent.QueueingHintFn)
+			require.NotNil(t, reservationEvent.QueueingHintFn)
+
+			// "Non-nil" alone would still pass if the two callbacks were
+			// swapped. The pod hint answers Queue unconditionally, so only the
+			// Reservation registration can tell them apart: a Pending Add is
+			// QueueSkip from the reservation callback and Queue from the pod
+			// one. The unstructured payload is what the dynamic informer
+			// actually delivers.
+			logger := klog.Background()
+			waiter := makeWaitingPodNoReservation("waiter")
+
+			hint, err := podEvent.QueueingHintFn(logger, waiter, makeWaitingPodNoReservation("deleted-unbound"), nil)
+			assert.NoError(t, err)
+			assert.Equal(t, fwktype.Queue, hint, "Pod/Delete requeues unconditionally")
+
+			pendingAdd, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "r-wiring", UID: "r-wiring"},
+				Status:     schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationPending},
+			})
+			require.NoError(t, err)
+			hint, err = reservationEvent.QueueingHintFn(logger, waiter, nil, &unstructured.Unstructured{Object: pendingAdd})
+			assert.NoError(t, err)
+			assert.Equal(t, fwktype.QueueSkip, hint,
+				"Reservation Add|Update|Delete must be wired to isSchedulableAfterReservationChange")
 		})
 	}
 }
@@ -185,12 +211,16 @@ func TestPlugin_QueueingHint_IsSchedulableAfterPodDeletion(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "deleted pod never bound, held no node resources, skip",
+			// The scheduler unwraps a tombstone before notifying the queue, so
+			// a pod with empty placement fields reaches the hint as a plain
+			// *v1.Pod and may still be the stale copy of a pod the cache just
+			// removed from a node. It cannot be skipped on those fields.
+			name: "stale unwrapped delete with empty placement still requeues",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w4"),
 				oldObj:     makeWaitingPodNoReservation("deleted-normal"),
 			},
-			expectedHint: fwktype.QueueSkip,
+			expectedHint: fwktype.Queue,
 		},
 		{
 			name: "any bound pod deletion frees node-level capacity, requeue",
@@ -922,19 +952,49 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 }
 
 // The QueueingHintFns run once per event per waiter this plugin rejected, so
-// their per-call cost bounds the scheduler's event-processing throughput.
-// The owner-only path is the most expensive one: it parses the owner
-// matchers of both the old and the new object.
-func BenchmarkIsSchedulableAfterReservationChange_OwnerOnlyWaiter(b *testing.B) {
+// their per-call cost bounds event processing. Only the Add branch reaches
+// reservationOwnerMatches, which builds a selector per Spec.Owners entry;
+// every Update short-circuits before it.
+func BenchmarkIsSchedulableAfterReservationChange_ReservationAddOwnerOnlyWaiter(b *testing.B) {
 	pl := &Plugin{}
 	owners := make([]schedulingv1alpha1.ReservationOwner, 0, 8)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
+		owners = append(owners, schedulingv1alpha1.ReservationOwner{
+			LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{fmt.Sprintf("app-%d", i): "demo"}},
+		})
+	}
+	r := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-bench", UID: "r-bench", Generation: 1},
+		Spec:       schedulingv1alpha1.ReservationSpec{Owners: owners},
+		Status:     schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationAvailable, NodeName: "node-1"},
+	}
+	// No reservation-affinity annotation, so podUsesReservation is false, and
+	// the matching selector is the last one, so all of them are built.
+	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: "w", Namespace: "default", UID: "w", Labels: map[string]string{"app-7": "demo"},
+	}}
+	logger := klog.Background()
+	b.ReportAllocs()
+	for b.Loop() {
+		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, nil, r)
+		if err != nil || hint != fwktype.Queue {
+			b.Fatalf("owner-matching path not exercised: hint=%v, err=%v", hint, err)
+		}
+	}
+}
+
+// The spec-update fast path the same waiter takes, which returns on the
+// generation check before any owner selector is built.
+func BenchmarkIsSchedulableAfterReservationChange_GenerationBump(b *testing.B) {
+	pl := &Plugin{}
+	owners := make([]schedulingv1alpha1.ReservationOwner, 0, 8)
+	for i := range 8 {
 		owners = append(owners, schedulingv1alpha1.ReservationOwner{
 			LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{fmt.Sprintf("app-%d", i): "demo"}},
 		})
 	}
 	oldR := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{Name: "r-bench", UID: "r-bench", Generation: 1},
+		ObjectMeta: metav1.ObjectMeta{Name: "r-bench-gen", UID: "r-bench-gen", Generation: 1},
 		Spec:       schedulingv1alpha1.ReservationSpec{Owners: owners},
 		Status:     schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationAvailable, NodeName: "node-1"},
 	}
@@ -944,9 +1004,12 @@ func BenchmarkIsSchedulableAfterReservationChange_OwnerOnlyWaiter(b *testing.B) 
 		Name: "w", Namespace: "default", UID: "w", Labels: map[string]string{"app-7": "demo"},
 	}}
 	logger := klog.Background()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = pl.isSchedulableAfterReservationChange(logger, waiter, oldR, newR)
+	b.ReportAllocs()
+	for b.Loop() {
+		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, oldR, newR)
+		if err != nil || hint != fwktype.Queue {
+			b.Fatalf("unexpected hint result: hint=%v, err=%v", hint, err)
+		}
 	}
 }
 
@@ -965,9 +1028,12 @@ func BenchmarkIsSchedulableAfterReservationChange_StatusHeartbeat(b *testing.B) 
 	}
 	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "w-hb", Namespace: "default", UID: "w-hb"}}
 	logger := klog.Background()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, _ = pl.isSchedulableAfterReservationChange(logger, waiter, r, r)
+	b.ReportAllocs()
+	for b.Loop() {
+		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, r, r)
+		if err != nil || hint != fwktype.QueueSkip {
+			b.Fatalf("status-heartbeat path not exercised: hint=%v, err=%v", hint, err)
+		}
 	}
 }
 
@@ -1008,4 +1074,133 @@ func TestReservationOwnerMatches(t *testing.T) {
 	assert.False(t, reservationOwnerMatches(pod, nonMatching))
 	assert.False(t, reservationOwnerMatches(pod, unparsable),
 		"unparsable owners must not claim the pod, matching ReservationInfo.MatchOwners")
+}
+
+// The scheduler resolves this plugin's event resource through the dynamic
+// informer, so real Reservation events arrive as *unstructured.Unstructured.
+// Every case is driven through the registered callback in both shapes and must
+// answer identically; without the decoder the unstructured half falls into the
+// type-error fallback and answers Queue for all of them, so the QueueSkip cases
+// below are the ones that actually pin the behaviour.
+func TestPlugin_QueueingHint_ReservationChange_UnstructuredParity(t *testing.T) {
+	toUnstructured := func(t *testing.T, r *schedulingv1alpha1.Reservation) interface{} {
+		t.Helper()
+		if r == nil {
+			return nil
+		}
+		object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(r)
+		require.NoError(t, err)
+		return &unstructured.Unstructured{Object: object}
+	}
+
+	newReservation := func(name string, phase schedulingv1alpha1.ReservationPhase) *schedulingv1alpha1.Reservation {
+		return &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(name), Generation: 1},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Owners: []schedulingv1alpha1.ReservationOwner{{
+					LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "owned"}},
+				}},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{Phase: phase, NodeName: "node-1"},
+		}
+	}
+	ownerMatched := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: "owner-matched", Namespace: "default", UID: "owner-matched",
+		Labels: map[string]string{"app": "owned"},
+	}}
+	unrelated := makeWaitingPodNoReservation("unrelated")
+
+	pendingOld := newReservation("r-pending", schedulingv1alpha1.ReservationPending)
+	pendingNew := pendingOld.DeepCopy()
+	pendingNew.Status.Conditions = []schedulingv1alpha1.ReservationCondition{{
+		Reason: schedulingv1alpha1.ReasonReservationUnschedulable, LastProbeTime: metav1.Now(),
+	}}
+
+	availableOld := newReservation("r-available", schedulingv1alpha1.ReservationAvailable)
+	availableNew := availableOld.DeepCopy()
+	availableNew.Status.Conditions = []schedulingv1alpha1.ReservationCondition{{
+		Reason: schedulingv1alpha1.ReasonReservationAvailable, LastProbeTime: metav1.Now(),
+	}}
+
+	replacedOld := newReservation("r-replaced", schedulingv1alpha1.ReservationPending)
+	replacedNew := replacedOld.DeepCopy()
+	replacedNew.UID = "r-replaced-2"
+
+	phaseOld := newReservation("r-phase", schedulingv1alpha1.ReservationPending)
+	phaseNew := phaseOld.DeepCopy()
+	phaseNew.Status.Phase = schedulingv1alpha1.ReservationAvailable
+
+	deletingOld := newReservation("r-deleting", schedulingv1alpha1.ReservationPending)
+	deletingNew := deletingOld.DeepCopy()
+	now := metav1.Now()
+	deletingNew.DeletionTimestamp = &now
+
+	tests := []struct {
+		name   string
+		waiter *corev1.Pod
+		oldR   *schedulingv1alpha1.Reservation
+		newR   *schedulingv1alpha1.Reservation
+		want   fwktype.QueueingHint
+	}{
+		{"pending status-only update", unrelated, pendingOld, pendingNew, fwktype.QueueSkip},
+		{"available heartbeat", unrelated, availableOld, availableNew, fwktype.QueueSkip},
+		{"available add, unrelated waiter", unrelated, nil, availableOld, fwktype.QueueSkip},
+		{"available add, owner-only waiter", ownerMatched, nil, availableOld, fwktype.Queue},
+		{"uid replacement", unrelated, replacedOld, replacedNew, fwktype.Queue},
+		{"phase transition", unrelated, phaseOld, phaseNew, fwktype.Queue},
+		{"entering deletion", unrelated, deletingOld, deletingNew, fwktype.Queue},
+		{"delete", unrelated, availableOld, nil, fwktype.Queue},
+	}
+
+	suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+		args.EnableQueueHint = true
+	})
+	p, err := suit.pluginFactory()
+	require.NoError(t, err)
+	pl := p.(*Plugin)
+	events, err := pl.EventsToRegister(context.TODO())
+	require.NoError(t, err)
+	var hintFn fwktype.QueueingHintFn
+	for i := range events {
+		if events[i].Event.Resource != fwktype.Pod {
+			hintFn = events[i].QueueingHintFn
+		}
+	}
+	require.NotNil(t, hintFn)
+	logger := klog.Background()
+
+	for _, tt := range tests {
+		t.Run(tt.name+"/typed", func(t *testing.T) {
+			var oldObj, newObj interface{}
+			if tt.oldR != nil {
+				oldObj = tt.oldR
+			}
+			if tt.newR != nil {
+				newObj = tt.newR
+			}
+			got, err := hintFn(logger, tt.waiter, oldObj, newObj)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+		t.Run(tt.name+"/unstructured", func(t *testing.T) {
+			got, err := hintFn(logger, tt.waiter, toUnstructured(t, tt.oldR), toUnstructured(t, tt.newR))
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+
+	t.Run("unstructured tombstone requeues", func(t *testing.T) {
+		got, err := hintFn(logger, unrelated,
+			clientcache.DeletedFinalStateUnknown{Key: "r-available", Obj: toUnstructured(t, availableOld)}, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, fwktype.Queue, got)
+	})
+
+	t.Run("undecodable payload requeues", func(t *testing.T) {
+		got, err := hintFn(logger, unrelated, nil, &unstructured.Unstructured{
+			Object: map[string]interface{}{"status": map[string]interface{}{"phase": 42}},
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, fwktype.Queue, got)
+	})
 }
