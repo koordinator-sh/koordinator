@@ -41,6 +41,20 @@ jobs:
           install_only: true
           version: "v0.22.0"
 
+      # Pre-install kustomize v3.8.7 into bin/ so the Makefile's $(KUSTOMIZE)
+      # target finds it already there and skips its download recipe.
+      # The recipe uses install_kustomize.sh which fetches from GitHub raw
+      # content — unauthenticated requests are rate-limited at 60/hr per IP
+      # on shared runners. Downloading directly from GitHub Releases avoids
+      # that limit entirely.
+      - name: Pre-install kustomize
+        run: |
+          mkdir -p bin
+          curl -sL \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv3.8.7/kustomize_v3.8.7_linux_amd64.tar.gz" \
+            | tar xz -C bin/
+          chmod +x bin/kustomize
+
       - name: Set up cluster
         run: make -C test/perf setup
 
