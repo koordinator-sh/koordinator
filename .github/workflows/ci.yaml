@@ -144,6 +144,12 @@ jobs:
         platforms: linux/amd64,linux/arm64
         push: true
         pull: true
+        # Aliyun ACR rejects the OCI 1.1 attestation manifests that newer
+        # BuildKit versions attach by default (denied: unknown manifest
+        # class for application/vnd.oci.empty.v1+json), which has failed
+        # every build-and-push on main since 2026-08-25.
+        provenance: false
+        sbom: false
         file: docker/${{ matrix.target }}.dockerfile
         labels: |
           org.opencontainers.image.title=${{ matrix.target }}
