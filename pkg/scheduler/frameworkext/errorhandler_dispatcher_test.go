@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -114,4 +115,91 @@ func TestErrorHandlerDispatcher(t *testing.T) {
 	assert.False(t, handler2Processed)
 	assert.False(t, afterHandler2Processed)
 	assert.False(t, enterDefaultHandler)
+}
+
+// TestErrorHandlerDispatcherReleasesInFlightPodOnSuppression verifies that when a
+// pre-handler filter suppresses the default failure handler, the dispatcher still
+// calls SchedulingQueue.Done() to release the pod's in-flight bookkeeping.
+// Otherwise the pod stays in inFlightPods forever, disables the pruning of
+// inFlightEvents, and all subsequent cluster events accumulate unboundedly,
+// leaking scheduler memory (see asi-release-v1.8.0 koord-scheduler OOM).
+func TestErrorHandlerDispatcherReleasesInFlightPodOnSuppression(t *testing.T) {
+	noOpHandler := func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) {
+	}
+
+	t.Run("suppressed failure releases the in-flight pod", func(t *testing.T) {
+		dispatcher := newErrorHandlerDispatcher()
+		defaultHandlerCalled := false
+		dispatcher.setDefaultHandler(func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) {
+			defaultHandlerCalled = true
+		})
+		queue := &FakeQueue{}
+		dispatcher.setSchedulingQueue(queue)
+		dispatcher.RegisterErrorHandlerFilters(func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) bool {
+			return true
+		}, nil)
+
+		podInfo := &framework.QueuedPodInfo{
+			PodInfo: &framework.PodInfo{
+				Pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "suppressed",
+						UID:  types.UID("suppressed-uid"),
+					},
+				},
+			},
+		}
+		dispatcher.Error(context.TODO(), nil, podInfo, nil, nil, time.Now())
+		assert.False(t, defaultHandlerCalled)
+		assert.Equal(t, []types.UID{types.UID("suppressed-uid")}, queue.DonePods)
+	})
+
+	t.Run("unsuppressed failure leaves Done to the default handler", func(t *testing.T) {
+		dispatcher := newErrorHandlerDispatcher()
+		defaultHandlerCalled := false
+		dispatcher.setDefaultHandler(func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) {
+			defaultHandlerCalled = true
+		})
+		queue := &FakeQueue{}
+		dispatcher.setSchedulingQueue(queue)
+		dispatcher.RegisterErrorHandlerFilters(func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) bool {
+			return false
+		}, nil)
+
+		podInfo := &framework.QueuedPodInfo{
+			PodInfo: &framework.PodInfo{
+				Pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "normal",
+						UID:  types.UID("normal-uid"),
+					},
+				},
+			},
+		}
+		dispatcher.Error(context.TODO(), nil, podInfo, nil, nil, time.Now())
+		assert.True(t, defaultHandlerCalled)
+		assert.Empty(t, queue.DonePods)
+	})
+
+	t.Run("suppression without a queue wired does not panic", func(t *testing.T) {
+		dispatcher := newErrorHandlerDispatcher()
+		dispatcher.setDefaultHandler(noOpHandler)
+		dispatcher.RegisterErrorHandlerFilters(func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) bool {
+			return true
+		}, nil)
+
+		podInfo := &framework.QueuedPodInfo{
+			PodInfo: &framework.PodInfo{
+				Pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "suppressed-no-queue",
+						UID:  types.UID("suppressed-no-queue-uid"),
+					},
+				},
+			},
+		}
+		assert.NotPanics(t, func() {
+			dispatcher.Error(context.TODO(), nil, podInfo, nil, nil, time.Now())
+		})
+	})
 }
