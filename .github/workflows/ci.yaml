@@ -83,7 +83,9 @@ jobs:
         token: ${{ secrets.CODECOV_TOKEN }}
         flags: unittests
         file: cover.out
-        fail_ci_if_error: true
+        # Dependabot PRs cannot access actions secrets, so the Codecov upload
+        # always fails on them and needlessly fails the unit-tests job.
+        fail_ci_if_error: ${{ github.actor != 'dependabot[bot]' }}
 
   build-and-push:
     needs: [ golangci-lint, unit-tests ]
