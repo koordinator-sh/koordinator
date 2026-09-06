@@ -32,6 +32,7 @@ import (
 	clientcache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
@@ -83,8 +84,8 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 					reservationEvent = &events[i]
 				}
 			}
-			assert.NotNil(t, podEvent, "Pod Delete event should be registered")
-			assert.NotNil(t, reservationEvent, "Reservation Add|Update|Delete event should be registered")
+			require.NotNil(t, podEvent, "Pod Delete event should be registered")
+			require.NotNil(t, reservationEvent, "Reservation Add|Update|Delete event should be registered")
 
 			// Action type is preserved regardless of the flag.
 			assert.Equal(t, fwktype.Delete, podEvent.Event.ActionType)
@@ -99,11 +100,10 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 			require.NotNil(t, reservationEvent.QueueingHintFn)
 
 			// "Non-nil" alone would still pass if the two callbacks were
-			// swapped. The pod hint answers Queue unconditionally, so only the
-			// Reservation registration can tell them apart: a Pending Add is
-			// QueueSkip from the reservation callback and Queue from the pod
-			// one. The unstructured payload is what the dynamic informer
-			// actually delivers.
+			// swapped. Both hints answer Queue for a delete and for an add, so
+			// the one input that separates them is a status heartbeat: the
+			// reservation callback skips it, the pod one would not. The
+			// unstructured payload is what the dynamic informer delivers.
 			logger := klog.Background()
 			waiter := makeWaitingPodNoReservation("waiter")
 
@@ -111,12 +111,15 @@ func TestPlugin_EventsToRegister(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, fwktype.Queue, hint, "Pod/Delete requeues unconditionally")
 
-			pendingAdd, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&schedulingv1alpha1.Reservation{
-				ObjectMeta: metav1.ObjectMeta{Name: "r-wiring", UID: "r-wiring"},
-				Status:     schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationPending},
+			heartbeat, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "r-wiring", UID: "r-wiring", Generation: 1},
+				Status: schedulingv1alpha1.ReservationStatus{
+					Phase: schedulingv1alpha1.ReservationAvailable, NodeName: "node-1",
+				},
 			})
 			require.NoError(t, err)
-			hint, err = reservationEvent.QueueingHintFn(logger, waiter, nil, &unstructured.Unstructured{Object: pendingAdd})
+			event := &unstructured.Unstructured{Object: heartbeat}
+			hint, err = reservationEvent.QueueingHintFn(logger, waiter, event, event)
 			assert.NoError(t, err)
 			assert.Equal(t, fwktype.QueueSkip, hint,
 				"Reservation Add|Update|Delete must be wired to isSchedulableAfterReservationChange")
@@ -561,13 +564,16 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "waiting pod is unrelated to reservations, skip all reservation changes",
+			// An Add is this observer's first sight of the reservation, not
+			// the moment it was created, so it cannot show that no nomination
+			// was released in the window this observer missed.
+			name: "add requeues a waiter unrelated to reservations",
 			args: args{
 				waitingPod: makeWaitingPodNoReservation("w2"),
 				oldObj:     nil,
 				newObj:     availableReservation,
 			},
-			expectedHint: fwktype.QueueSkip,
+			expectedHint: fwktype.Queue,
 		},
 		{
 			// A reserve pod is a waiter this plugin can reject too, and
@@ -592,22 +598,22 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "Add a not-yet-available reservation (pending), skip",
+			name: "add of a pending reservation requeues",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w4"),
 				oldObj:     nil,
 				newObj:     pendingReservation,
 			},
-			expectedHint: fwktype.QueueSkip,
+			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "Add a Waiting reservation is not yet matchable, skip",
+			name: "add of a waiting reservation requeues",
 			args: args{
 				waitingPod: makeWaitingPodUsingReservation("w4w"),
 				oldObj:     nil,
 				newObj:     waitingReservation,
 			},
-			expectedHint: fwktype.QueueSkip,
+			expectedHint: fwktype.Queue,
 		},
 		{
 			name: "Update from pending to available, requeue",
@@ -883,13 +889,13 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "owner-matched pod stays skipped when the affected reservation does not match its labels",
+			name: "add requeues even a waiter the reservation's owners do not target",
 			args: args{
 				waitingPod: ownerMatchedPod,
 				oldObj:     nil,
 				newObj:     availableReservation, // empty owners, does not target this pod
 			},
-			expectedHint: fwktype.QueueSkip,
+			expectedHint: fwktype.Queue,
 		},
 		{
 			name: "Available reservation spec updated (generation bumped), requeue",
@@ -977,13 +983,15 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			expectedHint: fwktype.Queue,
 		},
 		{
-			name: "add of an unallocated reservation still skips an unrelated waiter",
+			// Empty allocated and owners do not show that this observer saw the
+			// whole life of the reservation up to now.
+			name: "add of an unallocated reservation requeues an unrelated waiter",
 			args: args{
 				waitingPod: makeWaitingPodNoReservation("w-plain-add"),
 				oldObj:     nil,
 				newObj:     availableAllocatedZero,
 			},
-			expectedHint: fwktype.QueueSkip,
+			expectedHint: fwktype.Queue,
 		},
 	}
 
@@ -1000,38 +1008,6 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedHint, got)
 		})
-	}
-}
-
-// The QueueingHintFns run once per event per waiter this plugin rejected, so
-// their per-call cost bounds event processing. Only the Add branch reaches
-// reservationOwnerMatches, which builds a selector per Spec.Owners entry;
-// every Update short-circuits before it.
-func BenchmarkIsSchedulableAfterReservationChange_ReservationAddOwnerOnlyWaiter(b *testing.B) {
-	pl := &Plugin{}
-	owners := make([]schedulingv1alpha1.ReservationOwner, 0, 8)
-	for i := range 8 {
-		owners = append(owners, schedulingv1alpha1.ReservationOwner{
-			LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{fmt.Sprintf("app-%d", i): "demo"}},
-		})
-	}
-	r := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{Name: "r-bench", UID: "r-bench", Generation: 1},
-		Spec:       schedulingv1alpha1.ReservationSpec{Owners: owners},
-		Status:     schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationAvailable, NodeName: "node-1"},
-	}
-	// No reservation-affinity annotation, so podUsesReservation is false, and
-	// the matching selector is the last one, so all of them are built.
-	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-		Name: "w", Namespace: "default", UID: "w", Labels: map[string]string{"app-7": "demo"},
-	}}
-	logger := klog.Background()
-	b.ReportAllocs()
-	for b.Loop() {
-		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, nil, r)
-		if err != nil || hint != fwktype.Queue {
-			b.Fatalf("owner-matching path not exercised: hint=%v, err=%v", hint, err)
-		}
 	}
 }
 
@@ -1087,45 +1063,6 @@ func BenchmarkIsSchedulableAfterReservationChange_StatusHeartbeat(b *testing.B) 
 			b.Fatalf("status-heartbeat path not exercised: hint=%v, err=%v", hint, err)
 		}
 	}
-}
-
-// TestReservationOwnerMatches covers the fallbacks of the owner-matching
-// helper the QueueingHintFns rely on. Unparsable owners must report "no
-// match", mirroring the cached ReservationInfo used by Filter, whose
-// MatchOwners returns false when the same parse failed.
-func TestReservationOwnerMatches(t *testing.T) {
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-		Name: "p", Namespace: "default", UID: "p", Labels: map[string]string{"app": "demo"},
-	}}
-	matching := &schedulingv1alpha1.Reservation{
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Owners: []schedulingv1alpha1.ReservationOwner{{
-				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "demo"}},
-			}},
-		},
-	}
-	nonMatching := &schedulingv1alpha1.Reservation{
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Owners: []schedulingv1alpha1.ReservationOwner{{
-				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "other"}},
-			}},
-		},
-	}
-	unparsable := &schedulingv1alpha1.Reservation{
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Owners: []schedulingv1alpha1.ReservationOwner{{
-				LabelSelector: &metav1.LabelSelector{
-					MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "app", Operator: "NotAnOperator"}},
-				},
-			}},
-		},
-	}
-
-	assert.False(t, reservationOwnerMatches(pod, nil), "nil reservation cannot claim any pod")
-	assert.True(t, reservationOwnerMatches(pod, matching))
-	assert.False(t, reservationOwnerMatches(pod, nonMatching))
-	assert.False(t, reservationOwnerMatches(pod, unparsable),
-		"unparsable owners must not claim the pod, matching ReservationInfo.MatchOwners")
 }
 
 // The scheduler resolves this plugin's event resource through the dynamic
@@ -1209,7 +1146,7 @@ func TestPlugin_QueueingHint_ReservationChange_UnstructuredParity(t *testing.T) 
 	}{
 		{"pending status-only update", unrelated, pendingOld, pendingNew, fwktype.QueueSkip},
 		{"available heartbeat", unrelated, availableOld, availableNew, fwktype.QueueSkip},
-		{"available add, unrelated waiter", unrelated, nil, availableOld, fwktype.QueueSkip},
+		{"available add, unrelated waiter", unrelated, nil, availableOld, fwktype.Queue},
 		{"available add, owner-only waiter", ownerMatched, nil, availableOld, fwktype.Queue},
 		{"uid replacement", unrelated, replacedOld, replacedNew, fwktype.Queue},
 		{"phase transition", unrelated, phaseOld, phaseNew, fwktype.Queue},
@@ -1305,7 +1242,7 @@ func BenchmarkIsSchedulableAfterReservationChange_UnstructuredHeartbeat(b *testi
 	}
 }
 
-func BenchmarkIsSchedulableAfterReservationChange_UnstructuredAllocatedAdd(b *testing.B) {
+func BenchmarkIsSchedulableAfterReservationChange_UnstructuredAdd(b *testing.B) {
 	pl := &Plugin{}
 	r := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{Name: "r-bench-u-add", UID: "r-bench-u-add", Generation: 1},
@@ -1329,4 +1266,110 @@ func BenchmarkIsSchedulableAfterReservationChange_UnstructuredAllocatedAdd(b *te
 			b.Fatalf("unstructured allocated-add path not exercised: hint=%v, err=%v", hint, err)
 		}
 	}
+}
+
+// An Add carries no evidence about what this observer missed before it. The
+// typed informer drives the plugin cache and the nominator; the dynamic one
+// drives these events, and the two make progress independently. Both shapes
+// below are a reservation whose reserve pod has already been dropped from the
+// nominator by the time the event arrives, so a waiter this plugin rejected on
+// that node may now fit. Neither is rescued elsewhere: the framework handler
+// for an unassigned reservation reaching a terminal phase only removes it from
+// the scheduling queue, which emits no Pod delete event.
+func TestPlugin_QueueingHint_AddCannotProveNoNominationWasReleased(t *testing.T) {
+	suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+		args.EnableQueueHint = true
+	})
+	p, err := suit.pluginFactory()
+	require.NoError(t, err)
+	pl := p.(*Plugin)
+	logger := klog.Background()
+
+	// The waiter consumes another reservation through owner matching and has no
+	// relationship to the one in the event.
+	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: "w-elsewhere", Namespace: "default", UID: "w-elsewhere",
+		Labels: map[string]string{"app": "somewhere-else"},
+	}}
+
+	failedWhileUnassigned := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-failed", UID: "r-failed", Generation: 1},
+		Status:     schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationFailed},
+	}
+	availableElsewhere := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-moved", UID: "r-moved", Generation: 1},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "node-b",
+		},
+	}
+
+	for _, tt := range []struct {
+		name string
+		r    *schedulingv1alpha1.Reservation
+	}{
+		{"failed while still unassigned, first seen as an add", failedWhileUnassigned},
+		{"became available on another node, first seen as an add", availableElsewhere},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, nil, tt.r)
+			assert.NoError(t, err)
+			assert.Equal(t, fwktype.Queue, hint)
+
+			object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(tt.r)
+			require.NoError(t, err)
+			hint, err = pl.isSchedulableAfterReservationChange(logger, waiter, nil,
+				&unstructured.Unstructured{Object: object})
+			assert.NoError(t, err)
+			assert.Equal(t, fwktype.Queue, hint)
+		})
+	}
+}
+
+// The premise behind requeueing on every Add: by the time a reservation that
+// failed while still unassigned reaches this hint, the typed listener has
+// already dropped its reserve pod from the nominator, so the node it was
+// holding is free again. The hint has only the Add to go on.
+func TestPlugin_QueueingHint_TypedListenerFreesTheNodeBeforeTheAddArrives(t *testing.T) {
+	pending := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-race", UID: "r-race", Generation: 1},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				Containers: []corev1.Container{{
+					Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("2"),
+					}},
+				}},
+			}},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationPending},
+	}
+
+	nm := newNominator(nil, nil)
+	pi, err := framework.NewPodInfo(reservationutil.NewReservePod(pending))
+	require.NoError(t, err)
+	nm.AddNominatedReservePod(pi, "node-a")
+	require.Len(t, nm.NominatedReservePodForNode("node-a"), 1,
+		"the reserve pod holds node-a while the reservation is pending")
+
+	failed := pending.DeepCopy()
+	failed.Status.Phase = schedulingv1alpha1.ReservationFailed
+	h := &reservationEventHandler{cache: newReservationCache(nil), rrNominator: nm}
+	h.OnUpdate(pending, failed)
+	require.Empty(t, nm.NominatedReservePodForNode("node-a"),
+		"the typed listener releases node-a on the terminal transition")
+
+	// The dynamic informer never saw this reservation, so it observes it now as
+	// an Add carrying the terminal state. A waiter rejected on node-a earlier
+	// has to be woken by it.
+	suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+		args.EnableQueueHint = true
+	})
+	p, err := suit.pluginFactory()
+	require.NoError(t, err)
+	pl := p.(*Plugin)
+	hint, err := pl.isSchedulableAfterReservationChange(
+		klog.Background(), makeWaitingPodNoReservation("w-on-node-a"), nil, failed)
+	assert.NoError(t, err)
+	assert.Equal(t, fwktype.Queue, hint)
 }

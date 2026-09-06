@@ -196,54 +196,6 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 	return events, nil
 }
 
-// podUsesReservation is a cheap predicate that identifies pods which
-// explicitly opt in to reservation matching: reserve pods that own a
-// Reservation, and pods that carry the reservation-affinity annotation.
-// Pods that can be matched only via Reservation.Spec.Owners (without
-// explicit affinity) are not covered here; isSchedulableAfterReservationChange
-// falls back to the reservation owner matchers for those.
-//
-// The earlier implementation called GetRequiredReservationAffinity here,
-// which parses the affinity JSON and builds selectors on every call.
-// QueueingHintFns run once per waiting pod per event, so the JSON parse
-// cost dominated the hint's hot path. A simple annotation-presence check
-// is enough: malformed JSON only widens the wake-up (PreFilter then
-// rejects the pod), which is the conservative behavior the hint
-// framework expects.
-func podUsesReservation(pod *corev1.Pod) bool {
-	if reservationutil.IsReservePod(pod) {
-		return true
-	}
-	if pod.Annotations == nil {
-		return false
-	}
-	_, hasAffinity := pod.Annotations[apiext.AnnotationReservationAffinity]
-	return hasAffinity
-}
-
-// reservationOwnerMatches reports whether the given reservation could
-// claim the pod via its Spec.Owners selectors. nil reservation returns
-// false. Used by the QueueingHintFns to wake pods that match a
-// reservation via owner selectors even when they do not carry an
-// explicit reservation-affinity annotation.
-//
-// It parses only the owner matchers instead of building a full
-// ReservationInfo (allocatable, reserve pod, host ports, ...), because a
-// QueueingHintFn runs once per event per waiting pod. Unparsable owners
-// return false: the cached ReservationInfo used by the Filter carries the
-// same parse failure and matches nothing, so such a reservation cannot
-// serve the waiter either way.
-func reservationOwnerMatches(pod *corev1.Pod, r *schedulingv1alpha1.Reservation) bool {
-	if r == nil {
-		return false
-	}
-	matchers, err := reservationutil.ParseReservationOwnerMatchers(r.Spec.Owners)
-	if err != nil {
-		return false
-	}
-	return reservationutil.MatchReservationOwners(pod, matchers)
-}
-
 // isSchedulableAfterPodDeletion requeues every waiter this plugin rejected.
 //
 // The event object cannot narrow that down. The scheduler unwraps a
@@ -316,30 +268,24 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 	if newR == nil {
 		return fwktype.Queue, nil
 	}
-	// A reservation is only matchable for allocation (ReservationInfo.IsMatchable)
-	// once it reaches the Available phase. An unallocated one adds consumable
-	// capacity rather than releasing anything, so only waiters that can consume
-	// it benefit: affinity-annotated waiters, or waiters its owner selectors
-	// match.
+	// An Add is the first time this observer sees the reservation, not the
+	// moment it was created. processDeltas emits OnAdd whenever the object is
+	// absent from the local store, so a relist can deliver one whose earlier
+	// life this observer missed, while the typed informer that drives the
+	// plugin cache and the nominator has been following it throughout.
 	//
-	// An allocated one is different, and an Add can carry one. processDeltas
-	// turns a Sync, Replaced, Added or Updated delta into OnAdd whenever the
-	// object is absent from the local store, so a relist can deliver a
-	// reservation that has been allocated for a while, and its accounting
-	// reaches this plugin for the first time here. By the argument in the
-	// Available branch below, that can admit waiters which cannot consume this
-	// reservation at all.
+	// Nothing in the object rules out that the missed window released a
+	// nomination, and BeforeFilter counts a nominated reserve pod against
+	// every pod evaluated for that node. A reservation that failed while still
+	// unassigned, or that became Available on a different node, has had its
+	// reserve pod dropped from the nominator by the time it arrives here, and
+	// the framework handler for an unassigned reservation reaching a terminal
+	// phase only removes it from the scheduling queue, so no Pod delete event
+	// covers that release either. Reading the nominator here is not an option:
+	// the listener that maintains it processes the same events on another
+	// goroutine.
 	if oldR == nil {
-		if !reservationutil.IsReservationAvailable(newR) {
-			return fwktype.QueueSkip, nil
-		}
-		if !quotav1.IsZero(newR.Status.Allocated) || len(newR.Status.CurrentOwners) > 0 {
-			return fwktype.Queue, nil
-		}
-		if podUsesReservation(pod) || reservationOwnerMatches(pod, newR) {
-			return fwktype.Queue, nil
-		}
-		return fwktype.QueueSkip, nil
+		return fwktype.Queue, nil
 	}
 	// A UID replacement (delete+add coalesced into one update by the
 	// informer) replaces the reserve pod this plugin tracks - the scheduling
