@@ -31,11 +31,12 @@ limitations under the License.
 //     and adjusts node scores so pods prefer low-utilization nodes (leastUsedScore).
 //     Setting 70 of 100 nodes to 80% and 30 to 10% gives the plugin a clear
 //     routing signal: most pods should land on the 30 low-utilization nodes.
-//   - Two-pass NodeMetric seeding: NodeMetric status is written for low-util nodes
-//     BEFORE high-util nodes. The scheduler's NodeMetric informer processes events
-//     in arrival order; nodes whose NodeMetric is not yet cached score 0. By
-//     flushing low-util status first, those nodes (score ~90) are cached before
-//     high-util ones (score ~20), so even a lagging informer routes pods correctly.
+//   - Single-pass NodeMetric seeding: for each node, Create and UpdateStatus are
+//     called immediately adjacent to each other (no stale ResourceVersion gap).
+//     Low-util nodes are processed BEFORE high-util nodes so the informer caches
+//     their high scores (~90) before the high-util scores (~20) arrive — pods
+//     started during the seeding window are routed correctly even if the informer
+//     lags behind the last few events.
 //   - NodeMetric is cluster-scoped and has a status subresource. Create() drops
 //     the status field, so a separate UpdateStatus() call is required. The
 //     status payload MUST include updateTime — isNodeMetricExpired() in the
@@ -163,51 +164,61 @@ func (s *LoadAwareScenario) Setup(
 	s.lowUtilNodes = make(map[string]bool, len(nodes.Items))
 	var setupErrs []string
 
-	// Pass 1: create all NodeMetric objects (spec/metadata only, no status yet).
-	createdNMs := make([]*unstructured.Unstructured, len(nodes.Items))
+	// Single-pass NodeMetric seeding: for each node, create the object and
+	// immediately UpdateStatus in the same iteration so the informer processes
+	// create + status as adjacent events (no stale ResourceVersion gap).
+	//
+	// Low-util nodes are processed FIRST (indices HighUtilNodeCount..N-1, then
+	// 0..HighUtilNodeCount-1). The scheduler's NodeMetric informer processes
+	// events in arrival order; nodes whose NodeMetric is not yet in the cache
+	// score 0. By flushing low-util status (score ~90) before high-util status
+	// (score ~20), the low-util nodes are cached first and attract pods even
+	// if the informer lags behind the last few high-util updates.
+	type nodePass struct {
+		node   corev1.Node
+		isLow  bool
+		cpuMilli int64
+	}
+	passes := make([]nodePass, 0, len(nodes.Items))
+	// First collect low-util nodes (indices >= HighUtilNodeCount).
 	for i, n := range nodes.Items {
-		created, createErr := createNodeMetric(ctx, dynClient, n.Name, runID)
+		if i < cfg.HighUtilNodeCount {
+			continue
+		}
+		passes = append(passes, nodePass{
+			node:     n,
+			isLow:    true,
+			cpuMilli: n.Status.Allocatable.Cpu().MilliValue() * 10 / 100,
+		})
+	}
+	// Then collect high-util nodes (indices < HighUtilNodeCount).
+	for i, n := range nodes.Items {
+		if i >= cfg.HighUtilNodeCount {
+			continue
+		}
+		passes = append(passes, nodePass{
+			node:     n,
+			isLow:    false,
+			cpuMilli: n.Status.Allocatable.Cpu().MilliValue() * int64(highPct) / 100,
+		})
+	}
+
+	for _, p := range passes {
+		if p.isLow {
+			s.lowUtilNodes[p.node.Name] = true
+		}
+		nm, createErr := createNodeMetric(ctx, dynClient, p.node.Name, runID)
 		if createErr != nil {
 			setupErrs = append(setupErrs, createErr.Error())
 			continue
 		}
-		createdNMs[i] = created
+		if _, statusErr := setNodeMetricStatus(ctx, dynClient, nm, p.cpuMilli); statusErr != nil {
+			klog.ErrorS(statusErr, "failed to set NodeMetric status — node will score as zero utilization",
+				"node", p.node.Name)
+		}
 	}
 	if len(setupErrs) > 0 {
 		return fmt.Errorf("setup had %d NodeMetric create error(s): %s", len(setupErrs), strings.Join(setupErrs, "; "))
-	}
-
-	// Pass 2: UpdateStatus for LOW-utilization nodes first.
-	// The scheduler's NodeMetric informer processes events in arrival order. By
-	// flushing low-util status updates before high-util ones, the low-util
-	// NodeMetrics reach the informer cache first. During the subsequent pod burst,
-	// nodes whose NodeMetric is NOT yet in the cache score 0 — so writing low-util
-	// status first guarantees they are cached (scoring ~90) before high-util ones
-	// arrive (scoring ~20), steering pods toward the low-util set even if the
-	// informer lags behind a few status updates.
-	for i, n := range nodes.Items {
-		if i < cfg.HighUtilNodeCount || createdNMs[i] == nil {
-			continue // high-util handled in pass 3
-		}
-		cpuUsageMilli := n.Status.Allocatable.Cpu().MilliValue() * 10 / 100 // 10%
-		s.lowUtilNodes[n.Name] = true
-		if _, statusErr := setNodeMetricStatus(ctx, dynClient, createdNMs[i], cpuUsageMilli); statusErr != nil {
-			klog.ErrorS(statusErr, "failed to set NodeMetric status — node will score as zero utilization",
-				"node", n.Name)
-		}
-	}
-
-	// Pass 3: UpdateStatus for HIGH-utilization nodes.
-	for i, n := range nodes.Items {
-		if i >= cfg.HighUtilNodeCount || createdNMs[i] == nil {
-			continue
-		}
-		cpuAllocatable := n.Status.Allocatable.Cpu()
-		cpuUsageMilli := cpuAllocatable.MilliValue() * int64(highPct) / 100
-		if _, statusErr := setNodeMetricStatus(ctx, dynClient, createdNMs[i], cpuUsageMilli); statusErr != nil {
-			klog.ErrorS(statusErr, "failed to set NodeMetric status — node will score as zero utilization",
-				"node", n.Name)
-		}
 	}
 
 	klog.InfoS("LoadAware setup complete",

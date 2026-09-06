@@ -102,6 +102,12 @@ func TestSetup_FieldShape(t *testing.T) {
 		if sched == "" {
 			t.Errorf("reservation %d: spec.template.spec.schedulerName is empty — koord-scheduler will never schedule it", i)
 		}
+		// spec.ttl (or spec.expires) is required by ValidateReservation — without it the
+		// Reservation is silently rejected before it is enqueued and stays at count 0.
+		ttl, _, _ := unstructured.NestedString(rsv.Object, "spec", "ttl")
+		if ttl == "" {
+			t.Errorf("reservation %d: spec.ttl is empty — ValidateReservation will silently drop it", i)
+		}
 	}
 }
 

@@ -191,6 +191,10 @@ func (s *ReservationScenario) Setup(
 				},
 			},
 			"spec": map[string]interface{}{
+				// ValidateReservation at pkg/util/reservation/reservation.go requires
+				// spec.ttl or spec.expires — Reservations without either field are
+				// silently rejected before they reach the scheduling queue.
+				"ttl": "24h",
 				"template": map[string]interface{}{
 					"spec": map[string]interface{}{
 						// The koord-scheduler checks spec.template.spec.schedulerName to
