@@ -18,6 +18,7 @@ package nodenumaresource
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	nrtv1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
@@ -64,6 +65,7 @@ const (
 
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.SignPlugin        = &Plugin{}
 
 	_ fwktype.PreFilterPlugin = &Plugin{}
 	_ fwktype.FilterPlugin    = &Plugin{}
@@ -262,6 +264,100 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+// Signer names for this plugin's signature fragments.
+const (
+	numaTopologySignerName           = "koord.NodeNUMAResource.numaTopology"
+	resourceSpecSignerName           = "koord.NodeNUMAResource.resourceSpec"
+	hasReservationAffinitySignerName = "koord.NodeNUMAResource.hasReservationAffinity"
+	preAllocationRequiredSignerName  = "koord.NodeNUMAResource.preAllocationRequired"
+	allowUseCPUSetSignerName         = "koord.NodeNUMAResource.allowUseCPUSet"
+)
+
+// SignPod signs the pod inputs this plugin's PreFilter, Filter and Score read.
+// The per-pod signature is the union of every plugin's fragments, so pod
+// requests are omitted: upstream noderesources/fit already signs them.
+//
+// Parsing and gating follow PreFilter, so a pod SignPod refuses is one PreFilter
+// would reject too; the individual gates are noted where they apply.
+//
+// PreFilter also branches on hinter.GetSchedulingHintState, a CycleState value
+// written by pkg/scheduler/batch that SignPod cannot see. SchedulingHint has no
+// signer, so signatures are off in the shipped profile and this stays masked.
+func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	fragments := make([]fwktype.SignFragment, 0, 5)
+	// Parse numa-topology-spec / resource-spec with the same helpers PreFilter
+	// uses (see PreFilter below) so malformed input produces the identical
+	// Error Status instead of silently canonicalizing the raw bytes and
+	// letting a bad pod share a signature with a clean one.
+	if _, ok := pod.Annotations[extension.AnnotationNUMATopologySpec]; ok {
+		numaSpec, err := extension.GetNUMATopologySpec(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.Error, err.Error())
+		}
+		b, mErr := json.Marshal(numaSpec)
+		if mErr != nil {
+			return nil, fwktype.AsStatus(mErr)
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   numaTopologySignerName,
+			Value: string(b),
+		})
+	}
+	if _, ok := pod.Annotations[extension.AnnotationResourceSpec]; ok {
+		resourceSpec, err := extension.GetResourceSpec(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.Error, err.Error())
+		}
+		b, mErr := json.Marshal(resourceSpec)
+		if mErr != nil {
+			return nil, fwktype.AsStatus(mErr)
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   resourceSpecSignerName,
+			Value: string(b),
+		})
+	}
+	// Zero-request pods cause PreFilter to return Skip before any of the
+	// inputs below are read, so SignPod must short-circuit the same way.
+	// Two zero-request pods that only differ in
+	// reservation-affinity or IsPreAllocationRequired are batched together
+	// safely because PreFilter would Skip both.
+	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
+	if !quotav1.IsZero(requests) {
+		reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
+		}
+		if reservationAffinity != nil {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   hasReservationAffinitySignerName,
+				Value: true,
+			})
+		}
+		if extension.IsPreAllocationRequired(pod.Labels) {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   preAllocationRequiredSignerName,
+				Value: true,
+			})
+		}
+		// AllowUseCPUSet gates PreFilter's whole CPU-binding block but derives
+		// from the QoS label and the effective priority class, neither of which
+		// this plugin signs. The default profile covers both only by accident
+		// (InterPodAffinity signs v1.Pod.Labels, LoadAware signs the same
+		// priority class); signing the boolean removes that dependency.
+		if AllowUseCPUSet(pod) {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   allowUseCPUSetSignerName,
+				Value: true,
+			})
+		}
+	}
+	if len(fragments) == 0 {
+		return nil, nil
+	}
+	return fragments, nil
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
