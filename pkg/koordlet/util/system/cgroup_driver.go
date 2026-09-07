@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -296,5 +297,47 @@ func SetupCgroupPathFormatter(driver CgroupDriverType) {
 		CgroupPathFormatter = cgroupPathFormatterInCgroupfs
 	default:
 		klog.Warningf("cgroup driver formatter not supported: '%s'", string(driver))
+	}
+}
+
+// SetupCgroupV1PSIPathSubsysAutoDetect re-points the Subfs of the three cgroup v1 PSI resources
+// (CPUAcctCPUPressure / CPUAcctMemoryPressure / CPUAcctIOPressure) to the controller subsystem
+// where their *.pressure files actually live under the kubepods parent dir.
+//
+// On the default Alinux layout all three pressure files live under cpuacct/ (the resources are
+// already initialized to CgroupCPUAcctDir). On other vendor layouts (e.g. TencentOS) the pressure
+// files are split across controllers, so instead of fixing a hardcoded mapping we auto-detect the
+// subsystem root for each pressure file by probing candidate subsystems in priority order. The
+// first candidate whose <candidate>/<kubepodsParentDir>/<pressureFileName> exists wins; if none
+// matches, the default CgroupCPUAcctDir ("cpuacct/") is kept (Alinux behavior unchanged, safe).
+//
+// Must run before the PerformanceCollector's collectPSI() does its WithCheckOnce(true) support
+// check, otherwise the cached false result sticks.
+func SetupCgroupV1PSIPathSubsysAutoDetect() {
+	if UseCgroupsV2.Load() {
+		return
+	}
+	// candidate subsystems probed in priority order for each pressure resource
+	candidateSubsys := []string{CgroupCPUAcctDir, CgroupCPUDir, CgroupMemDir, CgroupBlkioDir}
+	resources := []*CgroupResource{
+		CPUAcctCPUPressure.(*CgroupResource),
+		CPUAcctMemoryPressure.(*CgroupResource),
+		CPUAcctIOPressure.(*CgroupResource),
+	}
+	for _, res := range resources {
+		detected := false
+		for _, subsys := range candidateSubsys {
+			probePath := filepath.Join(Conf.CgroupRootDir, subsys, CgroupPathFormatter.ParentDir, res.FileName)
+			if exists, err := PathExists(probePath); err == nil && exists {
+				res.Subfs = subsys
+				klog.Infof("cgroup v1 PSI resource %s auto-detected under subsystem %q (%s)", res.ResourceType(), subsys, probePath)
+				detected = true
+				break
+			}
+		}
+		if !detected {
+			// keep the default CgroupCPUAcctDir (resources are initialized to "cpuacct/").
+			klog.Warningf("cgroup v1 PSI resource %s: no candidate subsystem holds the pressure file, keep default %q", res.ResourceType(), CgroupCPUAcctDir)
+		}
 	}
 }

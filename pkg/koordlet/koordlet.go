@@ -108,6 +108,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 
 	cgroupDriver := system.GetCgroupDriver()
 	system.SetupCgroupPathFormatter(cgroupDriver)
+	system.SetupCgroupV1PSIPathSubsysAutoDetect()
 
 	collectorService := metricsadvisor.NewMetricAdvisor(config.CollectorConf, statesInformer, metricCache)
 
