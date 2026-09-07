@@ -177,8 +177,8 @@ func (s *LoadAwareScenario) Setup(
 	// (score ~20), the low-util nodes are cached first and attract pods even
 	// if the informer lags behind the last few high-util updates.
 	type nodePass struct {
-		node   corev1.Node
-		isLow  bool
+		node     corev1.Node
+		isLow    bool
 		cpuMilli int64
 	}
 	passes := make([]nodePass, 0, len(nodes.Items))
