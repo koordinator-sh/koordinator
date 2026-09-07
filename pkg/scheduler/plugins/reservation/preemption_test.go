@@ -756,3 +756,50 @@ func TestOrderedScoreFuncs(t *testing.T) {
 	result := pl.preemptionMgr.OrderedScoreFuncs(context.TODO(), nil)
 	assert.Nil(t, result)
 }
+
+func TestPreEnqueue(t *testing.T) {
+	testPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       "test-pod-uid",
+		},
+	}
+
+	t.Run("preemption disabled", func(t *testing.T) {
+		suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+			args.EnablePreemption = false
+		})
+		p, err := suit.pluginFactory()
+		assert.NoError(t, err)
+		pl := p.(*Plugin)
+		status := pl.PreEnqueue(context.TODO(), testPod)
+		assert.Nil(t, status)
+	})
+
+	t.Run("preemption enabled, async disabled", func(t *testing.T) {
+		suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+			args.EnablePreemption = true
+			args.EnableAsyncPreemption = false
+		})
+		p, err := suit.pluginFactory()
+		assert.NoError(t, err)
+		pl := p.(*Plugin)
+		status := pl.PreEnqueue(context.TODO(), testPod)
+		assert.Nil(t, status)
+	})
+
+	t.Run("preemption enabled, async enabled", func(t *testing.T) {
+		suit := newPluginTestSuitWith(t, nil, nil, func(args *config.ReservationArgs) {
+			args.EnablePreemption = true
+			args.EnableAsyncPreemption = true
+		})
+		p, err := suit.pluginFactory()
+		assert.NoError(t, err)
+		pl := p.(*Plugin)
+		assert.NotNil(t, pl.preemptionMgr.evaluator)
+
+		status := pl.PreEnqueue(context.TODO(), testPod)
+		assert.Nil(t, status)
+	})
+}

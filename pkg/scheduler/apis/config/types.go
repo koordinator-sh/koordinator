@@ -184,6 +184,7 @@ type ReservationArgs struct {
 	// EnablePreemption indicates whether to enable preemption for reservations.
 	EnablePreemption bool
 	// EnableAsyncPreemption indicates whether to enable asynchronous preemption for reservations.
+	// default is false
 	EnableAsyncPreemption bool
 	// MinCandidateNodesPercentage is the minimum number of candidates to
 	// shortlist when dry running preemption as a percentage of number of nodes.

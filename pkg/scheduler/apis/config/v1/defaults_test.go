@@ -26,28 +26,28 @@ func TestSetDefaults_ReservationArgs(t *testing.T) {
 	obj := &ReservationArgs{}
 	SetDefaults_ReservationArgs(obj)
 	assert.NotNil(t, obj.EnableAsyncPreemption)
-	assert.True(t, *obj.EnableAsyncPreemption)
+	assert.False(t, *obj.EnableAsyncPreemption)
 
-	enableAsync := false
+	enableAsync := true
 	obj2 := &ReservationArgs{
 		EnableAsyncPreemption: &enableAsync,
 	}
 	SetDefaults_ReservationArgs(obj2)
 	assert.NotNil(t, obj2.EnableAsyncPreemption)
-	assert.False(t, *obj2.EnableAsyncPreemption)
+	assert.True(t, *obj2.EnableAsyncPreemption)
 }
 
 func TestSetDefaults_CoschedulingArgs(t *testing.T) {
 	obj := &CoschedulingArgs{}
 	SetDefaults_CoschedulingArgs(obj)
 	assert.NotNil(t, obj.EnableAsyncPreemption)
-	assert.True(t, *obj.EnableAsyncPreemption)
+	assert.False(t, *obj.EnableAsyncPreemption)
 
-	enableAsync := false
+	enableAsync := true
 	obj2 := &CoschedulingArgs{
 		EnableAsyncPreemption: &enableAsync,
 	}
 	SetDefaults_CoschedulingArgs(obj2)
 	assert.NotNil(t, obj2.EnableAsyncPreemption)
-	assert.False(t, *obj2.EnableAsyncPreemption)
+	assert.True(t, *obj2.EnableAsyncPreemption)
 }

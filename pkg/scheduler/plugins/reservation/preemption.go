@@ -19,7 +19,6 @@ package reservation
 
 import (
 	"context"
-	"fmt"
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
@@ -27,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	policylisters "k8s.io/client-go/listers/policy/v1"
@@ -66,6 +64,7 @@ type PreemptionMgr struct {
 	pdbLister             policylisters.PodDisruptionBudgetLister
 	reservationLister     listerschedulingv1alpha1.ReservationLister
 	enableAsyncPreemption bool
+	evaluator             *preemption.Evaluator
 }
 
 func newPreemptionMgr(pluginArgs *config.ReservationArgs, extendedHandle frameworkext.ExtendedHandle,
@@ -89,18 +88,31 @@ func newPreemptionMgr(pluginArgs *config.ReservationArgs, extendedHandle framewo
 		pdbLister = extendedHandle.SharedInformerFactory().Policy().V1().PodDisruptionBudgets().Lister()
 	}
 
-	return &PreemptionMgr{
+	pm := &PreemptionMgr{
 		DefaultPreemption:     preemptionPl,
 		fh:                    extendedHandle,
 		podLister:             podLister,
 		pdbLister:             pdbLister,
 		reservationLister:     rLister,
 		enableAsyncPreemption: pluginArgs.EnableAsyncPreemption,
-	}, nil
+	}
+
+	pe := preemption.NewEvaluator(Name, extendedHandle, pm, pluginArgs.EnableAsyncPreemption)
+	pe.PodLister = newDelegatingPodLister(podLister, rLister)
+	pm.evaluator = pe
+
+	return pm, nil
 }
 
 func (pm *PreemptionMgr) Name() string {
 	return Name
+}
+
+func (pm *PreemptionMgr) PreEnqueue(ctx context.Context, p *corev1.Pod) *fwktype.Status {
+	if pm.evaluator != nil && pm.evaluator.IsPodRunningPreemption(p.UID) {
+		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "pod is running preemption")
+	}
+	return nil
 }
 
 func (pm *PreemptionMgr) PostFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, m fwktype.NodeToStatusReader) (*fwktype.PostFilterResult, *fwktype.Status) {
@@ -108,11 +120,9 @@ func (pm *PreemptionMgr) PostFilter(ctx context.Context, state fwktype.CycleStat
 		metrics.PreemptionAttempts.Inc()
 	}()
 
-	pe := preemption.NewEvaluator(Name, pm.fh, pm, pm.enableAsyncPreemption)
-	pe.PodLister = newDelegatingPodLister(pm.podLister, pm.reservationLister, pod)
 	klog.V(4).InfoS("Attempt to do reservation preemption in the PostFilter", "pod", klog.KObj(pod))
 
-	result, status := pe.Preempt(ctx, state, pod, m)
+	result, status := pm.evaluator.Preempt(ctx, state, pod, m)
 	if status.Message() != "" {
 		return result, fwktype.NewStatus(status.Code(), "preemption: "+status.Message())
 	}
@@ -228,34 +238,20 @@ var _ corelisters.PodLister = &delegatingPodLister{}
 type delegatingPodLister struct {
 	corelisters.PodLister
 	reservationLister listerschedulingv1alpha1.ReservationLister
-	cachedPod         *corev1.Pod
 }
 
 func newDelegatingPodLister(podLister corelisters.PodLister,
-	reservationLister listerschedulingv1alpha1.ReservationLister,
-	pod *corev1.Pod) corelisters.PodLister {
-	if !reservationutil.IsReservePod(pod) {
-		return podLister
-	}
-
+	reservationLister listerschedulingv1alpha1.ReservationLister) corelisters.PodLister {
 	return &delegatingPodLister{
 		PodLister:         podLister,
 		reservationLister: reservationLister,
-		cachedPod:         pod,
 	}
 }
 
 func (dp *delegatingPodLister) Pods(namespace string) corelisters.PodNamespaceLister {
-	// only delegate the default namespace since reserve pod is forced to the namespace
-	if namespace != "" && namespace != corev1.NamespaceDefault ||
-		dp.cachedPod == nil || namespace != dp.cachedPod.Namespace {
-		return dp.PodLister.Pods(namespace)
-	}
-
 	return &delegatingPodNamespaceLister{
 		PodNamespaceLister: dp.PodLister.Pods(namespace),
 		reservationLister:  dp.reservationLister,
-		cachedPod:          dp.cachedPod,
 	}
 }
 
@@ -264,7 +260,6 @@ var _ corelisters.PodNamespaceLister = &delegatingPodNamespaceLister{}
 type delegatingPodNamespaceLister struct {
 	corelisters.PodNamespaceLister
 	reservationLister listerschedulingv1alpha1.ReservationLister
-	cachedPod         *corev1.Pod
 }
 
 func (dpn *delegatingPodNamespaceLister) Get(name string) (*corev1.Pod, error) {
@@ -276,24 +271,13 @@ func (dpn *delegatingPodNamespaceLister) Get(name string) (*corev1.Pod, error) {
 		return pod, err
 	}
 
-	// if the cached pod not found from the informer, try to get a corresponding reservation
-	if dpn.cachedPod == nil || dpn.cachedPod.Name != name {
-		return pod, err
+	if dpn.reservationLister != nil {
+		reservation, err1 := dpn.reservationLister.Get(name)
+		if err1 == nil {
+			return reservationutil.NewReservePod(reservation), nil
+		}
 	}
-	reservationName := reservationutil.GetReservationNameFromReservePod(dpn.cachedPod)
-	if len(reservationName) <= 0 {
-		klog.ErrorS(fmt.Errorf("missing a reservationName"), "Failed to get reservation for cachedPod",
-			"pod", name, "cachedPod", klog.KObj(dpn.cachedPod))
-		return pod, err
-	}
-
-	reservation, err1 := dpn.reservationLister.Get(reservationName)
-	if err1 != nil {
-		return pod, utilerrors.NewAggregate([]error{err, err1})
-	}
-	// Is it necessary to regenerate the reserve pod?
-	reservePod := reservationutil.NewReservePod(reservation)
-	return reservePod, nil
+	return pod, err
 }
 
 // filterPodsWithPDBViolation groups the given "pods" into two groups of "violatingPods"
