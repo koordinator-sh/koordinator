@@ -49,6 +49,11 @@ limitations under the License.
 //     (~38s) this is not a concern, but it becomes a ceiling if the scenario is
 //     scaled to 10k pods. Static seeding with no re-stamp is deliberate for now
 //     (dynamic periodic updates are a stretch goal per the execution plan).
+//   - Post-seeding verification: after all patches, Setup polls the API server
+//     until every NodeMetric for this run has a non-empty status.updateTime,
+//     retrying patches for any that are missing. Once all are confirmed in
+//     etcd, it sleeps 15 s for the scheduler's watch-based informer to process
+//     the MODIFIED events before the pod burst begins.
 //   - Augment (ResultAugmenter): the engine calls Augment before Teardown
 //     (Teardown runs via defer after WriteReport). Pods are still live at
 //     Augment time, so Augment lists them and counts those whose spec.nodeName
@@ -228,14 +233,61 @@ func (s *LoadAwareScenario) Setup(
 		"lowUtilNodes", len(nodes.Items)-cfg.HighUtilNodeCount,
 		"highUtilCPUPct", highPct,
 	)
-	// Give the scheduler's NodeMetric informer time to process all the UpdateStatus
-	// events before the pod burst starts. Low-util NodeMetrics are flushed first
-	// (pass 2 above) so they are cached first; high-util ones may still be in-flight
-	// but their absence only degrades the high-util score to 0 — pods still prefer
-	// the cached low-util nodes. The 5 s window provides extra headroom for slower
-	// CI environments (kind clusters on GitHub Actions can take longer than a local
-	// cluster to propagate informer events).
-	time.Sleep(5 * time.Second)
+
+	// Build node→cpuMilli map for status-patch retries below.
+	nodeUsages := make(map[string]int64, len(passes))
+	for _, p := range passes {
+		nodeUsages[p.node.Name] = p.cpuMilli
+	}
+
+	// Wait until every NodeMetric for this run has status.updateTime set in the
+	// API server.  The patchNodeMetricStatus call is best-effort in the loop
+	// above; if a patch failed silently (transient error, object recreated by
+	// another controller, etc.) the metric would have nil UpdateTime, causing
+	// isNodeMetricExpired to return true and Score to return 0 for that node.
+	// Retrying here guarantees the data reaches etcd before we hand off to the
+	// pod burst, at which point the scheduler's watch-based informer will have
+	// already (or very shortly) reflected the change.
+	klog.InfoS("Verifying NodeMetric statuses in API server (with retry)")
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		nms, listErr := dynClient.Resource(nodeMetricGVR).List(ctx, metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("%s=%s", types.RunIDLabel, runID),
+		})
+		if listErr != nil {
+			klog.ErrorS(listErr, "NodeMetric status verification: list failed")
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		notReady := 0
+		for i := range nms.Items {
+			updateTime, _, _ := unstructured.NestedString(nms.Items[i].Object, "status", "updateTime")
+			if updateTime != "" {
+				continue
+			}
+			notReady++
+			name := nms.Items[i].GetName()
+			if cpuMilli, ok := nodeUsages[name]; ok {
+				if _, retryErr := patchNodeMetricStatus(ctx, dynClient, name, cpuMilli); retryErr != nil {
+					klog.ErrorS(retryErr, "NodeMetric status retry patch failed", "node", name)
+				}
+			}
+		}
+		if notReady == 0 {
+			klog.InfoS("All NodeMetric statuses confirmed in API server", "count", len(nms.Items))
+			break
+		}
+		klog.InfoS("NodeMetric statuses not yet ready, retrying patches",
+			"notReady", notReady, "total", len(nms.Items))
+		time.Sleep(2 * time.Second)
+	}
+
+	// Extra sleep for the scheduler's NodeMetric informer to process all
+	// MODIFIED watch events.  The status is now confirmed in etcd; watch
+	// events propagate within milliseconds, but a 15 s buffer handles loaded
+	// CI runners where the scheduler goroutine may be delayed.
+	klog.InfoS("Waiting for informer propagation before pod burst")
+	time.Sleep(15 * time.Second)
 	return nil
 }
 
