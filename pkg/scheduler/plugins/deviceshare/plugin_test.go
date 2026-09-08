@@ -452,11 +452,13 @@ func Test_Plugin_Reserve_SameNameRecreation_NoStaleMarker(t *testing.T) {
 }
 
 // Test_Plugin_Reserve_SameNameRecreation_PartialCollision_NoStaleMarker pins @ZiMengSheng review
-// item 1: updateCacheUsed must report all-or-nothing, not "any device type landed". A recreated
-// pod that requests a superset of device types ({gpu, rdma}) where only the gpu slot is still held
-// by the previous pod must NOT get a marker — the gpu add is skipped but the rdma add lands, and a
-// marker published here would snapshot the previous pod's gpu allocation (copyPodAllocations reads
-// by ns/name). Fails against the "any" return; passes once the return is all-or-nothing.
+// item 1 (both rounds): a recreated pod that requests a superset of device types ({gpu, rdma})
+// where only the gpu slot is still held by the previous pod must (a) NOT get a marker, and (b)
+// leave the cache untouched. Reserve must be all-or-nothing: if any type collides it writes
+// nothing, so the non-colliding rdma add cannot leak into deviceUsed/allocateSet — otherwise it
+// stays accounted for a pod that never existed (Reserve skips the marker, Unreserve is gated off,
+// and gcNodeDevice never reaps orphaned allocateSet entries). Assertion (b) fails against the
+// partial-write code; passes once Reserve gates on canApplyAll.
 func Test_Plugin_Reserve_SameNameRecreation_PartialCollision_NoStaleMarker(t *testing.T) {
 	suit := newPluginTestSuit(t, []*corev1.Node{{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}}})
 	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
@@ -477,11 +479,18 @@ func Test_Plugin_Reserve_SameNameRecreation_PartialCollision_NoStaleMarker(t *te
 	_, ok := assumedEntry(cache, types.UID("uid-1"))
 	assert.True(t, ok, "UID1 must be assumed")
 
-	// UID2 recreated with the same ns/name requests {gpu, rdma}: gpu collides (skipped), rdma lands.
+	// UID2 recreated with the same ns/name requests {gpu, rdma}: gpu collides, rdma would land.
 	// The add is a partial collision, so no marker may be published for UID2.
-	reserve("uid-2", "sts-0", gpuRdmaAllocations(0, 100, 0))
+	reserve("uid-2", "sts-0", gpuRdmaAllocations(0, 100, 3))
 	_, ok = assumedEntry(cache, types.UID("uid-2"))
 	assert.False(t, ok, "Reserve must not publish a marker when only part of the add landed")
+
+	// The skipped Reserve must have left the cache untouched: UID1's gpu slot stays, and UID2's
+	// rdma allocation must NOT have leaked in (nothing would ever subtract it back out).
+	nd := cache.getNodeDevice("node-1", false)
+	assert.ElementsMatch(t, []int{0}, gpuMinors(nd, "default", "sts-0"), "UID1's gpu slot must remain")
+	assert.Empty(t, rdmaMinors(nd, "default", "sts-0"),
+		"the non-colliding rdma add must not leak when the Reserve is skipped")
 }
 
 // Test_Plugin_Unreserve_SkipsSubtractOnCollision pins @ZiMengSheng review item 2: when Reserve

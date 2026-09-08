@@ -130,13 +130,13 @@ func (n *nodeDevice) resetDeviceTotal(resources map[schedulingv1alpha1.DeviceTyp
 	}
 }
 
-// updateCacheUsed updates deviceUsed when a pod is created/deleted, and reports whether the
-// operation landed for every requested device type (all-or-nothing). A type is skipped by isValid
-// when the pod's ns/name slot in allocateSet is already held — e.g. a same-ns/name pod (a
-// StatefulSet replica) not yet deleted. Callers that publish an assumed marker (keyed by UID, but
-// snapshotted by name) must not do so unless every type landed, or the marker would snapshot the
-// other pod's allocation for the colliding type. The return value is "all", not "any": a partial
-// collision returns false even though the non-colliding types were applied.
+// updateCacheUsed updates deviceUsed when a pod is created/deleted, applying each requested device
+// type best-effort: a type is skipped by isValid when the pod's ns/name slot in allocateSet is
+// already held — e.g. a same-ns/name pod (a StatefulSet replica) not yet deleted — while the rest
+// are still applied. This partial application is what the informer path wants (self-healing). The
+// return value reports whether every type landed, but callers that need an all-or-nothing write
+// (the Reserve path) must gate on canApplyAll first rather than rely on this return, because by the
+// time it reports false the non-colliding types have already been written.
 func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) bool {
 	if len(deviceAllocations) == 0 {
 		return false
@@ -152,6 +152,25 @@ func (n *nodeDevice) updateCacheUsed(deviceAllocations apiext.DeviceAllocations,
 		n.updateAllocateSet(deviceType, allocations, pod, add)
 	}
 	return applied
+}
+
+// canApplyAll reports whether every requested device type can be applied for this pod, i.e. no
+// ns/name slot in allocateSet is already held for any of them. Callers that need an
+// all-or-nothing write must gate on this instead of inspecting updateCacheUsed's return value:
+// updateCacheUsed applies the non-colliding types before reporting false, which is the desired
+// best-effort behavior on the informer path but leaves an unrevertable partial write on the
+// Reserve path. Must be called with n.lock held for write (isValid lazily initializes
+// allocateSet[deviceType]).
+func (n *nodeDevice) canApplyAll(deviceAllocations apiext.DeviceAllocations, pod *corev1.Pod, add bool) bool {
+	if len(deviceAllocations) == 0 {
+		return false
+	}
+	for deviceType := range deviceAllocations {
+		if !n.isValid(deviceType, pod.Namespace, pod.Name, add) {
+			return false
+		}
+	}
+	return true
 }
 
 // copyPodAllocations returns the DeviceAllocations recorded in allocateSet for pod. The

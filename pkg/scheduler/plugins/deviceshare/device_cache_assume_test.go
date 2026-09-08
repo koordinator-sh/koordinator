@@ -91,6 +91,17 @@ func gpuMinors(nd *nodeDevice, ns, name string) []int {
 	return minors
 }
 
+func rdmaMinors(nd *nodeDevice, ns, name string) []int {
+	nd.lock.RLock()
+	defer nd.lock.RUnlock()
+	res := nd.getUsed(ns, name)[schedulingv1alpha1.RDMA]
+	minors := make([]int, 0, len(res))
+	for m := range res {
+		minors = append(minors, m)
+	}
+	return minors
+}
+
 // reserveInto simulates Plugin.Reserve writing an allocation to the per-node cache.
 func reserveInto(cache *nodeDeviceCache, node string, pod *corev1.Pod, alloc apiext.DeviceAllocations) {
 	nd := cache.getNodeDevice(node, true)

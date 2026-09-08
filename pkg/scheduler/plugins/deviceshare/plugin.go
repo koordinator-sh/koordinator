@@ -555,10 +555,17 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 	}
 	logAllocationContext(pod, nodeName, nodeDeviceInfo, state.designatedAllocation, state.allocationResult)
 	nodeDeviceInfo.lock.Lock()
-	applied := nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
+	// canApplyAll gates the write instead of inspecting updateCacheUsed's return value:
+	// updateCacheUsed applies the non-colliding types before reporting false, which would leak an
+	// unrevertable partial write here (the marker is skipped and Unreserve is gated off). Gating
+	// keeps the add all-or-nothing on the Reserve path while leaving the informer path best-effort.
+	applied := nodeDeviceInfo.canApplyAll(state.allocationResult, pod, true)
+	if applied {
+		nodeDeviceInfo.updateCacheUsed(state.allocationResult, pod, true)
+	}
 	nodeDeviceInfo.lock.Unlock()
 	if !applied {
-		// The add did not land: a pod with the same ns/name still holds the allocateSet slot
+		// The add did not land: a pod with the same ns/name still holds an allocateSet slot
 		// (e.g. a StatefulSet replica recreated before the old pod's delete reached the cache).
 		// Publishing an assumed marker here would snapshot the OTHER pod's allocation (the marker
 		// is keyed by UID but the snapshot is read by name); once the old pod's delete frees the
@@ -572,7 +579,8 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 		// the write above and here). Roll back the cache write — the framework does not
 		// guarantee Unreserve for a Reserve plugin that returns an error at the Reserve
 		// extension point, so we clean up rather than rely on it (safe if Unreserve also runs:
-		// the isValid guard skips the second subtract) — then degrade to annotation semantics
+		// deviceCacheReserved is left false on this path — it is set only after AssumePod
+		// succeeds — so Unreserve skips its subtract) — then degrade to annotation semantics
 		// (no marker; informer events repopulate the cache) instead of failing the pod over a
 		// transient race.
 		nodeDeviceInfo.lock.Lock()
