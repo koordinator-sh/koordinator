@@ -281,13 +281,20 @@ func (s *LoadAwareScenario) Setup(
 			"notReady", notReady, "total", len(nms.Items))
 		time.Sleep(2 * time.Second)
 	}
+	if time.Now().After(deadline) {
+		klog.Warningf("NodeMetric status verification deadline exceeded; some nodes may score as zero utilization")
+	}
 
 	// Extra sleep for the scheduler's NodeMetric informer to process all
 	// MODIFIED watch events.  The status is now confirmed in etcd; watch
 	// events propagate within milliseconds, but a 15 s buffer handles loaded
 	// CI runners where the scheduler goroutine may be delayed.
-	klog.InfoS("Waiting for informer propagation before pod burst")
-	time.Sleep(15 * time.Second)
+	// Skip the sleep when the context is already cancelled (e.g. unit tests)
+	// so that test packages don't each pay an unnecessary 15 s penalty.
+	if ctx.Err() == nil {
+		klog.InfoS("Waiting for informer propagation before pod burst")
+		time.Sleep(15 * time.Second)
+	}
 	return nil
 }
 
