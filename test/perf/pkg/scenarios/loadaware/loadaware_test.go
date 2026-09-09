@@ -111,8 +111,14 @@ func TestSetup_NodeMetricFieldShape(t *testing.T) {
 	fakeK8s := fakeNodeList(t, "run-abc123", cfg.NodeCount)
 	fakeDyn := newFakeDynClient()
 
+	// Pre-cancel the context so the 15 s informer-propagation sleep is skipped
+	// (ctx.Err() != nil). The fake dynamic client has no scheduler to process
+	// watch events, so the sleep adds no value in unit tests.
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	s := &LoadAwareScenario{}
-	if err := s.Setup(context.Background(), fakeK8s, fakeDyn, cfg, "run-abc123"); err != nil {
+	if err := s.Setup(cancelledCtx, fakeK8s, fakeDyn, cfg, "run-abc123"); err != nil {
 		t.Fatalf("Setup() returned unexpected error: %v", err)
 	}
 
@@ -142,8 +148,11 @@ func TestSetup_HighLowSplit(t *testing.T) {
 	fakeK8s := fakeNodeList(t, "run-1", cfg.NodeCount)
 	fakeDyn := newFakeDynClient()
 
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	s := &LoadAwareScenario{}
-	if err := s.Setup(context.Background(), fakeK8s, fakeDyn, cfg, "run-1"); err != nil {
+	if err := s.Setup(cancelledCtx, fakeK8s, fakeDyn, cfg, "run-1"); err != nil {
 		t.Fatalf("Setup() error: %v", err)
 	}
 
