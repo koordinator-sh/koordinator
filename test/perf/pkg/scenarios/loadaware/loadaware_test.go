@@ -253,7 +253,7 @@ func TestPods_InvalidResourceQuantity(t *testing.T) {
 // node, making the scenario a no-op.
 func TestBuildNodeMetricStatus_UpdateTime(t *testing.T) {
 	before := time.Now().Add(-time.Second)
-	status := buildNodeMetricStatus(16000) // 16 CPU cores in milli
+	status := buildNodeMetricStatus(16000, 10*1024*1024*1024) // 16 cores, 10 GiB
 	after := time.Now().Add(time.Second)
 
 	ut, ok, err := unstructured.NestedString(status, "updateTime")
