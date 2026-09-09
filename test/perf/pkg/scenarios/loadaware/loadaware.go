@@ -25,8 +25,10 @@ limitations under the License.
 //   - Nodes are split into two tiers controlled by cfg.HighUtilNodeCount:
 //     the first cfg.HighUtilNodeCount nodes (alphabetically lowest) are
 //     "high-utilization" (seeded at cfg.HighUtilCPUPct% of each node's
-//     allocatable CPU, defaulting to 80%), and the remaining nodes are
-//     "low-utilization" (fixed 10% of allocatable).
+//     allocatable CPU and memory, defaulting to 80%), and the remaining nodes
+//     are "low-utilization" (fixed 10% of allocatable CPU and memory).
+//     Both dimensions are seeded so the LoadAware plugin's combined score
+//     (average of CPU and memory leastUsedScore) preserves the full tier gap.
 //   - The LoadAware plugin reads NodeMetric.status.nodeMetric.nodeUsage.resources.cpu
 //     and adjusts node scores so pods prefer low-utilization nodes (leastUsedScore).
 //     Setting 70 of 100 nodes to 80% and 30 to 10% gives the plugin a clear
@@ -181,10 +183,17 @@ func (s *LoadAwareScenario) Setup(
 	// score 0. By flushing low-util status (score ~90) before high-util status
 	// (score ~20), the low-util nodes are cached first and attract pods even
 	// if the informer lags behind the last few high-util updates.
+	//
+	// Both CPU and memory are seeded at the same utilization percentage so the
+	// LoadAware plugin's combined score (average of CPU and memory leastUsedScore)
+	// reflects the intended tier split. Seeding only CPU while leaving memory
+	// identical across tiers halves the score gap, moving the crossover point
+	// (where accumulating NRF scores overtake LoadAware) inside the 1 000-pod run.
 	type nodePass struct {
 		node     corev1.Node
 		isLow    bool
 		cpuMilli int64
+		memBytes int64
 	}
 	passes := make([]nodePass, 0, len(nodes.Items))
 	// First collect low-util nodes (indices >= HighUtilNodeCount).
@@ -196,6 +205,7 @@ func (s *LoadAwareScenario) Setup(
 			node:     n,
 			isLow:    true,
 			cpuMilli: n.Status.Allocatable.Cpu().MilliValue() * 10 / 100,
+			memBytes: n.Status.Allocatable.Memory().Value() * 10 / 100,
 		})
 	}
 	// Then collect high-util nodes (indices < HighUtilNodeCount).
@@ -207,6 +217,7 @@ func (s *LoadAwareScenario) Setup(
 			node:     n,
 			isLow:    false,
 			cpuMilli: n.Status.Allocatable.Cpu().MilliValue() * int64(highPct) / 100,
+			memBytes: n.Status.Allocatable.Memory().Value() * int64(highPct) / 100,
 		})
 	}
 
@@ -218,7 +229,7 @@ func (s *LoadAwareScenario) Setup(
 			setupErrs = append(setupErrs, createErr.Error())
 			continue
 		}
-		if _, statusErr := patchNodeMetricStatus(ctx, dynClient, p.node.Name, p.cpuMilli); statusErr != nil {
+		if _, statusErr := patchNodeMetricStatus(ctx, dynClient, p.node.Name, p.cpuMilli, p.memBytes); statusErr != nil {
 			klog.ErrorS(statusErr, "failed to patch NodeMetric status — node will score as zero utilization",
 				"node", p.node.Name)
 		}
@@ -234,10 +245,14 @@ func (s *LoadAwareScenario) Setup(
 		"highUtilCPUPct", highPct,
 	)
 
-	// Build node→cpuMilli map for status-patch retries below.
-	nodeUsages := make(map[string]int64, len(passes))
+	// Build node→seeding map for status-patch retries below.
+	type nodeSeeding struct {
+		cpuMilli int64
+		memBytes int64
+	}
+	nodeUsages := make(map[string]nodeSeeding, len(passes))
 	for _, p := range passes {
-		nodeUsages[p.node.Name] = p.cpuMilli
+		nodeUsages[p.node.Name] = nodeSeeding{p.cpuMilli, p.memBytes}
 	}
 
 	// Wait until every NodeMetric for this run has status.updateTime set in the
@@ -267,8 +282,8 @@ func (s *LoadAwareScenario) Setup(
 			}
 			notReady++
 			name := nms.Items[i].GetName()
-			if cpuMilli, ok := nodeUsages[name]; ok {
-				if _, retryErr := patchNodeMetricStatus(ctx, dynClient, name, cpuMilli); retryErr != nil {
+			if seed, ok := nodeUsages[name]; ok {
+				if _, retryErr := patchNodeMetricStatus(ctx, dynClient, name, seed.cpuMilli, seed.memBytes); retryErr != nil {
 					klog.ErrorS(retryErr, "NodeMetric status retry patch failed", "node", name)
 				}
 			}
@@ -345,14 +360,22 @@ func createNodeMetric(
 // circuits to 0) whenever Status.UpdateTime is nil, making the scenario a
 // no-op without it.
 //
-// The JSON path read by the LoadAware plugin:
+// Both cpu and memory are required to give the LoadAware plugin a full signal.
+// The plugin averages leastUsedScore across all resourceWeights dimensions
+// (cpu and memory, each weight=1 in the default config); seeding only CPU while
+// leaving memory identical across tiers halves the effective score gap between
+// tiers and moves the NRF crossover point inside the 1 000-pod run.
+//
+// The JSON paths read by the LoadAware plugin:
 //
 //	status.nodeMetric.nodeUsage.resources.cpu
+//	status.nodeMetric.nodeUsage.resources.memory
 //
 // where "resources" is the JSON tag for ResourceMap.ResourceList (not
 // "resourceList" — see apis/slo/v1alpha1/resources.go).
-func buildNodeMetricStatus(cpuUsageMilli int64) map[string]interface{} {
+func buildNodeMetricStatus(cpuUsageMilli, memUsageBytes int64) map[string]interface{} {
 	cpuQty := resource.NewMilliQuantity(cpuUsageMilli, resource.DecimalSI)
+	memQty := resource.NewQuantity(memUsageBytes, resource.BinarySI)
 	return map[string]interface{}{
 		// updateTime is required — isNodeMetricExpired returns true when nil,
 		// causing Score to short-circuit and return 0 for every node.
@@ -363,7 +386,7 @@ func buildNodeMetricStatus(cpuUsageMilli int64) map[string]interface{} {
 				// apis/slo/v1alpha1/resources.go: `corev1.ResourceList \`json:"resources,omitempty"\``
 				"resources": map[string]interface{}{
 					"cpu":    cpuQty.String(),
-					"memory": "10Gi",
+					"memory": memQty.String(),
 				},
 			},
 		},
@@ -379,9 +402,9 @@ func patchNodeMetricStatus(
 	ctx context.Context,
 	dynClient dynamic.Interface,
 	nodeName string,
-	cpuUsageMilli int64,
+	cpuUsageMilli, memUsageBytes int64,
 ) (*unstructured.Unstructured, error) {
-	status := buildNodeMetricStatus(cpuUsageMilli)
+	status := buildNodeMetricStatus(cpuUsageMilli, memUsageBytes)
 	patch := map[string]interface{}{"status": status}
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
