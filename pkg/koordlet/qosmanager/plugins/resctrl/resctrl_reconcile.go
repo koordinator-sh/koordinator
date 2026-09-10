@@ -43,15 +43,6 @@ import (
 const (
 	ResctrlReconcileName = "ResctrlReconcile"
 
-	// LSRResctrlGroup is the name of LSR resctrl group
-	LSRResctrlGroup = "LSR"
-	// LSResctrlGroup is the name of LS resctrl group
-	LSResctrlGroup = "LS"
-	// BEResctrlGroup is the name of BE resctrl group
-	BEResctrlGroup = "BE"
-	// UnknownResctrlGroup is the resctrl group which is unknown to reconcile
-	UnknownResctrlGroup = "Unknown"
-
 	// Max memory bandwidth for AMD CPU, Gb/s, since the extreme limit is hard to reach, we set a discount by 0.8
 	// TODO The max memory bandwidth varies across SKU, so koordlet should be aware of the maximum automatically,
 	// or support an configuration list.
@@ -65,7 +56,7 @@ const (
 
 var (
 	// resctrlGroupList is the list of resctrl groups to be reconcile
-	resctrlGroupList = []string{LSRResctrlGroup, LSResctrlGroup, BEResctrlGroup}
+	resctrlGroupList = []string{system.LSRResctrlGroup, system.LSResctrlGroup, system.BEResctrlGroup}
 )
 
 var _ framework.QOSStrategy = &resctrlReconcile{}
@@ -110,15 +101,15 @@ func getPodResctrlGroup(pod *corev1.Pod) string {
 	podQoS := extension.GetPodQoSClassWithDefault(pod)
 	switch podQoS {
 	case extension.QoSLSE:
-		return LSRResctrlGroup
+		return system.LSRResctrlGroup
 	case extension.QoSLSR:
-		return LSRResctrlGroup
+		return system.LSRResctrlGroup
 	case extension.QoSLS:
-		return LSResctrlGroup
+		return system.LSResctrlGroup
 	case extension.QoSBE:
-		return BEResctrlGroup
+		return system.BEResctrlGroup
 	}
-	return UnknownResctrlGroup
+	return system.UnknownResctrlGroup
 }
 
 func getResourceQOSForResctrlGroup(strategy *slov1alpha1.ResourceQOSStrategy, group string) *slov1alpha1.ResourceQOS {
@@ -126,11 +117,11 @@ func getResourceQOSForResctrlGroup(strategy *slov1alpha1.ResourceQOSStrategy, gr
 		return nil
 	}
 	switch group {
-	case LSRResctrlGroup:
+	case system.LSRResctrlGroup:
 		return strategy.LSRClass
-	case LSResctrlGroup:
+	case system.LSResctrlGroup:
 		return strategy.LSClass
-	case BEResctrlGroup:
+	case system.BEResctrlGroup:
 		return strategy.BEClass
 	}
 	return nil
@@ -477,7 +468,7 @@ func (r *resctrlReconcile) reconcileResctrlGroups(qosStrategy *slov1alpha1.Resou
 		}
 
 		// TODO https://github.com/koordinator-sh/koordinator/pull/94#discussion_r858779795
-		if group := getPodResctrlGroup(pod); group != UnknownResctrlGroup {
+		if group := getPodResctrlGroup(pod); group != system.UnknownResctrlGroup {
 			ids := r.getPodCgroupNewTaskIds(podMeta, curTaskMaps[group])
 			taskIds[group] = append(taskIds[group], ids...)
 			klog.V(6).Infof("pod %v apply to group %s with %v tasks", util.GetPodKey(pod), group, len(ids))
