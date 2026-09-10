@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -74,6 +75,13 @@ type FrameworkExtender interface {
 	// per-node reuse capacity for Sandbox equivalence-class scheduling.
 	EquivalenceCapacityPlugins() []EquivalenceCapacityPlugin
 
+	// RegisterSchedulingDecisionProvider appends a provider during setup, before scheduling starts.
+	// The first registered provider whose Handles returns true owns the decision, including errors.
+	// A nil provider is ignored.
+	RegisterSchedulingDecisionProvider(provider SchedulingDecisionProvider)
+	// GetSchedulingDecisionProviders returns providers in registration order. The returned slice is read-only.
+	GetSchedulingDecisionProviders() []SchedulingDecisionProvider
+
 	// RunFindOneNodePlugin invokes the registered FindOneNodePlugin (if any) during the PreFilter phase.
 	// The plugin's FindOneNode method attempts to deterministically compute a placement plan for the whole job
 	// (all member pods and their target nodes) for the given pod.
@@ -98,6 +106,21 @@ type FrameworkExtender interface {
 	RunNUMATopologyManagerAdmit(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *fwktype.Status
 
 	RunResizePod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status
+}
+
+// SchedulingDecisionProvider lets a custom workflow override the node-selection decision for the
+// pods it handles, while keeping the upstream Scheduler.Run/ScheduleOne loop and reusing
+// FrameworkExtenderFactory.scheduleOne's Koordinator lifecycle hooks (diagnosis, monitor, auditor,
+// reservation nomination, ResizePod). FrameworkExtenderFactory.scheduleOne calls SchedulePod instead
+// of the upstream schedulePod when Handles(pod) is true. Implementations live outside frameworkext
+// and are registered on the FrameworkExtender to avoid import cycles.
+type SchedulingDecisionProvider interface {
+	// Handles reports whether the provider wants to make the scheduling decision for the pod.
+	Handles(pod *corev1.Pod) bool
+	// SchedulePod returns the scheduling decision for the pod, mirroring scheduler.SchedulePod's
+	// contract: a ScheduleResult with the suggested host, or a *framework.FitError when the pod does
+	// not fit any node. It must not recurse back into scheduleOne.
+	SchedulePod(ctx context.Context, state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 }
 
 // SchedulingTransformer is the parent type for all the custom transformer plugins.

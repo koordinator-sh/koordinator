@@ -564,24 +564,18 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 	)
 	frameworkExtenderFactory.RegisterErrorHandlerFilters(reservationErrorHandler, nil)
 
-	for _, wf := range KnownWorkflowList {
-		if wf.IsEnabled() {
-			err = wf.Setup(ctx, &CustomWorkflowOptions{
-				Sched:                      sched,
-				SharedInformerFactory:      cc.InformerFactory,
-				KubeClient:                 cc.Client,
-				KoordSharedInformerFactory: cc.KoordinatorSharedInformerFactory,
-				KoordClient:                cc.KoordinatorClient,
-				RecorderFactory:            recorderFactory,
-				KubeConfig:                 cc.KubeConfig,
-				PercentageOfNodesToScore:   cc.ComponentConfig.PercentageOfNodesToScore,
-			})
-			if err != nil {
-				return nil, nil, nil, nil, err
-			}
-			return &cc, sched, frameworkExtenderFactory, wf, nil
-		}
+	workflow, err := setupWorkflows(ctx, &CustomWorkflowOptions{
+		Sched:                      sched,
+		SharedInformerFactory:      cc.InformerFactory,
+		KubeClient:                 cc.Client,
+		KoordSharedInformerFactory: cc.KoordinatorSharedInformerFactory,
+		KoordClient:                cc.KoordinatorClient,
+		RecorderFactory:            recorderFactory,
+		KubeConfig:                 cc.KubeConfig,
+		PercentageOfNodesToScore:   cc.ComponentConfig.PercentageOfNodesToScore,
+	})
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
-
-	return &cc, sched, frameworkExtenderFactory, nil, nil
+	return &cc, sched, frameworkExtenderFactory, workflow, nil
 }
