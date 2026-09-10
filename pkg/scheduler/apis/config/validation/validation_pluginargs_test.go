@@ -212,6 +212,21 @@ func TestValidateLoadAwareSchedulingArgs(t *testing.T) {
 	}
 }
 
+func TestValidateLoadAwareSchedulingArgs_ReportsAllMissingScalingFactors(t *testing.T) {
+	args := &config.LoadAwareSchedulingArgs{
+		ResourceWeights: map[corev1.ResourceName]int64{
+			corev1.ResourceCPU:    1,
+			corev1.ResourceMemory: 1,
+		},
+		EstimatedScalingFactors: map[corev1.ResourceName]int64{},
+	}
+	err := ValidateLoadAwareSchedulingArgs(args)
+	assert.Error(t, err)
+	errStr := err.Error()
+	assert.Contains(t, errStr, string(corev1.ResourceCPU))
+	assert.Contains(t, errStr, string(corev1.ResourceMemory))
+}
+
 func TestValidateElasticQuotaArgs(t *testing.T) {
 	tests := []struct {
 		name    string
