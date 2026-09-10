@@ -112,6 +112,8 @@ type frameworkExtenderImpl struct {
 	crossSchedulerNominator *CrossSchedulerPodNominator
 
 	factory *FrameworkExtenderFactory
+
+	schedulingDecisionProviders []SchedulingDecisionProvider
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -255,6 +257,16 @@ func (ext *frameworkExtenderImpl) StartMonitoring(pod *corev1.Pod) {
 	if ext.monitor != nil {
 		ext.monitor.StartMonitoring(pod)
 	}
+}
+
+func (ext *frameworkExtenderImpl) RegisterSchedulingDecisionProvider(provider SchedulingDecisionProvider) {
+	if provider != nil {
+		ext.schedulingDecisionProviders = append(ext.schedulingDecisionProviders, provider)
+	}
+}
+
+func (ext *frameworkExtenderImpl) GetSchedulingDecisionProviders() []SchedulingDecisionProvider {
+	return ext.schedulingDecisionProviders
 }
 
 func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plugins) {

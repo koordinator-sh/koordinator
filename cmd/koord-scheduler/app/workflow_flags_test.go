@@ -54,7 +54,7 @@ func TestNewSchedulerCommandRegistersCustomWorkflowFlags(t *testing.T) {
 	})
 
 	workflow := &customWorkflowWithFlags{}
-	KnownWorkflowList = []CustomWorkflow{workflow}
+	KnownWorkflowList = []WorkflowInitializer{workflow}
 
 	command := NewSchedulerCommand()
 	require.NotNil(t, command.Flags().Lookup("test-custom-workflow-value"))
