@@ -318,12 +318,40 @@ func TestEquivalenceClassCache(t *testing.T) {
 		}
 	})
 
+	t.Run("rejected candidates do not count toward placement drift", func(t *testing.T) {
+		c, _ := newTestCache()
+		c.store("h1", quotaNodes(100, "rejected", "accepted"), 1, nil)
+		node, ok, _ := c.next("h1", 2)
+		require.True(t, ok)
+		require.Equal(t, "rejected", node)
+		c.rejectNode("h1", node, 2)
+		assert.Zero(t, c.entries["h1"].consumed)
+		for i := 0; i < defaultDriftFactor*2; i++ {
+			node, ok, _ = c.next("h1", int64(i+3))
+			require.True(t, ok)
+			assert.Equal(t, "accepted", node)
+		}
+		_, ok, reason := c.next("h1", 10)
+		assert.False(t, ok)
+		assert.Equal(t, equivalenceCacheMissDrift, reason)
+	})
+
 	t.Run("empty backfill removes the old class", func(t *testing.T) {
 		c, _ := newTestCache()
 		c.store("h1", quotaNodes(10, "node"), 1, nil)
 		c.store("h1", nil, 2, nil)
 		assert.Empty(t, c.entries)
 		assert.Zero(t, c.lru.Len())
+	})
+
+	t.Run("node invalidation between lookup and rejection cancels consumption", func(t *testing.T) {
+		c, _ := newTestCache()
+		c.store("h1", quotaNodes(10, "node-a", "node-b"), 1, nil)
+		node, ok, _ := c.next("h1", 2)
+		require.True(t, ok)
+		c.removeNode(node, nil)
+		c.rejectNode("h1", node, 2)
+		assert.Zero(t, c.entries["h1"].consumed)
 	})
 
 	t.Run("empty key and empty backfill do not create entries", func(t *testing.T) {

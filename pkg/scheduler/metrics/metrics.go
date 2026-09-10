@@ -328,6 +328,18 @@ func RecordSandboxEquivalenceClassFlush(reason string) {
 	SandboxEquivalenceClassFlushes.WithLabelValues(reason).Inc()
 }
 
+func RecordSandboxEquivalenceClassHit(profile string) {
+	SandboxEquivalenceClassHits.WithLabelValues(profile).Inc()
+}
+
+func RecordSandboxEquivalenceClassMiss(profile, reason string) {
+	SandboxEquivalenceClassMisses.WithLabelValues(profile, reason).Inc()
+}
+
+func RecordSandboxSchedulingDuration(profile, path, result string, latency time.Duration) {
+	SandboxSchedulingDuration.WithLabelValues(profile, path, result).Observe(latency.Seconds())
+}
+
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
 	ElasticQuotaProcessLatency.WithLabelValues(operation).Observe(latency.Seconds())
 }

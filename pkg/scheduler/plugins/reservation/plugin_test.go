@@ -251,6 +251,90 @@ func TestNew(t *testing.T) {
 	assert.Equal(t, Name, pl.Name())
 }
 
+func TestEquivalenceCapacity(t *testing.T) {
+	capacityPlugin, ok := interface{}(&Plugin{}).(frameworkext.EquivalenceCapacityPlugin)
+	if !ok {
+		t.Fatal("Reservation must be able to veto equivalence reuse")
+	}
+	for _, tt := range []struct {
+		name  string
+		pod   *corev1.Pod
+		state *stateData
+		veto  bool
+	}{
+		{name: "plain pod", pod: &corev1.Pod{}, state: &stateData{}},
+		{name: "reserve pod", pod: testGetReservePod(&corev1.Pod{}), state: &stateData{}, veto: true},
+		{name: "reservation affinity", pod: &corev1.Pod{}, state: &stateData{
+			schedulingStateData: schedulingStateData{hasAffinity: true},
+		}, veto: true},
+		{name: "restoration on another node", pod: &corev1.Pod{}, state: &stateData{
+			schedulingStateData: schedulingStateData{nodeReservationStates: map[string]*nodeReservationState{
+				"other-node": {matchedOrIgnored: []*frameworkext.ReservationInfo{{}}},
+			}},
+		}, veto: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			state := framework.NewCycleState()
+			state.Write(stateKey, tt.state)
+			node := framework.NewNodeInfo()
+			node.SetNode(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "cached-node"}})
+			_, reusable, handled := capacityPlugin.EquivalenceCapacity(context.Background(), state, tt.pod, node)
+			assert.Equal(t, tt.veto, handled)
+			if handled {
+				assert.False(t, reusable)
+			}
+		})
+	}
+}
+
+func TestEquivalenceCapacityUsesCurrentReservationOwnership(t *testing.T) {
+	node := st.MakeNode().Name("node-1").Capacity(map[corev1.ResourceName]string{
+		corev1.ResourceCPU: "8", corev1.ResourceMemory: "16Gi",
+	}).Obj()
+	owner := st.MakePod().Namespace("ns").Name("owner").UID("owner-uid").
+		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1"}).Obj()
+	r := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "reservation", UID: "reservation-uid"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{Spec: owner.Spec},
+			Owners: []schedulingv1alpha1.ReservationOwner{{
+				Object: &corev1.ObjectReference{Namespace: owner.Namespace, Name: owner.Name, UID: owner.UID},
+			}},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReservationAvailable, NodeName: node.Name,
+			Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+		},
+	}
+	other := owner.DeepCopy()
+	other.Name, other.UID = "other", "other-uid"
+	for _, pod := range []*corev1.Pod{other, owner} {
+		t.Run(pod.Name, func(t *testing.T) {
+			suit := newPluginTestSuitWith(t, []*corev1.Pod{reservationutil.NewReservePod(r)}, []*corev1.Node{node})
+			p, err := suit.pluginFactory()
+			if !assert.NoError(t, err) {
+				return
+			}
+			pl := p.(*Plugin)
+			pl.reservationCache.updateReservation(r)
+			state := framework.NewCycleState()
+			_, _, status := pl.BeforePreFilter(context.Background(), state, pod)
+			if !assert.True(t, status.IsSuccess(), "%v", status) {
+				return
+			}
+			nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
+			assert.NoError(t, err)
+			_, reusable, handled := pl.EquivalenceCapacity(context.Background(), state, pod, nodeInfo)
+			assert.Equal(t, pod.Name == owner.Name, handled)
+			if handled {
+				assert.False(t, reusable)
+			}
+			ext := suit.extenderFactory.GetExtender(suit.fw.ProfileName())
+			assert.Contains(t, ext.EquivalenceCapacityPlugins(), pl)
+		})
+	}
+}
+
 func TestPreFilter(t *testing.T) {
 	reservePod := testGetReservePod(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

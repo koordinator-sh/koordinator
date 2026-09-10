@@ -200,10 +200,11 @@ type PreferNodesPlugin interface {
 	PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status)
 }
 
-// EquivalenceCapacityPlugin lets a plugin refine the default resource-based
-// equivalence-class capacity. A plugin can return handled=false when it has no
-// opinion for the pod/node pair. When handled is true, reusable=false disables
-// cache reuse for the pair; otherwise quota caps the resource-based capacity.
+// EquivalenceCapacityPlugin refines resource-based equivalence-class capacity.
+// It is consulted at cache backfill and before reusing a node for each pod.
+// A plugin with identity-dependent state that cannot be represented by a per-node
+// quota must return handled=true, reusable=false. Otherwise a handled quota caps
+// the resource-based capacity; handled=false means the plugin has no opinion.
 type EquivalenceCapacityPlugin interface {
 	fwktype.Plugin
 	EquivalenceCapacity(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (quota int64, reusable bool, handled bool)
