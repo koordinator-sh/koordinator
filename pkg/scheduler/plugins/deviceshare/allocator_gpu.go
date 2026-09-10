@@ -409,7 +409,7 @@ func allocateFromScope(requirements *GPURequirements, scope *GPUTopologyScope, a
 			_, belongToTotal := allocateContext.deviceTotal[minor]
 			contextOfDevice.satisfied = contextOfDevice.satisfied && belongToTotal
 			if contextOfDevice.satisfied && requirements.gpuShared && allocateContext.allocationScorer != nil {
-				contextOfDevice.score = allocateContext.allocationScorer.scoreDevice(requirements.requestsPerGPU, freeResources, totalResources)
+				contextOfDevice.score = allocateContext.allocationScorer.scoreDevice(requirements.requestsPerGPU, totalResources, freeResources)
 			}
 		}
 		if !contextOfDevice.satisfied {

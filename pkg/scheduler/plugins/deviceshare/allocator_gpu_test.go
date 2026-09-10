@@ -1690,6 +1690,58 @@ func TestAllocateSharedGPU(t *testing.T) {
 	}
 }
 
+func TestAllocateFromScopeSharedGPUScoreUsesTotalAndFree(t *testing.T) {
+	// Two shared-GPU minors in the same scope, both able to satisfy the request
+	// but at different utilization levels:
+	//   minor 6: 75 free out of 100 (25 used)
+	//   minor 7: 50 free out of 100 (50 used)
+	// With the MostAllocated strategy the scorer must prefer the more-utilized
+	// minor (7) to bin-pack shared GPUs. This only holds when scoreDevice is
+	// called as scoreDevice(request, total, free); if total and free are swapped,
+	// every partially-used minor collapses to an identical score and the lower
+	// minor (6) wins by iteration order instead. This test guards that regression.
+	scorer := deviceResourceStrategyTypeMap[schedulerconfig.MostAllocated](&schedulerconfig.DeviceShareArgs{
+		ScoringStrategy: &schedulerconfig.ScoringStrategy{
+			Type: schedulerconfig.MostAllocated,
+			Resources: []schedconfig.ResourceSpec{
+				{
+					Name:   string(apiext.ResourceGPUMemoryRatio),
+					Weight: 1,
+				},
+			},
+		},
+	})
+
+	total := corev1.ResourceList{apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(100, resource.DecimalSI)}
+	deviceTotal := deviceResources{6: total.DeepCopy(), 7: total.DeepCopy()}
+	deviceFree := deviceResources{
+		6: corev1.ResourceList{apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(75, resource.DecimalSI)},
+		7: corev1.ResourceList{apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI)},
+	}
+	scope := &GPUTopologyScope{
+		scopeLevel:      0,
+		minors:          []int{6, 7},
+		minorsResources: deviceResources{6: total.DeepCopy(), 7: total.DeepCopy()},
+	}
+	requirements := &GPURequirements{
+		numberOfGPUs:   1,
+		gpuShared:      true,
+		requestsPerGPU: corev1.ResourceList{apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(50, resource.DecimalSI)},
+	}
+	allocateContext := &AllocateContext{
+		deviceFree:       deviceFree,
+		deviceTotal:      deviceTotal,
+		allocationScorer: scorer,
+	}
+
+	result := allocateFromScope(requirements, scope, allocateContext, ScopeLevelContext{
+		contextOfDevices: make(map[int]*DeviceLevelContext, len(scope.minors)),
+	})
+	if assert.NotNil(t, result) && assert.Len(t, result.allocations, 1) {
+		assert.Equal(t, int32(7), result.allocations[0].Minor, "MostAllocated should pick the more-utilized shared GPU minor")
+	}
+}
+
 func TestAllocateByTemplate(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
