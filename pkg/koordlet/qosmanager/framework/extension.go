@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	clientset "k8s.io/client-go/kubernetes"
 	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/featuregate"
@@ -57,6 +58,11 @@ type ExtensionPlugin interface {
 	Run(stopCh <-chan struct{})
 }
 
+// DynamicClientAware is optional; plugins that patch CRDs implement it.
+type DynamicClientAware interface {
+	SetupDynamicClient(dyn dynamic.Interface)
+}
+
 type QOSExtensionConfig struct {
 	FeatureGates map[string]bool
 }
@@ -72,8 +78,17 @@ func (c *QOSExtensionConfig) InitFlags(fs *flag.FlagSet) {
 }
 
 func SetupPlugins(client clientset.Interface, metricCache metriccache.MetricCache, statesInformer statesinformer.StatesInformer) {
+	SetupPluginsWithDynamic(client, nil, metricCache, statesInformer)
+}
+
+func SetupPluginsWithDynamic(client clientset.Interface, dyn dynamic.Interface, metricCache metriccache.MetricCache, statesInformer statesinformer.StatesInformer) {
 	for f, plugin := range globalExtensionPlugins {
 		plugin.Setup(client, metricCache, statesInformer)
+		if dyn != nil {
+			if aware, ok := plugin.(DynamicClientAware); ok {
+				aware.SetupDynamicClient(dyn)
+			}
+		}
 		klog.V(4).Infof("setup for qos extension plugin %v", f)
 	}
 }

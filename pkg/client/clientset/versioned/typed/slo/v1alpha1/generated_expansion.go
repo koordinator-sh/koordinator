@@ -18,6 +18,8 @@ limitations under the License.
 
 package v1alpha1
 
+type ContainerCgroupOverrideExpansion interface{}
+
 type NodeMetricExpansion interface{}
 
 type NodeSLOExpansion interface{}
