@@ -20,6 +20,11 @@ import (
 	"container/list"
 	"sync"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+
+	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
 // defaultEquivalenceClassTTL is a backstop lifetime for a cached scheduling decision. The
@@ -53,15 +58,16 @@ type equivalenceClassNode struct {
 // scheduling cycle of the class. Pods consume it round-robin: the cursor wraps around instead of
 // exhausting the list, because nodes stay valid for many class pods (multi-pod-per-node). An
 // entry is dropped when every node's quota is spent, when the drift threshold is reached, on TTL
-// expiry, or on any node inventory change (flush).
+// expiry, or when a node event removes its last cached node.
 type equivalenceClassEntry struct {
-	key        string
-	nodes      []equivalenceClassNode
-	cursor     int
-	consumed   int
-	createdAt  time.Time
-	lastCycle  int64
-	lruElement *list.Element
+	key           string
+	nodes         []equivalenceClassNode
+	resourceNames sets.Set[corev1.ResourceName]
+	cursor        int
+	consumed      int
+	createdAt     time.Time
+	cycle         int64
+	lruElement    *list.Element
 }
 
 type equivalenceCacheMissReason string
@@ -76,22 +82,25 @@ const (
 	equivalenceCacheMissFilterError    equivalenceCacheMissReason = "filter_error"
 	equivalenceCacheMissSnapshotError  equivalenceCacheMissReason = "snapshot_error"
 	equivalenceCacheMissPreFilter      equivalenceCacheMissReason = "prefilter_failed"
+	equivalenceCacheMissNodeEvent      equivalenceCacheMissReason = "node_event"
 )
 
 func (r equivalenceCacheMissReason) String() string {
 	return string(r)
 }
 
-// equivalenceClassCache keeps a bounded set of scheduling decisions keyed by sandbox template
-// hash. Entries are reused independently, so interleaved hashes do not invalidate one another.
-// The LRU bound limits memory while retaining the most recently used equivalence classes.
+// equivalenceClassCache keeps a bounded set of scheduling decisions keyed by a profile-namespaced
+// sandbox template hash. Entries are reused independently, so interleaved profiles and hashes do
+// not invalidate one another. The LRU bound limits memory while retaining the most recently used
+// equivalence classes.
 type equivalenceClassCache struct {
-	mu       sync.Mutex
-	entries  map[string]*equivalenceClassEntry
-	lru      *list.List
-	capacity int
-	ttl      time.Duration
-	now      func() time.Time
+	mu                   sync.Mutex
+	entries              map[string]*equivalenceClassEntry
+	lru                  *list.List
+	capacity             int
+	ttl                  time.Duration
+	now                  func() time.Time
+	nodeEventInvalidated map[string]struct{}
 }
 
 func newEquivalenceClassCache(ttl time.Duration, capacity int) *equivalenceClassCache {
@@ -99,38 +108,50 @@ func newEquivalenceClassCache(ttl time.Duration, capacity int) *equivalenceClass
 		capacity = defaultEquivalenceClassCacheSize
 	}
 	return &equivalenceClassCache{
-		entries:  make(map[string]*equivalenceClassEntry, capacity),
-		lru:      list.New(),
-		capacity: capacity,
-		ttl:      ttl,
-		now:      time.Now,
+		entries:              make(map[string]*equivalenceClassEntry, capacity),
+		lru:                  list.New(),
+		capacity:             capacity,
+		ttl:                  ttl,
+		now:                  time.Now,
+		nodeEventInvalidated: make(map[string]struct{}),
 	}
 }
 
 // store backfills the class with a score-ordered feasible node list carrying per-node quotas.
-// An empty list is ignored: a class with no feasible node must fall back to the full path on
-// every pod instead of poisoning the cache.
-func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, cycle int64) {
-	if key == "" || len(nodes) == 0 {
+// An empty list removes any old entry: without reusable nodes the class must use the full path.
+func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, cycle int64, podRequests corev1.ResourceList) {
+	if key == "" {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.removeExpiredLocked(c.now())
+	delete(c.nodeEventInvalidated, key)
 	if oldEntry := c.entries[key]; oldEntry != nil {
 		c.removeLocked(oldEntry)
 	}
+	if len(nodes) == 0 {
+		return
+	}
 
 	nodes = append([]equivalenceClassNode(nil), nodes...)
+	resourceNames := sets.New(corev1.ResourcePods)
+	for name, quantity := range podRequests {
+		if quantity.Sign() > 0 {
+			resourceNames.Insert(name)
+		}
+	}
 	entry := &equivalenceClassEntry{
-		key:       key,
-		nodes:     nodes,
-		createdAt: c.now(),
-		lastCycle: cycle,
+		key:           key,
+		nodes:         nodes,
+		resourceNames: resourceNames,
+		createdAt:     c.now(),
+		cycle:         cycle,
 	}
 	entry.lruElement = c.lru.PushFront(entry)
 	c.entries[key] = entry
+	koordmetrics.RecordSandboxEquivalenceClassCacheEntries(1)
 	for len(c.entries) > c.capacity {
 		c.removeLocked(c.lru.Back().Value.(*equivalenceClassEntry))
 	}
@@ -142,7 +163,7 @@ func (c *equivalenceClassCache) recordConsumption(key, node string, cycle int64)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry := c.entries[key]
-	if entry == nil || entry.key != key || entry.lastCycle != cycle {
+	if entry == nil || entry.key != key || entry.cycle != cycle {
 		return
 	}
 	c.lru.MoveToFront(entry.lruElement)
@@ -165,6 +186,10 @@ func (c *equivalenceClassCache) next(key string, cycle int64) (string, bool, equ
 	defer c.mu.Unlock()
 	entry := c.entries[key]
 	if entry == nil {
+		if _, ok := c.nodeEventInvalidated[key]; ok {
+			delete(c.nodeEventInvalidated, key)
+			return "", false, equivalenceCacheMissNodeEvent
+		}
 		if len(c.entries) == 0 {
 			return "", false, equivalenceCacheMissEmpty
 		}
@@ -179,7 +204,7 @@ func (c *equivalenceClassCache) next(key string, cycle int64) (string, bool, equ
 		return "", false, equivalenceCacheMissDrift
 	}
 	c.lru.MoveToFront(entry.lruElement)
-	entry.lastCycle = cycle
+	entry.cycle = cycle
 	for i := 0; i < len(entry.nodes); i++ {
 		idx := (entry.cursor + i) % len(entry.nodes)
 		if entry.nodes[idx].quota <= 0 {
@@ -194,14 +219,77 @@ func (c *equivalenceClassCache) next(key string, cycle int64) (string, bool, equ
 	return "", false, equivalenceCacheMissQuotaExhausted
 }
 
-// flush drops all cached classes. It is called on node add/update/delete events: any change of the
-// node inventory may invalidate cached decisions, and rebuilding them is one full scheduling cycle
-// away.
+// flush drops all cached classes. It is used for invalidations that cannot be scoped to one node.
 func (c *equivalenceClassCache) flush() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	entryCount := len(c.entries)
+	c.nodeEventInvalidated = make(map[string]struct{})
 	c.entries = make(map[string]*equivalenceClassEntry, c.capacity)
 	c.lru.Init()
+	koordmetrics.RecordSandboxEquivalenceClassCacheEntries(-entryCount)
+}
+
+// flushNodeEvent drops all cached classes and remembers the affected keys so the next lookup can
+// attribute the miss to the node event instead of reporting an indistinguishable empty cache.
+func (c *equivalenceClassCache) flushNodeEvent() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entryCount := len(c.entries)
+	for key := range c.entries {
+		c.markNodeEventInvalidatedLocked(key)
+	}
+	c.entries = make(map[string]*equivalenceClassEntry, c.capacity)
+	c.lru.Init()
+	koordmetrics.RecordSandboxEquivalenceClassCacheEntries(-entryCount)
+}
+
+// removeNode removes a node from classes whose quotas depend on changed resources, or all classes when
+// changedResources is nil. An entry whose last node was removed reports a node-event miss.
+func (c *equivalenceClassCache) removeNode(nodeName string, changedResources sets.Set[corev1.ResourceName]) {
+	if nodeName == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	resources := changedResources.UnsortedList()
+	for element := c.lru.Back(); element != nil; {
+		entry := element.Value.(*equivalenceClassEntry)
+		element = element.Prev()
+		if changedResources != nil && !entry.resourceNames.HasAny(resources...) {
+			continue
+		}
+		for i := range entry.nodes {
+			if entry.nodes[i].name != nodeName {
+				continue
+			}
+			entry.nodes = append(entry.nodes[:i], entry.nodes[i+1:]...)
+			if entry.cursor > i {
+				entry.cursor--
+			}
+			if len(entry.nodes) == 0 {
+				c.markNodeEventInvalidatedLocked(entry.key)
+				c.removeLocked(entry)
+			} else if entry.cursor >= len(entry.nodes) {
+				entry.cursor = 0
+			}
+			break
+		}
+	}
+}
+
+func (c *equivalenceClassCache) markNodeEventInvalidatedLocked(key string) {
+	if _, exists := c.nodeEventInvalidated[key]; exists {
+		return
+	}
+	for len(c.nodeEventInvalidated) >= c.capacity {
+		for staleKey := range c.nodeEventInvalidated {
+			delete(c.nodeEventInvalidated, staleKey)
+			break
+		}
+	}
+	c.nodeEventInvalidated[key] = struct{}{}
 }
 
 func (c *equivalenceClassCache) removeExpiredLocked(now time.Time) {
@@ -219,7 +307,10 @@ func (c *equivalenceClassCache) removeLocked(entry *equivalenceClassEntry) {
 	if entry == nil {
 		return
 	}
-	delete(c.entries, entry.key)
+	if current, ok := c.entries[entry.key]; ok && current == entry {
+		delete(c.entries, entry.key)
+		koordmetrics.RecordSandboxEquivalenceClassCacheEntries(-1)
+	}
 	if entry.lruElement != nil {
 		c.lru.Remove(entry.lruElement)
 		entry.lruElement = nil

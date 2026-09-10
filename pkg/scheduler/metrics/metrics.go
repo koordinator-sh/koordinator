@@ -91,6 +91,13 @@ var (
 			Help:           "Number of Sandbox equivalence-class cache flushes, labeled by reason.",
 			StabilityLevel: metrics.ALPHA,
 		}, []string{"reason"})
+	SandboxEquivalenceClassCacheEntries = metrics.NewGauge(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "sandbox_equivalence_class_cache_entries",
+			Help:           "Current number of Sandbox equivalence-class cache entries.",
+			StabilityLevel: metrics.ALPHA,
+		})
 	SandboxSchedulingDuration = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
@@ -214,6 +221,7 @@ var (
 		SandboxEquivalenceClassHits,
 		SandboxEquivalenceClassMisses,
 		SandboxEquivalenceClassFlushes,
+		SandboxEquivalenceClassCacheEntries,
 		SandboxSchedulingDuration,
 		SandboxBindingSlotWaitDuration,
 		ElasticQuotaProcessLatency,
@@ -310,6 +318,14 @@ func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, v
 
 func RecordSandboxBindingSlotWaitDuration(profile string, latency time.Duration) {
 	SandboxBindingSlotWaitDuration.WithLabelValues(profile).Observe(latency.Seconds())
+}
+
+func RecordSandboxEquivalenceClassCacheEntries(delta int) {
+	SandboxEquivalenceClassCacheEntries.Add(float64(delta))
+}
+
+func RecordSandboxEquivalenceClassFlush(reason string) {
+	SandboxEquivalenceClassFlushes.WithLabelValues(reason).Inc()
 }
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
