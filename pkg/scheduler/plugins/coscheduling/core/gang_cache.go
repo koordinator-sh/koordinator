@@ -274,6 +274,10 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 	gangId := util.GetId(gangNamespace, gangName)
 	gang := gangCache.getGangFromCacheByGangId(gangId, true)
 	gang.tryInitByPodGroup(pg, gangCache.pluginArgs)
+	gangGroup := gang.getGangGroup()
+	gangGroupId := util.GetGangGroupId(gangGroup)
+	gangGroupInfo, _ := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
+	gang.SetGangGroupInfo(gangGroupInfo)
 	if gangCache.workloadAuditor != nil {
 		phase := pg.Status.Phase
 		if isPodGroupPendingPhase(phase) {
@@ -297,11 +301,6 @@ func (gangCache *GangCache) onPodGroupAdd(obj interface{}) {
 			extendedHandle.Scheduler().GetSchedulingQueue().Activate(logr.Discard(), map[string]*v1.Pod{util.GetId(someChildren.Namespace, someChildren.Name): someChildren})
 		}
 	}
-
-	gangGroup := gang.getGangGroup()
-	gangGroupId := util.GetGangGroupId(gangGroup)
-	gangGroupInfo, _ := gangCache.getGangGroupInfo(gangGroupId, gangGroup, true)
-	gang.SetGangGroupInfo(gangGroupInfo)
 
 	klog.Infof("watch podGroup created, Name:%v", pg.Name)
 }
