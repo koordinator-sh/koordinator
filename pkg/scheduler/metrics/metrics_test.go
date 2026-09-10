@@ -92,6 +92,61 @@ func TestRecordSandboxEquivalenceClassFlush(t *testing.T) {
 	}
 }
 
+func TestRecordSandboxEquivalenceClassHitAndMiss(t *testing.T) {
+	Register()
+	SandboxEquivalenceClassHits.Reset()
+	SandboxEquivalenceClassMisses.Reset()
+	t.Cleanup(SandboxEquivalenceClassHits.Reset)
+	t.Cleanup(SandboxEquivalenceClassMisses.Reset)
+
+	for i, profile := range []string{"koord-scheduler", "other-scheduler"} {
+		for j := 0; j <= i; j++ {
+			RecordSandboxEquivalenceClassHit(profile)
+			RecordSandboxEquivalenceClassMiss(profile, "empty")
+		}
+		RecordSandboxEquivalenceClassMiss(profile, "nominated")
+
+		hits, err := testutil.GetCounterMetricValue(SandboxEquivalenceClassHits.WithLabelValues(profile))
+		require.NoError(t, err)
+		assert.Equal(t, float64(i+1), hits, profile)
+		for reason, want := range map[string]float64{"empty": float64(i + 1), "nominated": 1} {
+			misses, err := testutil.GetCounterMetricValue(SandboxEquivalenceClassMisses.WithLabelValues(profile, reason))
+			require.NoError(t, err)
+			assert.Equal(t, want, misses, "%s/%s", profile, reason)
+		}
+	}
+}
+
+func TestRecordSandboxSchedulingDuration(t *testing.T) {
+	Register()
+	SandboxSchedulingDuration.Reset()
+	t.Cleanup(SandboxSchedulingDuration.Reset)
+
+	RecordSandboxSchedulingDuration("koord-scheduler", "fast", "success", 250*time.Millisecond)
+	RecordSandboxSchedulingDuration("koord-scheduler", "fast", "success", 750*time.Millisecond)
+	RecordSandboxSchedulingDuration("koord-scheduler", "full", "unschedulable", 1500*time.Millisecond)
+	RecordSandboxSchedulingDuration("other-scheduler", "full", "error", 2*time.Second)
+
+	for _, tt := range []struct {
+		profile, path, result string
+		count                 uint64
+		sum                   float64
+	}{
+		{profile: "koord-scheduler", path: "fast", result: "success", count: 2, sum: 1},
+		{profile: "koord-scheduler", path: "full", result: "unschedulable", count: 1, sum: 1.5},
+		{profile: "other-scheduler", path: "full", result: "error", count: 1, sum: 2},
+	} {
+		t.Run(tt.profile+"/"+tt.path+"/"+tt.result, func(t *testing.T) {
+			vec, err := testutil.GetHistogramVecFromGatherer(legacyregistry.DefaultGatherer,
+				"scheduler_sandbox_scheduling_duration_seconds",
+				map[string]string{"profile": tt.profile, "path": tt.path, "result": tt.result})
+			require.NoError(t, err)
+			assert.Equal(t, tt.count, vec.GetAggregatedSampleCount())
+			assert.InDelta(t, tt.sum, vec.GetAggregatedSampleSum(), 1e-9)
+		})
+	}
+}
+
 func TestGangJobSizeBucket(t *testing.T) {
 	tests := []struct {
 		name string

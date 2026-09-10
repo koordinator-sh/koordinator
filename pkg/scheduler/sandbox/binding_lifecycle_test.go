@@ -33,6 +33,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/component-base/metrics/testutil"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -356,4 +357,58 @@ func TestSandboxReservePodBypassesBindingAdmission(t *testing.T) {
 	require.True(t, status.IsSuccess(), "%v", status)
 	ext.RunReservePluginsUnreserve(ctx, framework.NewCycleState(), pod, "node-1")
 	assert.Len(t, h.workflow.limiter.slots, 1, "reserve pod must neither wait for nor release a sandbox slot")
+}
+
+type capacityPreFilterPlugin struct {
+	testEquivalenceCapacityPlugin
+}
+
+func (p *capacityPreFilterPlugin) PreFilter(context.Context, fwktype.CycleState, *corev1.Pod, []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
+	return nil, nil
+}
+
+func (p *capacityPreFilterPlugin) PreFilterExtensions() fwktype.PreFilterExtensions { return nil }
+
+func TestSandboxWarmCacheHonorsCurrentPodCapacity(t *testing.T) {
+	for _, tt := range []struct {
+		reason    equivalenceCacheMissReason
+		reusable  bool
+		evaluated int
+	}{
+		{reason: equivalenceCacheMissPluginVeto, evaluated: 3},
+		{reason: equivalenceCacheMissQuotaExhausted, reusable: true, evaluated: 4},
+	} {
+		t.Run(tt.reason.String(), func(t *testing.T) {
+			_, ctx := ktesting.NewTestContext(t)
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			plugin := &capacityPreFilterPlugin{}
+			h := newSandboxWorkflowTest(t, ctx, func(factory *frameworkext.FrameworkExtenderFactory) []schedulertesting.RegisterPluginFunc {
+				proxy := frameworkext.PluginFactoryProxy(factory, func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
+					return plugin, nil
+				})
+				return []schedulertesting.RegisterPluginFunc{schedulertesting.RegisterPreFilterPlugin(plugin.Name(), proxy)}
+			})
+			s := h.workflow.scheduling
+			fwk := h.sched.Profiles["koord-scheduler"]
+			_, err := h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeSandboxPod("first", "hash-a"))
+			require.NoError(t, err)
+			require.Len(t, s.equivalence.entries, 1)
+
+			// The current pod's identity or plugin state can differ even with a warm class.
+			plugin.handled = true
+			plugin.reusable = tt.reusable
+			counter := koordmetrics.SandboxEquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), tt.reason.String())
+			before, err := testutil.GetCounterMetricValue(counter)
+			require.NoError(t, err)
+			result, err := h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeSandboxPod("second", "hash-a"))
+			require.NoError(t, err)
+			assert.Equal(t, 2, result.FeasibleNodes, "a current-pod capacity rejection must run full node selection")
+			assert.Equal(t, tt.evaluated, result.EvaluatedNodes, "include failed fast attempts and full fallback")
+			after, err := testutil.GetCounterMetricValue(counter)
+			require.NoError(t, err)
+			assert.Equal(t, before+1, after)
+			assert.Empty(t, s.equivalence.entries, "a non-reusable backfill must not leave the old class cached")
+		})
+	}
 }
