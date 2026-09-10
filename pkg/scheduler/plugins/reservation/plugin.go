@@ -25,15 +25,18 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
 	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	listercorev1 "k8s.io/client-go/listers/core/v1"
+	clientcache "k8s.io/client-go/tools/cache"
 	resourceapi "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -181,10 +184,219 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 	// To register a custom event, follow the naming convention at:
 	// https://github.com/kubernetes/kubernetes/blob/e1ad9bee5bba8fbe85a6bf6201379ce8b1a611b1/pkg/scheduler/eventhandlers.go#L415-L422
 	gvk := fmt.Sprintf("reservations.%v.%v", schedulingv1alpha1.GroupVersion.Version, schedulingv1alpha1.GroupVersion.Group)
-	return []fwktype.ClusterEventWithHint{
+	events := []fwktype.ClusterEventWithHint{
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
-	}, nil
+	}
+
+	if pl.args != nil && pl.args.EnableQueueHint {
+		events[0].QueueingHintFn = pl.isSchedulableAfterPodDeletion
+		events[1].QueueingHintFn = pl.isSchedulableAfterReservationChange
+	}
+	return events, nil
+}
+
+// isSchedulableAfterPodDeletion requeues every waiter this plugin rejected.
+//
+// The event object cannot narrow that down. The scheduler unwraps a
+// DeletedFinalStateUnknown before notifying the queue and passes the carried
+// pod on, which it documents as possibly stale, while cache.RemovePod removes
+// the pod the cache holds and treats an empty Spec.NodeName as a missed delete
+// rather than as proof the pod held nothing. Empty placement fields therefore
+// do not show that no node capacity was released.
+func (pl *Plugin) isSchedulableAfterPodDeletion(_ klog.Logger, _ *corev1.Pod, _, _ interface{}) (fwktype.QueueingHint, error) {
+	return fwktype.Queue, nil
+}
+
+// reservationForQueueingHint decodes an object delivered to the Reservation
+// QueueingHintFn. The scheduler resolves this plugin's event resource through
+// the dynamic informer, which hands out *unstructured.Unstructured, so a plain
+// type assertion never matches a real event. ElasticQuota decodes the same way
+// in toElasticQuota; this one keeps the error rather than collapsing to nil,
+// because the caller has to tell a genuinely absent old object, which is an
+// Add, apart from one it failed to decode.
+func reservationForQueueingHint(obj interface{}) (*schedulingv1alpha1.Reservation, error) {
+	var u *unstructured.Unstructured
+	switch t := obj.(type) {
+	case nil:
+		return nil, nil
+	case *schedulingv1alpha1.Reservation:
+		return t, nil
+	case *unstructured.Unstructured:
+		if t == nil {
+			return nil, nil
+		}
+		u = t
+	case clientcache.DeletedFinalStateUnknown:
+		switch inner := t.Obj.(type) {
+		case *schedulingv1alpha1.Reservation:
+			return inner, nil
+		case *unstructured.Unstructured:
+			u = inner
+		default:
+			return nil, fmt.Errorf("expected a Reservation in the tombstone, got %T", t.Obj)
+		}
+	default:
+		return nil, fmt.Errorf("expected a Reservation or an unstructured object, got %T", obj)
+	}
+	if u == nil || u.Object == nil {
+		return nil, errors.New("the reservation event carries no object content")
+	}
+	r := &schedulingv1alpha1.Reservation{}
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, r); err != nil {
+		return nil, fmt.Errorf("decode the reservation event: %w", err)
+	}
+	return r, nil
+}
+
+func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
+	oldR, err := reservationForQueueingHint(oldObj)
+	if err != nil {
+		logger.Error(err, "Failed to decode the old Reservation in isSchedulableAfterReservationChange", "oldObj", oldObj)
+		return fwktype.Queue, nil
+	}
+	newR, err := reservationForQueueingHint(newObj)
+	if err != nil {
+		logger.Error(err, "Failed to decode the new Reservation in isSchedulableAfterReservationChange", "newObj", newObj)
+		return fwktype.Queue, nil
+	}
+	// Delete removes the reserve pod from the scheduler cache and returns its
+	// resources to the node. The freed node-level capacity can lift this
+	// plugin's fit rejections (fitsNodeAndReservation) even for waiters
+	// matched to a different reservation on the same node, so every waiter
+	// this plugin rejected gets another chance.
+	if newR == nil {
+		return fwktype.Queue, nil
+	}
+	// An Add is the first time this observer sees the reservation, not the
+	// moment it was created. processDeltas emits OnAdd whenever the object is
+	// absent from the local store, so a relist can deliver one whose earlier
+	// life this observer missed, while the typed informer that drives the
+	// plugin cache and the nominator has been following it throughout.
+	//
+	// Nothing in the object rules out that the missed window released a
+	// nomination, and BeforeFilter counts a nominated reserve pod against
+	// every pod evaluated for that node. A reservation that failed while still
+	// unassigned, or that became Available on a different node, has had its
+	// reserve pod dropped from the nominator by the time it arrives here, and
+	// the framework handler for an unassigned reservation reaching a terminal
+	// phase only removes it from the scheduling queue, so no Pod delete event
+	// covers that release either. Reading the nominator here is not an option:
+	// the listener that maintains it processes the same events on another
+	// goroutine.
+	if oldR == nil {
+		return fwktype.Queue, nil
+	}
+	// A UID replacement (delete+add coalesced into one update by the
+	// informer) replaces the reserve pod this plugin tracks - the scheduling
+	// queue keys reserve pods by the reservation UID and does not handle the
+	// replacement, see #3152 - and a phase transition moves the reservation
+	// between the
+	// scheduling queue, the reservation nominator, and the scheduler cache:
+	// becoming active deletes the reserve pod's nomination
+	// (reservationEventHandler.OnUpdate, at Waiting already), becoming
+	// Available assumes the reserve pod, leaving Available or terminating
+	// releases it. A nominated reserve pod is part of OTHER pods' node-level
+	// state (the transformer reads NominatedReservePodForNode), so all of
+	// these can change the fit of any waiter this plugin rejected: requeue
+	// unconditionally. These are once-per-lifecycle events, so the cost is
+	// bounded.
+	// The nodeName check must sit here as well: a same-phase migration (e.g.
+	// Waiting node-1 -> Waiting node-2, or a Waiting assignment rollback) is
+	// applied by the handlers as delete-then-add of the assumed reserve pod,
+	// which frees node capacity for any waiter.
+	// A reservation entering deletion releases what it held even while a
+	// finalizer keeps the object around: its reserve pod will never be
+	// scheduled, so the nominator drops the nomination and the node it was
+	// holding becomes available to other waiters. None of the fields compared
+	// below move when only deletionTimestamp is set.
+	if oldR.UID != newR.UID || oldR.Status.Phase != newR.Status.Phase ||
+		oldR.Status.NodeName != newR.Status.NodeName ||
+		oldR.DeletionTimestamp.IsZero() != newR.DeletionTimestamp.IsZero() {
+		return fwktype.Queue, nil
+	}
+	oldAvailable := reservationutil.IsReservationAvailable(oldR)
+	newAvailable := reservationutil.IsReservationAvailable(newR)
+	if !oldAvailable && !newAvailable {
+		// Same non-available phase: a spec, label, or annotation change can
+		// fix the reason this reservation's own reserve pod was rejected and
+		// also resizes the virtual occupancy its nomination imposes on other
+		// pods (the nominator holds the reserve pod built from the spec), so
+		// requeue every waiter. Pure status writes - including the
+		// unschedulable conditions this scheduler records after every failed
+		// attempt - must stay skipped, or each failure would requeue itself
+		// in a hot loop.
+		if oldR.Generation != newR.Generation ||
+			!apiequality.Semantic.DeepEqual(oldR.Labels, newR.Labels) ||
+			!apiequality.Semantic.DeepEqual(oldR.Annotations, newR.Annotations) {
+			return fwktype.Queue, nil
+		}
+		return fwktype.QueueSkip, nil
+	}
+	// Both Available on the same node below (same phase and same nodeName
+	// imply matching availability).
+	// A resize of status.allocatable also resizes the reserve pod held in the
+	// scheduler cache: growth adds reservation capacity for matched waiters,
+	// while shrinkage releases node capacity that can admit waiters unrelated
+	// to this reservation. Resizes are rare, so requeue unconditionally
+	// rather than reasoning per direction and per waiter.
+	if !apiequality.Semantic.DeepEqual(oldR.Status.Allocatable, newR.Status.Allocatable) {
+		return fwktype.Queue, nil
+	}
+	// Any change to the reservation's accounting requeues, in either
+	// direction and without gating on consumer relevance.
+	//
+	// A release frees reservation capacity for waiters matched to it. Growth
+	// helps waiters that cannot consume this reservation at all: once a bound
+	// pod is associated with it, restoreUnmatchedReservations subtracts the
+	// larger Allocated from the node's requested total
+	// (updateNodeInfoRequestedForUnmatched), which removes more of the double
+	// counting between the reservation and its owner pods and can turn a
+	// node-level rejection into a fit.
+	//
+	// CurrentOwners is compared separately because it is a separate limit.
+	// fitsReservation rejects on len(AssignedPods)+1 > allocatable pods, so a
+	// pod slot can be released while the allocated quantities stay equal. The
+	// controller compares the two the same way when it decides to write.
+	if !quotav1.Equals(oldR.Status.Allocated, newR.Status.Allocated) ||
+		!apiequality.Semantic.DeepEqual(oldR.Status.CurrentOwners, newR.Status.CurrentOwners) {
+		return fwktype.Queue, nil
+	}
+	// An update that keeps the reservation Available can still change the
+	// pod's fit, because the plugin cache rebuilds its ReservationInfo from
+	// the updated object:
+	//   - spec changes (owners widened, template resized, ...): the CRD has
+	//     the status subresource, so metadata.generation bumps exactly on
+	//     spec updates;
+	//   - label changes: reservation affinity selects reservations by label;
+	//   - annotation changes: NewReservationInfo derives the reserved
+	//     resources and the restricted-allocation options from annotations.
+	//
+	// None of these is gated on the waiter being able to consume this
+	// reservation, because none of them is local to its consumers:
+	//   - the template requests and, under a Restricted AllocatePolicy, the
+	//     restricted-options annotation decide ReservationInfo.ResourceNames,
+	//     which masks ReservationInfo.Allocated, which fitsNode subtracts from
+	//     the node's requested total to undo the double counting between a
+	//     reservation and its owner pods (widening that set does not currently
+	//     grow Allocated - see #3155 - but the wake-up must not depend on that
+	//     bug). Growing that subtraction can make a
+	//     pod fit that has no relationship to this reservation at all - the same
+	//     reason the accounting comparison above is ungated;
+	//   - an Available reservation's reserve pod is in the scheduler cache, and
+	//     it carries the reservation's labels, so other pods' inter-pod affinity
+	//     and topology spread are evaluated against them.
+	// Accounting changes are handled ungated above; a status write that moves
+	// neither Allocated nor CurrentOwners, such as the condition refresh this
+	// scheduler records after every attempt, is skipped.
+	if oldR.Generation != newR.Generation {
+		return fwktype.Queue, nil
+	}
+	if !apiequality.Semantic.DeepEqual(oldR.Labels, newR.Labels) ||
+		!apiequality.Semantic.DeepEqual(oldR.Annotations, newR.Annotations) {
+		return fwktype.Queue, nil
+	}
+	return fwktype.QueueSkip, nil
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.

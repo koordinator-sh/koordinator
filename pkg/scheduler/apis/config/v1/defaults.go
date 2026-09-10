@@ -186,6 +186,12 @@ func SetDefaults_ReservationArgs(obj *ReservationArgs) {
 	if obj.ResyncIntervalSeconds == 0 {
 		obj.ResyncIntervalSeconds = *defaultResyncIntervalSeconds
 	}
+	if obj.EnableQueueHint == nil {
+		// Copy the default instead of aliasing the package-level pointer, so
+		// a later in-place mutation of one defaulted object cannot leak into
+		// the shared default or into other defaulted objects.
+		obj.EnableQueueHint = ptr.To(*defaultEnableQueueHint)
+	}
 }
 
 func SetDefaults_ElasticQuotaArgs(obj *ElasticQuotaArgs) {
