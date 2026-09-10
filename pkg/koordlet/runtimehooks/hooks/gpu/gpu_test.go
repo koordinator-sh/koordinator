@@ -17,6 +17,7 @@ limitations under the License.
 package gpu
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -140,4 +141,130 @@ func Test_InjectContainerGPUEnv(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_injectGPUEnv(t *testing.T) {
+	tests := []struct {
+		name         string
+		devices      []*ext.DeviceAllocation
+		expectedEnvs map[string]string
+	}{
+		{
+			name: "single gpu",
+			devices: []*ext.DeviceAllocation{
+				{Minor: 0},
+			},
+			expectedEnvs: map[string]string{GpuAllocEnv: "0"},
+		},
+		{
+			name: "multiple gpus",
+			devices: []*ext.DeviceAllocation{
+				{Minor: 0},
+				{Minor: 1},
+				{Minor: 3},
+			},
+			expectedEnvs: map[string]string{GpuAllocEnv: "0,1,3"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			containerCtx := &protocol.ContainerContext{}
+			containerCtx.Response.AddContainerEnvs = make(map[string]string)
+			injectGPUEnv(containerCtx, tt.devices)
+			assert.Equal(t, tt.expectedEnvs, containerCtx.Response.AddContainerEnvs)
+		})
+	}
+}
+
+func mockGetDeviceNumbers(path string) ([]int64, error) {
+	// Simulate real device numbers for known NVIDIA device paths.
+	knownDevices := map[string][]int64{
+		"/dev/nvidia0":          {195, 0},
+		"/dev/nvidia1":          {195, 1},
+		"/dev/nvidiactl":        {195, 255},
+		"/dev/nvidia-uvm":       {510, 0},
+		"/dev/nvidia-uvm-tools": {510, 1},
+	}
+	if info, ok := knownDevices[path]; ok {
+		return info, nil
+	}
+	return nil, fmt.Errorf("device not found: %s", path)
+}
+
+func Test_injectGPUDevices(t *testing.T) {
+	original := getDeviceNumbers
+	getDeviceNumbers = mockGetDeviceNumbers
+	defer func() { getDeviceNumbers = original }()
+
+	tests := []struct {
+		name            string
+		devices         []*ext.DeviceAllocation
+		expectedDevices []*protocol.LinuxDevice
+	}{
+		{
+			name: "single gpu",
+			devices: []*ext.DeviceAllocation{
+				{Minor: 0},
+			},
+			expectedDevices: []*protocol.LinuxDevice{
+				{Path: "/dev/nvidia0", Type: "c", Major: 195, Minor: 0, FileModeValue: 0666},
+				{Path: nvidiaCtlDevice, Type: "c", Major: 195, Minor: 255, FileModeValue: 0666},
+				{Path: nvidiaUVMDevice, Type: "c", Major: 510, Minor: 0, FileModeValue: 0666},
+				{Path: nvidiaUVMToolsDevice, Type: "c", Major: 510, Minor: 1, FileModeValue: 0666},
+			},
+		},
+		{
+			name: "multiple gpus",
+			devices: []*ext.DeviceAllocation{
+				{Minor: 0},
+				{Minor: 1},
+			},
+			expectedDevices: []*protocol.LinuxDevice{
+				{Path: "/dev/nvidia0", Type: "c", Major: 195, Minor: 0, FileModeValue: 0666},
+				{Path: "/dev/nvidia1", Type: "c", Major: 195, Minor: 1, FileModeValue: 0666},
+				{Path: nvidiaCtlDevice, Type: "c", Major: 195, Minor: 255, FileModeValue: 0666},
+				{Path: nvidiaUVMDevice, Type: "c", Major: 510, Minor: 0, FileModeValue: 0666},
+				{Path: nvidiaUVMToolsDevice, Type: "c", Major: 510, Minor: 1, FileModeValue: 0666},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			containerCtx := &protocol.ContainerContext{}
+			err := injectGPUDevices(containerCtx, tt.devices)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedDevices, containerCtx.Response.AddContainerDevices)
+		})
+	}
+}
+
+func Test_injectGPUDevices_deviceNotFound(t *testing.T) {
+	original := getDeviceNumbers
+	getDeviceNumbers = func(path string) ([]int64, error) {
+		return nil, fmt.Errorf("device not found: %s", path)
+	}
+	defer func() { getDeviceNumbers = original }()
+
+	containerCtx := &protocol.ContainerContext{}
+	err := injectGPUDevices(containerCtx, []*ext.DeviceAllocation{{Minor: 0}})
+	assert.NoError(t, err)
+	assert.Nil(t, containerCtx.Response.AddContainerDevices)
+}
+
+func Test_injectGPUDevices_partialFailure(t *testing.T) {
+	original := getDeviceNumbers
+	getDeviceNumbers = func(path string) ([]int64, error) {
+		// GPU0 exists, GPU1 does not.
+		if path == "/dev/nvidia0" {
+			return []int64{195, 0}, nil
+		}
+		return nil, fmt.Errorf("device not found: %s", path)
+	}
+	defer func() { getDeviceNumbers = original }()
+
+	containerCtx := &protocol.ContainerContext{}
+	err := injectGPUDevices(containerCtx, []*ext.DeviceAllocation{{Minor: 0}, {Minor: 1}})
+	assert.NoError(t, err)
+	// On partial failure, no devices should be injected (atomic all-or-nothing).
+	assert.Nil(t, containerCtx.Response.AddContainerDevices)
 }
