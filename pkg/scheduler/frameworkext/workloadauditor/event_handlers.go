@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
@@ -45,6 +46,14 @@ func AddEventHandler(sched *scheduler.Scheduler, workloadAuditor WorkloadAuditor
 				if !ok {
 					return false
 				}
+			}
+			// Synthetic reserve pods (created from Reservation objects) are not real
+			// scheduling workloads. Tracking them in the workload auditor would mix
+			// reservation lifecycle data into real pod records and leak WorkloadRecord
+			// entries, since reserve-pod update/delete events are filtered out once
+			// the underlying reservation is scheduled (NodeName != "").
+			if reservationutil.IsReservePod(pod) {
+				return false
 			}
 			return pod.Spec.NodeName == "" && sched.Profiles.HandlesSchedulerName(pod.Spec.SchedulerName)
 		},
@@ -88,8 +97,12 @@ func AddEventHandler(sched *scheduler.Scheduler, workloadAuditor WorkloadAuditor
 		},
 	}
 	podInformer := sharedInformerFactory.Core().V1().Pods()
-	_, _ = frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer.Informer(), podEventHandler)
-	reservationEventHandler := reservationutil.NewReservationToPodEventHandler(podEventHandler)
+	if _, err := frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer.Informer(), podEventHandler); err != nil {
+		klog.ErrorS(err, "failed to register pod event handler for workload auditor")
+	}
+	reservationEventHandler := reservationutil.NewReservationToPodEventHandler(podEventHandler, reservationutil.IsObjValidActiveReservation)
 	reservationInformer := koordInformerFactory.Scheduling().V1alpha1().Reservations()
-	_, _ = frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordInformerFactory, reservationInformer.Informer(), reservationEventHandler)
+	if _, err := frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), koordInformerFactory, reservationInformer.Informer(), reservationEventHandler); err != nil {
+		klog.ErrorS(err, "failed to register reservation event handler for workload auditor")
+	}
 }

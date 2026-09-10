@@ -30,10 +30,26 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 )
+
+type mutableClientFeatureGates interface {
+	clientfeatures.Gates
+	Set(key clientfeatures.Feature, value bool) error
+}
+
+func init() {
+	// Disable WatchListClient to avoid fake client compatibility issues in tests.
+	// In k8s v1.35, WatchListClient defaults to true (Beta), but fake clients
+	// don't send the required bookmark event (k8s.io/initial-events-end=true),
+	// causing informers to hang forever waiting for initial sync.
+	if fg, ok := clientfeatures.FeatureGates().(mutableClientFeatureGates); ok {
+		_ = fg.Set(clientfeatures.WatchListClient, false)
+	}
+}
 
 func TestSyncedEventHandler(t *testing.T) {
 	var objects []runtime.Object
