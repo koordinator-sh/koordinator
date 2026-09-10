@@ -80,9 +80,12 @@ const (
 	equivalenceCacheMissQuotaExhausted equivalenceCacheMissReason = "quota_exhausted"
 	equivalenceCacheMissFilterRejected equivalenceCacheMissReason = "filter_rejected"
 	equivalenceCacheMissFilterError    equivalenceCacheMissReason = "filter_error"
+	equivalenceCacheMissExtenderError  equivalenceCacheMissReason = "extender_error"
 	equivalenceCacheMissSnapshotError  equivalenceCacheMissReason = "snapshot_error"
 	equivalenceCacheMissPreFilter      equivalenceCacheMissReason = "prefilter_failed"
+	equivalenceCacheMissNominated      equivalenceCacheMissReason = "nominated_node"
 	equivalenceCacheMissNodeEvent      equivalenceCacheMissReason = "node_event"
+	equivalenceCacheMissPluginVeto     equivalenceCacheMissReason = "plugin_not_reusable"
 )
 
 func (r equivalenceCacheMissReason) String() string {
@@ -176,11 +179,33 @@ func (c *equivalenceClassCache) recordConsumption(key, node string, cycle int64)
 	}
 }
 
+// rejectNode cancels the provisional consumption from next and discards the candidate.
+func (c *equivalenceClassCache) rejectNode(key, node string, cycle int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry := c.entries[key]
+	if entry == nil || entry.cycle != cycle {
+		return
+	}
+	entry.consumed--
+	for i := range entry.nodes {
+		if entry.nodes[i].name == node {
+			entry.nodes[i].quota = 0
+			return
+		}
+	}
+}
+
 // next returns the next candidate node of the class, decrementing its quota and advancing the
 // cursor round-robin. The second return value is false when the class is unknown, expired,
 // drifted beyond the recomputation threshold, or fully out of quota. The third return value
 // identifies the miss reason. On a miss, the affected entry is dropped and the caller falls back
 // to the full path, which backfills a fresh entry.
+//
+// Consumption is one-way: a subsequent Reserve/Permit/Bind failure that forgets the pod from the
+// scheduler cache does not reclaim the slot here. Under-counting a class's remaining capacity can
+// only force a conservative fallback to the full path, never an overcommit, so the drift threshold
+// and TTL are the intended correction rather than per-failure quota bookkeeping.
 func (c *equivalenceClassCache) next(key string, cycle int64) (string, bool, equivalenceCacheMissReason) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

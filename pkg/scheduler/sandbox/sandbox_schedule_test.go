@@ -71,6 +71,20 @@ func (p *countingPreFilterPlugin) PreFilterExtensions() fwktype.PreFilterExtensi
 	return nil
 }
 
+type rejectingPreFilterPlugin struct{}
+
+func (p *rejectingPreFilterPlugin) Name() string {
+	return "SandboxRejectingPreFilter"
+}
+
+func (p *rejectingPreFilterPlugin) PreFilter(context.Context, fwktype.CycleState, *corev1.Pod, []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
+	return nil, fwktype.NewStatus(fwktype.Unschedulable, "rejected by test")
+}
+
+func (p *rejectingPreFilterPlugin) PreFilterExtensions() fwktype.PreFilterExtensions {
+	return nil
+}
+
 type namedFramework struct {
 	framework.Framework
 	name string
@@ -510,6 +524,283 @@ func TestDecideSandboxCacheIsProfileScoped(t *testing.T) {
 	assert.Len(t, s.equivalence.entries, 2)
 }
 
+func TestDecideSandboxFastPathRunsExtenderFilters(t *testing.T) {
+	ctx := context.Background()
+	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
+	fwk := s.sched.Profiles["koord-scheduler"]
+	var checks atomic.Int32
+	s.sched.Extenders = []fwktype.Extender{
+		&schedulertesting.FakeExtender{
+			Predicates: []schedulertesting.FitPredicate{func(_ *corev1.Pod, node fwktype.NodeInfo) *fwktype.Status {
+				checks.Add(1)
+				if node.Node().Name == "node-2" {
+					return fwktype.NewStatus(fwktype.Success)
+				}
+				return fwktype.NewStatus(fwktype.Unschedulable, "node is not allowed")
+			}},
+		},
+	}
+	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(1, "node-1", "node-2"), s.sched.CurrentCycle(), nil)
+
+	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-a"))
+	require.NoError(t, err)
+	assert.Equal(t, "node-2", result.SuggestedHost, "the fast path must honor extender filters before returning a cached node")
+	assert.Equal(t, int32(2), checks.Load())
+	assert.Equal(t, 2, result.EvaluatedNodes)
+}
+
+func TestSandboxFastPathChecksRejectedNodeOnce(t *testing.T) {
+	ctx := context.Background()
+	s := newSandboxTestScheduling(t, ctx, makeNode("rejected", "4", "8Gi"), makeNode("spent-1", "4", "8Gi"), makeNode("spent-2", "4", "8Gi"))
+	fwk := s.sched.Profiles["koord-scheduler"]
+	var checks atomic.Int32
+	s.sched.Extenders = []fwktype.Extender{&schedulertesting.FakeExtender{
+		Predicates: []schedulertesting.FitPredicate{func(*corev1.Pod, fwktype.NodeInfo) *fwktype.Status {
+			checks.Add(1)
+			return fwktype.NewStatus(fwktype.Unschedulable, "rejected")
+		}},
+	}}
+	key := equivalenceCacheKey(fwk.ProfileName(), "hash-a")
+	s.equivalence.store(key, []equivalenceClassNode{
+		{name: "rejected", quota: 100},
+		{name: "spent-1", quota: 0},
+		{name: "spent-2", quota: 0},
+	}, s.sched.CurrentCycle(), nil)
+	logger, _ := ktesting.NewTestContext(t)
+	snapshot, err := s.updateSnapshot(logger, fwk)
+	require.NoError(t, err)
+	state := framework.NewCycleState()
+	pod := makeSandboxPod("p1", "hash-a")
+	preFilter := s.runSandboxPreFilter(ctx, state, fwk, pod)
+
+	result, reason := s.scheduleFromEquivalenceClass(ctx, state, fwk, pod, key, snapshot, preFilter)
+
+	assert.Empty(t, result.SuggestedHost)
+	assert.Equal(t, 1, result.EvaluatedNodes)
+	assert.Equal(t, int32(1), checks.Load())
+	assert.Equal(t, equivalenceCacheMissFilterRejected, reason)
+}
+
+func TestSandboxFastPathFailureReasons(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		plugins   []schedulertesting.RegisterPluginFunc
+		extenders []fwktype.Extender
+		candidate string
+		reason    equivalenceCacheMissReason
+		evaluated int
+	}{
+		{
+			name: "filter error", candidate: "node-1", reason: equivalenceCacheMissFilterError, evaluated: 1,
+			plugins: []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterFilterPlugin("FakeFilter", schedulertesting.NewFakeFilterPlugin(map[string]fwktype.Code{"node-1": fwktype.Error})),
+			},
+		},
+		{
+			name: "extender error", candidate: "node-1", reason: equivalenceCacheMissExtenderError, evaluated: 1,
+			extenders: []fwktype.Extender{&schedulertesting.FakeExtender{
+				Predicates: []schedulertesting.FitPredicate{schedulertesting.ErrorPredicateExtender},
+			}},
+		},
+		{
+			name: "missing snapshot node", candidate: "deleted-node", reason: equivalenceCacheMissSnapshotError,
+		},
+		{
+			name: "prefilter restriction", candidate: "node-1", reason: equivalenceCacheMissFilterRejected,
+			plugins: []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterPreFilterPlugin("Restrict", schedulertesting.NewFakePreFilterPlugin(
+					"Restrict", &fwktype.PreFilterResult{NodeNames: sets.New("node-2")}, nil)),
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			s := newSandboxTestSchedulingWithPlugins(t, ctx, tt.plugins, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
+			s.sched.Extenders = tt.extenders
+			fwk := s.sched.Profiles["koord-scheduler"]
+			key := equivalenceCacheKey(fwk.ProfileName(), "hash")
+			s.equivalence.store(key, quotaNodes(100, tt.candidate), s.sched.CurrentCycle(), nil)
+			logger, _ := ktesting.NewTestContext(t)
+			snapshot, err := s.updateSnapshot(logger, fwk)
+			require.NoError(t, err)
+			pod := makeSandboxPod("pod", "hash")
+			state := framework.NewCycleState()
+			result, reason := s.scheduleFromEquivalenceClass(ctx, state, fwk, pod, key, snapshot, s.runSandboxPreFilter(ctx, state, fwk, pod))
+			assert.Empty(t, result.SuggestedHost)
+			assert.Equal(t, tt.evaluated, result.EvaluatedNodes)
+			assert.Equal(t, tt.reason, reason)
+			assert.Empty(t, s.equivalence.entries)
+		})
+	}
+}
+
+func TestSandboxFallbackCountsFastFilterRejection(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := newSandboxTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterFilterPlugin("FakeFilter", schedulertesting.NewFakeFilterPlugin(map[string]fwktype.Code{"node-1": fwktype.Unschedulable})),
+	}, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
+	fwk := s.sched.Profiles["koord-scheduler"]
+	key := equivalenceCacheKey(fwk.ProfileName(), "hash")
+	s.equivalence.store(key, quotaNodes(100, "node-1"), s.sched.CurrentCycle(), nil)
+	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("pod", "hash"))
+	require.NoError(t, err)
+	assert.Equal(t, "node-2", result.SuggestedHost)
+	assert.Equal(t, 3, result.EvaluatedNodes, "one fast rejection plus two full-path evaluations")
+	assert.Equal(t, []equivalenceClassNode{{name: "node-2", quota: 109}}, s.equivalence.entries[key].nodes)
+}
+
+func TestSandboxFullPathScoreErrors(t *testing.T) {
+	for _, stage := range []string{"PreScore", "Score"} {
+		t.Run(stage, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var preScore, score *fwktype.Status
+			status := fwktype.NewStatus(fwktype.Error, stage+" failed")
+			if stage == "PreScore" {
+				preScore = status
+			} else {
+				score = status
+			}
+			s := newSandboxTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterPluginAsExtensions("ScoreFailure",
+					schedulertesting.NewFakePreScoreAndScorePlugin("ScoreFailure", 1, preScore, score), "PreScore", "Score"),
+			}, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
+			result, err := s.decide(ctx, framework.NewCycleState(), s.sched.Profiles["koord-scheduler"], makeSandboxPod("pod", "hash"))
+			require.ErrorContains(t, err, stage+" failed")
+			assert.Empty(t, result.SuggestedHost)
+			assert.Empty(t, s.equivalence.entries)
+		})
+	}
+}
+
+type fixedScoreFramework struct {
+	framework.Framework
+	scores []fwktype.NodePluginScores
+}
+
+func (f *fixedScoreFramework) RunScorePlugins(context.Context, fwktype.CycleState, *corev1.Pod, []fwktype.NodeInfo) ([]fwktype.NodePluginScores, *fwktype.Status) {
+	return append([]fwktype.NodePluginScores(nil), f.scores...), nil
+}
+
+func TestSandboxCandidateOrder(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := newSandboxTestScheduling(t, ctx, makeNode("low", "4", "8Gi"), makeNode("tie-low", "4", "8Gi"), makeNode("tie-high", "4", "8Gi"))
+	fwk := &fixedScoreFramework{
+		Framework: s.sched.Profiles["koord-scheduler"],
+		scores: []fwktype.NodePluginScores{
+			{Name: "tie-low", TotalScore: 10, Randomizer: 1},
+			{Name: "low", TotalScore: 1, Randomizer: 100},
+			{Name: "tie-high", TotalScore: 10, Randomizer: 2},
+		},
+	}
+	logger, _ := ktesting.NewTestContext(t)
+	snapshot, err := s.updateSnapshot(logger, fwk)
+	require.NoError(t, err)
+	pod := makeSandboxPod("pod", "hash")
+	state := framework.NewCycleState()
+	result, ordered, err := s.scheduleSandboxPod(ctx, state, fwk, pod, snapshot, s.runSandboxPreFilter(ctx, state, fwk, pod))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"tie-high", "tie-low", "low"}, ordered)
+	assert.Equal(t, ordered[0], result.SuggestedHost)
+}
+
+func TestSandboxExtenderScoring(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := newSandboxTestScheduling(t, ctx, makeNode("node1", "4", "8Gi"), makeNode("node2", "4", "8Gi"))
+	s.sched.Extenders = []fwktype.Extender{
+		&schedulertesting.FakeExtender{ExtenderName: "scorer", Weight: 1,
+			Prioritizers: []schedulertesting.PriorityConfig{{Function: schedulertesting.Node2PrioritizerExtender, Weight: 1}}},
+		&schedulertesting.FakeExtender{ExtenderName: "failed-scorer",
+			Prioritizers: []schedulertesting.PriorityConfig{{Function: schedulertesting.ErrorPrioritizerExtender, Weight: 1}}},
+		&schedulertesting.FakeExtender{ExtenderName: "uninterested", UnInterested: true},
+	}
+	result, err := s.decide(ctx, framework.NewCycleState(), s.sched.Profiles["koord-scheduler"], makeSandboxPod("pod", "hash"))
+	require.NoError(t, err, "extender scoring errors must not fail the full path")
+	assert.Equal(t, "node2", result.SuggestedHost)
+	assert.Equal(t, 2, result.EvaluatedNodes)
+}
+
+func TestDecideSandboxNominatedNodeSkipsFastPath(t *testing.T) {
+	ctx := context.Background()
+	koordmetrics.Register()
+	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
+	fwk := s.sched.Profiles["koord-scheduler"]
+
+	// Prime the class so the fast path would place any pod of hash-a on node-1. The primed node has
+	// ample quota and the pod has no resource requests, so the fast path would return node-1 unless
+	// it is skipped: this is what makes node-2 a discriminating outcome rather than a coincidence.
+	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(10, "node-1"), s.sched.CurrentCycle(), nil)
+
+	missCounter := koordmetrics.SandboxEquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), equivalenceCacheMissNominated.String())
+	before, err := testutil.GetCounterMetricValue(missCounter)
+	require.NoError(t, err)
+
+	// A pod re-queued after preemption carries a NominatedNodeName. It must land on the nominated
+	// node the full path evaluates first, not the cached fast-path node.
+	pod := makeSandboxPod("p1", "hash-a")
+	pod.Status.NominatedNodeName = "node-2"
+
+	result, err := s.decide(ctx, framework.NewCycleState(), fwk, pod)
+	require.NoError(t, err)
+	assert.Equal(t, "node-2", result.SuggestedHost, "a nominated pod must honor its nominated node instead of the cached fast-path node")
+
+	after, err := testutil.GetCounterMetricValue(missCounter)
+	require.NoError(t, err)
+	assert.Equal(t, float64(1), after-before, "the nominated_node miss reason must be recorded exactly once, proving the fast path was skipped rather than node-2 chosen by chance")
+
+	node, ok, _ := s.equivalence.next(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), s.sched.CurrentCycle())
+	require.True(t, ok, "the existing class should remain available after a nominated pod")
+	assert.Equal(t, "node-1", node, "a nominated pod must not overwrite the class with its single-node result")
+}
+
+func TestDecideSandboxFastPathHitConsumesQuotaWithoutReclaim(t *testing.T) {
+	ctx := context.Background()
+	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
+	fwk := s.sched.Profiles["koord-scheduler"]
+
+	// Prime the class with a single slot on node-1. The first pod takes the fast path and consumes
+	// that slot; nothing binds in this test, mirroring a pod whose binding cycle later fails.
+	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(1, "node-1"), s.sched.CurrentCycle(), nil)
+
+	first, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-a"))
+	require.NoError(t, err)
+	assert.Equal(t, "node-1", first.SuggestedHost)
+	assert.Equal(t, 1, first.EvaluatedNodes, "the first pod must take the fast path")
+
+	// The slot is not reclaimed for the next pod: the exhausted class misses and the second pod
+	// pays the full path instead of reusing the consumed slot.
+	second, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p2", "hash-a"))
+	require.NoError(t, err)
+	assert.Equal(t, 2, second.FeasibleNodes, "the consumed slot must not be reclaimed; the second pod falls back to the full path")
+}
+
+func TestDecideSandboxPreFilterRejectionFallsBackToFullPath(t *testing.T) {
+	ctx := context.Background()
+	koordmetrics.Register()
+	s := newSandboxTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterPreFilterPlugin("SandboxRejectingPreFilter", func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
+			return &rejectingPreFilterPlugin{}, nil
+		}),
+	}, makeNode("node-1", "4", "8Gi"))
+	fwk := s.sched.Profiles["koord-scheduler"]
+
+	missCounter := koordmetrics.SandboxEquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), equivalenceCacheMissPreFilter.String())
+	before, err := testutil.GetCounterMetricValue(missCounter)
+	require.NoError(t, err)
+
+	_, err = s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-a"))
+	var fitErr *framework.FitError
+	require.ErrorAs(t, err, &fitErr, "a rejecting PreFilter must surface as an unschedulable FitError")
+
+	after, err := testutil.GetCounterMetricValue(missCounter)
+	require.NoError(t, err)
+	assert.Equal(t, float64(1), after-before, "a PreFilter rejection must be recorded as a prefilter_failed miss before falling back")
+}
+
 func TestDecideSandboxFastPathRefreshesSnapshot(t *testing.T) {
 	ctx := context.Background()
 	logger, _ := ktesting.NewTestContext(t)
@@ -550,8 +841,8 @@ func TestDecideSandboxFastPathMissFallsBackToFullPath(t *testing.T) {
 	require.True(t, ok)
 	state := framework.NewCycleState()
 	preFilter := s.runSandboxPreFilter(ctx, state, fwk, makeSandboxPod("p1", "unknown"))
-	_, ok, _ = s.scheduleFromEquivalenceClass(ctx, state, fwk, makeSandboxPod("p1", "unknown"), equivalenceCacheKey(fwk.ProfileName(), "unknown"), snapshot, preFilter)
-	assert.False(t, ok, "unknown class should miss")
+	fastResult, _ := s.scheduleFromEquivalenceClass(ctx, state, fwk, makeSandboxPod("p1", "unknown"), equivalenceCacheKey(fwk.ProfileName(), "unknown"), snapshot, preFilter)
+	assert.Empty(t, fastResult.SuggestedHost, "unknown class should miss")
 
 	// A miss falls back to the full path inside decide and backfills the class.
 	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-b"))

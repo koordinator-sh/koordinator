@@ -67,22 +67,12 @@ func buildQuotaNodesWithPlugins(
 			continue
 		}
 		quota := nodeQuotaForPod(podReqs, nodeInfo)
-		reusable := true
-		for _, plugin := range plugins {
-			pluginQuota, pluginReusable, handled := plugin.EquivalenceCapacity(ctx, state, pod, nodeInfo)
-			if !handled {
-				continue
-			}
-			if !pluginReusable {
-				reusable = false
-				break
-			}
-			if pluginQuota < quota {
-				quota = pluginQuota
-			}
-		}
+		pluginQuota, reusable := equivalencePluginCapacity(ctx, state, pod, nodeInfo, plugins)
 		if !reusable {
 			continue
+		}
+		if pluginQuota < quota {
+			quota = pluginQuota
 		}
 		if quota <= 0 {
 			continue
@@ -90,6 +80,23 @@ func buildQuotaNodesWithPlugins(
 		out = append(out, equivalenceClassNode{name: name, quota: quota})
 	}
 	return out
+}
+
+func equivalencePluginCapacity(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo, plugins []frameworkext.EquivalenceCapacityPlugin) (int64, bool) {
+	quota := int64(math.MaxInt64)
+	for _, plugin := range plugins {
+		pluginQuota, reusable, handled := plugin.EquivalenceCapacity(ctx, state, pod, nodeInfo)
+		if !handled {
+			continue
+		}
+		if !reusable {
+			return 0, false
+		}
+		if pluginQuota < quota {
+			quota = pluginQuota
+		}
+	}
+	return quota, true
 }
 
 // nodeQuotaForPod returns how many more pods of the class fit the node, as the minimum across
