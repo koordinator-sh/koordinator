@@ -81,6 +81,7 @@ const (
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
 
+	_ fwktype.PreEnqueuePlugin = &Plugin{}
 	_ fwktype.PreFilterPlugin  = &Plugin{}
 	_ fwktype.FilterPlugin     = &Plugin{}
 	_ fwktype.PostFilterPlugin = &Plugin{}
@@ -185,6 +186,13 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+func (pl *Plugin) PreEnqueue(ctx context.Context, p *corev1.Pod) *fwktype.Status {
+	if pl.preemptionMgr != nil {
+		return pl.preemptionMgr.PreEnqueue(ctx, p)
+	}
+	return nil
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.
