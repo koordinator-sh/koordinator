@@ -54,6 +54,44 @@ func TestRecordSandboxBindingSlotWaitDuration(t *testing.T) {
 	}
 }
 
+func TestRecordSandboxEquivalenceClassCacheEntries(t *testing.T) {
+	Register()
+	SandboxEquivalenceClassCacheEntries.Set(0)
+	t.Cleanup(func() { SandboxEquivalenceClassCacheEntries.Set(0) })
+
+	for _, tt := range []struct {
+		delta int
+		want  float64
+	}{
+		{delta: 1, want: 1},
+		{delta: 3, want: 4},
+		{delta: -1, want: 3},
+		{delta: -3, want: 0},
+		{delta: 0, want: 0},
+	} {
+		RecordSandboxEquivalenceClassCacheEntries(tt.delta)
+		value, err := testutil.GetGaugeMetricValue(SandboxEquivalenceClassCacheEntries)
+		require.NoError(t, err)
+		assert.Equal(t, tt.want, value)
+	}
+}
+
+func TestRecordSandboxEquivalenceClassFlush(t *testing.T) {
+	Register()
+	SandboxEquivalenceClassFlushes.Reset()
+	t.Cleanup(SandboxEquivalenceClassFlushes.Reset)
+
+	RecordSandboxEquivalenceClassFlush("node_event")
+	RecordSandboxEquivalenceClassFlush("node_event")
+	RecordSandboxEquivalenceClassFlush("bind_failure")
+
+	for reason, want := range map[string]float64{"node_event": 2, "bind_failure": 1} {
+		value, err := testutil.GetCounterMetricValue(SandboxEquivalenceClassFlushes.WithLabelValues(reason))
+		require.NoError(t, err)
+		assert.Equal(t, want, value, reason)
+	}
+}
+
 func TestGangJobSizeBucket(t *testing.T) {
 	tests := []struct {
 		name string
