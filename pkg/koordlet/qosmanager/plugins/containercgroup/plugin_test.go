@@ -291,6 +291,222 @@ func TestApplyFromNodeSLOExtensions(t *testing.T) {
 	assert.Equal(t, "536870912", got)
 }
 
+func TestSetupAndRunPlugin(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	helper.SetCgroupsV2(false)
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	si := mockstatesinformer.NewMockStatesInformer(ctrl)
+	si.EXPECT().GetAllPods().Return(nil).AnyTimes()
+	si.EXPECT().GetNodeSLO().Return(nil).AnyTimes()
+
+	p := NewPlugin()
+	p.Setup(nil, nil, si)
+	assert.NotNil(t, p.executor)
+	assert.NotNil(t, p.cgroupReader)
+	assert.NotNil(t, p.statesInformer)
+
+	p.SetupDynamicClient(nil)
+	assert.Nil(t, p.dynClient)
+
+	stopCh := make(chan struct{})
+	p.Run(stopCh)
+	close(stopCh)
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestHandlePendingDeleteWriteback(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	helper.SetCgroupsV2(false)
+
+	podMeta := testutil.MockTestPodWithQOS(corev1.PodQOSBurstable, apiext.QoSLS)
+	containerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, &podMeta.Pod.Status.ContainerStatuses[1])
+	assert.NoError(t, err)
+	helper.WriteCgroupFileContents(containerDir, system.MemoryLimit, "1073741824")
+	helper.WriteCgroupFileContents(containerDir, system.CPUCFSQuota, "100000")
+	helper.WriteCgroupFileContents(containerDir, system.CPUCFSPeriod, "100000")
+
+	p := NewPlugin()
+	p.executor = resourceexecutor.NewResourceUpdateExecutor()
+	p.cgroupReader = resourceexecutor.NewCgroupReader()
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	p.executor.Run(stopCh)
+
+	key := targetKey{id: "cr/default/cap"}
+	baseline := apiext.ContainerCgroupResources{
+		Memory: &apiext.MemoryCgroupOverride{Max: "1073741824"},
+		CPU:    &apiext.CPUCgroupOverride{Quota: "100000"},
+	}
+	p.mu.Lock()
+	p.baselines[key] = baseline
+	p.active[key] = activeEntry{
+		containerName: "main",
+		cgroupParent:  containerDir,
+		resources: apiext.ContainerCgroupResources{
+			Memory: &apiext.MemoryCgroupOverride{Max: "536870912"},
+		},
+	}
+	p.mu.Unlock()
+
+	item := &apiext.NodeCgroupOverrideItem{
+		Namespace:         "default",
+		Name:              "cap",
+		ContainerName:     "main",
+		WritebackOnDelete: true,
+		Resources: apiext.ContainerCgroupResources{
+			Memory: &apiext.MemoryCgroupOverride{Max: "536870912"},
+		},
+	}
+	err = p.handlePendingDelete(podMeta, item, key)
+	assert.NoError(t, err)
+
+	got := helper.ReadCgroupFileContents(containerDir, system.MemoryLimit)
+	assert.Equal(t, "1073741824", got)
+
+	p.mu.Lock()
+	_, aok := p.active[key]
+	_, bok := p.baselines[key]
+	p.mu.Unlock()
+	assert.False(t, aok, "active entry should be removed after writeback")
+	assert.False(t, bok, "baseline should be removed after writeback")
+}
+
+func TestResolveBaseline(t *testing.T) {
+	p := NewPlugin()
+	key := targetKey{id: "ann/x"}
+	p.mu.Lock()
+	p.baselines[key] = apiext.ContainerCgroupResources{Memory: &apiext.MemoryCgroupOverride{Max: "536870912"}}
+	p.mu.Unlock()
+	bl := p.resolveBaseline(key, nil)
+	assert.Equal(t, "536870912", bl.MemoryMax())
+
+	// stored baseline wins over external baseline
+	external := &apiext.ContainerCgroupResources{CPU: &apiext.CPUCgroupOverride{Quota: "200m"}}
+	bl = p.resolveBaseline(key, external)
+	assert.Equal(t, "536870912", bl.MemoryMax())
+
+	// no stored baseline -> falls back to external
+	key2 := targetKey{id: "ann/y"}
+	bl = p.resolveBaseline(key2, external)
+	assert.Equal(t, "200m", bl.CPUQuota())
+
+	// neither -> empty
+	bl = p.resolveBaseline(targetKey{id: "ann/z"}, nil)
+	assert.True(t, bl.Empty())
+}
+
+func TestWritebackRestore(t *testing.T) {
+	p := NewPlugin()
+	// empty container dir -> error
+	err := p.writeback("", apiext.ContainerCgroupResources{}, apiext.ContainerCgroupResources{})
+	assert.Error(t, err)
+
+	helper := system.NewFileTestUtil(t)
+	helper.SetCgroupsV2(false)
+
+	podMeta := testutil.MockTestPodWithQOS(corev1.PodQOSBurstable, apiext.QoSLS)
+	containerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, &podMeta.Pod.Status.ContainerStatuses[1])
+	assert.NoError(t, err)
+	helper.WriteCgroupFileContents(containerDir, system.MemoryLimit, "1073741824")
+	helper.WriteCgroupFileContents(containerDir, system.CPUCFSQuota, "100000")
+	helper.WriteCgroupFileContents(containerDir, system.CPUCFSPeriod, "100000")
+	helper.WriteCgroupFileContents(containerDir, system.CPUSet, "0-1")
+
+	p.executor = resourceexecutor.NewResourceUpdateExecutor()
+	p.cgroupReader = resourceexecutor.NewCgroupReader()
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	p.executor.Run(stopCh)
+
+	desired := apiext.ContainerCgroupResources{
+		Memory: &apiext.MemoryCgroupOverride{Max: "536870912"},
+		CPU:    &apiext.CPUCgroupOverride{Quota: "200m", CPUSet: "0-1"},
+	}
+	baseline := apiext.ContainerCgroupResources{
+		Memory: &apiext.MemoryCgroupOverride{Max: "1073741824"},
+		CPU:    &apiext.CPUCgroupOverride{Quota: "100000", CPUSet: "0-1"},
+	}
+	err = p.writeback(containerDir, desired, baseline)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "1073741824", helper.ReadCgroupFileContents(containerDir, system.MemoryLimit))
+	assert.Equal(t, "100000", helper.ReadCgroupFileContents(containerDir, system.CPUCFSQuota))
+}
+
+func TestWritebackMissingNoWriteback(t *testing.T) {
+	p := NewPlugin()
+	key := targetKey{id: "ann/x"}
+	p.mu.Lock()
+	p.active[key] = activeEntry{containerName: "main", writeback: false}
+	p.baselines[key] = apiext.ContainerCgroupResources{}
+	p.mu.Unlock()
+
+	p.writebackMissing(map[targetKey]struct{}{})
+
+	p.mu.Lock()
+	_, a := p.active[key]
+	_, b := p.baselines[key]
+	p.mu.Unlock()
+	assert.False(t, a, "entry without writeback should be dropped")
+	assert.False(t, b)
+}
+
+func TestFormatMemoryLimitForWrite(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	helper.SetCgroupsV2(false)
+	assert.Equal(t, "-1", formatMemoryLimitForWrite(-1))
+	assert.Equal(t, "536870912", formatMemoryLimitForWrite(536870912))
+
+	helper.SetCgroupsV2(true)
+	assert.Equal(t, "max", formatMemoryLimitForWrite(-1))
+}
+
+func TestMemoryMaxToCgroupValueV2(t *testing.T) {
+	helper := system.NewFileTestUtil(t)
+	helper.SetCgroupsV2(true)
+	v, err := MemoryMaxToCgroupValue("max")
+	assert.NoError(t, err)
+	assert.Equal(t, "max", v)
+
+	_, err = MemoryMaxToCgroupValue("not-a-quantity")
+	assert.Error(t, err)
+
+	// v1 for positive quantity already covered; ensure v2 positive too
+	v, err = MemoryMaxToCgroupValue("1Gi")
+	assert.NoError(t, err)
+	assert.Equal(t, "1073741824", v)
+}
+
+func TestCPUQuotaToCgroupValueWithPeriodEdges(t *testing.T) {
+	// quota <= 0 -> -1
+	v, err := CPUQuotaToCgroupValueWithPeriod("0", 100000)
+	assert.NoError(t, err)
+	assert.Equal(t, "-1", v)
+	// period <= 0 -> default period
+	v, err = CPUQuotaToCgroupValueWithPeriod("200m", 0)
+	assert.NoError(t, err)
+	assert.Equal(t, "20000", v)
+	// invalid quantity
+	_, err = CPUQuotaToCgroupValueWithPeriod("abc", 100000)
+	assert.Error(t, err)
+}
+
+func TestParseOverrideSpecsErrors(t *testing.T) {
+	_, err := ParseOverrideSpecs("")
+	assert.Error(t, err)
+	_, err = ParseOverrideSpecs("[]")
+	assert.Error(t, err)
+	// array with an invalid element (missing containerName)
+	_, err = ParseOverrideSpecs(`[{"memoryMax":"1Gi"}]`)
+	assert.Error(t, err)
+	// invalid JSON
+	_, err = ParseOverrideSpecs("not-json")
+	assert.Error(t, err)
+}
+
 func TestSkipNoOpApply(t *testing.T) {
 	helper := system.NewFileTestUtil(t)
 	helper.SetCgroupsV2(false)
