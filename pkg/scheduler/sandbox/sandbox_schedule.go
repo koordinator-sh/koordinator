@@ -64,6 +64,10 @@ type equivalenceScheduling struct {
 	percentageOfNodesToScore int32
 }
 
+func equivalenceCacheKey(profileName, templateHash string) string {
+	return profileName + "/" + templateHash
+}
+
 func newEquivalenceScheduling(sched *scheduler.Scheduler, percentageOfNodesToScore *int32, cacheCapacity int) *equivalenceScheduling {
 	s := &equivalenceScheduling{
 		sched:       sched,
@@ -76,15 +80,86 @@ func newEquivalenceScheduling(sched *scheduler.Scheduler, percentageOfNodesToSco
 }
 
 func (s *equivalenceScheduling) registerNodeEventHandler(informer toolscache.SharedIndexInformer) error {
-	// Any change of the node inventory may invalidate cached equivalence-class decisions;
-	// flushing everything is the conservative choice and rebuilding is one full scheduling
-	// cycle away.
 	_, err := informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { s.flushEquivalenceCache("node_event") },
-		UpdateFunc: func(oldObj, newObj interface{}) { s.flushEquivalenceCache("node_event") },
-		DeleteFunc: func(obj interface{}) { s.flushEquivalenceCache("node_event") },
+		AddFunc:    s.handleNodeAdd,
+		UpdateFunc: s.handleNodeUpdate,
+		DeleteFunc: s.handleNodeDelete,
 	})
 	return err
+}
+
+func (s *equivalenceScheduling) handleNodeAdd(obj interface{}) {
+	if _, ok := obj.(*corev1.Node); !ok {
+		s.flushNodeEventCache()
+		return
+	}
+	// A new node changes the candidate set and can change normalized scores for every class.
+	s.flushNodeEventCache()
+}
+
+func (s *equivalenceScheduling) handleNodeUpdate(oldObj, newObj interface{}) {
+	oldNode, oldOK := objAsNode(oldObj)
+	newNode, newOK := objAsNode(newObj)
+	if !oldOK || !newOK || oldNode.Name == "" || oldNode.Name != newNode.Name {
+		s.flushNodeEventCache()
+		return
+	}
+	// The upstream queue classifier reports uncordon but not cordon.
+	if oldNode.Spec.Unschedulable != newNode.Spec.Unschedulable {
+		s.removeNodeFromCache(newNode.Name)
+		return
+	}
+	changes := framework.NodeSchedulingPropertiesChange(newNode, oldNode)
+	if len(changes) == 0 {
+		return
+	}
+	for _, change := range changes {
+		if change.ActionType != fwktype.UpdateNodeAllocatable {
+			s.removeNodeFromCache(newNode.Name)
+			return
+		}
+	}
+
+	// Unrequested resources do not affect resource-based quota. Cached score ordering
+	// remains bounded by TTL and drift.
+	changedResources := sets.New[corev1.ResourceName]()
+	for name, oldQuantity := range oldNode.Status.Allocatable {
+		newQuantity, exists := newNode.Status.Allocatable[name]
+		if !exists || !oldQuantity.Equal(newQuantity) {
+			changedResources.Insert(name)
+		}
+	}
+	for name := range newNode.Status.Allocatable {
+		if _, exists := oldNode.Status.Allocatable[name]; !exists {
+			changedResources.Insert(name)
+		}
+	}
+	s.equivalence.removeNode(newNode.Name, changedResources)
+}
+
+func (s *equivalenceScheduling) handleNodeDelete(obj interface{}) {
+	// DeletedFinalStateUnknown is deliberately handled conservatively: the tombstone may not carry
+	// the latest node state needed to know which cached decisions are safe to retain.
+	node, ok := objAsNode(obj)
+	if !ok || node.Name == "" {
+		s.flushNodeEventCache()
+		return
+	}
+	s.removeNodeFromCache(node.Name)
+}
+
+func objAsNode(obj interface{}) (*corev1.Node, bool) {
+	node, ok := obj.(*corev1.Node)
+	return node, ok && node != nil
+}
+
+func (s *equivalenceScheduling) flushNodeEventCache() {
+	s.equivalence.flushNodeEvent()
+	koordmetrics.RecordSandboxEquivalenceClassFlush(equivalenceCacheMissNodeEvent.String())
+}
+
+func (s *equivalenceScheduling) removeNodeFromCache(nodeName string) {
+	s.equivalence.removeNode(nodeName, nil)
 }
 
 func (s *equivalenceScheduling) handles(pod *corev1.Pod) bool {
@@ -108,7 +183,7 @@ func (s *equivalenceScheduling) SchedulePod(ctx context.Context, state fwktype.C
 
 func (s *equivalenceScheduling) flushEquivalenceCache(reason string) {
 	s.equivalence.flush()
-	koordmetrics.SandboxEquivalenceClassFlushes.WithLabelValues(reason).Inc()
+	koordmetrics.RecordSandboxEquivalenceClassFlush(reason)
 }
 
 type sandboxPreFilterResult struct {
@@ -145,6 +220,7 @@ func (s *equivalenceScheduling) decide(ctx context.Context, state fwktype.CycleS
 	}()
 
 	hash := apiext.GetSandboxTemplateHash(pod)
+	cacheKey := equivalenceCacheKey(schedFramework.ProfileName(), hash)
 	snapshot, err := s.updateSnapshot(klog.FromContext(ctx), schedFramework)
 	if err != nil {
 		return scheduler.ScheduleResult{}, err
@@ -160,7 +236,7 @@ func (s *equivalenceScheduling) decide(ctx context.Context, state fwktype.CycleS
 		return result, err
 	}
 
-	if node, ok, reason := s.scheduleFromEquivalenceClass(ctx, state, schedFramework, pod, hash, snapshot, preFilter); ok {
+	if node, ok, reason := s.scheduleFromEquivalenceClass(ctx, state, schedFramework, pod, cacheKey, snapshot, preFilter); ok {
 		path = "fast"
 		koordmetrics.SandboxEquivalenceClassHits.WithLabelValues(schedFramework.ProfileName()).Inc()
 		return scheduler.ScheduleResult{SuggestedHost: node, EvaluatedNodes: 1, FeasibleNodes: 1}, nil
@@ -176,8 +252,8 @@ func (s *equivalenceScheduling) decide(ctx context.Context, state fwktype.CycleS
 		// The quota baselines reflect every occupant (running and assumed) at decision time.
 		// The pod paying for this full path occupies one slot on the suggested host itself.
 		cycle := s.sched.CurrentCycle()
-		s.equivalence.store(hash, buildQuotaNodesWithPlugins(ctx, state, pod, orderedNodes, schedFramework.SnapshotSharedLister(), s.equivalenceCapacityPlugins(schedFramework)), cycle)
-		s.equivalence.recordConsumption(hash, result.SuggestedHost, cycle)
+		s.equivalence.store(cacheKey, buildQuotaNodesWithPlugins(ctx, state, pod, orderedNodes, schedFramework.SnapshotSharedLister(), s.equivalenceCapacityPlugins(schedFramework)), cycle, podRequestsForQuota(pod))
+		s.equivalence.recordConsumption(cacheKey, result.SuggestedHost, cycle)
 	}
 	return result, err
 }
@@ -206,13 +282,13 @@ func (s *equivalenceScheduling) updateSnapshot(logger klog.Logger, schedFramewor
 // Filter reads the PreFilter-computed pod requests). The second return value is false when the
 // class cannot serve this pod (miss, expiry, exhaustion, or a plugin error), and the caller
 // falls back to the full scheduling path.
-func (s *equivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod, hash string, snapshot *cache.Snapshot, preFilter sandboxPreFilterResult) (string, bool, equivalenceCacheMissReason) {
+func (s *equivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod, cacheKey string, snapshot *cache.Snapshot, preFilter sandboxPreFilterResult) (string, bool, equivalenceCacheMissReason) {
 	if !preFilter.status.IsSuccess() {
 		return "", false, equivalenceCacheMissPreFilter
 	}
 	var sawFilterRejected, sawSnapshotError bool
 	for {
-		node, ok, reason := s.equivalence.next(hash, s.sched.CurrentCycle())
+		node, ok, reason := s.equivalence.next(cacheKey, s.sched.CurrentCycle())
 		if !ok {
 			if sawFilterRejected && reason == equivalenceCacheMissQuotaExhausted {
 				return "", false, equivalenceCacheMissFilterRejected
