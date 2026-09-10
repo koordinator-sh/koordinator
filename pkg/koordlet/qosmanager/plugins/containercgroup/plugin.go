@@ -347,7 +347,7 @@ func (p *plugin) applyNamed(podMeta *statesinformer.PodMeta, containerName strin
 		}
 	}
 	if quota := res.CPUQuota(); quota != "" {
-		period := int64(system.CFSBasePeriodValue)
+		period := system.CFSBasePeriodValue
 		if res.CPU != nil && res.CPU.Period != nil && *res.CPU.Period > 0 {
 			period = *res.CPU.Period
 		} else if per, rerr := p.cgroupReader.ReadCPUPeriod(containerDir); rerr == nil && per > 0 {
