@@ -65,6 +65,7 @@ type cgroupResourceSummary struct {
 	memoryUsePriorityOom   *int64
 	memoryPriority         *int64
 	memoryOomKillGroup     *int64
+	memorySoftLimit        *int64
 	// Alinux memcg page cache limit
 	memoryPageCacheLimitEnable   *int64
 	memoryPageCacheLimitSize     *int64
@@ -280,6 +281,14 @@ func (m *cgroupResourcesReconcile) calculatePodResources(pod *corev1.Pod, parent
 			klog.V(5).Infof("correct calculated memory.low for pod since it is lower than memory.min, "+
 				"pod %s, current value %v", util.GetPodKey(pod), summary.memoryLow)
 		}
+		// ponytail: report memory.soft_limit_in_bytes as a v1 fallback approximation of memory.low
+		// on standard cgroup v1 kernels that lack memory.low (e.g. EKS AL2, vanilla kernels).
+		// soft_limit is a best-effort limit: the kernel tries to keep usage below it under pressure,
+		// but does not provide a hard guarantee like memory.low does.
+		// Upgrade path: remove when the cluster migrates to cgroup v2 or Alibaba-compatible kernel.
+		if summary.memoryLow != nil {
+			summary.memorySoftLimit = ptr.To[int64](*summary.memoryLow)
+		}
 		// Alinux memcg page cache limit
 		// page cache limit is set at pod level. PageCacheLimitSize (absolute bytes) takes precedence
 		// over PageCacheLimitPercent when set; percent is calculated from pod memory limit.
@@ -394,6 +403,10 @@ func (m *cgroupResourcesReconcile) calculateContainerResources(container *corev1
 			*summary.memoryLow = *summary.memoryMin
 			klog.V(5).Infof("correct calculated memory.low for container since it is lower than memory.min,"+
 				" pod %s, container %s, current value %v", util.GetPodKey(pod), container.Name, *summary.memoryLow)
+		}
+		// ponytail: report memory.soft_limit_in_bytes as a v1 fallback approximation of memory.low
+		if summary.memoryLow != nil {
+			summary.memorySoftLimit = ptr.To[int64](*summary.memoryLow)
 		}
 		// values improved: memory.high is no less than memory.min
 		if summary.memoryHigh != nil && summary.memoryMin != nil && *summary.memoryHigh > 0 &&
@@ -577,6 +590,11 @@ func makeCgroupResources(parentDir string, summary *cgroupResourceSummary) []res
 		{
 			resourceType: system.MemoryOomGroupName,
 			value:        summary.memoryOomKillGroup,
+		},
+		// v1 fallback: memory.soft_limit_in_bytes approximates memory.low on standard cgroup v1 kernels
+		{
+			resourceType: system.MemorySoftLimitName,
+			value:        summary.memorySoftLimit,
 		},
 		// Alinux memcg page cache limit
 		{
