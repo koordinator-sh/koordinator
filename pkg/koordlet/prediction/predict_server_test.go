@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/koordinator-sh/koordinator/apis/extension"
+
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
 	v1 "k8s.io/api/core/v1"
@@ -528,4 +530,95 @@ func TestDoCheckpoint_RestoreModels(t *testing.T) {
 
 	unknownUIDs := predictServer.restoreModels()
 	assert.Equal(t, 1, len(unknownUIDs), "unknown uids")
+}
+
+func TestComputePodSampleWeight(t *testing.T) {
+	fakeClock := clock.NewFakeClock(time.Now())
+	predictServer := &peakPredictServer{
+		clock: fakeClock,
+	}
+
+	testCases := []struct {
+		name           string
+		pod            *v1.Pod
+		expectedWeight float64
+	}{
+		{
+			name: "prod pod, no age",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriorityClass: string(extension.PriorityProd),
+					},
+				},
+			},
+			expectedWeight: 1.0,
+		},
+		{
+			name: "batch pod, no age",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriorityClass: string(extension.PriorityBatch),
+					},
+				},
+			},
+			expectedWeight: 0.8,
+		},
+		{
+			name: "prod pod, very new cold start",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriorityClass: string(extension.PriorityProd),
+					},
+					CreationTimestamp: metav1.Time{Time: fakeClock.Now().Add(-1 * time.Minute)},
+				},
+			},
+			expectedWeight: 0.2, // 1 min / 5 min
+		},
+		{
+			name: "batch pod, mid cold start",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriorityClass: string(extension.PriorityBatch),
+					},
+					CreationTimestamp: metav1.Time{Time: fakeClock.Now().Add(-2 * time.Minute)},
+				},
+			},
+			expectedWeight: 0.4, // 2 min / 5 min = 0.4
+		},
+		{
+			name: "prod pod, out of cold start",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriorityClass: string(extension.PriorityProd),
+					},
+					CreationTimestamp: metav1.Time{Time: fakeClock.Now().Add(-6 * time.Minute)},
+				},
+			},
+			expectedWeight: 1.0,
+		},
+		{
+			name: "free pod, cold start limit below MinSampleWeight",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodPriorityClass: string(extension.PriorityFree),
+					},
+					CreationTimestamp: metav1.Time{Time: fakeClock.Now().Add(-1 * time.Second)}, // very new
+				},
+			},
+			expectedWeight: MinSampleWeight, // should hit min 0.1
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			weight := predictServer.computePodSampleWeight(tc.pod)
+			assert.InDelta(t, tc.expectedWeight, weight, 0.01)
+		})
+	}
 }
