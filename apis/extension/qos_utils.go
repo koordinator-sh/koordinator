@@ -17,6 +17,8 @@ limitations under the License.
 package extension
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/kubectl/pkg/util/qos"
 )
@@ -25,8 +27,16 @@ import (
 
 // QoSClassForGuaranteed indicates the QoSClass which a Guaranteed Pod without a koordinator QoSClass specified should
 // be regarded by default.
-// TODO: add component options to customize it.
 var QoSClassForGuaranteed = QoSLSR
+
+// SetQoSClassForGuaranteed configures the default QoSClass for Guaranteed Pods without a koordinator QoSClass specified.
+func SetQoSClassForGuaranteed(qosClass QoSClass) error {
+	if GetPodQoSClassByName(string(qosClass)) == QoSNone {
+		return fmt.Errorf("unsupported QoSClass %q for Guaranteed Pods", qosClass)
+	}
+	QoSClassForGuaranteed = qosClass
+	return nil
+}
 
 // GetPodQoSClassWithDefault gets the pod's QoSClass with the default config.
 func GetPodQoSClassWithDefault(pod *corev1.Pod) QoSClass {
