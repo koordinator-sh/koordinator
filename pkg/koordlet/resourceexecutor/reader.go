@@ -30,6 +30,7 @@ type CgroupReader interface {
 	ReadCPUQuota(parentDir string) (int64, error)
 	ReadCPUPeriod(parentDir string) (int64, error)
 	ReadCPUShares(parentDir string) (int64, error)
+	ReadCPUBurst(parentDir string) (int64, error)
 	ReadCPUSet(parentDir string) (*cpuset.CPUSet, error)
 	ReadCPUAcctUsage(parentDir string) (uint64, error)
 	ReadCPUStat(parentDir string) (*sysutil.CPUStatRaw, error)
@@ -66,6 +67,14 @@ func (r *CgroupV1Reader) ReadCPUPeriod(parentDir string) (int64, error) {
 
 func (r *CgroupV1Reader) ReadCPUShares(parentDir string) (int64, error) {
 	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.CPUSharesName)
+	if !ok {
+		return -1, ErrResourceNotRegistered
+	}
+	return readCgroupAndParseInt64(parentDir, resource)
+}
+
+func (r *CgroupV1Reader) ReadCPUBurst(parentDir string) (int64, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV1, sysutil.CPUBurstName)
 	if !ok {
 		return -1, ErrResourceNotRegistered
 	}
@@ -302,6 +311,14 @@ func (r *CgroupV2Reader) ReadCPUShares(parentDir string) (int64, error) {
 	}
 	// convert cpu.weight value into cpu.shares value
 	return sysutil.ConvertCPUWeightToShares(v)
+}
+
+func (r *CgroupV2Reader) ReadCPUBurst(parentDir string) (int64, error) {
+	resource, ok := sysutil.DefaultRegistry.Get(sysutil.CgroupVersionV2, sysutil.CPUBurstName)
+	if !ok {
+		return -1, ErrResourceNotRegistered
+	}
+	return readCgroupAndParseInt64(parentDir, resource)
 }
 
 func (r *CgroupV2Reader) ReadCPUSet(parentDir string) (*cpuset.CPUSet, error) {
