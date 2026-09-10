@@ -34,6 +34,7 @@ import (
 	sysutil "github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 	rmconfig "github.com/koordinator-sh/koordinator/pkg/runtimeproxy/config"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilcpuset "github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
 const (
@@ -82,6 +83,19 @@ func (p *cpusetPlugin) Register(op hooks.Options) {
 		"set sandbox container cpuset for cpushare pod is specified",
 		p.SetContainerCPUSet, reconciler.PodQOSFilter(), cpusharePodQOSConditions...)
 
+	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSetMems,
+		"set container cpuset.mems for numa-aware pod",
+		p.SetContainerCPUSetMems, reconciler.PodQOSFilter(), cpusetPodQOSConditions...)
+	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.CPUSetMems,
+		"set sandbox container cpuset.mems for numa-aware pod",
+		p.SetContainerCPUSetMems, reconciler.PodQOSFilter(), cpusetPodQOSConditions...)
+	reconciler.RegisterCgroupReconciler(reconciler.ContainerLevel, sysutil.CPUSetMems,
+		"set container cpuset.mems for cpushare numa-aware pod",
+		p.SetContainerCPUSetMems, reconciler.PodQOSFilter(), cpusharePodQOSConditions...)
+	reconciler.RegisterCgroupReconciler(reconciler.SandboxLevel, sysutil.CPUSetMems,
+		"set sandbox container cpuset.mems for cpushare numa-aware pod",
+		p.SetContainerCPUSetMems, reconciler.PodQOSFilter(), cpusharePodQOSConditions...)
+
 	reconciler.RegisterHostAppReconciler(sysutil.CPUSet, "set host application cpuset",
 		p.SetHostAppCPUSet, &reconciler.ReconcilerOption{})
 	p.executor = op.Executor
@@ -102,6 +116,11 @@ func (p *cpusetPlugin) SetContainerCPUSetAndUnsetCFS(proto protocol.HooksProtoco
 	err := p.SetContainerCPUSet(proto)
 	if err != nil {
 		return err
+	}
+
+	// set container-level cpuset.mems for numa-aware pods
+	if err := p.SetContainerCPUSetMems(proto); err != nil {
+		klog.V(4).Infof("set cpuset.mems failed, error: %v", err)
 	}
 
 	// unset container-level cpu.cfs_quota_us if needed
@@ -172,6 +191,36 @@ func (p *cpusetPlugin) SetHostAppCPUSet(proto protocol.HooksProtocol) error {
 	}
 	hostAppCtx.Response.Resources.CPUSet = cpusetValue
 	return nil
+}
+
+func (p *cpusetPlugin) SetContainerCPUSetMems(proto protocol.HooksProtocol) error {
+	containerCtx, _ := proto.(*protocol.ContainerContext)
+	if containerCtx == nil {
+		return fmt.Errorf("container protocol is nil for plugin %v", name)
+	}
+	containerReq := containerCtx.Request
+
+	podAlloc, err := apiext.GetResourceStatus(containerReq.PodAnnotations)
+	if err != nil {
+		return err
+	}
+	if podAlloc == nil || len(podAlloc.NUMANodeResources) == 0 {
+		return nil
+	}
+
+	memsValue := buildCPUSetMemsValue(podAlloc.NUMANodeResources)
+	containerCtx.Response.Resources.CPUSetMems = ptr.To(memsValue)
+	klog.V(5).Infof("set cpuset.mems %v for container %v/%v",
+		memsValue, containerCtx.Request.PodMeta.String(), containerCtx.Request.ContainerMeta.Name)
+	return nil
+}
+
+func buildCPUSetMemsValue(numaNodeResources []apiext.NUMANodeResource) string {
+	builder := utilcpuset.NewCPUSetBuilder()
+	for _, numaNode := range numaNodeResources {
+		builder.Add(int(numaNode.Node))
+	}
+	return builder.Result().String()
 }
 
 func (p *cpusetPlugin) UnsetPodCPUQuota(proto protocol.HooksProtocol) error {

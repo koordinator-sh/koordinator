@@ -185,6 +185,9 @@ func (p *PodResponse) ProxyDone(resp *runtimeapi.PodSandboxHookResponse) {
 	if p.Resources.CPUSet != nil {
 		resp.Resources.CpusetCpus = *p.Resources.CPUSet
 	}
+	if p.Resources.CPUSetMems != nil {
+		resp.Resources.CpusetMems = *p.Resources.CPUSetMems
+	}
 	if p.Resources.CPUShares != nil {
 		resp.Resources.CpuShares = *p.Resources.CPUShares
 	}
