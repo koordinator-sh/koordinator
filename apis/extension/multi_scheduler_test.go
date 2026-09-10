@@ -26,35 +26,44 @@ import (
 )
 
 func TestGetSchedulerName(t *testing.T) {
-	// Test case 1: Pod with LabelSchedulerName label
-	podWithLabel := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{
+	tests := []struct {
+		name           string
+		labels         map[string]string
+		specName       string
+		expectedResult string
+	}{
+		{
+			name: "scheduler name label takes precedence",
+			labels: map[string]string{
 				LabelSchedulerName: "custom-scheduler",
 			},
+			specName:       "default-scheduler",
+			expectedResult: "custom-scheduler",
 		},
-		Spec: corev1.PodSpec{
-			SchedulerName: "default-scheduler",
+		{
+			name:           "sandbox scheduler name is used directly",
+			specName:       SandboxSchedulerName,
+			expectedResult: SandboxSchedulerName,
 		},
-	}
-
-	result := GetSchedulerName(podWithLabel)
-	assert.Equal(t, "custom-scheduler", result, "Should return scheduler name from label when present")
-
-	// Test case 2: Pod without LabelSchedulerName label
-	podWithoutLabel := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{
+		{
+			name: "non-sandbox pod keeps spec scheduler",
+			labels: map[string]string{
 				"other-label": "value",
 			},
-		},
-		Spec: corev1.PodSpec{
-			SchedulerName: "default-scheduler",
+			specName:       "default-scheduler",
+			expectedResult: "default-scheduler",
 		},
 	}
 
-	result = GetSchedulerName(podWithoutLabel)
-	assert.Equal(t, "default-scheduler", result, "Should return spec.SchedulerName when label is not present")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Labels: tt.labels},
+				Spec:       corev1.PodSpec{SchedulerName: tt.specName},
+			}
+			assert.Equal(t, tt.expectedResult, GetSchedulerName(pod))
+		})
+	}
 }
 
 func TestGetSchedulingHint(t *testing.T) {
