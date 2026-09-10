@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#334155"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="560" fill="#ffffff"/>
+  <style>
+    .box  { stroke:#334155; stroke-width:1.5; rx:8; }
+    .lbl  { fill:#0f172a; font-size:12px; }
+    .lblb { fill:#0f172a; font-size:12px; font-weight:bold; }
+    .edge { fill:#475569; font-size:11px; font-style:italic; }
+    .ln   { stroke:#334155; stroke-width:1.5; fill:none; }
+    .ttl  { fill:#0f172a; font-size:14px; font-weight:bold; }
+  </style>
+
+  <text x="500" y="26" text-anchor="middle" class="ttl" font-size="16">Ownership resolution: the proposed model, and the alternative considered</text>
+
+  <!-- MODEL A -->
+  <text x="260" y="58" text-anchor="middle" class="ttl">Considered, not proposed</text>
+  <text x="260" y="76" text-anchor="middle" class="edge">Koord absorbs Workload as a gang source</text>
+
+  <rect class="box" x="80" y="92" width="160" height="40" fill="#dbeafe"/>
+  <text x="160" y="116" text-anchor="middle" class="lbl">Pod annotations</text>
+  <rect class="box" x="80" y="142" width="160" height="40" fill="#dbeafe"/>
+  <text x="160" y="166" text-anchor="middle" class="lbl">PodGroup CRD</text>
+  <rect class="box" x="80" y="192" width="160" height="40" fill="#dcfce7" stroke-dasharray="5 4"/>
+  <text x="160" y="210" text-anchor="middle" class="lbl">Native Workload</text>
+  <text x="160" y="226" text-anchor="middle" class="edge">not proposed</text>
+
+  <path class="ln" d="M240,112 L300,150" marker-end="url(#arrow)"/>
+  <path class="ln" d="M240,162 L300,160" marker-end="url(#arrow)"/>
+  <path class="ln" d="M240,212 L300,172" marker-end="url(#arrow)"/>
+
+  <rect class="box" x="302" y="132" width="180" height="60" fill="#f8fafc"/>
+  <text x="392" y="156" text-anchor="middle" class="lblb">GangCache</text>
+  <text x="392" y="174" text-anchor="middle" class="edge">Gang.GangFrom =</text>
+  <text x="392" y="188" text-anchor="middle" class="edge">PodAnnotation/Crd/Workload</text>
+
+  <path class="ln" d="M392,192 L392,232" marker-end="url(#arrow)"/>
+  <rect class="box" x="272" y="234" width="240" height="62" fill="#dbeafe"/>
+  <text x="392" y="258" text-anchor="middle" class="lblb">Koord Coscheduling</text>
+  <text x="392" y="276" text-anchor="middle" class="edge">job-level preempt, topology,</text>
+  <text x="392" y="290" text-anchor="middle" class="edge">reservation, quota (all merged)</text>
+
+  <!-- divider -->
+  <line x1="520" y1="50" x2="520" y2="320" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4 4"/>
+
+  <!-- MODEL B -->
+  <text x="740" y="58" text-anchor="middle" class="ttl">Proposed: ownership rule</text>
+  <text x="740" y="76" text-anchor="middle" class="edge">delegate to native plugin - per-pod owner</text>
+
+  <rect class="box" x="650" y="92" width="200" height="40" fill="#f1f5f9"/>
+  <text x="750" y="116" text-anchor="middle" class="lbl">Pod enters scheduling</text>
+  <path class="ln" d="M750,132 L750,150" marker-end="url(#arrow)"/>
+
+  <rect class="box" x="598" y="148" width="304" height="62" fill="#fef3c7"/>
+  <text x="750" y="167" text-anchor="middle" class="lbl">WorkloadRef set AND both gates on?</text>
+  <text x="750" y="183" text-anchor="middle" class="edge">GenericWorkload + GangScheduling required</text>
+  <text x="750" y="199" text-anchor="middle" class="edge">misconfig if Koord id also set: WorkloadRef wins</text>
+
+  <path class="ln" d="M675,210 L660,240" marker-end="url(#arrow)"/>
+  <text x="645" y="228" text-anchor="middle" class="edge">yes</text>
+  <rect class="box" x="560" y="242" width="180" height="56" fill="#dcfce7"/>
+  <text x="650" y="266" text-anchor="middle" class="lblb">Native GangScheduling</text>
+  <text x="650" y="284" text-anchor="middle" class="edge">PreEnqueue/Reserve/Permit</text>
+
+  <path class="ln" d="M825,210 L840,240" marker-end="url(#arrow)"/>
+  <text x="855" y="228" text-anchor="middle" class="edge">no</text>
+  <rect class="box" x="760" y="242" width="170" height="56" fill="#dbeafe"/>
+  <text x="845" y="266" text-anchor="middle" class="lblb">Koord Coscheduling</text>
+  <text x="845" y="284" text-anchor="middle" class="edge">(Koord-only features)</text>
+
+  <!-- bottom divider -->
+  <line x1="40" y1="338" x2="960" y2="338" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4 4"/>
+
+  <!-- key differences box -->
+  <rect class="box" x="60" y="356" width="880" height="180" fill="#f8fafc"/>
+  <text x="80" y="382" class="lblb">Why the ownership rule was chosen</text>
+  <text x="80" y="406" class="lbl">Considered: one plugin (Koord) owns every gang; Workload reinterpreted through Koord's engine.</text>
+  <text x="100" y="426" class="lbl">+ keeps all merged Koord features    + no coexistence problem</text>
+  <text x="100" y="446" class="lbl">- Koord would read WorkloadManager AND track its own state -&gt; two state machines for one pod</text>
+  <text x="80" y="476" class="lbl">Proposed: native plugin owns WorkloadRef pods (both gates + plugin present); Koord owns the rest.</text>
+  <text x="100" y="496" class="lbl">+ exactly one state machine per pod    + inherits future native (KEP-5710) preemption</text>
+  <text x="100" y="516" class="lbl">- pods on the native path lose GangGroup / topology / reservation / quota (Koordinator-only Extensions)</text>
+</svg>
