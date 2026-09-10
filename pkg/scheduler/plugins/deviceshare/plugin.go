@@ -594,6 +594,29 @@ func (p *Plugin) allocate(ctx context.Context, cycleState fwktype.CycleState, po
 		affinity, _ = store.GetAffinity(node.Name)
 	}
 
+	result, status := p.allocateWithNUMAAffinity(cycleState, state, nodeDeviceInfo, pod, node, affinity, reuseNominatedOnly)
+	if !status.IsSuccess() {
+		return status
+	}
+	state.allocationResult = result
+	return nil
+}
+
+// allocateWithNUMAAffinity allocates the devices constrained in the given NUMA affinity. It is shared by the Reserve
+// phase and the NUMA hint provider, so that the allocation admitted while the NUMA affinity is being chosen has the
+// same scope and constraints as the allocation the Reserve phase makes. The concrete devices are not guaranteed to be
+// the same ones: both allocate against the live node device cache and the equally scored candidates are not tie-broken
+// deterministically. probeMatchedWithoutNomination is documented in allocateWithReservationScope and must be disabled
+// for an allocation that is going to be assumed.
+func (p *Plugin) allocateWithNUMAAffinity(
+	cycleState fwktype.CycleState,
+	state *preFilterState,
+	nodeDeviceInfo *nodeDevice,
+	pod *corev1.Pod,
+	node *corev1.Node,
+	affinity topologymanager.NUMATopologyHint,
+	probeMatchedWithoutNomination bool,
+) (apiext.DeviceAllocations, *fwktype.Status) {
 	allocator := &AutopilotAllocator{
 		state:              state,
 		nodeDevice:         nodeDeviceInfo,
@@ -612,9 +635,64 @@ func (p *Plugin) allocate(ctx context.Context, cycleState fwktype.CycleState, po
 	nodeDeviceInfo.lock.RLock()
 	defer nodeDeviceInfo.lock.RUnlock()
 
-	result, nominated, status := p.allocateWithNominated(allocator, state, restoreState, node, pod, preemptible)
+	return p.allocateWithReservationScope(cycleState, allocator, state, restoreState, nodeDeviceInfo, pod, node, preemptible, probeMatchedWithoutNomination, logResolvedScope)
+}
+
+const (
+	// reuseNominatedOnly is the named false value of the probeMatchedWithoutNomination parameter of
+	// allocateWithNUMAAffinity and allocateWithReservationScope.
+	reuseNominatedOnly = false
+
+	// logResolvedScope is the named true value of the logAllocationScope parameter of allocateWithReservationScope.
+	logResolvedScope = true
+)
+
+// beforeReservationNominated reports whether the allocation being made is unable to see a nominated reservation yet,
+// because a reservation is nominated no earlier than the PreScore phase.
+// It relies on frameworkext.frameworkExtenderImpl.RunReservePluginsReserve recording the Reserve phase before running
+// the Reserve plugins, which is what makes the BestEffort NUMA hints, calculated inside nodenumaresource.Reserve,
+// observe the Reserve phase. A path running the Reserve plugins without the framework extender, or a NUMA admission
+// moved to another extension point, would silently widen the reservation scope back without failing any test.
+func beforeReservationNominated(cycleState fwktype.CycleState) bool {
+	return schedulingphase.GetExtensionPointBeingExecuted(cycleState) != schedulingphase.Reserve
+}
+
+// allocateWithReservationScope allocates the devices in the reservation scope shared by the Reserve phase and the
+// NUMA hint calculation: once the pod is nominated to a reservation reserving tracked device resources, its devices
+// MUST come from that reservation. Sharing the scope prevents a NUMA affinity from being admitted with the devices
+// that the Reserve phase is not allowed to allocate, e.g. a NUMA node holding no device reserved by the nominated
+// reservation.
+// The caller must hold the read lock of the nodeDeviceInfo, and the allocator must carry the NUMA nodes to allocate
+// from. logAllocationScope should be disabled when probing the NUMA node masks one by one, otherwise the resolved
+// scope is logged once per mask.
+// A reservation is nominated no earlier than the PreScore phase, so an allocation made before it, e.g. the hints of
+// the Restricted and the SingleNUMANode policies which are calculated during the Filter phase, has no nomination to
+// resolve the scope with. probeMatchedWithoutNomination lets such an allocation keep probing all the matched
+// reservations, which is what the hint calculation did before the scope was shared, so that the scope is only
+// narrowed where a nomination actually exists. It must be disabled for an allocation that is going to be assumed,
+// because occupying the devices reserved by a reservation the pod is not nominated to breaks the reservation
+// contract.
+func (p *Plugin) allocateWithReservationScope(
+	cycleState fwktype.CycleState,
+	allocator *AutopilotAllocator,
+	state *preFilterState,
+	restoreState *nodeReservationRestoreStateData,
+	nodeDeviceInfo *nodeDevice,
+	pod *corev1.Pod,
+	node *corev1.Node,
+	basicPreemptible map[schedulingv1alpha1.DeviceType]deviceResources,
+	probeMatchedWithoutNomination bool,
+	logAllocationScope bool,
+) (apiext.DeviceAllocations, *fwktype.Status) {
+	result, nominated, status := p.allocateWithNominated(allocator, state, restoreState, node, pod, basicPreemptible)
 	if !status.IsSuccess() {
-		return status
+		return nil, status
+	}
+	if len(result) == 0 && !nominated && probeMatchedWithoutNomination {
+		result, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched, pod, node, basicPreemptible, state.isReservationRequired)
+		if !status.IsSuccess() {
+			return nil, status
+		}
 	}
 	if len(result) == 0 {
 		// If the pod is nominated to a reservation reserving tracked device resources, its devices MUST come from
@@ -623,22 +701,30 @@ func (p *Plugin) allocate(ctx context.Context, cycleState fwktype.CycleState, po
 		// A nomination whose target reserves no tracked device resource reports nominated=false and falls back to
 		// the node unallocated resources below.
 		if nominated {
-			klog.V(4).InfoS("failed to allocate devices from the nominated reservation",
+			if logAllocationScope {
+				klog.V(4).InfoS("failed to allocate devices from the nominated reservation",
+					"pod", klog.KObj(pod), "node", node.Name,
+					"phase", schedulingphase.GetExtensionPointBeingExecuted(cycleState),
+					"numaNodes", allocator.numaNodes,
+					"matched", dumpReusableAllocs(restoreState.matched))
+			}
+			return nil, fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientDevicesInNominatedReservation)
+		}
+		if logAllocationScope {
+			klog.V(5).InfoS("allocating devices without reusing any reservation",
 				"pod", klog.KObj(pod), "node", node.Name,
 				"phase", schedulingphase.GetExtensionPointBeingExecuted(cycleState),
 				"matched", dumpReusableAllocs(restoreState.matched))
-			return fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientDevicesInNominatedReservation)
 		}
-		klog.V(5).InfoS("allocating devices without reusing any reservation",
-			"pod", klog.KObj(pod), "node", node.Name,
-			"phase", schedulingphase.GetExtensionPointBeingExecuted(cycleState),
-			"matched", dumpReusableAllocs(restoreState.matched))
-		preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
+		// the reserved but unallocated resources of the matched reservations are counted in the node used ones, so
+		// they have to be added back to allocate from the node unallocated resources. Build a new preemptible map
+		// to keep the caller's one untouched, which is reused when the NUMA node masks are probed one by one.
+		preemptible := appendAllocated(nil, basicPreemptible, restoreState.mergedMatchedAllocatable)
 		var requiredDeviceResource map[schedulingv1alpha1.DeviceType]deviceResources
 		if len(state.designatedAllocation) > 0 {
 			err := fillGPUTotalMem(state.designatedAllocation, nodeDeviceInfo)
 			if err != nil {
-				return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, node.Name))
+				return nil, fwktype.NewStatus(fwktype.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, node.Name))
 			}
 			requiredDeviceResource = make(map[schedulingv1alpha1.DeviceType]deviceResources, len(state.designatedAllocation))
 			for deviceType, minorResources := range state.designatedAllocation {
@@ -650,15 +736,14 @@ func (p *Plugin) allocate(ctx context.Context, cycleState fwktype.CycleState, po
 		}
 		result, status = allocator.Allocate(nil, nil, requiredDeviceResource, preemptible)
 		if !status.IsSuccess() {
-			return status
+			return nil, status
 		}
 	}
 	err := fillGPUTotalMem(result, nodeDeviceInfo)
 	if err != nil {
-		return fwktype.NewStatus(fwktype.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, node.Name))
+		return nil, fwktype.NewStatus(fwktype.Error, fmt.Sprintf("fillGPUTotalMem failed: %v, node: %v", err, node.Name))
 	}
-	state.allocationResult = result
-	return nil
+	return result, nil
 }
 
 func (p *Plugin) Unreserve(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) {

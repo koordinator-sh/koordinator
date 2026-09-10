@@ -126,34 +126,19 @@ func (p *Plugin) Allocate(ctx context.Context, cycleState fwktype.CycleState, af
 		return nil
 	}
 
-	reservationRestoreState := getReservationRestoreState(cycleState)
-	restoreState := reservationRestoreState.getNodeState(node.Name)
-	preemptible := appendAllocated(nil, restoreState.mergedUnmatchedUsed, state.preemptibleDevices[node.Name])
-
-	allocator := &AutopilotAllocator{
-		state:      state,
-		nodeDevice: nodeDeviceInfo,
-		node:       node,
-		pod:        pod,
-		numaNodes:  affinity.NUMANodeAffinity,
-	}
-
-	nodeDeviceInfo.lock.RLock()
-	defer nodeDeviceInfo.lock.RUnlock()
-	allocateResult, status := p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.isReservationRequired)
+	// The affinity here is the one finally chosen for the pod, so this allocation has to be as strict as the one the
+	// Reserve phase will redo with the same constraints, otherwise the pod would be admitted here and then rejected
+	// during Reserve. The allocations of the other phases, e.g. the preemption simulation during PostFilter, are only
+	// probing the feasibility and keep the scope they had before the nominated reservation was taken into account.
+	// The result is deliberately dropped instead of being handed over to Reserve: one more allocation per scheduling
+	// cycle buys not carrying an allocation across extension points, which would require a flag telling Reserve and
+	// Unreserve whether the result has already been accounted in the node device cache.
+	_, status = p.allocateWithNUMAAffinity(cycleState, state, nodeDeviceInfo, pod, node, affinity,
+		beforeReservationNominated(cycleState))
 	if !status.IsSuccess() {
 		return status
 	}
-	if len(allocateResult) > 0 {
-		return nil
-	}
-
-	preemptible = appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-	_, status = allocator.Allocate(nil, nil, nil, preemptible)
-	if status.IsSuccess() {
-		return nil
-	}
-	return status
+	return nil
 }
 
 func (p *Plugin) generateTopologyHints(cycleState fwktype.CycleState, state *preFilterState, nodeDevice *nodeDevice, node *corev1.Node, pod *corev1.Pod) (map[string][]topologymanager.NUMATopologyHint, *fwktype.Status) {
@@ -181,6 +166,11 @@ func (p *Plugin) generateTopologyHints(cycleState fwktype.CycleState, state *pre
 	var statusUnsatisfied *fwktype.Status
 	var bestAllocationResult apiext.DeviceAllocations
 	var feasibleAllocationResults []*numaScopedAllocation
+
+	// The hints of the Restricted and the SingleNUMANode policies are calculated during the Filter phase, where no
+	// reservation has been nominated yet. Only the hints calculated during the Reserve phase, i.e. the BestEffort
+	// ones, are able to resolve the scope with the nomination.
+	probeMatchedWithoutNomination := beforeReservationNominated(cycleState)
 
 	bitmask.IterateBitMasks(numaNodes, func(mask bitmask.BitMask) {
 		nodeDevice.lock.RLock()
@@ -215,16 +205,9 @@ func (p *Plugin) generateTopologyHints(cycleState fwktype.CycleState, state *pre
 			}
 		}
 
-		allocateResult, status = p.tryAllocateFromReusable(allocator, state, restoreState, restoreState.matched, pod, node, preemptible, state.isReservationRequired)
-		if !status.IsSuccess() {
+		allocateResult, status = p.allocateWithReservationScope(cycleState, allocator, state, restoreState, nodeDevice, pod, node, preemptible, probeMatchedWithoutNomination, mask.Count() == len(numaNodes))
+		if !status.IsSuccess() || len(allocateResult) == 0 {
 			return
-		}
-		if len(allocateResult) == 0 {
-			preemptible := appendAllocated(preemptible, restoreState.mergedMatchedAllocatable)
-			allocateResult, status = allocator.Allocate(nil, nil, nil, preemptible)
-			if !status.IsSuccess() || len(allocateResult) == 0 {
-				return
-			}
 		}
 
 		nodeCount := mask.Count()

@@ -5545,6 +5545,56 @@ func Test_Plugin_Unreserve(t *testing.T) {
 	}
 }
 
+func Test_Plugin_UnreserveNeverAssumed(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       "123456789",
+			Namespace: "default",
+			Name:      "test",
+		},
+	}
+	nodeDeviceInfo := newNodeDevice()
+	nodeDeviceInfo.resetDeviceTotal(map[schedulingv1alpha1.DeviceType]deviceResources{
+		schedulingv1alpha1.GPU: {
+			0: corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse("100"),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+				apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+			},
+		},
+	})
+	wantFree := copyDeviceResources(nodeDeviceInfo.deviceFree)
+
+	p := &Plugin{nodeDeviceCache: &nodeDeviceCache{
+		nodeDeviceInfos: map[string]*nodeDevice{"test-node": nodeDeviceInfo},
+	}}
+	// an allocation result that has never been accounted in the cache by the Reserve phase. Rolling it back must be a
+	// no-op: updateCacheUsed(add=false) admits a release only for a pod recorded in the allocateSet, which is keyed by
+	// the pod namespace/name.
+	state := &preFilterState{
+		allocationResult: apiext.DeviceAllocations{
+			schedulingv1alpha1.GPU: {
+				{
+					Minor: 0,
+					Resources: corev1.ResourceList{
+						apiext.ResourceGPUCore:        resource.MustParse("100"),
+						apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+						apiext.ResourceGPUMemory:      resource.MustParse("16Gi"),
+					},
+				},
+			},
+		},
+	}
+	cycleState := framework.NewCycleState()
+	cycleState.Write(stateKey, state)
+
+	p.Unreserve(context.TODO(), cycleState, pod, "test-node")
+
+	assert.Empty(t, state.allocationResult)
+	assert.Equal(t, wantFree, nodeDeviceInfo.deviceFree)
+	assert.Empty(t, nodeDeviceInfo.allocateSet[schedulingv1alpha1.GPU])
+}
+
 func Test_Plugin_PreBind(t *testing.T) {
 	now := time.Now()
 	dpAdapterClock = fakeclock.NewFakeClock(now)
