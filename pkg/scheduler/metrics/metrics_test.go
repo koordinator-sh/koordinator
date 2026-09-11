@@ -21,9 +21,38 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/component-base/metrics/testutil"
 )
+
+func TestRecordSandboxBindingSlotWaitDuration(t *testing.T) {
+	Register()
+	SandboxBindingSlotWaitDuration.Reset()
+	t.Cleanup(SandboxBindingSlotWaitDuration.Reset)
+
+	RecordSandboxBindingSlotWaitDuration("koord-scheduler", 250*time.Millisecond)
+	RecordSandboxBindingSlotWaitDuration("koord-scheduler", 750*time.Millisecond)
+	RecordSandboxBindingSlotWaitDuration("other-scheduler", 1500*time.Millisecond)
+
+	for _, tt := range []struct {
+		profile string
+		count   uint64
+		sum     float64
+	}{
+		{profile: "koord-scheduler", count: 2, sum: 1},
+		{profile: "other-scheduler", count: 1, sum: 1.5},
+	} {
+		t.Run(tt.profile, func(t *testing.T) {
+			vec, err := testutil.GetHistogramVecFromGatherer(legacyregistry.DefaultGatherer,
+				"scheduler_sandbox_binding_slot_wait_duration_seconds",
+				map[string]string{"profile": tt.profile})
+			require.NoError(t, err)
+			assert.Equal(t, tt.count, vec.GetAggregatedSampleCount())
+			assert.InDelta(t, tt.sum, vec.GetAggregatedSampleSum(), 1e-9)
+		})
+	}
+}
 
 func TestGangJobSizeBucket(t *testing.T) {
 	tests := []struct {

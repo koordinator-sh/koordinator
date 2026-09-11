@@ -91,6 +91,21 @@ func (s *equivalenceScheduling) handles(pod *corev1.Pod) bool {
 	return apiext.IsSandboxPod(pod) && apiext.GetSandboxTemplateHash(pod) != ""
 }
 
+var _ schedulerframeworkext.SchedulingDecisionProvider = &equivalenceScheduling{}
+
+// Handles implements frameworkext.SchedulingDecisionProvider: it reports whether the sandbox
+// equivalence-class path owns the pod's node-selection decision.
+func (s *equivalenceScheduling) Handles(pod *corev1.Pod) bool {
+	return s.handles(pod)
+}
+
+// SchedulePod implements frameworkext.SchedulingDecisionProvider by delegating to the
+// equivalence-class decision path. FrameworkExtenderFactory.scheduleOne invokes it in place of the
+// upstream schedulePod for pods that Handles reports.
+func (s *equivalenceScheduling) SchedulePod(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+	return s.decide(ctx, state, schedFramework, pod)
+}
+
 func (s *equivalenceScheduling) flushEquivalenceCache(reason string) {
 	s.equivalence.flush()
 	koordmetrics.SandboxEquivalenceClassFlushes.WithLabelValues(reason).Inc()
@@ -127,10 +142,6 @@ func (s *equivalenceScheduling) decide(ctx context.Context, state fwktype.CycleS
 			resultLabel = "unschedulable"
 		}
 		koordmetrics.SandboxSchedulingDuration.WithLabelValues(schedFramework.ProfileName(), path, resultLabel).Observe(time.Since(start).Seconds())
-		if err == nil && result.SuggestedHost != "" {
-			koordmetrics.PodSchedulingEvaluatedNodes.Observe(float64(result.EvaluatedNodes))
-			koordmetrics.PodSchedulingFeasibleNodes.Observe(float64(result.FeasibleNodes))
-		}
 	}()
 
 	hash := apiext.GetSandboxTemplateHash(pod)

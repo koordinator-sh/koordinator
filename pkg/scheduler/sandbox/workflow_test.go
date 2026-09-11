@@ -19,7 +19,6 @@ package sandbox
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
@@ -33,6 +32,11 @@ import (
 
 func TestSandboxCustomWorkflowName(t *testing.T) {
 	assert.Equal(t, Name, New().Name())
+}
+
+func TestSandboxCustomWorkflowDoesNotReplaceSchedulerLoop(t *testing.T) {
+	_, ownsLoop := interface{}(New()).(app.CustomWorkflow)
+	assert.False(t, ownsLoop)
 }
 
 func TestSandboxCustomWorkflowIsEnabled(t *testing.T) {
@@ -57,59 +61,14 @@ func TestSandboxCustomWorkflowAddFlags(t *testing.T) {
 	assert.Equal(t, 32, w.equivalenceCacheSize)
 }
 
-func TestSandboxCustomWorkflowBindingConcurrency(t *testing.T) {
-	w := &SandboxCustomWorkflow{bindingSlots: make(chan struct{}, 1)}
-	require.NoError(t, w.acquireBindingSlot(context.Background()))
-
-	acquired := make(chan error, 1)
-	started := make(chan struct{})
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	go func() {
-		close(started)
-		acquired <- w.acquireBindingSlot(ctx)
-	}()
-	<-started
-
-	select {
-	case err := <-acquired:
-		t.Fatalf("second binding slot acquired before release: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	w.releaseBindingSlot()
-	require.NoError(t, <-acquired)
-	w.releaseBindingSlot()
-}
-
-func TestSandboxCustomWorkflowBindingConcurrencyCancellation(t *testing.T) {
-	w := &SandboxCustomWorkflow{bindingSlots: make(chan struct{}, 1)}
-	require.NoError(t, w.acquireBindingSlot(context.Background()))
-	defer w.releaseBindingSlot()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	assert.ErrorIs(t, w.acquireBindingSlot(ctx), context.Canceled)
-}
-
-func TestSandboxCustomWorkflowBindingSlotsDisabledWhenChannelIsNil(t *testing.T) {
-	w := &SandboxCustomWorkflow{}
-	require.NoError(t, w.acquireBindingSlot(context.Background()))
-	w.releaseBindingSlot()
-
-	lease := &bindingSlotLease{workflow: w}
-	require.NoError(t, lease.reacquire(context.Background()))
-	lease.release()
-}
-
-func TestSandboxCustomWorkflowSetupDoesNotInitializeBindingSlotsWhenDisabled(t *testing.T) {
+func TestSandboxCustomWorkflowSetupDoesNotInitializeLimiterWhenDisabled(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.SandboxCustomWorkflow, false)()
 
 	w := New()
 	w.maxConcurrentBindings = 0
 	w.equivalenceCacheSize = 0
 	require.NoError(t, w.Setup(context.Background(), &app.CustomWorkflowOptions{}))
-	assert.Nil(t, w.bindingSlots)
+	assert.Nil(t, w.limiter)
 }
 
 func TestSandboxCustomWorkflowSetupRejectsInvalidBindingConcurrency(t *testing.T) {
@@ -128,4 +87,16 @@ func TestSandboxCustomWorkflowSetupRejectsInvalidEquivalenceCacheSize(t *testing
 	w.equivalenceCacheSize = 0
 	err := w.Setup(context.Background(), &app.CustomWorkflowOptions{})
 	assert.EqualError(t, err, "sandbox equivalence cache size must be greater than 0")
+}
+
+func TestSandboxCustomWorkflowSetupRejectsInlineBatchSchedule(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.SandboxCustomWorkflow, true)()
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.EnableInlineBatchSchedule, true)()
+
+	w := New()
+	err := w.Setup(context.Background(), &app.CustomWorkflowOptions{})
+	require.Error(t, err, "sandbox workflow and inline batch schedule must be mutually exclusive")
+	assert.Contains(t, err.Error(), string(koordfeatures.SandboxCustomWorkflow))
+	assert.Contains(t, err.Error(), string(koordfeatures.EnableInlineBatchSchedule))
+	assert.Nil(t, w.limiter, "binding limiter must not be initialized when setup fails")
 }
