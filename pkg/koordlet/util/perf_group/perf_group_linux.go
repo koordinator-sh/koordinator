@@ -246,8 +246,8 @@ func GetContainerPerfResult(collector *PerfGroupCollector) (map[string]float64, 
 	var err error
 	for _, cpu := range collector.cpus {
 		if pc, ok := collector.perfCollectors[cpu]; ok {
-			if err = pc.collect(collector.valueCh); err != nil {
-				err = multierr.Append(err, err)
+			if collectErr := pc.collect(collector.valueCh); collectErr != nil {
+				err = multierr.Append(err, collectErr)
 			}
 		}
 	}

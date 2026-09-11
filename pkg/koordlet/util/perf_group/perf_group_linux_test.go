@@ -141,3 +141,81 @@ func Test_GetContainerCyclesAndInstructions(t *testing.T) {
 	//assert.Nil(t, err)
 	//LibFinalize()
 }
+
+func TestGetContainerPerfResultPreservesErrors(t *testing.T) {
+	InitBufferPool(map[int]struct{}{1: {}})
+	oldNew := perfValuePool.New
+	perfValuePool.New = func() interface{} {
+		return &value{}
+	}
+	defer func() {
+		perfValuePool.New = oldNew
+	}()
+
+	tempDir := t.TempDir()
+	cgroupFile, err := os.OpenFile(tempDir, os.O_RDONLY, os.ModeDir)
+	assert.NoError(t, err)
+
+	failedCPUFile := newPerfValueFile(t, tempDir, "failed-cpu", 1, 10)
+	successCPUFile := newPerfValueFile(t, tempDir, "success-cpu", 1, 10)
+
+	collector := &PerfGroupCollector{
+		cgroupFile: cgroupFile,
+		cpus:       []int{0, 1},
+		perfCollectors: map[int]*perfCollector{
+			0: {
+				cpu:      0,
+				leaderFd: failedCPUFile,
+				syscall6: func(uintptr, uintptr, uintptr, uintptr, uintptr, uintptr, uintptr) (uintptr, uintptr, syscall.Errno) {
+					return 0, 0, syscall.EINVAL
+				},
+			},
+			1: {
+				cpu:      1,
+				leaderFd: successCPUFile,
+				syscall6: func(uintptr, uintptr, uintptr, uintptr, uintptr, uintptr, uintptr) (uintptr, uintptr, syscall.Errno) {
+					return 0, 0, 0
+				},
+			},
+		},
+		idEventMap: map[uint64]string{
+			1: CYCLES,
+		},
+		resultMap: map[string]float64{},
+		valueCh:   make(chan perfValue),
+		closeCh:   make(chan struct{}),
+	}
+
+	go func() {
+		for value := range collector.valueCh {
+			collector.resultMap[collector.idEventMap[value.ID]] += value.Value
+		}
+		close(collector.closeCh)
+	}()
+
+	_, err = GetContainerPerfResult(collector)
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "EINVAL")
+	}
+}
+
+func newPerfValueFile(t *testing.T, dir, name string, id, sampleValue uint64) *os.File {
+	t.Helper()
+
+	file, err := os.CreateTemp(dir, name)
+	assert.NoError(t, err)
+
+	assert.NoError(t, binary.Write(file, binary.LittleEndian, &perfValueHeader{
+		Nr:          1,
+		TimeEnabled: 10,
+		TimeRunning: 10,
+	}))
+	assert.NoError(t, binary.Write(file, binary.LittleEndian, value{
+		ID:    id,
+		Value: sampleValue,
+	}))
+	_, err = file.Seek(0, 0)
+	assert.NoError(t, err)
+
+	return file
+}
