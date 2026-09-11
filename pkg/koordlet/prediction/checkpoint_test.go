@@ -27,7 +27,7 @@ import (
 
 func TestSaveAndRestore(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("/tmp", "checkpoints")
+	tempDir, err := os.MkdirTemp("", "checkpoints")
 	if err != nil {
 		t.Fatalf("Failed to create temporary directory: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestSaveAndRestore(t *testing.T) {
 
 func TestSaveError(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("/tmp", "checkpoints")
+	tempDir, err := os.MkdirTemp("", "checkpoints")
 	if err != nil {
 		t.Fatalf("Failed to create temporary directory: %v", err)
 	}
