@@ -99,14 +99,6 @@ var (
 			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
 			StabilityLevel: metrics.ALPHA,
 		}, []string{"profile", "path", "result"})
-	SandboxBindingDuration = metrics.NewHistogramVec(
-		&metrics.HistogramOpts{
-			Subsystem:      schedulermetrics.SchedulerSubsystem,
-			Name:           "sandbox_binding_duration_seconds",
-			Help:           "Duration of the Sandbox binding phase through cache FinishBinding, labeled by result.",
-			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
-			StabilityLevel: metrics.ALPHA,
-		}, []string{"profile", "result"})
 	SandboxBindingSlotWaitDuration = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
@@ -223,7 +215,6 @@ var (
 		SandboxEquivalenceClassMisses,
 		SandboxEquivalenceClassFlushes,
 		SandboxSchedulingDuration,
-		SandboxBindingDuration,
 		SandboxBindingSlotWaitDuration,
 		ElasticQuotaProcessLatency,
 		SecondaryDeviceNotWellPlannedNodes,
@@ -315,6 +306,10 @@ func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, v
 		reservationResourceUnitKey: unit,
 	}
 	ReservationResource.With(labels).Set(value)
+}
+
+func RecordSandboxBindingSlotWaitDuration(profile string, latency time.Duration) {
+	SandboxBindingSlotWaitDuration.WithLabelValues(profile).Observe(latency.Seconds())
 }
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {

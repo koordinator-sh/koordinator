@@ -82,6 +82,11 @@ type FrameworkExtender interface {
 	// GetSchedulingDecisionProviders returns providers in registration order. The returned slice is read-only.
 	GetSchedulingDecisionProviders() []SchedulingDecisionProvider
 
+	// SetBindingLimiter registers a BindingLimiter that bounds the number of concurrent binding
+	// cycles for the pods it handles. It is registered externally (e.g. by a custom workflow) to
+	// avoid import cycles. A nil limiter disables the bound.
+	SetBindingLimiter(limiter BindingLimiter)
+
 	// RunFindOneNodePlugin invokes the registered FindOneNodePlugin (if any) during the PreFilter phase.
 	// The plugin's FindOneNode method attempts to deterministically compute a placement plan for the whole job
 	// (all member pods and their target nodes) for the given pod.
@@ -121,6 +126,20 @@ type SchedulingDecisionProvider interface {
 	// contract: a ScheduleResult with the suggested host, or a *framework.FitError when the pod does
 	// not fit any node. It must not recurse back into scheduleOne.
 	SchedulePod(ctx context.Context, state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod) (scheduler.ScheduleResult, error)
+}
+
+// BindingLimiter bounds concurrent PreBind/Bind execution for the pods it handles.
+// The extender acquires in PreBind and releases on PreBind failure, Unreserve, or PostBind.
+// It does not bound the number of pods waiting for a slot.
+type BindingLimiter interface {
+	// Handles reports whether the limiter bounds the binding concurrency for the pod.
+	Handles(pod *corev1.Pod) bool
+	// Acquire blocks until a slot is available for the pod or ctx is done, returning ctx.Err() on
+	// cancellation. It is a no-op when the pod already holds a slot.
+	Acquire(ctx context.Context, pod *corev1.Pod) error
+	// Release returns the slot held for the pod. It is a no-op when the pod holds no slot, so
+	// repeated calls across the binding lifecycle are harmless.
+	Release(pod *corev1.Pod)
 }
 
 // SchedulingTransformer is the parent type for all the custom transformer plugins.

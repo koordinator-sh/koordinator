@@ -56,6 +56,12 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	schedulinghint.Name:          schedulinghint.New,
 }
 
+func init() {
+	// Register custom workflows before command construction so workflow flags are available during
+	// package initialization, consistent with the scheduler app's other registrations.
+	app.KnownWorkflowList = append(app.KnownWorkflowList, sandbox.New())
+}
+
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {
 	options := make([]app.Option, 0, len(plugins))
 	for name, factoryFn := range plugins {
@@ -66,10 +72,6 @@ func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
-
-	// Register custom workflows. When one is enabled, it takes over the scheduling loop
-	// instead of the default scheduler workflow.
-	app.KnownWorkflowList = append(app.KnownWorkflowList, sandbox.New())
 
 	// Register custom plugins to the scheduler framework.
 	// Later they can consist of scheduler profile(s) and hence
