@@ -629,6 +629,124 @@ func TestPlugin_PreFilter(t *testing.T) {
 				numCPUsNeeded: 4,
 			},
 		},
+		{
+			name: "distribute resources evenly across NUMA nodes",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationNUMATopologySpec: `{"numaAllocateStrategy": "DistributeEvenly"}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				requestCPUBind: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				preferredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				podNUMAAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
+				numCPUsNeeded:           4,
+			},
+		},
+		{
+			name: "distribute evenly conflicts with SingleNUMANode policy",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationNUMATopologySpec: `{"numaTopologyPolicy": "SingleNUMANode", "numaAllocateStrategy": "DistributeEvenly"}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNUMADistributionConflict),
+		},
+		{
+			name: "distribute evenly conflicts with SingleNUMANodeExclusive Required",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationNUMATopologySpec: `{"singleNUMANodeExclusive": "Required", "numaAllocateStrategy": "DistributeEvenly"}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNUMADistributionConflict),
+		},
+		{
+			name: "pod numaAllocateStrategy other than DistributeEvenly is rejected",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationNUMATopologySpec: `{"numaAllocateStrategy": "MostAllocated"}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf(
+				"invalid numaAllocateStrategy %q in annotation %s: only %q is supported at the pod level",
+				schedulingconfig.NUMAMostAllocated, extension.AnnotationNUMATopologySpec, extension.NUMADistributeEvenly)),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -662,6 +780,154 @@ func TestPlugin_PreFilter(t *testing.T) {
 			state, status := getPreFilterState(cycleState)
 			assert.True(t, status.IsSuccess())
 			assert.Equal(t, tt.wantState, state)
+		})
+	}
+}
+
+// Test_isDistributeEvenly covers the even-spread gating: it must only take effect when the node actually
+// exposes NUMA resources to spread across and the pod is not confined to a single NUMA node, resolving the
+// strategy as pod annotation > node label > plugin default.
+func Test_isDistributeEvenly(t *testing.T) {
+	numaNodeResources := []NUMANodeResource{
+		{Node: 0, Resources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("128Gi")}},
+		{Node: 1, Resources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("128Gi")}},
+	}
+	tests := []struct {
+		name          string
+		state         *preFilterState
+		nodeLabels    map[string]string
+		numaResources []NUMANodeResource
+		want          bool
+	}{
+		{
+			name:          "pod DistributeEvenly on a node with NUMA resources",
+			state:         &preFilterState{podNUMAAllocateStrategy: schedulingconfig.NUMADistributeEvenly},
+			numaResources: numaNodeResources,
+			want:          true,
+		},
+		{
+			// Without NUMANodeResources the None->BestEffort upgrade would push the pod into NUMA
+			// admission that hard-fails on topology-less nodes, so even spread must stay inert.
+			name:          "pod DistributeEvenly on a node without NUMA resources",
+			state:         &preFilterState{podNUMAAllocateStrategy: schedulingconfig.NUMADistributeEvenly},
+			numaResources: nil,
+			want:          false,
+		},
+		{
+			name:          "node label DistributeEvenly applies node-wide when NUMA resources exist",
+			state:         &preFilterState{},
+			nodeLabels:    map[string]string{extension.LabelNodeNUMAAllocateStrategy: string(schedulingconfig.NUMADistributeEvenly)},
+			numaResources: numaNodeResources,
+			want:          true,
+		},
+		{
+			name:          "node label DistributeEvenly is inert without NUMA resources",
+			state:         &preFilterState{},
+			nodeLabels:    map[string]string{extension.LabelNodeNUMAAllocateStrategy: string(schedulingconfig.NUMADistributeEvenly)},
+			numaResources: nil,
+			want:          false,
+		},
+		{
+			// A node-level DistributeEvenly label must not silently override the pod's single-NUMA intent.
+			name:          "pod SingleNUMANode policy wins over node label DistributeEvenly",
+			state:         &preFilterState{podNUMATopologyPolicy: extension.NUMATopologyPolicySingleNUMANode},
+			nodeLabels:    map[string]string{extension.LabelNodeNUMAAllocateStrategy: string(schedulingconfig.NUMADistributeEvenly)},
+			numaResources: numaNodeResources,
+			want:          false,
+		},
+		{
+			// Same for Required single-NUMA exclusivity.
+			name:          "pod Required exclusivity wins over node label DistributeEvenly",
+			state:         &preFilterState{podNUMAExclusive: extension.NumaTopologyExclusiveRequired},
+			nodeLabels:    map[string]string{extension.LabelNodeNUMAAllocateStrategy: string(schedulingconfig.NUMADistributeEvenly)},
+			numaResources: numaNodeResources,
+			want:          false,
+		},
+		{
+			name:          "no opt-in and the plugin default is not DistributeEvenly",
+			state:         &preFilterState{},
+			numaResources: numaNodeResources,
+			want:          false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Plugin{}
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node", Labels: tt.nodeLabels}}
+			topologyOptions := TopologyOptions{NUMANodeResources: tt.numaResources}
+			assert.Equal(t, tt.want, p.isDistributeEvenly(tt.state, node, topologyOptions))
+		})
+	}
+}
+
+// Test_resolveNUMATopologyPolicy covers the single policy-resolution entry: the node policy merged with the
+// pod policy, then upgraded None->BestEffort only when even spread actually applies on this node.
+func Test_resolveNUMATopologyPolicy(t *testing.T) {
+	numaNodeResources := []NUMANodeResource{
+		{Node: 0, Resources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("128Gi")}},
+		{Node: 1, Resources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("128Gi")}},
+	}
+	tests := []struct {
+		name          string
+		state         *preFilterState
+		nodePolicy    extension.NUMATopologyPolicy
+		nodeLabels    map[string]string
+		numaResources []NUMANodeResource
+		want          extension.NUMATopologyPolicy
+		wantErr       bool
+	}{
+		{
+			name:          "None is upgraded to BestEffort for a DistributeEvenly pod on a NUMA node",
+			state:         &preFilterState{podNUMAAllocateStrategy: schedulingconfig.NUMADistributeEvenly},
+			nodePolicy:    extension.NUMATopologyPolicyNone,
+			numaResources: numaNodeResources,
+			want:          extension.NUMATopologyPolicyBestEffort,
+		},
+		{
+			// A topology-less node keeps its prior None behavior instead of being forced into admission.
+			name:          "None is not upgraded when the node has no NUMA resources",
+			state:         &preFilterState{podNUMAAllocateStrategy: schedulingconfig.NUMADistributeEvenly},
+			nodePolicy:    extension.NUMATopologyPolicyNone,
+			numaResources: nil,
+			want:          extension.NUMATopologyPolicyNone,
+		},
+		{
+			// Even spread must not change Restricted admission, so the policy is left untouched.
+			name:          "Restricted stays Restricted for a DistributeEvenly pod",
+			state:         &preFilterState{podNUMAAllocateStrategy: schedulingconfig.NUMADistributeEvenly},
+			nodePolicy:    extension.NUMATopologyPolicyRestricted,
+			numaResources: numaNodeResources,
+			want:          extension.NUMATopologyPolicyRestricted,
+		},
+		{
+			// The pod's single-NUMA intent wins over a node-wide DistributeEvenly label.
+			name:          "pod SingleNUMANode intent wins over node label DistributeEvenly",
+			state:         &preFilterState{podNUMATopologyPolicy: extension.NUMATopologyPolicySingleNUMANode},
+			nodeLabels:    map[string]string{extension.LabelNodeNUMAAllocateStrategy: string(schedulingconfig.NUMADistributeEvenly)},
+			nodePolicy:    extension.NUMATopologyPolicyNone,
+			numaResources: numaNodeResources,
+			want:          extension.NUMATopologyPolicySingleNUMANode,
+		},
+		{
+			name:          "pod/node policy mismatch is a conflict",
+			state:         &preFilterState{podNUMATopologyPolicy: extension.NUMATopologyPolicyBestEffort},
+			nodePolicy:    extension.NUMATopologyPolicyRestricted,
+			numaResources: numaNodeResources,
+			wantErr:       true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &Plugin{}
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node", Labels: tt.nodeLabels}}
+			topologyOptions := TopologyOptions{NUMATopologyPolicy: tt.nodePolicy, NUMANodeResources: tt.numaResources}
+			got, err := p.resolveNUMATopologyPolicy(tt.state, node, topologyOptions)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
@@ -1537,6 +1803,37 @@ func TestPlugin_Reserve(t *testing.T) {
 			name: "succeed with skip",
 			state: &preFilterState{
 				requestCPUBind: false,
+			},
+			pod:  &corev1.Pod{},
+			want: nil,
+		},
+		{
+			// A DistributeEvenly pod on a node without NUMA topology must keep the prior None behavior
+			// instead of being upgraded to BestEffort, which would hard-fail NUMA admission here at Reserve
+			// ("node(s) missing NUMA resources") and leave the pod Pending forever.
+			name: "distribute evenly pod on a node without NUMA topology does not hard-fail",
+			state: &preFilterState{
+				requestCPUBind:          false,
+				podNUMAAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
+				requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("200Gi"),
+				},
+			},
+			pod:  &corev1.Pod{},
+			want: nil,
+		},
+		{
+			// The same via a node-wide DistributeEvenly label, which must stay inert on a topology-less
+			// node rather than pushing every pod on it into NUMA admission.
+			name: "node label distribute evenly on a node without NUMA topology does not hard-fail",
+			nodeLabels: map[string]string{
+				extension.LabelNodeNUMAAllocateStrategy: string(schedulingconfig.NUMADistributeEvenly),
+			},
+			state: &preFilterState{
+				requestCPUBind: false,
+				requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("200Gi"),
+				},
 			},
 			pod:  &corev1.Pod{},
 			want: nil,
