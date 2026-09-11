@@ -36,7 +36,7 @@ jobs:
       # Install the kind CLI only — setup-cluster.sh creates the cluster
       # itself so only one place owns cluster lifecycle.
       - name: Install kind
-        uses: helm/kind-action@v1.9.0
+        uses: helm/kind-action@v1.15.0
         with:
           install_only: true
           version: "v0.22.0"
