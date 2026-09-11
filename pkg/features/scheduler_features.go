@@ -153,6 +153,13 @@ const (
 	// reservation restore. It is enabled by default; when disabled, the flow performs no snapshot
 	// writes and the framework's default shared snapshot lister is used instead.
 	EnableBatchScheduleNodeSnapshot featuregate.Feature = "EnableBatchScheduleNodeSnapshot"
+
+	// owner: @tan90github
+	// alpha: v1.9
+	//
+	// SandboxCustomWorkflow enables equivalence-class node selection and binding concurrency
+	// limits for sandbox pods while reusing the upstream scheduler loop.
+	SandboxCustomWorkflow featuregate.Feature = "SandboxCustomWorkflow"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -184,6 +191,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	GangPendingPodsConditionPatch:             {Default: true, PreRelease: featuregate.Beta},
 	EnableInlineBatchSchedule:                 {Default: false, PreRelease: featuregate.Alpha},
 	EnableBatchScheduleNodeSnapshot:           {Default: true, PreRelease: featuregate.Beta},
+	SandboxCustomWorkflow:                     {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {

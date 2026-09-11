@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -70,6 +71,21 @@ type ExtendedHandle interface {
 type FrameworkExtender interface {
 	framework.Framework
 	ExtendedHandle
+	// EquivalenceCapacityPlugins returns plugins that can provide a conservative
+	// per-node reuse capacity for Sandbox equivalence-class scheduling.
+	EquivalenceCapacityPlugins() []EquivalenceCapacityPlugin
+
+	// RegisterSchedulingDecisionProvider appends a provider during setup, before scheduling starts.
+	// The first registered provider whose Handles returns true owns the decision, including errors.
+	// A nil provider is ignored.
+	RegisterSchedulingDecisionProvider(provider SchedulingDecisionProvider)
+	// GetSchedulingDecisionProviders returns providers in registration order. The returned slice is read-only.
+	GetSchedulingDecisionProviders() []SchedulingDecisionProvider
+
+	// SetBindingLimiter registers a BindingLimiter that bounds the number of concurrent binding
+	// cycles for the pods it handles. It is registered externally (e.g. by a custom workflow) to
+	// avoid import cycles. A nil limiter disables the bound.
+	SetBindingLimiter(limiter BindingLimiter)
 
 	// RunFindOneNodePlugin invokes the registered FindOneNodePlugin (if any) during the PreFilter phase.
 	// The plugin's FindOneNode method attempts to deterministically compute a placement plan for the whole job
@@ -95,6 +111,35 @@ type FrameworkExtender interface {
 	RunNUMATopologyManagerAdmit(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, node *corev1.Node, numaNodes []int, policyType apiext.NUMATopologyPolicy, exclusivePolicy apiext.NumaTopologyExclusive, allNUMANodeStatus []apiext.NumaNodeStatus) *fwktype.Status
 
 	RunResizePod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status
+}
+
+// SchedulingDecisionProvider lets a custom workflow override the node-selection decision for the
+// pods it handles, while keeping the upstream Scheduler.Run/ScheduleOne loop and reusing
+// FrameworkExtenderFactory.scheduleOne's Koordinator lifecycle hooks (diagnosis, monitor, auditor,
+// reservation nomination, ResizePod). FrameworkExtenderFactory.scheduleOne calls SchedulePod instead
+// of the upstream schedulePod when Handles(pod) is true. Implementations live outside frameworkext
+// and are registered on the FrameworkExtender to avoid import cycles.
+type SchedulingDecisionProvider interface {
+	// Handles reports whether the provider wants to make the scheduling decision for the pod.
+	Handles(pod *corev1.Pod) bool
+	// SchedulePod returns the scheduling decision for the pod, mirroring scheduler.SchedulePod's
+	// contract: a ScheduleResult with the suggested host, or a *framework.FitError when the pod does
+	// not fit any node. It must not recurse back into scheduleOne.
+	SchedulePod(ctx context.Context, state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod) (scheduler.ScheduleResult, error)
+}
+
+// BindingLimiter bounds concurrent PreBind/Bind execution for the pods it handles.
+// The extender acquires in PreBind and releases on PreBind failure, Unreserve, or PostBind.
+// It does not bound the number of pods waiting for a slot.
+type BindingLimiter interface {
+	// Handles reports whether the limiter bounds the binding concurrency for the pod.
+	Handles(pod *corev1.Pod) bool
+	// Acquire blocks until a slot is available for the pod or ctx is done, returning ctx.Err() on
+	// cancellation. It is a no-op when the pod already holds a slot.
+	Acquire(ctx context.Context, pod *corev1.Pod) error
+	// Release returns the slot held for the pod. It is a no-op when the pod holds no slot, so
+	// repeated calls across the binding lifecycle are harmless.
+	Release(pod *corev1.Pod)
 }
 
 // SchedulingTransformer is the parent type for all the custom transformer plugins.
@@ -153,6 +198,16 @@ type PreferNodesPlugin interface {
 	fwktype.Plugin
 	// PreferNodes is used to provide preferred nodes for the scheduler to try scheduling first.
 	PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status)
+}
+
+// EquivalenceCapacityPlugin refines resource-based equivalence-class capacity.
+// It is consulted at cache backfill and before reusing a node for each pod.
+// A plugin with identity-dependent state that cannot be represented by a per-node
+// quota must return handled=true, reusable=false. Otherwise a handled quota caps
+// the resource-based capacity; handled=false means the plugin has no opinion.
+type EquivalenceCapacityPlugin interface {
+	fwktype.Plugin
+	EquivalenceCapacity(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (quota int64, reusable bool, handled bool)
 }
 
 // FilterTransformer is executed before Filter.

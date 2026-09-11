@@ -18,7 +18,9 @@ package app
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/spf13/pflag"
 	"k8s.io/client-go/informers"
 	kubeclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -30,15 +32,23 @@ import (
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 )
 
-var KnownWorkflowList []CustomWorkflow
+var KnownWorkflowList []WorkflowInitializer
 
-// CustomWorkflow defines a custom workflow for the scheduler.
-// If the workflow is enabled, the default workflow of the scheduler will not run.
-type CustomWorkflow interface {
+// WorkflowInitializer installs scheduler extensions before the scheduling loop starts.
+type WorkflowInitializer interface {
 	Name() string
 	IsEnabled() bool
 	Setup(ctx context.Context, opts *CustomWorkflowOptions) error
+}
+
+// CustomWorkflow additionally replaces the scheduler loop. At most one may be enabled.
+type CustomWorkflow interface {
+	WorkflowInitializer
 	Run(ctx context.Context)
+}
+
+type customWorkflowFlagProvider interface {
+	AddFlags(fs *pflag.FlagSet)
 }
 
 type CustomWorkflowOptions struct {
@@ -49,6 +59,32 @@ type CustomWorkflowOptions struct {
 	KoordClient                koordclientset.Interface
 	RecorderFactory            func(name string) events.EventRecorder
 	KubeConfig                 *rest.Config
+	PercentageOfNodesToScore   *int32
+}
+
+func setupWorkflows(ctx context.Context, opts *CustomWorkflowOptions) (CustomWorkflow, error) {
+	var enabled []WorkflowInitializer
+	var runner CustomWorkflow
+	for _, wf := range KnownWorkflowList {
+		if !wf.IsEnabled() {
+			continue
+		}
+		if candidate, ok := wf.(CustomWorkflow); ok {
+			if runner != nil {
+				return nil, fmt.Errorf("multiple custom workflow runners enabled: %q and %q", runner.Name(), candidate.Name())
+			}
+			runner = candidate
+		}
+		enabled = append(enabled, wf)
+	}
+
+	// Validate runner exclusivity before any initializer mutates the scheduler.
+	for _, wf := range enabled {
+		if err := wf.Setup(ctx, opts); err != nil {
+			return nil, fmt.Errorf("setup workflow %q: %w", wf.Name(), err)
+		}
+	}
+	return runner, nil
 }
 
 func RunWorkflow(

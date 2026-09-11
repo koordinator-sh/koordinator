@@ -26,6 +26,18 @@ const (
 	// LabelSchedulerName is used to specify the internal scheduler name for a pod, overriding the spec.schedulerName.
 	LabelSchedulerName = SchedulingDomainPrefix + "/scheduler-name"
 
+	// LabelSandbox marks a pod as a sandbox workload. Sandbox pods are routed into the
+	// dedicated sandbox scheduling path when the sandbox custom workflow is enabled.
+	LabelSandbox = SchedulingDomainPrefix + "/sandbox"
+
+	// LabelSandboxTemplateHash identifies the sandbox template a pod is created from. Pods
+	// carrying the same hash are treated as scheduling-equivalent by the sandbox workflow:
+	// the scheduling decision computed for one pod of the class can be reused by the others.
+	// It is written by the sandbox controller/adapter, which MUST guarantee that pods sharing
+	// a hash are equivalent in every scheduling-relevant field. The value must be a valid
+	// label value (at most 63 characters).
+	LabelSandboxTemplateHash = SchedulingDomainPrefix + "/sandbox-template-hash"
+
 	// AnnotationOriginalSchedulerName stores the original pod.Spec.SchedulerName before
 	// TransformSchedulerName overwrites it, allowing later restoration.
 	AnnotationOriginalSchedulerName = InternalSchedulingDomainPrefix + "/original-scheduler-name"
@@ -36,6 +48,24 @@ func GetSchedulerName(pod *corev1.Pod) string {
 		return schedulerName
 	}
 	return pod.Spec.SchedulerName
+}
+
+// IsSandboxPod returns true if the pod is marked as a sandbox workload.
+func IsSandboxPod(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	return pod.Labels[LabelSandbox] == "true"
+}
+
+// GetSandboxTemplateHash returns the sandbox template hash of the pod, or "" if the pod does
+// not carry one. Only sandbox pods with a non-empty hash are eligible for equivalence-class
+// decision reuse.
+func GetSandboxTemplateHash(pod *corev1.Pod) string {
+	if pod == nil {
+		return ""
+	}
+	return pod.Labels[LabelSandboxTemplateHash]
 }
 
 type SchedulingHint struct {
