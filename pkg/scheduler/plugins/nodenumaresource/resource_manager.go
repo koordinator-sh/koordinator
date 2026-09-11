@@ -62,6 +62,7 @@ type ResourceOptions struct {
 	requiredCPUBindPolicy   bool
 	cpuBindPolicy           schedulingconfig.CPUBindPolicy
 	cpuExclusivePolicy      schedulingconfig.CPUExclusivePolicy
+	distributeEvenly        bool // whether the pod wants its resources distributed evenly across NUMA nodes, preferring all nodes
 	preferredCPUs           cpuset.CPUSet
 	preemptibleCPUs         cpuset.CPUSet // cpus could be allocated by preemption
 	reusableResources       map[int]corev1.ResourceList
@@ -387,6 +388,10 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, all
 
 	result := cpuset.CPUSet{}
 	numaAllocateStrategy := GetNUMAAllocateStrategy(node, c.numaAllocateStrategy)
+	// NOTE: the cpu accumulator only distinguishes MostAllocated from other strategies, so a resolved
+	// NUMADistributeEvenly falls back to the LeastAllocated ordering here. The even spread across NUMA
+	// nodes for DistributeEvenly is realized at the NUMA hint/allocation layer (see generateResourceHints),
+	// not by this per-NUMA-node CPU ordering.
 	numCPUsNeeded := options.numCPUsNeeded
 	if len(allocatedNUMANodes) > 0 {
 		for _, numaNode := range allocatedNUMANodes {
@@ -464,7 +469,9 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, all
 
 func (c *resourceManager) Update(nodeName string, allocation *PodAllocation) {
 	topologyOptions := c.topologyOptionsManager.GetTopologyOptions(nodeName)
-	if !topologyOptions.CPUTopology.IsValid() {
+	if !topologyOptions.CPUTopology.IsValid() && !allocation.CPUSet.IsEmpty() {
+		// cpuset accounting requires a valid CPU topology; NUMA-resource-only allocations
+		// (e.g. memory-interleaved pods without CPU binding) can still be accounted.
 		return
 	}
 
@@ -545,6 +552,7 @@ func (c *resourceManager) generateResourceHints(node *corev1.Node, pod *corev1.P
 	generator := hintsGenerator{
 		numaNodesLackResource: numaNodesLackResource,
 		minAffinitySize:       make(map[corev1.ResourceName]int),
+		maxAffinitySize:       make(map[corev1.ResourceName]int),
 		hints:                 map[string][]topologymanager.NUMATopologyHint{},
 	}
 	for resourceName := range options.requests {
@@ -607,8 +615,18 @@ func (c *resourceManager) generateResourceHints(node *corev1.Node, pod *corev1.P
 	// behavior to prefer the minimal amount of NUMA nodes will be used
 	for resourceName := range options.requests {
 		minAffinitySize := generator.minAffinitySize[resourceName]
+		maxAffinitySize := generator.maxAffinitySize[resourceName]
 		for i, hint := range generator.hints[string(resourceName)] {
-			generator.hints[string(resourceName)][i].Preferred = len(hint.NUMANodeAffinity.GetBits()) == minAffinitySize || policy == apiext.NUMATopologyPolicyRestricted
+			if options.distributeEvenly && policy != apiext.NUMATopologyPolicySingleNUMANode {
+				// Prefer spreading the resources across the most NUMA nodes (typically all nodes),
+				// except under SingleNUMANode policy, which inherently confines the pod to one node.
+				// e.g. for pods whose memory is interleaved across NUMA nodes at runtime.
+				// Narrower masks stay satisfiable as a non-preferred fallback in case wider ones
+				// are infeasible on this node.
+				generator.hints[string(resourceName)][i].Preferred = len(hint.NUMANodeAffinity.GetBits()) == maxAffinitySize
+			} else {
+				generator.hints[string(resourceName)][i].Preferred = len(hint.NUMANodeAffinity.GetBits()) == minAffinitySize || policy == apiext.NUMATopologyPolicyRestricted
+			}
 		}
 	}
 
@@ -628,6 +646,7 @@ func (c *resourceManager) generateResourceHints(node *corev1.Node, pod *corev1.P
 type hintsGenerator struct {
 	numaNodesLackResource map[corev1.ResourceName][]int
 	minAffinitySize       map[corev1.ResourceName]int
+	maxAffinitySize       map[corev1.ResourceName]int
 	hints                 map[string][]topologymanager.NUMATopologyHint
 }
 
@@ -644,6 +663,9 @@ func (g *hintsGenerator) generateHints(mask bitmask.BitMask, score int64, resour
 		affinitySize := g.minAffinitySize[resourceName]
 		if nodeCount < affinitySize {
 			g.minAffinitySize[resourceName] = nodeCount
+		}
+		if nodeCount > g.maxAffinitySize[resourceName] {
+			g.maxAffinitySize[resourceName] = nodeCount
 		}
 		if _, ok := g.hints[string(resourceName)]; !ok {
 			g.hints[string(resourceName)] = []topologymanager.NUMATopologyHint{}

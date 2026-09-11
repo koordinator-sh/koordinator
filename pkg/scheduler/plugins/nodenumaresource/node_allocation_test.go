@@ -119,6 +119,73 @@ func TestNodeAllocationStateReleaseCPUs(t *testing.T) {
 	}
 }
 
+func TestNodeAllocationNUMAResourceSharedStatus(t *testing.T) {
+	cpuTopology := buildCPUTopologyForTest(2, 1, 4, 2)
+
+	allocationState := NewNodeAllocation("test-node-1")
+	assert.NotNil(t, allocationState)
+
+	// A pod whose NUMA resources span multiple nodes (e.g. allocated with
+	// NUMADistributeEvenly) marks all its NUMA nodes as shared,
+	// even without any CPU binding.
+	podUID := uuid.NewUUID()
+	allocationState.addPodAllocation(&PodAllocation{
+		UID: podUID,
+		NUMANodeResources: []NUMANodeResource{
+			{
+				Node: 0,
+				Resources: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Gi"),
+				},
+			},
+			{
+				Node: 1,
+				Resources: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Gi"),
+				},
+			},
+		},
+	}, cpuTopology)
+	assert.Equal(t, extension.NumaNodeStatusShared, allocationState.NUMANodeSharedStatus(0))
+	assert.Equal(t, extension.NumaNodeStatusShared, allocationState.NUMANodeSharedStatus(1))
+
+	allocationState.release(podUID)
+	assert.Equal(t, extension.NumaNodeStatusIdle, allocationState.NUMANodeSharedStatus(0))
+	assert.Equal(t, extension.NumaNodeStatusIdle, allocationState.NUMANodeSharedStatus(1))
+
+	// The shared status contributed by a multi-node pod is removed on release,
+	// while the single status of a pod bound to a single NUMA node is kept.
+	boundPodUID := uuid.NewUUID()
+	allocationState.addPodAllocation(&PodAllocation{
+		UID:    boundPodUID,
+		CPUSet: cpuset.MustParse("0"),
+	}, cpuTopology)
+	assert.Equal(t, extension.NumaNodeStatusSingle, allocationState.NUMANodeSharedStatus(0))
+
+	allocationState.addPodAllocation(&PodAllocation{
+		UID: podUID,
+		NUMANodeResources: []NUMANodeResource{
+			{
+				Node: 0,
+				Resources: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Gi"),
+				},
+			},
+			{
+				Node: 1,
+				Resources: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Gi"),
+				},
+			},
+		},
+	}, cpuTopology)
+	assert.Equal(t, extension.NumaNodeStatusShared, allocationState.NUMANodeSharedStatus(0))
+
+	allocationState.release(podUID)
+	assert.Equal(t, extension.NumaNodeStatusSingle, allocationState.NUMANodeSharedStatus(0))
+	assert.Equal(t, extension.NumaNodeStatusIdle, allocationState.NUMANodeSharedStatus(1))
+}
+
 func Test_cpuAllocation_getAvailableCPUs(t *testing.T) {
 	cpuTopology := buildCPUTopologyForTest(2, 1, 4, 2)
 	for _, v := range cpuTopology.CPUDetails {

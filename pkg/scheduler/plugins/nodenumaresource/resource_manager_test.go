@@ -1212,6 +1212,41 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "allocate memory evenly across all NUMA nodes with NUMADistributeEvenly",
+			pod:  &corev1.Pod{},
+			options: &ResourceOptions{
+				numCPUsNeeded:    0,
+				requestCPUBind:   false,
+				distributeEvenly: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("200Gi"),
+				},
+				hint: topologymanager.NUMATopologyHint{
+					NUMANodeAffinity: func() bitmask.BitMask {
+						mask, _ := bitmask.NewBitMask(0, 1)
+						return mask
+					}(),
+				},
+			},
+			want: &PodAllocation{
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("100Gi"),
+						},
+					},
+					{
+						Node: 1,
+						Resources: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("100Gi"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1618,6 +1653,122 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "distribute evenly prefers spanning all NUMA nodes",
+			pod:  &corev1.Pod{},
+			options: &ResourceOptions{
+				numCPUsNeeded:    4,
+				requestCPUBind:   false,
+				distributeEvenly: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("32Gi"),
+				},
+			},
+			want: map[string][]topologymanager.NUMATopologyHint{
+				string(corev1.ResourceCPU): {
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(1)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0, 1)
+							return mask
+						}(),
+						Preferred: true,
+					},
+				},
+				string(corev1.ResourceMemory): {
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(1)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0, 1)
+							return mask
+						}(),
+						Preferred: true,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "distribute evenly falls back to narrower affinity when wider is infeasible",
+			pod:  &corev1.Pod{},
+			options: &ResourceOptions{
+				numCPUsNeeded:    4,
+				requestCPUBind:   false,
+				distributeEvenly: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("128Gi"),
+				},
+			},
+			allocated: &PodAllocation{
+				UID:       "123456",
+				Name:      "test-xxx",
+				Namespace: "default",
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("128Gi"),
+						},
+					},
+				},
+			},
+			want: map[string][]topologymanager.NUMATopologyHint{
+				string(corev1.ResourceCPU): {
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(1)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0, 1)
+							return mask
+						}(),
+						Preferred: true,
+					},
+				},
+				string(corev1.ResourceMemory): {
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(1)
+							return mask
+						}(),
+						Preferred: true,
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1676,4 +1827,63 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestResourceManagerUpdateWithoutCPUTopology(t *testing.T) {
+	suit := newPluginTestSuit(t, nil, nil)
+	tom := NewTopologyOptionsManager()
+	tom.UpdateTopologyOptions("test-node", func(options *TopologyOptions) {
+		options.NUMANodeResources = []NUMANodeResource{
+			{
+				Node: 0,
+				Resources: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("128Gi"),
+				},
+			},
+			{
+				Node: 1,
+				Resources: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("128Gi"),
+				},
+			},
+		}
+	})
+	resourceManager := NewResourceManager(suit.Handle, schedulingconfig.NUMALeastAllocated, tom)
+
+	// NUMA-resource-only allocations (e.g. memory-interleaved pods without CPU binding)
+	// should still be accounted when the node has no CPU topology.
+	resourceManager.Update("test-node", &PodAllocation{
+		UID:       "123456",
+		Name:      "test-evenly",
+		Namespace: "default",
+		NUMANodeResources: []NUMANodeResource{
+			{
+				Node: 0,
+				Resources: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Gi"),
+				},
+			},
+			{
+				Node: 1,
+				Resources: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Gi"),
+				},
+			},
+		},
+	})
+	nodeAllocation := resourceManager.GetNodeAllocation("test-node")
+	_, ok := nodeAllocation.allocatedPods["123456"]
+	assert.True(t, ok)
+	assert.Equal(t, apiext.NumaNodeStatusShared, nodeAllocation.NUMANodeSharedStatus(0))
+	assert.Equal(t, apiext.NumaNodeStatusShared, nodeAllocation.NUMANodeSharedStatus(1))
+
+	// cpuset allocations still require a valid CPU topology to be accounted
+	resourceManager.Update("test-node", &PodAllocation{
+		UID:       "654321",
+		Name:      "test-cpuset",
+		Namespace: "default",
+		CPUSet:    cpuset.MustParse("0-3"),
+	})
+	_, ok = nodeAllocation.allocatedPods["654321"]
+	assert.False(t, ok)
 }

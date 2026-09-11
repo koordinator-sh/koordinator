@@ -125,6 +125,12 @@ func (n *NodeAllocation) addPodAllocation(request *PodAllocation, cpuTopology *C
 		n.allocatedCPUs[cpuID] = cpuInfo
 		usedNUMA.Insert(cpuInfo.NodeID)
 	}
+	// A pod whose NUMA resources span multiple nodes (e.g. a memory-interleaved pod allocated
+	// with NUMADistributeEvenly) must be observed by the exclusive-policy admission
+	// even when it does not bind CPUs, so account its NUMA nodes in usedNUMA as well.
+	if resourceNUMANodes := numaNodesOfResources(request.NUMANodeResources); resourceNUMANodes.Len() > 1 {
+		usedNUMA = usedNUMA.Union(resourceNUMANodes)
+	}
 	if len(usedNUMA) > 1 {
 		for ni := range usedNUMA {
 			if ps := n.sharedNode[ni]; ps == nil {
@@ -155,6 +161,14 @@ func (n *NodeAllocation) addPodAllocation(request *PodAllocation, cpuTopology *C
 	}
 }
 
+func numaNodesOfResources(numaNodeResources []NUMANodeResource) sets.Int {
+	numaNodes := sets.NewInt()
+	for _, numaNodeRes := range numaNodeResources {
+		numaNodes.Insert(numaNodeRes.Node)
+	}
+	return numaNodes
+}
+
 func (n *NodeAllocation) release(podUID types.UID) {
 	request, ok := n.allocatedPods[podUID]
 	if !ok {
@@ -175,6 +189,10 @@ func (n *NodeAllocation) release(podUID types.UID) {
 			n.allocatedCPUs[cpuID] = cpuInfo
 		}
 		usedNUMA.Insert(cpuInfo.NodeID)
+	}
+	// Mirror addPodAllocation: multi-node NUMA resources also contributed to the shared/single status.
+	if resourceNUMANodes := numaNodesOfResources(request.NUMANodeResources); resourceNUMANodes.Len() > 1 {
+		usedNUMA = usedNUMA.Union(resourceNUMANodes)
 	}
 	for ni := range usedNUMA {
 		delete(n.sharedNode[ni], string(podUID))

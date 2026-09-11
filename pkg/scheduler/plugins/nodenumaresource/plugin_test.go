@@ -629,6 +629,95 @@ func TestPlugin_PreFilter(t *testing.T) {
 				numCPUsNeeded: 4,
 			},
 		},
+		{
+			name: "distribute resources evenly across NUMA nodes",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationNUMATopologySpec: `{"numaAllocateStrategy": "DistributeEvenly"}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			wantState: &preFilterState{
+				requestCPUBind: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("4"),
+				},
+				preferredCPUBindPolicy:  schedulingconfig.CPUBindPolicyFullPCPUs,
+				podNUMAAllocateStrategy: schedulingconfig.NUMADistributeEvenly,
+				numCPUsNeeded:           4,
+			},
+		},
+		{
+			name: "distribute evenly conflicts with SingleNUMANode policy",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationNUMATopologySpec: `{"numaTopologyPolicy": "SingleNUMANode", "numaAllocateStrategy": "DistributeEvenly"}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNUMADistributionConflict),
+		},
+		{
+			name: "distribute evenly conflicts with SingleNUMANodeExclusive Required",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLSE),
+					},
+					Annotations: map[string]string{
+						extension.AnnotationNUMATopologySpec: `{"singleNUMANodeExclusive": "Required", "numaAllocateStrategy": "DistributeEvenly"}`,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Priority: ptr.To[int32](extension.PriorityProdValueMax),
+					Containers: []corev1.Container{
+						{
+							Name: "container-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("4"),
+								},
+							},
+						},
+					},
+				},
+			},
+			want: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNUMADistributionConflict),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
