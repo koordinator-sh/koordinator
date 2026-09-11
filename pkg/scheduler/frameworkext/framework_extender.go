@@ -22,6 +22,9 @@ import (
 	"time"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -302,6 +305,17 @@ func (ext *frameworkExtenderImpl) GetWorkloadAuditor() workloadauditor.WorkloadA
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
 func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) (*fwktype.PreFilterResult, *fwktype.Status, sets.Set[string]) {
+	// Child span under the SchedulingCycle root span for the Koordinator PreFilter
+	// transformers. When no tracer provider is configured this is a no-op span, so it
+	// adds negligible overhead on the hot path. ctx is derived from the span so the
+	// native PreFilter plugins nest under it.
+	ctx, span := otel.GetTracerProvider().Tracer(tracingInstrumentationScope).Start(ctx, "PreFilterTransformers",
+		oteltrace.WithAttributes(
+			attribute.String("pod.namespace", pod.Namespace),
+			attribute.String("pod.name", pod.Name),
+		))
+	defer span.End()
+
 	trace := utiltrace.New("RunPreFilterPluginTransformers", utiltrace.Field{Key: "namespace", Value: pod.Namespace}, utiltrace.Field{Key: "name", Value: pod.Name})
 	defer trace.LogIfLong(5 * time.Millisecond)
 	for _, transformer := range ext.preFilterTransformersEnabled {

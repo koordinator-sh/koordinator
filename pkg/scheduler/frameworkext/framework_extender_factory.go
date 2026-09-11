@@ -380,7 +380,7 @@ func PodScheduleAttemptInfo(pod *corev1.Pod) (attempts int, initialAttemptTimest
 
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
 	InitDiagnosis(cycleState, pod)
-	f.monitor.StartMonitoring(pod)
+	ctx = f.monitor.StartMonitoring(ctx, pod)
 	if f.workloadAuditor != nil {
 		f.workloadAuditor.RecordAttemptPod(pod)
 	}
