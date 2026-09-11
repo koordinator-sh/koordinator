@@ -55,6 +55,7 @@ func init() {
 		sysutil.MemoryPriorityName,
 		sysutil.MemoryUsePriorityOomName,
 		sysutil.MemoryOomGroupName,
+		sysutil.MemoryReclaimName,
 		sysutil.NetClsClassIdName,
 	)
 	// special cases

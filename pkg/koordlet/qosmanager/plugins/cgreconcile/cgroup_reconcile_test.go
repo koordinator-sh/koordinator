@@ -1439,6 +1439,101 @@ func Test_calculatePodResources_PageCacheLimit(t *testing.T) {
 	}
 }
 
+func Test_cgroupResourcesReconcile_reclaimBEMemory(t *testing.T) {
+	bePod := testutil.MockTestPodWithQOS(corev1.PodQOSBestEffort, apiext.QoSBE)
+	podDir := bePod.CgroupDir
+
+	tests := []struct {
+		name        string
+		usage       string // memory.current content
+		limit       string // memory.max content
+		wmarkRatio  int64
+		wantWritten bool
+		wantValue   string // expected memory.reclaim content when written
+	}{
+		{
+			name:        "usage over watermark capped to max batch",
+			usage:       "1073741824", // 1Gi
+			limit:       "1073741824",
+			wmarkRatio:  95,
+			wantWritten: true,
+			wantValue:   strconv.FormatInt(memoryReclaimMaxBatch, 10),
+		},
+		{
+			name:        "small reclaim under max batch",
+			usage:       "1020055732", // watermark(95% of 1Gi) + 1000
+			limit:       "1073741824",
+			wmarkRatio:  95,
+			wantWritten: true,
+			wantValue:   "1000",
+		},
+		{
+			name:        "usage at or below watermark no reclaim",
+			usage:       "1073741824",
+			limit:       "1073741824",
+			wmarkRatio:  100,
+			wantWritten: false,
+		},
+		{
+			name:        "unlimited memory.max skipped",
+			usage:       "1073741824",
+			limit:       "max",
+			wmarkRatio:  95,
+			wantWritten: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			statesInformer := mockstatesinformer.NewMockStatesInformer(ctrl)
+			statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{bePod}).MaxTimes(1)
+
+			opt := &framework.Options{StatesInformer: statesInformer, Config: framework.NewDefaultConfig()}
+			reconciler := newTestCgroupResourcesReconcile(opt)
+			stop := make(chan struct{})
+			assert.NotPanics(t, func() { reconciler.init(stop) })
+			defer func() { stop <- struct{}{} }()
+
+			helper := system.NewFileTestUtil(t)
+			helper.SetCgroupsV2(true)
+			defer helper.Cleanup()
+
+			// create the memory.reclaim support gate file under the besteffort qos dir
+			helper.CreateCgroupFile(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.MemoryReclaimV2)
+			helper.CreateCgroupFile(podDir, system.MemoryUsageV2)
+			helper.CreateCgroupFile(podDir, system.MemoryLimitV2)
+			helper.CreateCgroupFile(podDir, system.MemoryReclaimV2)
+			helper.WriteCgroupFileContents(podDir, system.MemoryUsageV2, tt.usage)
+			helper.WriteCgroupFileContents(podDir, system.MemoryLimitV2, tt.limit)
+
+			nodeSLO := &slov1alpha1.NodeSLO{
+				Spec: slov1alpha1.NodeSLOSpec{
+					ResourceQOSStrategy: &slov1alpha1.ResourceQOSStrategy{
+						BEClass: &slov1alpha1.ResourceQOS{
+							MemoryQOS: &slov1alpha1.MemoryQOSCfg{
+								Enable: ptr.To[bool](true),
+								MemoryQOS: slov1alpha1.MemoryQOS{
+									WmarkRatio: ptr.To[int64](tt.wmarkRatio),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			reconciler.reclaimBEMemory(nodeSLO)
+
+			got := helper.ReadCgroupFileContents(podDir, system.MemoryReclaimV2)
+			if tt.wantWritten {
+				assert.Equal(t, tt.wantValue, got)
+			} else {
+				assert.Equal(t, "", got)
+			}
+		})
+	}
+}
+
 func newTestCgroupResourcesReconcile(opt *framework.Options) *cgroupResourcesReconcile {
 	return &cgroupResourcesReconcile{
 		reconcileInterval: time.Duration(opt.Config.ReconcileIntervalSeconds) * time.Second,
