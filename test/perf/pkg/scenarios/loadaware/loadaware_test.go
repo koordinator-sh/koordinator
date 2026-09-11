@@ -272,4 +272,40 @@ func TestBuildNodeMetricStatus_UpdateTime(t *testing.T) {
 	if cpu == "" {
 		t.Error("buildNodeMetricStatus: resources.cpu is empty")
 	}
+
+	mem, _, _ := unstructured.NestedString(status, "nodeMetric", "nodeUsage", "resources", "memory")
+	if mem == "" {
+		t.Error("buildNodeMetricStatus: resources.memory is empty")
+	}
+	// Verify the memory value reflects the memUsageBytes argument (10 GiB = 10737418240 bytes).
+	// resource.NewQuantity with BinarySI formats 10 GiB as "10Gi".
+	wantMem := resource.NewQuantity(10*1024*1024*1024, resource.BinarySI).String()
+	if mem != wantMem {
+		t.Errorf("buildNodeMetricStatus: resources.memory = %q, want %q", mem, wantMem)
+	}
+}
+
+// TestBuildNodeMetricStatus_TierMemory verifies that the low-util and high-util
+// seeding percentages produce distinct memory values. If this regresses to a
+// hardcoded constant, both calls return the same string and the test fails —
+// identical memory across tiers halves the LoadAware score gap and causes
+// ~510 of 1 000 pods to land on high-util nodes instead of the majority on low.
+func TestBuildNodeMetricStatus_TierMemory(t *testing.T) {
+	allocMem := int64(256 * 1024 * 1024 * 1024) // 256 Gi (kwok-bench default)
+
+	lowMem := allocMem * 10 / 100
+	highMem := allocMem * 80 / 100
+
+	lowStatus := buildNodeMetricStatus(1000, lowMem)
+	highStatus := buildNodeMetricStatus(80000, highMem)
+
+	lowMemStr, _, _ := unstructured.NestedString(lowStatus, "nodeMetric", "nodeUsage", "resources", "memory")
+	highMemStr, _, _ := unstructured.NestedString(highStatus, "nodeMetric", "nodeUsage", "resources", "memory")
+
+	if lowMemStr == "" || highMemStr == "" {
+		t.Fatalf("buildNodeMetricStatus: memory missing (low=%q high=%q)", lowMemStr, highMemStr)
+	}
+	if lowMemStr == highMemStr {
+		t.Errorf("buildNodeMetricStatus: low-util and high-util tiers produced identical memory %q — per-tier seeding is broken", lowMemStr)
+	}
 }

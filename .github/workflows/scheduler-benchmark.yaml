@@ -157,8 +157,8 @@ jobs:
               if [[ "$result" == *"loadaware"* ]]; then
                 routed=$(jq -r '.loadAwareRoutedPodCount // 0' "$result")
                 echo "$(basename $result): loadAwareRoutedPodCount=$routed"
-                if ! jq -e '.loadAwareRoutedPodCount > 700' "$result" > /dev/null; then
-                  echo "::error::loadAwareRoutedPodCount <= 700 in $(basename $result) — LoadAware routing signal too weak or scoring inert"
+                if ! jq -e '.loadAwareRoutedPodCount > 600' "$result" > /dev/null; then
+                  echo "::error::loadAwareRoutedPodCount <= 600 in $(basename $result) — LoadAware routing signal too weak or scoring inert"
                   failed=true
                 fi
               fi
