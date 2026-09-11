@@ -25,6 +25,7 @@ import (
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
 	koordfeatures "github.com/koordinator-sh/koordinator/pkg/features"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 const (
@@ -34,21 +35,15 @@ const (
 	defaultMaxConcurrentBindings = 1024
 )
 
-var _ app.CustomWorkflow = &SandboxCustomWorkflow{}
+var _ app.WorkflowInitializer = &SandboxCustomWorkflow{}
 
-// SandboxCustomWorkflow schedules sandbox workloads through the equivalence-class path and
-// delegates ordinary pods to the default scheduler decision path.
+// SandboxCustomWorkflow installs equivalence-class node selection and shared binding admission
+// on each profile's FrameworkExtender without replacing the scheduler loop.
 type SandboxCustomWorkflow struct {
-	workflow              *Workflow
 	scheduling            *equivalenceScheduling
-	bindingSlots          chan struct{}
+	limiter               *bindingLimiter
 	maxConcurrentBindings int
 	equivalenceCacheSize  int
-}
-
-type bindingSlotLease struct {
-	workflow *SandboxCustomWorkflow
-	held     bool
 }
 
 // New creates a sandbox custom workflow.
@@ -65,7 +60,7 @@ func (w *SandboxCustomWorkflow) AddFlags(fs *pflag.FlagSet) {
 		&w.maxConcurrentBindings,
 		"sandbox-max-concurrent-bindings",
 		w.maxConcurrentBindings,
-		"Maximum number of concurrent post-Permit binding cycles for the sandbox custom workflow.",
+		"Maximum number of concurrent sandbox PreBind/Bind executions; waiting pods are not bounded.",
 	)
 	fs.IntVar(
 		&w.equivalenceCacheSize,
@@ -85,8 +80,14 @@ func (w *SandboxCustomWorkflow) IsEnabled() bool {
 
 func (w *SandboxCustomWorkflow) Setup(_ context.Context, opts *app.CustomWorkflowOptions) error {
 	if !w.IsEnabled() {
-		w.bindingSlots = nil
+		w.limiter = nil
 		return nil
+	}
+	// The equivalence-class path and the inline batch scheduler both take over pods that would
+	// otherwise flow through FrameworkExtenderFactory.scheduleOne. Keep them mutually exclusive so a
+	// single pod is never claimed by both takeovers.
+	if utilfeature.DefaultFeatureGate.Enabled(koordfeatures.EnableInlineBatchSchedule) {
+		return fmt.Errorf("feature gates %s and %s are mutually exclusive", koordfeatures.SandboxCustomWorkflow, koordfeatures.EnableInlineBatchSchedule)
 	}
 	if w.maxConcurrentBindings <= 0 {
 		return fmt.Errorf("sandbox max concurrent bindings must be greater than 0")
@@ -94,57 +95,22 @@ func (w *SandboxCustomWorkflow) Setup(_ context.Context, opts *app.CustomWorkflo
 	if w.equivalenceCacheSize <= 0 {
 		return fmt.Errorf("sandbox equivalence cache size must be greater than 0")
 	}
-	w.workflow = NewWorkflow(opts.Sched, opts.KubeClient)
 	w.scheduling = newEquivalenceScheduling(opts.Sched, opts.PercentageOfNodesToScore, w.equivalenceCacheSize)
 	if err := w.scheduling.registerNodeEventHandler(opts.SharedInformerFactory.Core().V1().Nodes().Informer()); err != nil {
 		return err
 	}
-	w.bindingSlots = make(chan struct{}, w.maxConcurrentBindings)
+	// One limiter instance is shared across all profiles so its semaphore bounds the total number
+	// of concurrent sandbox binding cycles, not the number per profile.
+	w.limiter = newBindingLimiter(w.maxConcurrentBindings)
+	// Register the equivalence-class path as the scheduling decision provider and the shared binding
+	// limiter on every profile's FrameworkExtender, so FrameworkExtenderFactory.scheduleOne routes
+	// sandbox pods through the equivalence path and the upstream binding cycle bounds their
+	// concurrency through the limiter.
+	for _, fwk := range opts.Sched.Profiles {
+		if extender, ok := fwk.(frameworkext.FrameworkExtender); ok {
+			extender.RegisterSchedulingDecisionProvider(w.scheduling)
+			extender.SetBindingLimiter(w.limiter)
+		}
+	}
 	return nil
-}
-
-func (w *SandboxCustomWorkflow) acquireBindingSlot(ctx context.Context) error {
-	if w.bindingSlots == nil {
-		return nil
-	}
-	select {
-	case w.bindingSlots <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (w *SandboxCustomWorkflow) releaseBindingSlot() {
-	if w.bindingSlots == nil {
-		return
-	}
-	<-w.bindingSlots
-}
-
-func (s *bindingSlotLease) release() {
-	if !s.held {
-		return
-	}
-	s.workflow.releaseBindingSlot()
-	s.held = false
-}
-
-func (s *bindingSlotLease) reacquire(ctx context.Context) error {
-	if s.held || s.workflow == nil || s.workflow.bindingSlots == nil {
-		return nil
-	}
-	if err := s.workflow.acquireBindingSlot(ctx); err != nil {
-		return err
-	}
-	s.held = true
-	return nil
-}
-
-// Run takes over the scheduler loop while the sandbox custom workflow is enabled.
-//
-// TODO: support running alongside the default sched.Run so that enabling the workflow does not
-// require taking over the whole scheduler.
-func (w *SandboxCustomWorkflow) Run(ctx context.Context) {
-	w.workflow.Run(ctx, w.ScheduleOne)
 }

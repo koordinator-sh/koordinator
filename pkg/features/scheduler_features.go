@@ -157,10 +157,8 @@ const (
 	// owner: @tan90github
 	// alpha: v1.9
 	//
-	// SandboxCustomWorkflow enables the sandbox custom workflow. When enabled, the default
-	// scheduler workflow does not run and the sandbox workflow takes over the scheduling loop,
-	// routing sandbox-labeled pods into the dedicated sandbox scheduling path while ordinary
-	// pods keep the mirrored default scheduling behavior.
+	// SandboxCustomWorkflow enables equivalence-class node selection and binding concurrency
+	// limits for sandbox pods while reusing the upstream scheduler loop.
 	SandboxCustomWorkflow featuregate.Feature = "SandboxCustomWorkflow"
 )
 
