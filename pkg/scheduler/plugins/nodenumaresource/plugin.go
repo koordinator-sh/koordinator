@@ -60,6 +60,7 @@ const (
 	ErrInvalidCPUAmplificationRatio = "node(s) invalid CPU amplification ratio"
 	ErrInsufficientAmplifiedCPU     = "Insufficient amplified cpu"
 	ErrNotEnoughCPUs                = "not enough cpus available to satisfy request"
+	ErrNUMADistributionConflict     = "numa resource distribution conflicts with single NUMA node policy or exclusive requirement"
 )
 
 var (
@@ -200,6 +201,7 @@ type preFilterState struct {
 	preferredCPUExclusivePolicy schedulingconfig.CPUExclusivePolicy // the preferred exclusive policy if specified
 	podNUMATopologyPolicy       extension.NUMATopologyPolicy        // the pod-level NUMA topology policy if specified
 	podNUMAExclusive            extension.NumaTopologyExclusive     // the pod-level NUMA exclusive policy if specified
+	podNUMAAllocateStrategy     extension.NUMAAllocateStrategy      // the pod-level NUMA allocate strategy if specified; overrides the node label and the plugin default
 	numCPUsNeeded               int                                 // the number of requested CPUs
 	allocation                  *PodAllocation                      // the CPU allocation reserved for the pod
 	hasReservationAffinity      bool                                // whether the pod has a required reservation affinity
@@ -223,6 +225,7 @@ func (s *preFilterState) Clone() fwktype.StateData {
 		preferredCPUBindPolicy:      s.preferredCPUBindPolicy,
 		podNUMATopologyPolicy:       s.podNUMATopologyPolicy,
 		podNUMAExclusive:            s.podNUMAExclusive,
+		podNUMAAllocateStrategy:     s.podNUMAAllocateStrategy,
 		preferredCPUExclusivePolicy: s.preferredCPUExclusivePolicy,
 		numCPUsNeeded:               s.numCPUsNeeded,
 		allocation:                  s.allocation,
@@ -273,6 +276,12 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, p
 	if err != nil {
 		return nil, fwktype.NewStatus(fwktype.Error, err.Error())
 	}
+	if numaSpec.NUMAAllocateStrategy == extension.NUMADistributeEvenly &&
+		(numaSpec.NUMATopologyPolicy == extension.NUMATopologyPolicySingleNUMANode ||
+			numaSpec.SingleNUMANodeExclusive == extension.NumaTopologyExclusiveRequired) {
+		// distributing resources across NUMA nodes contradicts single-NUMA-node placement intents
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNUMADistributionConflict)
+	}
 
 	requests := resourceapi.PodRequests(pod, resourceapi.PodResourcesOptions{})
 	if quotav1.IsZero(requests) {
@@ -292,6 +301,7 @@ func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, p
 		numCPUsNeeded:           int(requestedCPU / 1000),
 		podNUMATopologyPolicy:   numaSpec.NUMATopologyPolicy,
 		podNUMAExclusive:        numaSpec.SingleNUMANodeExclusive,
+		podNUMAAllocateStrategy: numaSpec.NUMAAllocateStrategy,
 		hasReservationAffinity:  reservationAffinity != nil,
 		isPreAllocationRequired: extension.IsPreAllocationRequired(pod.Labels),
 	}
@@ -379,6 +389,7 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 	if err != nil {
 		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, ErrNotMatchNUMATopology)
 	}
+	numaTopologyPolicy = effectiveNUMATopologyPolicy(numaTopologyPolicy, p.isDistributeEvenly(state, node))
 	if state.designatedAllocation != nil {
 		status = p.allocate(ctx, cycleState, pod, nodeInfo.Node(), numaTopologyPolicy)
 		if !status.IsSuccess() {
@@ -525,6 +536,7 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 	// we have checked in filter, so we will not get error in reserve
 	numaTopologyPolicy, _ = mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
+	numaTopologyPolicy = effectiveNUMATopologyPolicy(numaTopologyPolicy, p.isDistributeEvenly(state, node))
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
 	if !status.IsSuccess() {
 		return status
@@ -609,6 +621,7 @@ func (p *Plugin) Reserve(ctx context.Context, cycleState fwktype.CycleState, pod
 		numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 		// we have check in filter, so we will not get error in reserve
 		numaTopologyPolicy, _ = mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
+		numaTopologyPolicy = effectiveNUMATopologyPolicy(numaTopologyPolicy, p.isDistributeEvenly(state, node))
 		if numaTopologyPolicy == extension.NUMATopologyPolicyBestEffort {
 			podNUMAExclusive := state.podNUMAExclusive
 			// when numa topology policy is set on node, we should maintain the same behavior as before, so we only
@@ -652,6 +665,7 @@ func (p *Plugin) allocate(ctx context.Context, cycleState fwktype.CycleState, po
 	if !status.IsSuccess() {
 		return status
 	}
+	numaTopologyPolicy = effectiveNUMATopologyPolicy(numaTopologyPolicy, p.isDistributeEvenly(state, node))
 	if !requestCPUBind && numaTopologyPolicy == extension.NUMATopologyPolicyNone {
 		return nil
 	}
@@ -764,6 +778,14 @@ func (p *Plugin) preBindObject(ctx context.Context, cycleState fwktype.CycleStat
 	return nil
 }
 
+// isDistributeEvenly reports whether the pod's resources should be distributed evenly across NUMA nodes
+// on the given node. It resolves the effective NUMAAllocateStrategy as pod annotation > node label >
+// plugin default, so both a per-pod opt-in and a node-wide default are honored.
+func (p *Plugin) isDistributeEvenly(state *preFilterState, node *corev1.Node) bool {
+	strategy := resolveNUMAAllocateStrategy(state.podNUMAAllocateStrategy, node, GetDefaultNUMAAllocateStrategy(p.pluginArgs))
+	return strategy == schedulingconfig.NUMADistributeEvenly
+}
+
 func (p *Plugin) getResourceOptions(state *preFilterState, node *corev1.Node, requestCPUBind bool, affinity topologymanager.NUMATopologyHint, topologyOptions TopologyOptions) (*ResourceOptions, error) {
 	if err := amplifyNUMANodeResources(node, &topologyOptions); err != nil {
 		return nil, err
@@ -795,6 +817,7 @@ func (p *Plugin) getResourceOptions(state *preFilterState, node *corev1.Node, re
 		requiredCPUBindPolicy:   requiredCPUBindPolicy,
 		cpuBindPolicy:           cpuBindPolicy,
 		cpuExclusivePolicy:      state.preferredCPUExclusivePolicy,
+		distributeEvenly:        p.isDistributeEvenly(state, node),
 		hint:                    affinity,
 		requiredFromReservation: state.hasReservationAffinity,
 		requiredPreAllocation:   state.isPreAllocationRequired,

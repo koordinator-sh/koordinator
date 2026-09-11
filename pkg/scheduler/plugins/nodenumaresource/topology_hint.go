@@ -50,6 +50,7 @@ func (p *Plugin) GetPodTopologyHints(ctx context.Context, cycleState fwktype.Cyc
 	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
 	// we have check in filter, so we will not get error in reserve
 	numaTopologyPolicy, _ = mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
+	numaTopologyPolicy = effectiveNUMATopologyPolicy(numaTopologyPolicy, p.isDistributeEvenly(state, node))
 	nodeCPUBindPolicy := apiext.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
 	if !status.IsSuccess() {
