@@ -142,11 +142,11 @@ func (n *NodeAllocation) addPodAllocation(request *PodAllocation, cpuTopology *C
 		}
 	}
 
-	for nodeID, numaNodeRes := range request.NUMANodeResources {
+	for _, numaNodeRes := range request.NUMANodeResources {
 		res := n.allocatedResources[numaNodeRes.Node]
 		if res == nil {
 			res = &NUMANodeResource{
-				Node:      nodeID,
+				Node:      numaNodeRes.Node,
 				Resources: make(corev1.ResourceList),
 			}
 			n.allocatedResources[numaNodeRes.Node] = res
