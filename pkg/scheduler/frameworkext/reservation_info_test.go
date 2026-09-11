@@ -1188,6 +1188,72 @@ func TestReservationInfoRefreshAvailable(t *testing.T) {
 	})
 }
 
+func TestReservationInfoCloneSnapshotIsolation(t *testing.T) {
+	newPod := func(name string, uid types.UID, hostPort int32) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: name, UID: uid},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("1"),
+								corev1.ResourceMemory: resource.MustParse("1Gi"),
+							},
+						},
+						Ports: []corev1.ContainerPort{
+							{HostPort: hostPort, Protocol: corev1.ProtocolTCP},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	reservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-reservation", UID: "r-0"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Owners: []schedulingv1alpha1.ReservationOwner{{}},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase: schedulingv1alpha1.ReasonReservationAvailable,
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("16Gi"),
+			},
+		},
+	}
+
+	podA := newPod("pod-a", "uid-a", 8080)
+	podB := newPod("pod-b", "uid-b", 8081)
+
+	original := NewReservationInfo(reservation)
+	original.AddAssignedPod(podA)
+
+	snapshot := original.Clone()
+	assert.Len(t, snapshot.AssignedPods, 1)
+	assert.Contains(t, snapshot.AssignedPods, podA.UID)
+	assert.Equal(t, 1, snapshot.AllocatedPorts.Len())
+	allocatedAtSnapshot := snapshot.Allocated.DeepCopy()
+
+	original.AddAssignedPod(podB)
+	assert.Len(t, original.AssignedPods, 2)
+	assert.Len(t, snapshot.AssignedPods, 1, "snapshot must not see pods added to original after Clone")
+	assert.NotContains(t, snapshot.AssignedPods, podB.UID)
+	assert.Equal(t, allocatedAtSnapshot, snapshot.Allocated, "snapshot.Allocated must be frozen at clone time")
+	assert.Equal(t, 1, snapshot.AllocatedPorts.Len(), "snapshot.AllocatedPorts must not see original's new port")
+	assert.Equal(t, 2, original.AllocatedPorts.Len())
+
+	original.RemoveAssignedPod(podA)
+	assert.NotContains(t, original.AssignedPods, podA.UID)
+	assert.Contains(t, snapshot.AssignedPods, podA.UID, "snapshot must not see pods removed from original after Clone")
+
+	originalLen := len(original.AssignedPods)
+	snapshot.AddAssignedPod(podB)
+	assert.Contains(t, snapshot.AssignedPods, podB.UID)
+	assert.Len(t, original.AssignedPods, originalLen, "original must not see pods added to the clone")
+}
+
 func TestReservationInfoMatchReservationAffinity(t *testing.T) {
 	tests := []struct {
 		name                string
@@ -1305,7 +1371,107 @@ func TestReservationInfoMatchReservationAffinity(t *testing.T) {
 			reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
 			assert.NoError(t, err)
 			rInfo := NewReservationInfo(tt.reservation)
-			got := rInfo.MatchReservationAffinity(reservationAffinity, &corev1.Node{})
+			got := rInfo.MatchReservationAffinity(reservationAffinity, &corev1.Node{}, false)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestReservationInfoMatchReservationAffinityNodeLabels(t *testing.T) {
+	tests := []struct {
+		name                string
+		reservationLabels   map[string]string
+		nodeLabels          map[string]string
+		reservationSelector map[string]string
+		selectorTerms       []corev1.NodeSelectorTerm
+		omitNodeLabels      bool
+		want                bool
+	}{
+		{
+			name:                "fast path: selector matches reservation label",
+			reservationLabels:   map[string]string{"reservation-type": "gpu"},
+			reservationSelector: map[string]string{"reservation-type": "gpu"},
+			want:                true,
+		},
+		{
+			name:                "fast path: selector does not match reservation label",
+			reservationLabels:   map[string]string{"reservation-type": "cpu"},
+			reservationSelector: map[string]string{"reservation-type": "gpu"},
+			want:                false,
+		},
+		{
+			name:                "fast path: label only on node, node labels visible -> match",
+			nodeLabels:          map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou"},
+			reservationSelector: map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou"},
+			omitNodeLabels:      false,
+			want:                true,
+		},
+		{
+			name:                "fast path: label only on node, node labels omitted -> no match",
+			nodeLabels:          map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou"},
+			reservationSelector: map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou"},
+			omitNodeLabels:      true,
+			want:                false,
+		},
+		{
+			name:                "fast path: reservation label overrides node label",
+			reservationLabels:   map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou"},
+			nodeLabels:          map[string]string{"topology.kubernetes.io/zone": "cn-shanghai"},
+			reservationSelector: map[string]string{"topology.kubernetes.io/zone": "cn-hangzhou"},
+			omitNodeLabels:      false,
+			want:                true,
+		},
+		{
+			name:       "slow path: node selector satisfied by node label when visible",
+			nodeLabels: map[string]string{"reservation-type": "gpu"},
+			selectorTerms: []corev1.NodeSelectorTerm{
+				{MatchExpressions: []corev1.NodeSelectorRequirement{
+					{Key: "reservation-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"gpu"}},
+				}},
+			},
+			omitNodeLabels: false,
+			want:           true,
+		},
+		{
+			name:       "slow path: node selector unsatisfied when node labels omitted",
+			nodeLabels: map[string]string{"reservation-type": "gpu"},
+			selectorTerms: []corev1.NodeSelectorTerm{
+				{MatchExpressions: []corev1.NodeSelectorRequirement{
+					{Key: "reservation-type", Operator: corev1.NodeSelectorOpIn, Values: []string{"gpu"}},
+				}},
+			},
+			omitNodeLabels: true,
+			want:           false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			affinity := &apiext.ReservationAffinity{}
+			if len(tt.reservationSelector) > 0 {
+				affinity.ReservationSelector = tt.reservationSelector
+			}
+			if len(tt.selectorTerms) > 0 {
+				affinity.RequiredDuringSchedulingIgnoredDuringExecution = &apiext.ReservationAffinitySelector{
+					ReservationSelectorTerms: tt.selectorTerms,
+				}
+			}
+			affinityData, err := json.Marshal(affinity)
+			assert.NoError(t, err)
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Annotations: map[string]string{apiext.AnnotationReservationAffinity: string(affinityData)},
+				},
+			}
+			reservationAffinity, err := reservationutil.GetRequiredReservationAffinity(pod)
+			assert.NoError(t, err)
+
+			rInfo := NewReservationInfo(&schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-reservation", Labels: tt.reservationLabels},
+			})
+			node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node", Labels: tt.nodeLabels}}
+
+			got := rInfo.MatchReservationAffinity(reservationAffinity, node, tt.omitNodeLabels)
 			assert.Equal(t, tt.want, got)
 		})
 	}
