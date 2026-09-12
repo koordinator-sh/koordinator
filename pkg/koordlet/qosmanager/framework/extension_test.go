@@ -50,7 +50,7 @@ func (f *dynAwareTestPlugin) SetupDynamicClient(dyn dynamic.Interface) {
 type plainTestPlugin struct {
 }
 
-func (f *plainTestPlugin) InitFlags(fs *flag.FlagSet)                                {}
+func (f *plainTestPlugin) InitFlags(fs *flag.FlagSet) {}
 func (f *plainTestPlugin) Setup(client clientset.Interface, metricCache metriccache.MetricCache, statesInformer statesinformer.StatesInformer) {
 }
 func (f *plainTestPlugin) Run(stopCh <-chan struct{}) {}
