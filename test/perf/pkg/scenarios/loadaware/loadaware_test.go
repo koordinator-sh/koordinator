@@ -98,14 +98,14 @@ func TestSetup_EmptyNamespace(t *testing.T) {
 }
 
 // TestSetup_NodeMetricFieldShape verifies each created NodeMetric has the
-// correct apiVersion, RunIDLabel, and a "resources.cpu" field in its status
-// (via UpdateStatus call).
+// correct apiVersion and RunIDLabel.
 //
-// The fake dynamic client does not actually execute UpdateStatus (it records it
-// but the object state after Create has no status). We verify:
-//   - the correct number of NodeMetric objects exist post-Setup
-//   - each carries the RunIDLabel label
-//   - each has apiVersion == "slo.koordinator.sh/v1alpha1"
+// The fake dynamic client DOES apply the status merge patch written by
+// patchNodeMetricStatus — status.nodeMetric.nodeUsage.resources.cpu/memory
+// are readable via Get() immediately after Setup returns. This test only
+// checks object shape (count, apiVersion, label); the per-tier seeded
+// values are checked separately in TestSetup_HighLowSplit, since that is
+// the test that actually has two distinct tiers to compare.
 func TestSetup_NodeMetricFieldShape(t *testing.T) {
 	cfg := validCfg()
 	fakeK8s := fakeNodeList(t, "run-abc123", cfg.NodeCount)
@@ -172,6 +172,45 @@ func TestSetup_HighLowSplit(t *testing.T) {
 		if i >= cfg.HighUtilNodeCount && !isLow {
 			t.Errorf("node %d (%q) should be low-util, but is NOT in lowUtilNodes", i, name)
 		}
+	}
+
+	// Verify the *seeded values themselves* differ across tiers, not just the
+	// bucket classification above. TestBuildNodeMetricStatus_TierMemory only
+	// proves buildNodeMetricStatus is sensitive to its cpu/mem arguments; it
+	// cannot see a regression at the Setup call site (loadaware.go ~200-222)
+	// that decides what those arguments are for each tier. Read back what the
+	// fake dynamic client actually stored for one high-tier and one low-tier
+	// node.
+	highNodeName := fmt.Sprintf("kwok-bench-node-abc12345-%04d", 0)
+	lowNodeName := fmt.Sprintf("kwok-bench-node-abc12345-%04d", cfg.NodeCount-1)
+
+	highNM, err := fakeDyn.Resource(nodeMetricGVR).Get(context.Background(), highNodeName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(NodeMetric %s) error: %v", highNodeName, err)
+	}
+	lowNM, err := fakeDyn.Resource(nodeMetricGVR).Get(context.Background(), lowNodeName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(NodeMetric %s) error: %v", lowNodeName, err)
+	}
+
+	highCPU, _, _ := unstructured.NestedString(highNM.Object, "status", "nodeMetric", "nodeUsage", "resources", "cpu")
+	lowCPU, _, _ := unstructured.NestedString(lowNM.Object, "status", "nodeMetric", "nodeUsage", "resources", "cpu")
+	highMem, _, _ := unstructured.NestedString(highNM.Object, "status", "nodeMetric", "nodeUsage", "resources", "memory")
+	lowMem, _, _ := unstructured.NestedString(lowNM.Object, "status", "nodeMetric", "nodeUsage", "resources", "memory")
+
+	if highCPU == "" || lowCPU == "" {
+		t.Fatalf("seeded status.nodeMetric.nodeUsage.resources.cpu missing (high=%q low=%q)", highCPU, lowCPU)
+	}
+	if highMem == "" || lowMem == "" {
+		t.Fatalf("seeded status.nodeMetric.nodeUsage.resources.memory missing (high=%q low=%q)", highMem, lowMem)
+	}
+	if highCPU == lowCPU {
+		t.Errorf("high-tier and low-tier nodes have identical seeded cpu %q — "+
+			"the tier split isn't reaching the status patch at the Setup call site", highCPU)
+	}
+	if highMem == lowMem {
+		t.Errorf("high-tier and low-tier nodes have identical seeded memory %q — "+
+			"the tier split isn't reaching the status patch at the Setup call site", highMem)
 	}
 }
 

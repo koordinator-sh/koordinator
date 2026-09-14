@@ -151,7 +151,7 @@ jobs:
                 fi
               fi
               # LoadAware must route the large majority of pods to low-util nodes —
-              # a count <= 700 means the LoadAware plugin is not scoring correctly
+              # a count <= 600 means the LoadAware plugin is not scoring correctly
               # (e.g. NodeMetric status.updateTime was nil and isNodeMetricExpired
               # returned true, causing Score to return 0 for every node).
               if [[ "$result" == *"loadaware"* ]]; then
