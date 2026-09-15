@@ -53,6 +53,7 @@ type AllocateContext struct {
 	deviceUsedMinorsHash int
 	deviceFree           deviceResources
 	deviceTotal          deviceResources
+	requiredMinors       sets.Int
 	allocationScorer     *resourceAllocationScorer
 }
 
@@ -85,6 +86,7 @@ func (a *GPUAllocator) Allocate(requestCtx *requestContext, nodeDevice *nodeDevi
 		deviceUsedMinorsHash: hashDevices(realUsed),
 		deviceFree:           nodeDevice.deviceFree[schedulingv1alpha1.GPU],
 		deviceTotal:          removeZeroDevice(nodeDevice.deviceTotal[schedulingv1alpha1.GPU]),
+		requiredMinors:       requestCtx.requiredDeviceMinors[schedulingv1alpha1.GPU],
 		allocationScorer:     requestCtx.allocationScorer,
 	}
 
@@ -198,11 +200,15 @@ func allocateByPartition(honorGPUPartition bool, gpuRequirements *GPURequirement
 
 	// we have to calculate this hash during scheduling cycle because reservation restore and preemption may happen
 	deviceTotalMinorsHash := hashDevices(allocateContext.deviceTotal)
+	requiredMinorsHash := hashMinors(allocateContext.requiredMinors.UnsortedList())
 
 	var feasiblePartitions []*apiext.GPUPartition
 	for _, candidatePartitions := range indexerOfAllocationScore {
 		for _, partition := range candidatePartitions.Partitions {
 			if partition.MinorsHash&allocateContext.deviceUsedMinorsHash > 0 {
+				continue
+			}
+			if partition.MinorsHash&requiredMinorsHash != requiredMinorsHash {
 				continue
 			}
 			if deviceTotalMinorsHash&partition.MinorsHash != partition.MinorsHash {
@@ -358,6 +364,10 @@ func allocateFromScope(requirements *GPURequirements, scope *GPUTopologyScope, a
 	if len(scope.minors) < requirements.numberOfGPUs {
 		return nil
 	}
+	requiredMinorsHash := hashMinors(allocateContext.requiredMinors.UnsortedList())
+	if scope.minorsHash&requiredMinorsHash != requiredMinorsHash {
+		return nil
+	}
 	scopeLevelContext.depth++
 	allocatedMinorHashOfScope := scope.minorsHash & allocateContext.deviceUsedMinorsHash
 	if allocatedMinorHashOfScope > 0 {
@@ -398,7 +408,11 @@ func allocateFromScope(requirements *GPURequirements, scope *GPUTopologyScope, a
 	bestMinorWhenShared := -1
 	bestScoreWhenShared := int64(-1)
 	var satisfied bool
-	for _, minor := range scope.minors {
+	scopeMinors := append([]int(nil), scope.minors...)
+	sort.SliceStable(scopeMinors, func(i, j int) bool {
+		return allocateContext.requiredMinors.Has(scopeMinors[i]) && !allocateContext.requiredMinors.Has(scopeMinors[j])
+	})
+	for _, minor := range scopeMinors {
 		totalResources := scope.minorsResources[minor]
 		freeResources := allocateContext.deviceFree[minor]
 		contextOfDevice, ok := scopeLevelContext.contextOfDevices[minor]

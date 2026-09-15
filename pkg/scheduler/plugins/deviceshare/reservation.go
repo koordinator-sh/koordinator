@@ -345,8 +345,14 @@ func (p *Plugin) tryAllocateFromReusable(
 			// unmatched reservations U1, U2, ..., Uj, and pods P1, P2, ..., Pk.
 			// The free device resources for the scheduling pod P0 is:
 			// min(NodeTotal - P1 - P2 - ... - Pk - U1 - U2 - ... - Uj, R1)
-			requiredDeviceResources := calcRequiredDeviceResources(&alloc, preemptibleInRR)
-			result, status = allocator.Allocate(preferred, preferred, requiredDeviceResources, preemptible)
+			if isPreAllocation {
+				// A pre-allocating Reservation can reserve more devices than the pre-allocatable Pod,
+				// but its allocation must include all devices already used by that Pod.
+				result, status = allocator.allocateWithRequiredDeviceMinors(preferred, preferred, preemptible)
+			} else {
+				requiredDeviceResources := calcRequiredDeviceResources(&alloc, preemptibleInRR)
+				result, status = allocator.Allocate(preferred, preferred, requiredDeviceResources, preemptible)
+			}
 			if !status.IsSuccess() {
 				reservationReasons = append(reservationReasons, status)
 				continue
