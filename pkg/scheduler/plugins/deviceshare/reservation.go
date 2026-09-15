@@ -346,10 +346,6 @@ func (p *Plugin) tryAllocateFromReusable(
 			// The free device resources for the scheduling pod P0 is:
 			// min(NodeTotal - P1 - P2 - ... - Pk - U1 - U2 - ... - Uj, R1)
 			requiredDeviceResources := calcRequiredDeviceResources(&alloc, preemptibleInRR)
-			if isPreAllocation {
-				// pre-allocating reservation can allocate more than the pre-allocatable pod remained
-				requiredDeviceResources = nil
-			}
 			result, status = allocator.Allocate(preferred, preferred, requiredDeviceResources, preemptible)
 			if !status.IsSuccess() {
 				reservationReasons = append(reservationReasons, status)
