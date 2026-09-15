@@ -1145,10 +1145,13 @@ func Test_tryAllocateFromPreAllocatablePod(t *testing.T) {
 		}
 		return device
 	}
-	newDeviceResources := func(minors ...int) deviceResources {
+	newDeviceResources := func(gpuCore string, minors ...int) deviceResources {
 		resources := deviceResources{}
 		for _, minor := range minors {
-			resources[minor] = gpuResources.DeepCopy()
+			resources[minor] = corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse(gpuCore),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse(gpuCore),
+			}
 		}
 		return resources
 	}
@@ -1156,6 +1159,8 @@ func Test_tryAllocateFromPreAllocatablePod(t *testing.T) {
 	tests := []struct {
 		name                   string
 		requestedGPUCore       string
+		preAllocatableGPUCore  string
+		nodeUsedGPUCore        string
 		preAllocatableMinors   []int
 		wantAllocationCount    int
 		wantIncludedGPUDevices []int
@@ -1163,6 +1168,8 @@ func Test_tryAllocateFromPreAllocatablePod(t *testing.T) {
 		{
 			name:                   "inherit a non-lowest GPU minor",
 			requestedGPUCore:       "100",
+			preAllocatableGPUCore:  "100",
+			nodeUsedGPUCore:        "100",
 			preAllocatableMinors:   []int{4},
 			wantAllocationCount:    1,
 			wantIncludedGPUDevices: []int{4},
@@ -1170,9 +1177,20 @@ func Test_tryAllocateFromPreAllocatablePod(t *testing.T) {
 		{
 			name:                   "expand two pre-allocated GPUs to a four-GPU reservation",
 			requestedGPUCore:       "400",
+			preAllocatableGPUCore:  "100",
+			nodeUsedGPUCore:        "100",
 			preAllocatableMinors:   []int{4, 5},
 			wantAllocationCount:    4,
 			wantIncludedGPUDevices: []int{4, 5},
+		},
+		{
+			name:                   "inherit a shared GPU minor over a better-scored device",
+			requestedGPUCore:       "50",
+			preAllocatableGPUCore:  "50",
+			nodeUsedGPUCore:        "75",
+			preAllocatableMinors:   []int{4},
+			wantAllocationCount:    1,
+			wantIncludedGPUDevices: []int{4},
 		},
 	}
 
@@ -1181,11 +1199,11 @@ func Test_tryAllocateFromPreAllocatablePod(t *testing.T) {
 			deviceCache := newNodeDeviceCache()
 			deviceCache.updateNodeDevice("test-node", newDevice())
 			nodeDevice := deviceCache.getNodeDevice("test-node", false)
-			preAllocatedGPUs := newDeviceResources(tt.preAllocatableMinors...)
+			preAllocatedGPUs := newDeviceResources(tt.preAllocatableGPUCore, tt.preAllocatableMinors...)
 			preAllocatableResources := map[schedulingv1alpha1.DeviceType]deviceResources{
 				schedulingv1alpha1.GPU: preAllocatedGPUs,
 			}
-			nodeDevice.deviceUsed[schedulingv1alpha1.GPU] = preAllocatedGPUs
+			nodeDevice.deviceUsed[schedulingv1alpha1.GPU] = newDeviceResources(tt.nodeUsedGPUCore, tt.preAllocatableMinors...)
 			nodeDevice.resetDeviceFree(schedulingv1alpha1.GPU)
 
 			reservation := &schedulingv1alpha1.Reservation{
@@ -1214,11 +1232,13 @@ func Test_tryAllocateFromPreAllocatablePod(t *testing.T) {
 			reservePod := &corev1.Pod{}
 			state := &preFilterState{podRequests: podRequests}
 			state.gpuRequirements, _ = parseGPURequirements(reservePod, podRequests, nil, nil, nil)
+			args := getDefaultArgs()
 			allocator := &AutopilotAllocator{
 				state:      state,
 				nodeDevice: nodeDevice,
 				node:       &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}},
 				pod:        reservePod,
+				scorer:     deviceResourceStrategyTypeMap[args.ScoringStrategy.Type](args),
 			}
 
 			result, status := (&Plugin{}).tryAllocateFromReusable(
