@@ -1212,6 +1212,41 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "allocate memory evenly across all NUMA nodes with NUMADistributeEvenly",
+			pod:  &corev1.Pod{},
+			options: &ResourceOptions{
+				numCPUsNeeded:            0,
+				requestCPUBind:           false,
+				preferWidestNUMAAffinity: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("200Gi"),
+				},
+				hint: topologymanager.NUMATopologyHint{
+					NUMANodeAffinity: func() bitmask.BitMask {
+						mask, _ := bitmask.NewBitMask(0, 1)
+						return mask
+					}(),
+				},
+			},
+			want: &PodAllocation{
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("100Gi"),
+						},
+					},
+					{
+						Node: 1,
+						Resources: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("100Gi"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1618,6 +1653,122 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "distribute evenly prefers spanning all NUMA nodes",
+			pod:  &corev1.Pod{},
+			options: &ResourceOptions{
+				numCPUsNeeded:            4,
+				requestCPUBind:           false,
+				preferWidestNUMAAffinity: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("32Gi"),
+				},
+			},
+			want: map[string][]topologymanager.NUMATopologyHint{
+				string(corev1.ResourceCPU): {
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(1)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0, 1)
+							return mask
+						}(),
+						Preferred: true,
+					},
+				},
+				string(corev1.ResourceMemory): {
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(1)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0, 1)
+							return mask
+						}(),
+						Preferred: true,
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "distribute evenly falls back to narrower affinity when wider is infeasible",
+			pod:  &corev1.Pod{},
+			options: &ResourceOptions{
+				numCPUsNeeded:            4,
+				requestCPUBind:           false,
+				preferWidestNUMAAffinity: true,
+				requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("4"),
+					corev1.ResourceMemory: resource.MustParse("128Gi"),
+				},
+			},
+			allocated: &PodAllocation{
+				UID:       "123456",
+				Name:      "test-xxx",
+				Namespace: "default",
+				NUMANodeResources: []NUMANodeResource{
+					{
+						Node: 0,
+						Resources: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("128Gi"),
+						},
+					},
+				},
+			},
+			want: map[string][]topologymanager.NUMATopologyHint{
+				string(corev1.ResourceCPU): {
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(1)
+							return mask
+						}(),
+						Preferred: false,
+					},
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(0, 1)
+							return mask
+						}(),
+						Preferred: true,
+					},
+				},
+				string(corev1.ResourceMemory): {
+					{
+						NUMANodeAffinity: func() bitmask.BitMask {
+							mask, _ := bitmask.NewBitMask(1)
+							return mask
+						}(),
+						Preferred: true,
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1676,4 +1827,86 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// TestDistributeEvenlyRestrictedAdmission guards Restricted admission. Under the Restricted policy the even-spread
+// hint flip must be exempted. Otherwise, because maxAffinitySize is tracked per resource, a pod whose resources
+// have different widest feasible masks (here cpu can span {0,1} but memory only fits {1}) would get per-resource
+// Preferred flags on non-overlapping masks; mergePermutation then marks every merged permutation non-preferred,
+// and Restricted (canAdmitPodResult == hint.Preferred) rejects an otherwise-schedulable pod.
+func TestDistributeEvenlyRestrictedAdmission(t *testing.T) {
+	suit := newPluginTestSuit(t, nil, nil)
+	tom := NewTopologyOptionsManager()
+	tom.UpdateTopologyOptions("test-node", func(options *TopologyOptions) {
+		options.CPUTopology = buildCPUTopologyForTest(2, 1, 26, 2)
+		options.NUMANodeResources = []NUMANodeResource{
+			{Node: 0, Resources: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("52"),
+				corev1.ResourceMemory: resource.MustParse("128Gi"),
+			}},
+			{Node: 1, Resources: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("52"),
+				corev1.ResourceMemory: resource.MustParse("128Gi"),
+			}},
+		}
+	})
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("104"),
+				corev1.ResourceMemory: resource.MustParse("256Gi"),
+			},
+		},
+	}
+	resourceManager := NewResourceManager(suit.Handle, schedulingconfig.NUMALeastAllocated, tom)
+	// Consume node 0's memory so the widest feasible mask differs across resources (cpu spans {0,1}, memory
+	// only fits {1}) — the exact shape that made Restricted reject the pod before the exemption.
+	resourceManager.Update("test-node", &PodAllocation{
+		UID:       "123456",
+		Name:      "test-xxx",
+		Namespace: "default",
+		NUMANodeResources: []NUMANodeResource{
+			{Node: 0, Resources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("128Gi")}},
+		},
+	})
+
+	pod := &corev1.Pod{}
+	newOptions := func(preferWidest bool) *ResourceOptions {
+		options := &ResourceOptions{
+			numCPUsNeeded:            4,
+			requestCPUBind:           false,
+			preferWidestNUMAAffinity: preferWidest,
+			requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("128Gi"),
+			},
+			topologyOptions: tom.GetTopologyOptions("test-node"),
+		}
+		options.originalRequests = options.requests.DeepCopy()
+		assert.NoError(t, amplifyNUMANodeResources(node, &options.topologyOptions))
+		return options
+	}
+
+	// Under Restricted the flip is exempted: the hints are identical whether or not even spread is requested.
+	restrictedWidest, err := resourceManager.GetTopologyHints(node, pod, newOptions(true), apiext.NUMATopologyPolicyRestricted, &nodeReservationRestoreStateData{})
+	assert.NoError(t, err)
+	restrictedNarrow, err := resourceManager.GetTopologyHints(node, pod, newOptions(false), apiext.NUMATopologyPolicyRestricted, &nodeReservationRestoreStateData{})
+	assert.NoError(t, err)
+	assert.Equal(t, restrictedNarrow, restrictedWidest, "Restricted must not apply the even-spread flip")
+
+	// And the pod is admitted under Restricted; before the fix the merged hint was non-preferred and rejected.
+	numaNodes := []int{0, 1}
+	numaNodeStatus := resourceManager.GetNodeAllocation("test-node").GetAllNUMANodeStatus(len(numaNodes))
+	_, admit, reasons := topologymanager.NewRestrictedPolicy(numaNodes).Merge(
+		[]map[string][]topologymanager.NUMATopologyHint{restrictedWidest}, "", numaNodeStatus)
+	assert.True(t, admit, "Restricted must admit the DistributeEvenly pod; reasons: %v", reasons)
+
+	// Contrast: under BestEffort the flip is still active, so even spread changes the hint preference. This
+	// proves the exemption is policy-scoped rather than a global no-op of the DistributeEvenly feature.
+	bestEffortWidest, err := resourceManager.GetTopologyHints(node, pod, newOptions(true), apiext.NUMATopologyPolicyBestEffort, &nodeReservationRestoreStateData{})
+	assert.NoError(t, err)
+	bestEffortNarrow, err := resourceManager.GetTopologyHints(node, pod, newOptions(false), apiext.NUMATopologyPolicyBestEffort, &nodeReservationRestoreStateData{})
+	assert.NoError(t, err)
+	assert.NotEqual(t, bestEffortNarrow, bestEffortWidest, "BestEffort must still apply the even-spread flip")
 }
