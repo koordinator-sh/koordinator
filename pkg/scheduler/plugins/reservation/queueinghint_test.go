@@ -1011,60 +1011,6 @@ func TestPlugin_QueueingHint_IsSchedulableAfterReservationChange(t *testing.T) {
 	}
 }
 
-// The spec-update fast path the same waiter takes, which returns on the
-// generation check before any owner selector is built.
-func BenchmarkIsSchedulableAfterReservationChange_GenerationBump(b *testing.B) {
-	pl := &Plugin{}
-	owners := make([]schedulingv1alpha1.ReservationOwner, 0, 8)
-	for i := range 8 {
-		owners = append(owners, schedulingv1alpha1.ReservationOwner{
-			LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{fmt.Sprintf("app-%d", i): "demo"}},
-		})
-	}
-	oldR := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{Name: "r-bench-gen", UID: "r-bench-gen", Generation: 1},
-		Spec:       schedulingv1alpha1.ReservationSpec{Owners: owners},
-		Status:     schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationAvailable, NodeName: "node-1"},
-	}
-	newR := oldR.DeepCopy()
-	newR.Generation = 2
-	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
-		Name: "w", Namespace: "default", UID: "w", Labels: map[string]string{"app-7": "demo"},
-	}}
-	logger := klog.Background()
-	b.ReportAllocs()
-	for b.Loop() {
-		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, oldR, newR)
-		if err != nil || hint != fwktype.Queue {
-			b.Fatalf("unexpected hint result: hint=%v, err=%v", hint, err)
-		}
-	}
-}
-
-// The common no-op case: an Available reservation's status heartbeat with an
-// owner-only waiter, ending in QueueSkip.
-func BenchmarkIsSchedulableAfterReservationChange_StatusHeartbeat(b *testing.B) {
-	pl := &Plugin{}
-	r := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{Name: "r-bench-hb", UID: "r-bench-hb", Generation: 1},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Owners: []schedulingv1alpha1.ReservationOwner{{
-				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "demo"}},
-			}},
-		},
-		Status: schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationAvailable, NodeName: "node-1"},
-	}
-	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "w-hb", Namespace: "default", UID: "w-hb"}}
-	logger := klog.Background()
-	b.ReportAllocs()
-	for b.Loop() {
-		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, r, r)
-		if err != nil || hint != fwktype.QueueSkip {
-			b.Fatalf("status-heartbeat path not exercised: hint=%v, err=%v", hint, err)
-		}
-	}
-}
-
 // The scheduler resolves this plugin's event resource through the dynamic
 // informer, so real Reservation events arrive as *unstructured.Unstructured.
 // Every case is driven through the registered callback in both shapes and must
@@ -1209,63 +1155,6 @@ func TestPlugin_QueueingHint_ReservationChange_UnstructuredParity(t *testing.T) 
 		assert.NoError(t, err)
 		assert.Equal(t, fwktype.Queue, got)
 	})
-}
-
-// The typed benchmarks above measure the predicate alone. These two add the
-// decoding the dynamic informer actually forces on every event: the fixtures
-// are converted outside the timer, so what is measured is the
-// FromUnstructured the callback itself performs.
-func BenchmarkIsSchedulableAfterReservationChange_UnstructuredHeartbeat(b *testing.B) {
-	pl := &Plugin{}
-	r := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{Name: "r-bench-u-hb", UID: "r-bench-u-hb", Generation: 1},
-		Spec: schedulingv1alpha1.ReservationSpec{
-			Owners: []schedulingv1alpha1.ReservationOwner{{
-				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "demo"}},
-			}},
-		},
-		Status: schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationAvailable, NodeName: "node-1"},
-	}
-	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(r)
-	if err != nil {
-		b.Fatal(err)
-	}
-	event := &unstructured.Unstructured{Object: object}
-	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "w-u-hb", Namespace: "default", UID: "w-u-hb"}}
-	logger := klog.Background()
-	b.ReportAllocs()
-	for b.Loop() {
-		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, event, event)
-		if err != nil || hint != fwktype.QueueSkip {
-			b.Fatalf("unstructured heartbeat path not exercised: hint=%v, err=%v", hint, err)
-		}
-	}
-}
-
-func BenchmarkIsSchedulableAfterReservationChange_UnstructuredAdd(b *testing.B) {
-	pl := &Plugin{}
-	r := &schedulingv1alpha1.Reservation{
-		ObjectMeta: metav1.ObjectMeta{Name: "r-bench-u-add", UID: "r-bench-u-add", Generation: 1},
-		Status: schedulingv1alpha1.ReservationStatus{
-			Phase:     schedulingv1alpha1.ReservationAvailable,
-			NodeName:  "node-1",
-			Allocated: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("4")},
-		},
-	}
-	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(r)
-	if err != nil {
-		b.Fatal(err)
-	}
-	event := &unstructured.Unstructured{Object: object}
-	waiter := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "w-u-add", Namespace: "default", UID: "w-u-add"}}
-	logger := klog.Background()
-	b.ReportAllocs()
-	for b.Loop() {
-		hint, err := pl.isSchedulableAfterReservationChange(logger, waiter, nil, event)
-		if err != nil || hint != fwktype.Queue {
-			b.Fatalf("unstructured allocated-add path not exercised: hint=%v, err=%v", hint, err)
-		}
-	}
 }
 
 // An Add carries no evidence about what this observer missed before it. The

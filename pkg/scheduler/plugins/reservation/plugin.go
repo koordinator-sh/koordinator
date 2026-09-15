@@ -20,12 +20,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -114,6 +116,7 @@ type Plugin struct {
 	enablePreAllocationClusterMode bool
 	ignoredResources               sets.Set[string]
 	ignoredResourceGroups          sets.Set[string]
+	hintDecoded                    decodedReservationEvent
 }
 
 func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
@@ -249,15 +252,71 @@ func reservationForQueueingHint(obj interface{}) (*schedulingv1alpha1.Reservatio
 	return r, nil
 }
 
-func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
+// decodedReservationEvent remembers the last event pair the hint decoded. The
+// scheduling queue runs the hint once per pod this plugin rejected, passing the
+// same two objects each time, so every call after the first for an event hits
+// here instead of running FromUnstructured again. Entries are keyed by object
+// identity and resourceVersion: informer objects are read-only by contract and
+// a resourceVersion names exactly one revision, so a reused address cannot
+// return another event's decode.
+type decodedReservationEvent struct {
+	mu           sync.Mutex
+	oldU, newU   *unstructured.Unstructured
+	oldRV, newRV string
+	oldR, newR   *schedulingv1alpha1.Reservation
+}
+
+// decodeReservationEvent returns the typed old and new objects of an event,
+// serving repeats of the same pair from hintDecoded. Only unstructured pairs
+// are cached; typed objects and tombstones decode directly.
+func (pl *Plugin) decodeReservationEvent(oldObj, newObj interface{}) (*schedulingv1alpha1.Reservation, *schedulingv1alpha1.Reservation, error) {
+	oldU, _ := oldObj.(*unstructured.Unstructured)
+	newU, _ := newObj.(*unstructured.Unstructured)
+	cacheable := (oldObj == nil || oldU != nil) && newU != nil && newU.GetResourceVersion() != ""
+	if cacheable {
+		oldRV := ""
+		if oldU != nil {
+			oldRV = oldU.GetResourceVersion()
+		}
+		newRV := newU.GetResourceVersion()
+		c := &pl.hintDecoded
+		c.mu.Lock()
+		if c.oldU == oldU && c.newU == newU && c.oldRV == oldRV && c.newRV == newRV {
+			oldR, newR := c.oldR, c.newR
+			c.mu.Unlock()
+			return oldR, newR, nil
+		}
+		c.mu.Unlock()
+		oldR, err := reservationForQueueingHint(oldObj)
+		if err != nil {
+			return nil, nil, err
+		}
+		newR, err := reservationForQueueingHint(newObj)
+		if err != nil {
+			return nil, nil, err
+		}
+		c.mu.Lock()
+		c.oldU, c.newU, c.oldRV, c.newRV, c.oldR, c.newR = oldU, newU, oldRV, newRV, oldR, newR
+		c.mu.Unlock()
+		return oldR, newR, nil
+	}
 	oldR, err := reservationForQueueingHint(oldObj)
 	if err != nil {
-		logger.Error(err, "Failed to decode the old Reservation in isSchedulableAfterReservationChange", "oldObj", oldObj)
-		return fwktype.Queue, nil
+		return nil, nil, err
 	}
 	newR, err := reservationForQueueingHint(newObj)
+	return oldR, newR, err
+}
+
+func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
+	// A Delete arrives as (object, nil) and always requeues, so do not decode
+	// the tombstone once per rejected pod to find that out.
+	if newObj == nil {
+		return fwktype.Queue, nil
+	}
+	oldR, newR, err := pl.decodeReservationEvent(oldObj, newObj)
 	if err != nil {
-		logger.Error(err, "Failed to decode the new Reservation in isSchedulableAfterReservationChange", "newObj", newObj)
+		logger.Error(err, "Failed to decode the Reservation event in isSchedulableAfterReservationChange", "oldObj", oldObj, "newObj", newObj)
 		return fwktype.Queue, nil
 	}
 	// Delete removes the reserve pod from the scheduler cache and returns its
@@ -327,8 +386,8 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 		// attempt - must stay skipped, or each failure would requeue itself
 		// in a hot loop.
 		if oldR.Generation != newR.Generation ||
-			!apiequality.Semantic.DeepEqual(oldR.Labels, newR.Labels) ||
-			!apiequality.Semantic.DeepEqual(oldR.Annotations, newR.Annotations) {
+			!maps.Equal(oldR.Labels, newR.Labels) ||
+			!maps.Equal(oldR.Annotations, newR.Annotations) {
 			return fwktype.Queue, nil
 		}
 		return fwktype.QueueSkip, nil
@@ -340,7 +399,7 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 	// while shrinkage releases node capacity that can admit waiters unrelated
 	// to this reservation. Resizes are rare, so requeue unconditionally
 	// rather than reasoning per direction and per waiter.
-	if !apiequality.Semantic.DeepEqual(oldR.Status.Allocatable, newR.Status.Allocatable) {
+	if !quotav1.Equals(oldR.Status.Allocatable, newR.Status.Allocatable) {
 		return fwktype.Queue, nil
 	}
 	// Any change to the reservation's accounting requeues, in either
@@ -359,7 +418,7 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 	// pod slot can be released while the allocated quantities stay equal. The
 	// controller compares the two the same way when it decides to write.
 	if !quotav1.Equals(oldR.Status.Allocated, newR.Status.Allocated) ||
-		!apiequality.Semantic.DeepEqual(oldR.Status.CurrentOwners, newR.Status.CurrentOwners) {
+		!slices.Equal(oldR.Status.CurrentOwners, newR.Status.CurrentOwners) {
 		return fwktype.Queue, nil
 	}
 	// An update that keeps the reservation Available can still change the
@@ -392,8 +451,8 @@ func (pl *Plugin) isSchedulableAfterReservationChange(logger klog.Logger, pod *c
 	if oldR.Generation != newR.Generation {
 		return fwktype.Queue, nil
 	}
-	if !apiequality.Semantic.DeepEqual(oldR.Labels, newR.Labels) ||
-		!apiequality.Semantic.DeepEqual(oldR.Annotations, newR.Annotations) {
+	if !maps.Equal(oldR.Labels, newR.Labels) ||
+		!maps.Equal(oldR.Annotations, newR.Annotations) {
 		return fwktype.Queue, nil
 	}
 	return fwktype.QueueSkip, nil
