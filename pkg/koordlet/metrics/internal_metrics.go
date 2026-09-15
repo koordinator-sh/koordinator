@@ -18,6 +18,7 @@ package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	k8smetrics "k8s.io/component-base/metrics"
 	"k8s.io/component-base/metrics/legacyregistry"
 )
 
@@ -27,12 +28,20 @@ const (
 
 var (
 	// InternalRegistry only register metrics of koordlet itself for performance and functional monitor
-	// TODO consider using k8s.io/component-base/metrics to replace github.com/prometheus/client_golang/prometheus
 	InternalRegistry = legacyregistry.DefaultGatherer
 )
 
 func internalMustRegister(metrics ...prometheus.Collector) {
 	legacyregistry.RawMustRegister(metrics...)
+}
+
+// internalKubeMustRegister registers metrics that declare a StabilityLevel, so the component-base stability
+// framework applies to them. New koordlet internal metrics should be defined with
+// k8s.io/component-base/metrics and registered here; internalMustRegister stays for collectors that cannot
+// implement k8smetrics.Registerable, such as the pkg/util/metrics GC wrappers, which expose the wrapped
+// prometheus.Collector rather than the component-base type.
+func internalKubeMustRegister(metrics ...k8smetrics.Registerable) {
+	legacyregistry.MustRegister(metrics...)
 }
 
 func init() {
