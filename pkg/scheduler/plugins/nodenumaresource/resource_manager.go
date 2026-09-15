@@ -55,23 +55,24 @@ type ResourceManager interface {
 }
 
 type ResourceOptions struct {
-	numCPUsNeeded           int
-	requestCPUBind          bool
-	requests                corev1.ResourceList
-	originalRequests        corev1.ResourceList
-	requiredCPUBindPolicy   bool
-	cpuBindPolicy           schedulingconfig.CPUBindPolicy
-	cpuExclusivePolicy      schedulingconfig.CPUExclusivePolicy
-	preferredCPUs           cpuset.CPUSet
-	preemptibleCPUs         cpuset.CPUSet // cpus could be allocated by preemption
-	reusableResources       map[int]corev1.ResourceList
-	requiredResources       map[int]corev1.ResourceList
-	requiredFromReservation bool
-	requiredPreAllocation   bool
-	hint                    topologymanager.NUMATopologyHint
-	topologyOptions         TopologyOptions
-	numaScorer              *resourceAllocationScorer
-	nodePreemptionState     *preemptibleNodeState
+	numCPUsNeeded            int
+	requestCPUBind           bool
+	requests                 corev1.ResourceList
+	originalRequests         corev1.ResourceList
+	requiredCPUBindPolicy    bool
+	cpuBindPolicy            schedulingconfig.CPUBindPolicy
+	cpuExclusivePolicy       schedulingconfig.CPUExclusivePolicy
+	preferWidestNUMAAffinity bool // prefer the widest feasible NUMA affinity (spread across the most NUMA nodes) when generating hints; set for DistributeEvenly pods whose memory is interleaved at runtime
+	preferredCPUs            cpuset.CPUSet
+	preemptibleCPUs          cpuset.CPUSet // cpus could be allocated by preemption
+	reusableResources        map[int]corev1.ResourceList
+	requiredResources        map[int]corev1.ResourceList
+	requiredFromReservation  bool
+	requiredPreAllocation    bool
+	hint                     topologymanager.NUMATopologyHint
+	topologyOptions          TopologyOptions
+	numaScorer               *resourceAllocationScorer
+	nodePreemptionState      *preemptibleNodeState
 }
 
 type resourceManager struct {
@@ -387,6 +388,10 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, all
 
 	result := cpuset.CPUSet{}
 	numaAllocateStrategy := GetNUMAAllocateStrategy(node, c.numaAllocateStrategy)
+	// NOTE: the cpu accumulator only distinguishes MostAllocated from other strategies, so a resolved
+	// NUMADistributeEvenly falls back to the LeastAllocated ordering here. The even spread across NUMA
+	// nodes for DistributeEvenly is realized at the NUMA hint/allocation layer (see generateResourceHints),
+	// not by this per-NUMA-node CPU ordering.
 	numCPUsNeeded := options.numCPUsNeeded
 	if len(allocatedNUMANodes) > 0 {
 		for _, numaNode := range allocatedNUMANodes {
@@ -545,6 +550,7 @@ func (c *resourceManager) generateResourceHints(node *corev1.Node, pod *corev1.P
 	generator := hintsGenerator{
 		numaNodesLackResource: numaNodesLackResource,
 		minAffinitySize:       make(map[corev1.ResourceName]int),
+		maxAffinitySize:       make(map[corev1.ResourceName]int),
 		hints:                 map[string][]topologymanager.NUMATopologyHint{},
 	}
 	for resourceName := range options.requests {
@@ -607,8 +613,25 @@ func (c *resourceManager) generateResourceHints(node *corev1.Node, pod *corev1.P
 	// behavior to prefer the minimal amount of NUMA nodes will be used
 	for resourceName := range options.requests {
 		minAffinitySize := generator.minAffinitySize[resourceName]
+		maxAffinitySize := generator.maxAffinitySize[resourceName]
 		for i, hint := range generator.hints[string(resourceName)] {
-			generator.hints[string(resourceName)][i].Preferred = len(hint.NUMANodeAffinity.GetBits()) == minAffinitySize || policy == apiext.NUMATopologyPolicyRestricted
+			if options.preferWidestNUMAAffinity && policy != apiext.NUMATopologyPolicySingleNUMANode && policy != apiext.NUMATopologyPolicyRestricted {
+				// Prefer spreading the resources across the most NUMA nodes (typically all nodes), e.g.
+				// for pods whose memory is interleaved across NUMA nodes at runtime. This only applies
+				// under the None/BestEffort policies:
+				//   - SingleNUMANode inherently confines the pod to one node;
+				//   - Restricted admits a pod only when every merged resource hint is Preferred, but
+				//     maxAffinitySize is tracked per resource, so the widest feasible mask can differ
+				//     across resources and mergePermutation would mark the merged hint non-preferred,
+				//     turning an otherwise-schedulable pod into a rejection. Even spread must not change
+				//     Restricted/SingleNUMANode admission, so both fall back to the narrowest-mask
+				//     preference below.
+				// Narrower masks stay satisfiable as a non-preferred fallback in case wider ones are
+				// infeasible on this node.
+				generator.hints[string(resourceName)][i].Preferred = len(hint.NUMANodeAffinity.GetBits()) == maxAffinitySize
+			} else {
+				generator.hints[string(resourceName)][i].Preferred = len(hint.NUMANodeAffinity.GetBits()) == minAffinitySize || policy == apiext.NUMATopologyPolicyRestricted
+			}
 		}
 	}
 
@@ -628,6 +651,7 @@ func (c *resourceManager) generateResourceHints(node *corev1.Node, pod *corev1.P
 type hintsGenerator struct {
 	numaNodesLackResource map[corev1.ResourceName][]int
 	minAffinitySize       map[corev1.ResourceName]int
+	maxAffinitySize       map[corev1.ResourceName]int
 	hints                 map[string][]topologymanager.NUMATopologyHint
 }
 
@@ -644,6 +668,9 @@ func (g *hintsGenerator) generateHints(mask bitmask.BitMask, score int64, resour
 		affinitySize := g.minAffinitySize[resourceName]
 		if nodeCount < affinitySize {
 			g.minAffinitySize[resourceName] = nodeCount
+		}
+		if nodeCount > g.maxAffinitySize[resourceName] {
+			g.maxAffinitySize[resourceName] = nodeCount
 		}
 		if _, ok := g.hints[string(resourceName)]; !ok {
 			g.hints[string(resourceName)] = []topologymanager.NUMATopologyHint{}

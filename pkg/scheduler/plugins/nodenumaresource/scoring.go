@@ -81,10 +81,8 @@ func (p *Plugin) Score(ctx context.Context, cycleState fwktype.CycleState, pod *
 	node := nodeInfoSnapshot.Node()
 	topologyOptions := p.topologyOptionsManager.GetTopologyOptions(node.Name)
 	nodeCPUBindPolicy := extension.GetNodeCPUBindPolicy(node.Labels, topologyOptions.Policy)
-	podNUMATopologyPolicy := state.podNUMATopologyPolicy
-	numaTopologyPolicy := getNUMATopologyPolicy(node.Labels, topologyOptions.NUMATopologyPolicy)
-	// we have check in filter, so we will not get error in reserve
-	numaTopologyPolicy, _ = mergeTopologyPolicy(numaTopologyPolicy, podNUMATopologyPolicy)
+	// we have checked in filter, so we will not get error here
+	numaTopologyPolicy, _ := p.resolveNUMATopologyPolicy(state, node, topologyOptions)
 	requestCPUBind, status := requestCPUBind(state, nodeCPUBindPolicy)
 	if !status.IsSuccess() {
 		return 0, status
