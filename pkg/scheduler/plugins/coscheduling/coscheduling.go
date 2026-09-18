@@ -69,6 +69,7 @@ var _ frameworkext.ReservationPreBindPlugin = &Coscheduling{}
 var _ fwktype.PostBindPlugin = &Coscheduling{}
 var _ fwktype.EnqueueExtensions = &Coscheduling{}
 var _ frameworkext.InformerFactoryProvider = &Coscheduling{}
+var _ fwktype.SignPlugin = &Coscheduling{}
 
 const (
 	// Name is the name of the plugin used in Registry and configurations.
@@ -112,6 +113,45 @@ func New(_ context.Context, obj runtime.Object, handle fwktype.Handle) (fwktype.
 func (cs *Coscheduling) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWithHint, error) {
 	// indicates that we are not interested in any events
 	return nil, nil
+}
+
+// Signer names for this plugin's signature fragments.
+const (
+	gangSignerName = "koord.Coscheduling.gang"
+)
+
+// SignPod returns the pod's gang identity so that pods in different
+// PodGroups do not share batched scheduling results (KEP-5598). The
+// gang id combines namespace and gang name, so two gangs with the same
+// name in different namespaces stay distinct.
+//
+// Network-topology-aware pods are refused instead: sortNodesByTopology ranks
+// nodes by the matching pods already under each topology node, and PreFilter
+// pins every gang pod after the first to its own planned node, which
+// findNodesThatFitPod applies only after trying the batch hint. Unschedulable
+// is the SignPlugin opt-out - the signature is dropped and the pod schedules
+// unbatched - not a rejection. AwareNetworkTopology defaults to false, so
+// ordinary gangs keep their fragment.
+func (cs *Coscheduling) SignPod(_ context.Context, pod *v1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	gangName := util.GetGangNameByPod(pod)
+
+	// Only the gang cache knows which gangs carry a NetworkTopologySpec, so
+	// every gang counts while the feature is on. The selector is checked too:
+	// it drives PreScore and Score with or without a gang.
+	awareGang := gangName != "" && cs.args != nil &&
+		cs.args.AwareNetworkTopology != nil && *cs.args.AwareNetworkTopology
+	if awareGang || extension.GetPodNetworkTopologySelector(pod) != "" {
+		return nil, fwktype.NewStatus(fwktype.Unschedulable,
+			"network-topology-aware scheduling is not eligible for opportunistic batching")
+	}
+
+	if gangName == "" {
+		return nil, nil
+	}
+	return []fwktype.SignFragment{{
+		Key:   gangSignerName,
+		Value: util.GetId(pod.Namespace, gangName),
+	}}, nil
 }
 
 // Name returns name of the plugin. It is used in logs, etc.

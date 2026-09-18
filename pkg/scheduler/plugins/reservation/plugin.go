@@ -18,8 +18,11 @@ package reservation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -80,6 +83,7 @@ const (
 
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.SignPlugin        = &Plugin{}
 
 	_ fwktype.PreFilterPlugin  = &Plugin{}
 	_ fwktype.FilterPlugin     = &Plugin{}
@@ -185,6 +189,148 @@ func (pl *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWit
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+// Signer names for this plugin's signature fragments.
+const (
+	reservePodForSignerName           = "koord.Reservation.reservePodFor"
+	reservePodPreAllocationSignerName = "koord.Reservation.reservePodPreAllocation"
+	affinitySignerName                = "koord.Reservation.affinity"
+	exactMatchSignerName              = "koord.Reservation.exactMatch"
+	ignoredSignerName                 = "koord.Reservation.ignored"
+	preAllocationRequiredSignerName   = "koord.Reservation.preAllocationRequired"
+	ownerInputsSignerName             = "koord.Reservation.ownerInputs"
+)
+
+// SignPod signs the pod inputs this plugin's PreFilter, Filter and Score read.
+// The per-pod signature is the union of every plugin's fragments, so inputs an
+// upstream signer already covers are omitted: requests go to noderesources/fit,
+// node affinity and nodeSelector to nodeaffinity. Pod affinity and topology
+// spread need no fragment either, because interpodaffinity and
+// podtopologyspread refuse to sign the pods that carry them.
+//
+// A reserve pod signs the reservation it owns, which every downstream decision
+// derives from. A normal pod signs the inputs the owner matchers consult.
+//
+// PreFilter also branches on hinter.GetSchedulingHintState, a CycleState value
+// written by pkg/scheduler/batch that SignPod cannot see. SchedulingHint has no
+// signer, so signatures are off in the shipped profile and this stays masked.
+func (pl *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	if reservationutil.IsReservePod(pod) {
+		fragments := []fwktype.SignFragment{{
+			Key:   reservePodForSignerName,
+			Value: reservationutil.GetReservationNameFromReservePod(pod),
+		}}
+		if reservationutil.IsReservePodPreAllocation(pod) {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   reservePodPreAllocationSignerName,
+				Value: true,
+			})
+		}
+		return fragments, nil
+	}
+
+	fragments := make([]fwktype.SignFragment, 0, 5)
+	// Parse reservation-affinity / exact-match annotations with the same
+	// helpers PreFilter uses (transformer.go around prepareMatchReservationStateForNormalPod)
+	// so malformed input yields the identical Status a non-batched schedule
+	// would see, instead of silently canonicalizing the raw bytes.
+	// Marshal the parsed structs (not the raw annotation) so formatting
+	// differences between semantically equal values collapse.
+	if _, ok := pod.Annotations[apiext.AnnotationReservationAffinity]; ok {
+		aff, err := apiext.GetReservationAffinity(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.AsStatus(err)
+		}
+		if aff != nil {
+			b, mErr := json.Marshal(aff)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   affinitySignerName,
+				Value: string(b),
+			})
+		}
+	}
+	if _, ok := pod.Annotations[apiext.AnnotationExactMatchReservationSpec]; ok {
+		exact, err := apiext.GetExactMatchReservationSpec(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.AsStatus(err)
+		}
+		if exact != nil {
+			b, mErr := json.Marshal(exact)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   exactMatchSignerName,
+				Value: string(b),
+			})
+		}
+	}
+	if apiext.IsReservationIgnored(pod) {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   ignoredSignerName,
+			Value: true,
+		})
+	}
+	if apiext.IsPreAllocationRequired(pod.Labels) {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   preAllocationRequiredSignerName,
+			Value: true,
+		})
+	}
+	// Owner-matching inputs are always present (at least the pod namespace
+	// shapes the matcher decision), so the fragment is unconditional.
+	fragments = append(fragments, fwktype.SignFragment{
+		Key:   ownerInputsSignerName,
+		Value: canonicalOwnerInputs(pod),
+	})
+	return fragments, nil
+}
+
+// canonicalOwnerInputs serializes every pod attribute the reservation owner
+// matchers consult, so two pods that would match different reservations cannot
+// share a signature: MatchLabels reads pod.Labels, MatchObjectRef reads pod.UID,
+// Name, Namespace and APIVersion, and MatchReservationControllerReference reads
+// pod.Namespace plus every OwnerReference field.
+//
+// Signing UID and Name makes the fragment unique per pod, which stops batching
+// across pods whenever this plugin is in the profile. Matching resolves by
+// ObjectReference UID, so two pods with different UIDs can select different
+// reservations, and correctness has to win over batching here.
+func canonicalOwnerInputs(pod *corev1.Pod) string {
+	parts := make([]string, 0, 6+len(pod.Labels)+len(pod.OwnerReferences))
+	parts = append(parts, "ns="+pod.Namespace)
+	if pod.Name != "" {
+		parts = append(parts, "name="+pod.Name)
+	}
+	if pod.UID != "" {
+		parts = append(parts, "uid="+string(pod.UID))
+	}
+	if pod.APIVersion != "" {
+		parts = append(parts, "apiVersion="+pod.APIVersion)
+	}
+	if len(pod.Labels) > 0 {
+		for _, k := range slices.Sorted(maps.Keys(pod.Labels)) {
+			parts = append(parts, "label:"+k+"="+pod.Labels[k])
+		}
+	}
+	if len(pod.OwnerReferences) > 0 {
+		owners := make([]string, 0, len(pod.OwnerReferences))
+		for _, ref := range pod.OwnerReferences {
+			controller := ""
+			if ref.Controller != nil {
+				controller = strconv.FormatBool(*ref.Controller)
+			}
+			owners = append(owners, fmt.Sprintf("owner:apiVersion=%s/kind=%s/name=%s/uid=%s/controller=%s",
+				ref.APIVersion, ref.Kind, ref.Name, string(ref.UID), controller))
+		}
+		slices.Sort(owners)
+		parts = append(parts, owners...)
+	}
+	return strings.Join(parts, "|")
 }
 
 // PreFilter checks if the pod is a reserve pod. If it is, update cycle state to annotate reservation scheduling.

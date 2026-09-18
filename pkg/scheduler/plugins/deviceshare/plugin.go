@@ -20,6 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -62,6 +64,7 @@ const (
 
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.SignPlugin        = &Plugin{}
 
 	_ fwktype.PreFilterPlugin = &Plugin{}
 	_ fwktype.FilterPlugin    = &Plugin{}
@@ -189,6 +192,147 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+// Signer names for this plugin's signature fragments. Annotation fragments
+// append the annotation key to annotationSignerPrefix.
+const (
+	deviceRequestsSignerName       = "koord.DeviceShare.deviceRequests"
+	gpuIsolationProviderSignerName = "koord.DeviceShare.gpuIsolationProvider"
+	annotationSignerPrefix         = "koord.DeviceShare.annotation:"
+)
+
+// SignPod signs the pod inputs preparePod reads. The per-pod signature is the
+// union of every plugin's fragments, so inputs another in-profile signer covers
+// are omitted: Reservation signs the reservation-affinity annotation and the
+// pre-allocation-required label, the only two preparePod shares with it.
+//
+// Annotations are parsed with the helpers preparePod uses, so malformed input
+// yields the same UnschedulableAndUnresolvable, and the parsed struct rather
+// than the raw bytes is marshaled so equal values collapse. Each parse is gated
+// the way preparePod gates it, noted at the gate.
+//
+// PreFilter also branches on hinter.GetSchedulingHintState, a CycleState value
+// written by pkg/scheduler/batch that SignPod cannot see. SchedulingHint has no
+// signer, so signatures are off in the shipped profile and this stays masked.
+func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	requests, err := GetPodDeviceRequests(pod)
+	if err != nil {
+		// PreFilter (preparePod) returns UnschedulableAndUnresolvable for the
+		// same parse failure; mirror that exactly so the pod is handled
+		// identically whether opportunistic batching is on or off.
+		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
+	}
+
+	fragments := make([]fwktype.SignFragment, 0, 6)
+	if len(requests) > 0 {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   deviceRequestsSignerName,
+			Value: canonicalDeviceRequests(requests),
+		})
+	}
+	// DeviceAllocations is parsed unconditionally to match preparePod, which
+	// reads it before the state.skip check.
+	if _, ok := pod.Annotations[apiext.AnnotationDeviceAllocated]; ok {
+		allocs, err := apiext.GetDeviceAllocations(pod.Annotations)
+		if err != nil {
+			return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
+		}
+		b, mErr := json.Marshal(allocs)
+		if mErr != nil {
+			return nil, fwktype.AsStatus(mErr)
+		}
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   annotationSignerPrefix + apiext.AnnotationDeviceAllocated,
+			Value: string(b),
+		})
+	}
+	// Device-shape annotations gate on len(requests) > 0 to mirror
+	// preparePod's `if !state.skip` block. Zero-request
+	// pods short-circuit PreFilter without parsing these, so SignPod
+	// must do the same to keep batched and non-batched outcomes aligned.
+	if len(requests) > 0 {
+		if _, ok := pod.Annotations[apiext.AnnotationDeviceAllocateHint]; ok {
+			hints, err := apiext.GetDeviceAllocateHints(pod.Annotations)
+			if err != nil {
+				return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
+					fmt.Sprintf("invalid DeviceAllocateHint annotation, err: %s", err.Error()))
+			}
+			b, mErr := json.Marshal(hints)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   annotationSignerPrefix + apiext.AnnotationDeviceAllocateHint,
+				Value: string(b),
+			})
+		}
+		if _, ok := pod.Annotations[apiext.AnnotationDeviceJointAllocate]; ok {
+			joint, err := apiext.GetDeviceJointAllocate(pod.Annotations)
+			if err != nil {
+				return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
+					fmt.Sprintf("invalid DeviceJointAllocate annotation, err: %s", err.Error()))
+			}
+			b, mErr := json.Marshal(joint)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   annotationSignerPrefix + apiext.AnnotationDeviceJointAllocate,
+				Value: string(b),
+			})
+		}
+		// parseGPURequirements, the annotation's only production reader,
+		// returns before reading it when the GPU requests are zero. Signing it
+		// would drop RDMA- or FPGA-only pods out of batching for nothing.
+		if _, ok := pod.Annotations[apiext.AnnotationGPUPartitionSpec]; ok &&
+			!quotav1.IsZero(requests[schedulingv1alpha1.GPU]) {
+			spec, err := apiext.GetGPUPartitionSpec(pod.Annotations)
+			if err != nil {
+				return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable,
+					fmt.Sprintf("invalid GPUPartitionSpec annotation, err: %s", err.Error()))
+			}
+			b, mErr := json.Marshal(spec)
+			if mErr != nil {
+				return nil, fwktype.AsStatus(mErr)
+			}
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   annotationSignerPrefix + apiext.AnnotationGPUPartitionSpec,
+				Value: string(b),
+			})
+		}
+		// Filter rejects a shared-GPU pod whose GPUIsolationProvider label
+		// disagrees with the node's. Nothing else reads the label, so the
+		// fragment carries the same gate instead of signing every pod label.
+		if provider := pod.Labels[apiext.LabelGPUIsolationProvider]; provider != "" &&
+			!quotav1.IsZero(requests[schedulingv1alpha1.GPU]) {
+			if _, _, shared := calcDesiredRequestsAndCountForGPU(requests[schedulingv1alpha1.GPU]); shared {
+				fragments = append(fragments, fwktype.SignFragment{
+					Key:   gpuIsolationProviderSignerName,
+					Value: provider,
+				})
+			}
+		}
+	}
+	if len(fragments) == 0 {
+		return nil, nil
+	}
+	return fragments, nil
+}
+
+// canonicalDeviceRequests turns the device request map into a stable,
+// comparable representation so two pods requesting the same set produce
+// the same fragment value.
+func canonicalDeviceRequests(requests map[schedulingv1alpha1.DeviceType]corev1.ResourceList) []string {
+	out := make([]string, 0, len(requests))
+	for _, dt := range slices.Sorted(maps.Keys(requests)) {
+		rl := requests[dt]
+		for _, n := range slices.Sorted(maps.Keys(rl)) {
+			q := rl[n]
+			out = append(out, string(dt)+"/"+string(n)+"="+q.String())
+		}
+	}
+	return out
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
