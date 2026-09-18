@@ -36,6 +36,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scarceresourceavoidance"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scheduleadmission"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/schedulinghint"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/sandbox"
 
 	// Ensure metric package is initialized
 	_ "k8s.io/component-base/metrics/prometheus/clientgo"
@@ -55,6 +56,12 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	scarceresourceavoidance.Name: scarceresourceavoidance.New,
 	scheduleadmission.Name:       scheduleadmission.New,
 	schedulinghint.Name:          schedulinghint.New,
+}
+
+func init() {
+	// Register custom workflows before command construction so workflow flags are available during
+	// package initialization, consistent with the scheduler app's other registrations.
+	app.KnownWorkflowList = append(app.KnownWorkflowList, sandbox.New())
 }
 
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {

@@ -378,13 +378,28 @@ func PodScheduleAttemptInfo(pod *corev1.Pod) (attempts int, initialAttemptTimest
 	return podInfo.Attempts, podInfo.InitialAttemptTimestamp, true
 }
 
+// dispatchSchedulePod routes the node-selection decision to a registered SchedulingDecisionProvider
+// (e.g. the sandbox equivalence-class path) when it handles the pod; otherwise it falls back to the
+// upstream schedulePod. f.schedulePod is the raw upstream Scheduler.SchedulePod captured in
+// InitScheduler, so this must not recurse into scheduleOne.
+func (f *FrameworkExtenderFactory) dispatchSchedulePod(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+	if extender, ok := fwk.(FrameworkExtender); ok {
+		for _, provider := range extender.GetSchedulingDecisionProviders() {
+			if provider.Handles(pod) {
+				return provider.SchedulePod(ctx, cycleState, fwk, pod)
+			}
+		}
+	}
+	return f.schedulePod(ctx, fwk, cycleState, pod)
+}
+
 func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
 	InitDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
 	if f.workloadAuditor != nil {
 		f.workloadAuditor.RecordAttemptPod(pod)
 	}
-	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
+	scheduleResult, err := f.dispatchSchedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
 		if st := getBatchScheduleState(cycleState); st != nil && st.handled && st.success {
 			// The whole job (including this pod) has already been assumed and bound by the inline

@@ -70,6 +70,50 @@ var (
 			Help:      "The number of of nodes out of the evaluated ones that fit the pod when find the suggested node",
 			Buckets:   metrics.ExponentialBuckets(1, 2, 24),
 		})
+	SandboxEquivalenceClassHits = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "sandbox_equivalence_class_hits",
+			Help:           "Number of Sandbox scheduling decisions served by the equivalence-class fast path.",
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"profile"})
+	SandboxEquivalenceClassMisses = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "sandbox_equivalence_class_misses",
+			Help:           "Number of Sandbox equivalence-class lookups that fell back to full scheduling, labeled by reason.",
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"profile", "reason"})
+	SandboxEquivalenceClassFlushes = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "sandbox_equivalence_class_flushes",
+			Help:           "Number of Sandbox equivalence-class cache flushes, labeled by reason.",
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"reason"})
+	SandboxEquivalenceClassCacheEntries = metrics.NewGauge(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "sandbox_equivalence_class_cache_entries",
+			Help:           "Current number of Sandbox equivalence-class cache entries.",
+			StabilityLevel: metrics.ALPHA,
+		})
+	SandboxSchedulingDuration = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "sandbox_scheduling_duration_seconds",
+			Help:           "Duration of Sandbox scheduling decisions, labeled by fast/full path and result.",
+			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"profile", "path", "result"})
+	SandboxBindingSlotWaitDuration = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "sandbox_binding_slot_wait_duration_seconds",
+			Help:           "Time spent waiting for a Sandbox binding slot.",
+			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"profile"})
 
 	ElasticQuotaProcessLatency = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
@@ -174,6 +218,12 @@ var (
 		ReservationResource,
 		PodSchedulingEvaluatedNodes,
 		PodSchedulingFeasibleNodes,
+		SandboxEquivalenceClassHits,
+		SandboxEquivalenceClassMisses,
+		SandboxEquivalenceClassFlushes,
+		SandboxEquivalenceClassCacheEntries,
+		SandboxSchedulingDuration,
+		SandboxBindingSlotWaitDuration,
 		ElasticQuotaProcessLatency,
 		SecondaryDeviceNotWellPlannedNodes,
 		WaitingGangGroupNumber,
@@ -264,6 +314,30 @@ func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, v
 		reservationResourceUnitKey: unit,
 	}
 	ReservationResource.With(labels).Set(value)
+}
+
+func RecordSandboxBindingSlotWaitDuration(profile string, latency time.Duration) {
+	SandboxBindingSlotWaitDuration.WithLabelValues(profile).Observe(latency.Seconds())
+}
+
+func RecordSandboxEquivalenceClassCacheEntries(delta int) {
+	SandboxEquivalenceClassCacheEntries.Add(float64(delta))
+}
+
+func RecordSandboxEquivalenceClassFlush(reason string) {
+	SandboxEquivalenceClassFlushes.WithLabelValues(reason).Inc()
+}
+
+func RecordSandboxEquivalenceClassHit(profile string) {
+	SandboxEquivalenceClassHits.WithLabelValues(profile).Inc()
+}
+
+func RecordSandboxEquivalenceClassMiss(profile, reason string) {
+	SandboxEquivalenceClassMisses.WithLabelValues(profile, reason).Inc()
+}
+
+func RecordSandboxSchedulingDuration(profile, path, result string, latency time.Duration) {
+	SandboxSchedulingDuration.WithLabelValues(profile, path, result).Observe(latency.Seconds())
 }
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
