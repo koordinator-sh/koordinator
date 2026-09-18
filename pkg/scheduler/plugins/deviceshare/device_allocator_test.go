@@ -1197,9 +1197,9 @@ func TestAutopilotAllocator(t *testing.T) {
 			}
 
 			frameworkexthelper.ResetRegistrations()
-			deviceCache := newNodeDeviceCache()
+			deviceCache := newNodeDeviceCache(nil)
 			registerDeviceEventHandler(deviceCache, koordShareInformerFactory)
-			registerPodEventHandler(deviceCache, sharedInformerFactory, koordShareInformerFactory)
+			registerPodEventHandlerForTest(deviceCache, sharedInformerFactory, koordShareInformerFactory)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
@@ -2017,9 +2017,9 @@ func TestAutopilotAllocatorWithExclusivePolicyAndRequiredScope(t *testing.T) {
 			}
 
 			frameworkexthelper.ResetRegistrations()
-			deviceCache := newNodeDeviceCache()
+			deviceCache := newNodeDeviceCache(nil)
 			registerDeviceEventHandler(deviceCache, koordShareInformerFactory)
-			registerPodEventHandler(deviceCache, sharedInformerFactory, koordShareInformerFactory)
+			registerPodEventHandlerForTest(deviceCache, sharedInformerFactory, koordShareInformerFactory)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()

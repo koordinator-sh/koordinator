@@ -49,7 +49,7 @@ func TestDefaultDeviceHandler_CalcDesiredRequestsAndCount(t *testing.T) {
 		},
 	})
 
-	cache := newNodeDeviceCache()
+	cache := newNodeDeviceCache(nil)
 	cache.updateNodeDevice(fakeDeviceCRCopy.Name, fakeDeviceCRCopy)
 	nodeDeviceInfo := cache.getNodeDevice(fakeDeviceCRCopy.Name, false)
 	assert.Equal(t, map[schedulingv1alpha1.DeviceType]map[int32]int{
