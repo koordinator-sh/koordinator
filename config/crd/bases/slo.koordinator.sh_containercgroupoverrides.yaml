@@ -1,0 +1,393 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: containercgroupoverrides.slo.koordinator.sh
+spec:
+  group: slo.koordinator.sh
+  names:
+    kind: ContainerCgroupOverride
+    listKind: ContainerCgroupOverrideList
+    plural: containercgroupoverrides
+    shortNames:
+    - cco
+    singular: containercgroupoverride
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.target.podName
+      name: Pod
+      type: string
+    - jsonPath: .spec.target.containerName
+      name: Container
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.nodeName
+      name: Node
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ContainerCgroupOverride declares precise runtime cgroup hard limits for one container
+          without mutating Pod Spec. Delete (default) writebacks host baseline.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ContainerCgroupOverrideSpec defines the desired runtime cgroup hard limits.
+              Resources are nested by controller (ACK Cgroups style) for extensibility;
+              restore contract stays host-baseline writeback (not NRC PodSpec rollback).
+            properties:
+              resources:
+                description: Resources is the desired hard-limit surface (memory/cpu/cpuset;
+                  blkio schema-ready).
+                properties:
+                  blkio:
+                    description: Blkio is schema-ready; koordlet ignores until explicitly
+                      implemented.
+                    properties:
+                      deviceReadBps:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                      deviceReadIops:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                      deviceWriteBps:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                      deviceWriteIops:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                      weight:
+                        format: int64
+                        type: integer
+                      weightDevice:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                    type: object
+                  cpu:
+                    description: CPUCgroupOverride is the cpu / cpuset controller
+                      surface.
+                    properties:
+                      cpuset:
+                        description: CPUSet maps to cpuset.cpus (isolation experiments;
+                          optional).
+                        type: string
+                      period:
+                        description: Period is optional CFS period in microseconds;
+                          0/empty = use host period.
+                        format: int64
+                        type: integer
+                      quota:
+                        description: |-
+                          Quota is a millicores Quantity string (e.g. "200m").
+                          Maps to cpu.max (v2) / cpu.cfs_quota_us (v1); period from host unless Period set.
+                        type: string
+                    type: object
+                  memory:
+                    description: |-
+                      MemoryCgroupOverride is the memory controller hard-limit surface.
+                      Nested (ACK-style) so future knobs (high/min/low) can land without flattening Spec.
+                    properties:
+                      max:
+                        description: |-
+                          Max is a Quantity string (e.g. "512Mi") or "max".
+                          Maps to memory.max (v2) / memory.limit_in_bytes (v1).
+                        type: string
+                    type: object
+                type: object
+              target:
+                description: Target selects the Pod/container. Required.
+                properties:
+                  containerName:
+                    description: ContainerName is the target container name.
+                    type: string
+                  podName:
+                    description: PodName is the target Pod name in the same namespace
+                      as this CR.
+                    type: string
+                  podUID:
+                    description: PodUID when set must match the live Pod UID (recommended;
+                      prevents recreate races).
+                    type: string
+                required:
+                - containerName
+                - podName
+                type: object
+              writebackOnDelete:
+                description: 'WritebackOnDelete defaults to true: delete blocks on
+                  finalizer until host baseline restored.'
+                type: boolean
+            required:
+            - resources
+            - target
+            type: object
+          status:
+            description: ContainerCgroupOverrideStatus is the observed state.
+            properties:
+              baseline:
+                description: Baseline is the host cgroup snapshot captured before
+                  first apply (nested).
+                properties:
+                  blkio:
+                    description: Blkio is schema-ready; koordlet ignores until explicitly
+                      implemented.
+                    properties:
+                      deviceReadBps:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                      deviceReadIops:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                      deviceWriteBps:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                      deviceWriteIops:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                      weight:
+                        format: int64
+                        type: integer
+                      weightDevice:
+                        items:
+                          description: BlkioDeviceValue is one device throttle entry.
+                          properties:
+                            device:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                          - device
+                          - value
+                          type: object
+                        type: array
+                    type: object
+                  cpu:
+                    description: CPUCgroupOverride is the cpu / cpuset controller
+                      surface.
+                    properties:
+                      cpuset:
+                        description: CPUSet maps to cpuset.cpus (isolation experiments;
+                          optional).
+                        type: string
+                      period:
+                        description: Period is optional CFS period in microseconds;
+                          0/empty = use host period.
+                        format: int64
+                        type: integer
+                      quota:
+                        description: |-
+                          Quota is a millicores Quantity string (e.g. "200m").
+                          Maps to cpu.max (v2) / cpu.cfs_quota_us (v1); period from host unless Period set.
+                        type: string
+                    type: object
+                  memory:
+                    description: |-
+                      MemoryCgroupOverride is the memory controller hard-limit surface.
+                      Nested (ACK-style) so future knobs (high/min/low) can land without flattening Spec.
+                    properties:
+                      max:
+                        description: |-
+                          Max is a Quantity string (e.g. "512Mi") or "max".
+                          Maps to memory.max (v2) / memory.limit_in_bytes (v1).
+                        type: string
+                    type: object
+                type: object
+              conditions:
+                description: Conditions optional NRC-style observability (Applied
+                  / Writeback / Failed).
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastAppliedTime:
+                format: date-time
+                type: string
+              message:
+                type: string
+              nodeName:
+                description: NodeName is filled by the aggregator from the scheduled
+                  Pod.
+                type: string
+              observedDesiredHash:
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the metadata.generation last successfully
+                  applied.
+                format: int64
+                type: integer
+              phase:
+                description: CgroupOverridePhase is reported on CR status / NodeSLO
+                  payload.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
