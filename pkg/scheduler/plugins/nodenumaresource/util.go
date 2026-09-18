@@ -46,6 +46,18 @@ func GetNUMAAllocateStrategy(node *corev1.Node, defaultNUMAtAllocateStrategy sch
 	return numaAllocateStrategy
 }
 
+// resolveNUMAAllocateStrategy returns the effective NUMAAllocateStrategy for a pod on a node.
+// The pod-level strategy (koordinator.sh/numa-topology-spec.numaAllocateStrategy) takes precedence,
+// then the node-level label, then the plugin default. Unlike NUMATopologyPolicy, a pod/node mismatch
+// here is not a conflict: the pod simply overrides the node default, since the allocate strategy is a
+// placement preference rather than an admission constraint.
+func resolveNUMAAllocateStrategy(podStrategy schedulingconfig.NUMAAllocateStrategy, node *corev1.Node, defaultStrategy schedulingconfig.NUMAAllocateStrategy) schedulingconfig.NUMAAllocateStrategy {
+	if podStrategy != "" {
+		return podStrategy
+	}
+	return GetNUMAAllocateStrategy(node, defaultStrategy)
+}
+
 func AllowUseCPUSet(pod *corev1.Pod) bool {
 	if pod == nil {
 		return false
@@ -63,6 +75,16 @@ func mergeTopologyPolicy(nodePolicy, podPolicy extension.NUMATopologyPolicy) (ex
 		nodePolicy = podPolicy
 	}
 	return nodePolicy, nil
+}
+
+// effectiveNUMATopologyPolicy upgrades a None policy to BestEffort when the pod's resources should be
+// distributed evenly across NUMA nodes, so that the NUMA-level accounting and hint generation still run
+// on nodes without an explicit NUMA topology policy.
+func effectiveNUMATopologyPolicy(policy extension.NUMATopologyPolicy, distributeEvenly bool) extension.NUMATopologyPolicy {
+	if distributeEvenly && policy == extension.NUMATopologyPolicyNone {
+		return extension.NUMATopologyPolicyBestEffort
+	}
+	return policy
 }
 
 func getNUMATopologyPolicy(nodeLabels map[string]string, kubeletTopologyManagerPolicy extension.NUMATopologyPolicy) extension.NUMATopologyPolicy {

@@ -77,6 +77,15 @@ type NUMATopologySpec struct {
 	// on a NUMA node can be scheduled to use the NUMA node when another Pod that uses multiple NUMA nodes/a single NUMA node
 	// is already running on the same node.
 	SingleNUMANodeExclusive NumaTopologyExclusive `json:"singleNUMANodeExclusive,omitempty"`
+	// NUMAAllocateStrategy optionally requests that the pod's cpu/memory be spread across as many NUMA
+	// nodes as feasible (by preferring the widest NUMA affinity when generating topology hints) instead
+	// of packed into the fewest, e.g. for pods whose memory is interleaved across NUMA nodes at runtime.
+	// At the pod level only DistributeEvenly is honored; any other value is rejected at scheduling. The
+	// MostAllocated/LeastAllocated strategies remain node-level only (the
+	// node.koordinator.sh/numa-allocate-strategy label or the plugin default), which an empty value
+	// inherits. Even spread applies only when the node exposes NUMA topology and the pod is not confined
+	// to a single NUMA node (SingleNUMANode policy or Required exclusivity), which take precedence.
+	NUMAAllocateStrategy NUMAAllocateStrategy `json:"numaAllocateStrategy,omitempty"`
 }
 
 // ResourceStatus describes resource allocation result, such as how to bind CPU.
@@ -138,7 +147,9 @@ const (
 	NUMAMostAllocated NUMAAllocateStrategy = "MostAllocated"
 	// NUMALeastAllocated indicates that allocates from the NUMA Node with the most amount of available resource.
 	NUMALeastAllocated NUMAAllocateStrategy = "LeastAllocated"
-	// NUMADistributeEvenly indicates that evenly distribute CPUs across NUMA Nodes.
+	// NUMADistributeEvenly indicates that evenly distribute cpu/memory across as many NUMA Nodes as feasible,
+	// preferring to span all NUMA nodes instead of packing into the fewest. It can be set per node via the
+	// node.koordinator.sh/numa-allocate-strategy label, or per pod via NUMATopologySpec.NUMAAllocateStrategy.
 	NUMADistributeEvenly NUMAAllocateStrategy = "DistributeEvenly"
 )
 
