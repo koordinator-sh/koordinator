@@ -227,6 +227,8 @@ type ReservationArgs struct {
 	// enumerate the candidate nodes that hold any matching reservation.
 	// +optional
 	ReservationSelectorIndex *ReservationSelectorIndexArgs `json:"reservationSelectorIndex,omitempty"`
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint *bool `json:"enableQueueHint,omitempty"`
 }
 
 // ReservationSelectorIndexArgs configures the reservationSelector white-list
