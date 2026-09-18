@@ -56,6 +56,14 @@ const (
 	ResourceHuaweiNPUCore = "huawei.com/npu-core"
 	ResourceHuaweiNPUCPU  = "huawei.com/npu-cpu"
 	ResourceHuaweiNPUDVPP = "huawei.com/npu-dvpp"
+
+	// Hygon DCU resource names used by HAMi device plugin
+	// These resources are used by Hygon DCU device plugin to report resources
+	// and should be skipped during scheduling validation since they are handled
+	// by the device plugin directly.
+	ResourceHygonDCUCores = "hygon.com/dcucores"
+	ResourceHygonDCUMem   = "hygon.com/dcumem"
+	ResourceHygonDCUNum   = "hygon.com/dcunum"
 )
 
 const (
@@ -75,6 +83,7 @@ const (
 	GPUVendorCambricon = "cambricon"
 	GPUVendorMetaX     = "metax"
 	GPUVendorBaidu     = "baidu"
+	GPUVendorHygon     = "hygon"
 )
 
 // DeviceAllocations would be injected into Pod as form of annotation during Pre-bind stage.
