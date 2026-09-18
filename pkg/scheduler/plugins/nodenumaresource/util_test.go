@@ -164,3 +164,87 @@ func Test_mergeTopologyPolicy(t *testing.T) {
 		})
 	}
 }
+
+func Test_resolveNUMAAllocateStrategy(t *testing.T) {
+	tests := []struct {
+		name            string
+		podStrategy     schedulingconfig.NUMAAllocateStrategy
+		nodeLabel       schedulingconfig.NUMAAllocateStrategy
+		defaultStrategy schedulingconfig.NUMAAllocateStrategy
+		want            schedulingconfig.NUMAAllocateStrategy
+	}{
+		{
+			name:            "pod strategy takes precedence over node label and default",
+			podStrategy:     schedulingconfig.NUMADistributeEvenly,
+			nodeLabel:       schedulingconfig.NUMAMostAllocated,
+			defaultStrategy: schedulingconfig.NUMALeastAllocated,
+			want:            schedulingconfig.NUMADistributeEvenly,
+		},
+		{
+			name:            "node label takes precedence over default when pod unset",
+			nodeLabel:       schedulingconfig.NUMADistributeEvenly,
+			defaultStrategy: schedulingconfig.NUMALeastAllocated,
+			want:            schedulingconfig.NUMADistributeEvenly,
+		},
+		{
+			name:            "fall back to plugin default when pod and node unset",
+			defaultStrategy: schedulingconfig.NUMAMostAllocated,
+			want:            schedulingconfig.NUMAMostAllocated,
+		},
+		{
+			name:            "pod MostAllocated overrides node DistributeEvenly",
+			podStrategy:     schedulingconfig.NUMAMostAllocated,
+			nodeLabel:       schedulingconfig.NUMADistributeEvenly,
+			defaultStrategy: schedulingconfig.NUMALeastAllocated,
+			want:            schedulingconfig.NUMAMostAllocated,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{},
+				},
+			}
+			if tt.nodeLabel != "" {
+				node.Labels[extension.LabelNodeNUMAAllocateStrategy] = string(tt.nodeLabel)
+			}
+			got := resolveNUMAAllocateStrategy(tt.podStrategy, node, tt.defaultStrategy)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_effectiveNUMATopologyPolicy(t *testing.T) {
+	tests := []struct {
+		name             string
+		policy           extension.NUMATopologyPolicy
+		distributeEvenly bool
+		want             extension.NUMATopologyPolicy
+	}{
+		{
+			name:             "upgrade None to BestEffort when distributing evenly",
+			policy:           extension.NUMATopologyPolicyNone,
+			distributeEvenly: true,
+			want:             extension.NUMATopologyPolicyBestEffort,
+		},
+		{
+			name:             "keep None when not distributing evenly",
+			policy:           extension.NUMATopologyPolicyNone,
+			distributeEvenly: false,
+			want:             extension.NUMATopologyPolicyNone,
+		},
+		{
+			name:             "keep an explicit policy unchanged even when distributing evenly",
+			policy:           extension.NUMATopologyPolicySingleNUMANode,
+			distributeEvenly: true,
+			want:             extension.NUMATopologyPolicySingleNUMANode,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := effectiveNUMATopologyPolicy(tt.policy, tt.distributeEvenly)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
