@@ -1123,6 +1123,141 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 	}
 }
 
+func Test_tryAllocateFromPreAllocatablePod(t *testing.T) {
+	gpuResources := corev1.ResourceList{
+		apiext.ResourceGPUCore:        resource.MustParse("100"),
+		apiext.ResourceGPUMemoryRatio: resource.MustParse("100"),
+		apiext.ResourceGPUMemory:      resource.MustParse("8Gi"),
+	}
+	newDevice := func() *schedulingv1alpha1.Device {
+		device := &schedulingv1alpha1.Device{}
+		for i := 0; i < 8; i++ {
+			device.Spec.Devices = append(device.Spec.Devices, schedulingv1alpha1.DeviceInfo{
+				Minor:     ptr.To(int32(i)),
+				Health:    true,
+				Type:      schedulingv1alpha1.GPU,
+				Resources: gpuResources.DeepCopy(),
+				Topology: &schedulingv1alpha1.DeviceTopology{
+					NodeID: 0,
+					PCIEID: "0",
+				},
+			})
+		}
+		return device
+	}
+	newDeviceResources := func(gpuCore string, minors ...int) deviceResources {
+		resources := deviceResources{}
+		for _, minor := range minors {
+			resources[minor] = corev1.ResourceList{
+				apiext.ResourceGPUCore:        resource.MustParse(gpuCore),
+				apiext.ResourceGPUMemoryRatio: resource.MustParse(gpuCore),
+			}
+		}
+		return resources
+	}
+
+	tests := []struct {
+		name                   string
+		requestedGPUCore       string
+		preAllocatableGPUCore  string
+		nodeUsedGPUCore        string
+		preAllocatableMinors   []int
+		wantAllocationCount    int
+		wantIncludedGPUDevices []int
+	}{
+		{
+			name:                   "inherit a non-lowest GPU minor",
+			requestedGPUCore:       "100",
+			preAllocatableGPUCore:  "100",
+			nodeUsedGPUCore:        "100",
+			preAllocatableMinors:   []int{4},
+			wantAllocationCount:    1,
+			wantIncludedGPUDevices: []int{4},
+		},
+		{
+			name:                   "expand two pre-allocated GPUs to a four-GPU reservation",
+			requestedGPUCore:       "400",
+			preAllocatableGPUCore:  "100",
+			nodeUsedGPUCore:        "100",
+			preAllocatableMinors:   []int{4, 5},
+			wantAllocationCount:    4,
+			wantIncludedGPUDevices: []int{4, 5},
+		},
+		{
+			name:                   "inherit a shared GPU minor over a better-scored device",
+			requestedGPUCore:       "50",
+			preAllocatableGPUCore:  "50",
+			nodeUsedGPUCore:        "75",
+			preAllocatableMinors:   []int{4},
+			wantAllocationCount:    1,
+			wantIncludedGPUDevices: []int{4},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deviceCache := newNodeDeviceCache()
+			deviceCache.updateNodeDevice("test-node", newDevice())
+			nodeDevice := deviceCache.getNodeDevice("test-node", false)
+			preAllocatedGPUs := newDeviceResources(tt.preAllocatableGPUCore, tt.preAllocatableMinors...)
+			preAllocatableResources := map[schedulingv1alpha1.DeviceType]deviceResources{
+				schedulingv1alpha1.GPU: preAllocatedGPUs,
+			}
+			nodeDevice.deviceUsed[schedulingv1alpha1.GPU] = newDeviceResources(tt.nodeUsedGPUCore, tt.preAllocatableMinors...)
+			nodeDevice.resetDeviceFree(schedulingv1alpha1.GPU)
+
+			reservation := &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-reservation", UID: types.UID("test-reservation-uid")},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+					Template:       &corev1.PodTemplateSpec{},
+				},
+			}
+			rInfo := frameworkext.NewReservationInfo(reservation)
+			restoreState := &nodeReservationRestoreStateData{
+				matched: []reusableAlloc{{
+					rInfo:          rInfo,
+					preAllocatable: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pre-allocatable-pod"}},
+					allocatable:    preAllocatableResources,
+					remained:       preAllocatableResources,
+				}},
+				preAllocationRInfo: rInfo,
+			}
+			podRequests := map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
+				schedulingv1alpha1.GPU: {
+					apiext.ResourceGPUCore:        resource.MustParse(tt.requestedGPUCore),
+					apiext.ResourceGPUMemoryRatio: resource.MustParse(tt.requestedGPUCore),
+				},
+			}
+			reservePod := &corev1.Pod{}
+			state := &preFilterState{podRequests: podRequests}
+			state.gpuRequirements, _ = parseGPURequirements(reservePod, podRequests, nil, nil, nil)
+			args := getDefaultArgs()
+			allocator := &AutopilotAllocator{
+				state:      state,
+				nodeDevice: nodeDevice,
+				node:       &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}},
+				pod:        reservePod,
+				scorer:     deviceResourceStrategyTypeMap[args.ScoringStrategy.Type](args),
+			}
+
+			result, status := (&Plugin{}).tryAllocateFromReusable(
+				allocator, state, restoreState, restoreState.matched, reservePod, allocator.node, nil, true,
+			)
+
+			assert.True(t, status.IsSuccess(), "status: %v", status)
+			assert.Len(t, result[schedulingv1alpha1.GPU], tt.wantAllocationCount)
+			allocatedMinors := map[int32]bool{}
+			for _, allocation := range result[schedulingv1alpha1.GPU] {
+				allocatedMinors[allocation.Minor] = true
+			}
+			for _, minor := range tt.wantIncludedGPUDevices {
+				assert.True(t, allocatedMinors[int32(minor)], "expected GPU minor %d in allocation %v", minor, result)
+			}
+		})
+	}
+}
+
 func Test_allocateWithNominated(t *testing.T) {
 	// Fixed UIDs to avoid non-determinism from uuid.NewUUID()
 	const (

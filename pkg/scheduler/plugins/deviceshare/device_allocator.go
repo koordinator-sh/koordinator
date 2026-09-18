@@ -55,6 +55,7 @@ type requestContext struct {
 	hintSelectors             map[schedulingv1alpha1.DeviceType][2]labels.Selector
 	required                  map[schedulingv1alpha1.DeviceType]sets.Int
 	preferred                 map[schedulingv1alpha1.DeviceType]sets.Int
+	requiredDeviceMinors      map[schedulingv1alpha1.DeviceType]sets.Int
 	allocationScorer          *resourceAllocationScorer
 	nodeDevice                *nodeDevice
 
@@ -99,6 +100,21 @@ func (a *AutopilotAllocator) Allocate(
 	required, preferred map[schedulingv1alpha1.DeviceType]sets.Int,
 	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
 ) (apiext.DeviceAllocations, *fwktype.Status) {
+	return a.allocate(required, preferred, requiredDeviceResources, preemptibleDeviceResources, nil)
+}
+
+func (a *AutopilotAllocator) allocateWithRequiredDeviceMinors(
+	preferred, requiredDeviceMinors map[schedulingv1alpha1.DeviceType]sets.Int,
+	preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+) (apiext.DeviceAllocations, *fwktype.Status) {
+	return a.allocate(nil, preferred, nil, preemptibleDeviceResources, requiredDeviceMinors)
+}
+
+func (a *AutopilotAllocator) allocate(
+	required, preferred map[schedulingv1alpha1.DeviceType]sets.Int,
+	requiredDeviceResources, preemptibleDeviceResources map[schedulingv1alpha1.DeviceType]deviceResources,
+	requiredDeviceMinors map[schedulingv1alpha1.DeviceType]sets.Int,
+) (apiext.DeviceAllocations, *fwktype.Status) {
 	if status := a.Prepare(); !status.IsSuccess() {
 		return nil, status
 	}
@@ -115,6 +131,7 @@ func (a *AutopilotAllocator) Allocate(
 		allocationScorer:          a.scorer,
 		required:                  required,
 		preferred:                 preferred,
+		requiredDeviceMinors:      requiredDeviceMinors,
 		nodeDevice:                a.nodeDevice,
 		designatedVF:              a.state.designatedVF,
 	}
@@ -334,22 +351,36 @@ func allocateDevices(requestCtx *requestContext, nodeDevice *nodeDevice, deviceT
 
 	allocator := deviceAllocators[deviceType]
 	if allocator != nil {
-		return allocator.Allocate(requestCtx, nodeDevice, desiredCount, maxDesiredCount, nil)
+		allocations, status = allocator.Allocate(requestCtx, nodeDevice, desiredCount, maxDesiredCount, nil)
+	} else {
+		allocations, status = defaultAllocateDevices(
+			nodeDevice,
+			requestCtx,
+			requestPerInstance,
+			desiredCount,
+			maxDesiredCount,
+			deviceType,
+			preferredPCIEs,
+		)
 	}
-
-	allocations, status = defaultAllocateDevices(
-		nodeDevice,
-		requestCtx,
-		requestPerInstance,
-		desiredCount,
-		maxDesiredCount,
-		deviceType,
-		preferredPCIEs,
-	)
 	if !status.IsSuccess() {
 		return nil, status
 	}
+	if !allocationIncludesAllMinors(allocations, requestCtx.requiredDeviceMinors[deviceType]) {
+		return nil, fwktype.NewStatus(fwktype.Unschedulable, fmt.Sprintf("Insufficient %s devices", deviceType))
+	}
 	return allocations, nil
+}
+
+func allocationIncludesAllMinors(allocations []*apiext.DeviceAllocation, required sets.Int) bool {
+	if required.Len() == 0 {
+		return true
+	}
+	allocated := sets.NewInt()
+	for _, allocation := range allocations {
+		allocated.Insert(int(allocation.Minor))
+	}
+	return allocated.IsSuperset(required)
 }
 
 func defaultAllocateDevices(
