@@ -1700,7 +1700,7 @@ func Test_preemptionEvaluatorImpl_preempt(t *testing.T) {
 				_, _ = extendedFramework.ClientSet().CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 			}
 
-			ev := NewPreemptionEvaluator(extendedFramework, gangCache, gangSchedulingContextHolder, nil).(*preemptionEvaluatorImpl)
+			ev := NewPreemptionEvaluator(extendedFramework, gangCache, gangSchedulingContextHolder, nil, false).(*preemptionEvaluatorImpl)
 			preemptionState := &JobPreemptionState{
 				TerminatingPodOnNominatedNode: map[string]string{},
 				ClearNominatedNodeFailedMsg:   map[string]string{},
