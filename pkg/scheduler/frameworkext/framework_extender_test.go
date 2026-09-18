@@ -24,6 +24,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -460,6 +463,68 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins(t *testing.T) {
 			}
 			assert.Equal(t, expectedAnnotations, tt.pod.Annotations)
 		})
+	}
+}
+
+// Test_frameworkExtenderImpl_RunPreFilterPlugins_Tracing verifies that RunPreFilterPlugins
+// starts a PreFilterTransformers child span with the expected pod attributes when a tracer
+// provider is configured.
+func Test_frameworkExtenderImpl_RunPreFilterPlugins_Tracing(t *testing.T) {
+	// Install an in-memory tracer provider to capture emitted spans, and restore the
+	// previous global provider afterwards so other tests are unaffected.
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	defer otel.SetTracerProvider(previous)
+
+	koordClientSet := koordfake.NewSimpleClientset()
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	extenderFactory, err := NewFrameworkExtenderFactory(
+		WithServicesEngine(services.NewEngine(gin.New())),
+		WithKoordinatorClientSet(koordClientSet),
+		WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+	)
+	assert.NoError(t, err)
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+		schedulertesting.RegisterPreFilterPlugin("T1", PluginFactoryProxy(extenderFactory, func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
+			return &TestTransformer{name: "T1", index: 1}, nil
+		})),
+	}
+	fakeClient := kubefake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+	fh, err := schedulertesting.NewFramework(
+		context.TODO(),
+		registeredPlugins,
+		"koord-scheduler",
+		frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfoLister{}}),
+		frameworkruntime.WithClientSet(fakeClient),
+		frameworkruntime.WithInformerFactory(sharedInformerFactory),
+	)
+	assert.NoError(t, err)
+	frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
+	frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
+
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "test-ns"}}
+	_, status, _ := frameworkExtender.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), pod)
+	assert.Nil(t, status)
+
+	var found sdktrace.ReadOnlySpan
+	for _, s := range recorder.Ended() {
+		if s.Name() == "PreFilterTransformers" {
+			found = s
+			break
+		}
+	}
+	if assert.NotNil(t, found, "expected a PreFilterTransformers span to be recorded") {
+		attrs := map[string]string{}
+		for _, kv := range found.Attributes() {
+			attrs[string(kv.Key)] = kv.Value.AsString()
+		}
+		assert.Equal(t, "test-ns", attrs["pod.namespace"])
+		assert.Equal(t, "test-pod", attrs["pod.name"])
 	}
 }
 
