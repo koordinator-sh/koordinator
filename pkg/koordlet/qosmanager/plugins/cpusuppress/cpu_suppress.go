@@ -262,14 +262,18 @@ func (r *CPUSuppress) suppressBECPU() {
 		features.DefaultKoordletFeatureGate.Enabled(features.BECPUManager) {
 		r.recoverCFSQuotaIfNeed()
 		r.recoverCPUSetForBECPUManager()
-		r.recoverBECpuIdleIfNeed()
+		if features.DefaultKoordletFeatureGate.Enabled(features.BECPUIdleSuppress) {
+			r.recoverBECpuIdleIfNeed()
+		}
 		klog.V(5).Infof("suppressBECPU cannot work with BECPUManager together, suppress will be skipped, " +
 			"recover cpuset on all level if be pod does not specified numa node, and let be cpu set hook handle the others")
 		return
 	} else if disabled {
 		r.recoverCFSQuotaIfNeed()
 		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
-		r.recoverBECpuIdleIfNeed()
+		if features.DefaultKoordletFeatureGate.Enabled(features.BECPUIdleSuppress) {
+			r.recoverBECpuIdleIfNeed()
+		}
 		klog.V(5).Infof("suppressBECPU skipped, nodeSLO disable the featuregate")
 		return
 	}
@@ -323,12 +327,16 @@ func (r *CPUSuppress) suppressBECPU() {
 		r.adjustByCfsQuota(suppressCPUQuantity, node)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
 		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
-		r.suppressBECPUIdle()
+		if features.DefaultKoordletFeatureGate.Enabled(features.BECPUIdleSuppress) {
+			r.suppressBECPUIdle()
+		}
 	} else {
 		r.adjustByCPUSet(suppressCPUQuantity, nodeCPUInfo)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
 		r.recoverCFSQuotaIfNeed()
-		r.suppressBECPUIdle()
+		if features.DefaultKoordletFeatureGate.Enabled(features.BECPUIdleSuppress) {
+			r.suppressBECPUIdle()
+		}
 	}
 }
 

@@ -18,6 +18,7 @@ package cpusuppress
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -97,6 +98,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 		preBECPUSet         string
 		preBECFSQuota       int64
 		beCPUManagerEnabled bool
+		beCPUIdleEnabled    bool
 	}
 	tests := []struct {
 		name                     string
@@ -107,6 +109,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 		wantBECPUSetOfContainer  map[string]string // key is container id
 		wantBECPUSetOfSandbox    map[string]string // key is pod name
 		wantCPUSetPolicyStatus   *suppressPolicyStatus
+		wantCPUIdle              string
 	}{
 		{
 			name: "does not panic on empty (non-nil) input",
@@ -118,6 +121,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 16 * system.DefaultCPUCFSPeriod,
+				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
@@ -128,6 +132,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			wantCFSQuotaPolicyStatus: nil,
 			wantBECPUSet:             "0-9",
 			wantCPUSetPolicyStatus:   nil,
+			wantCPUIdle:              "0", 
 		},
 		{
 			name: "recover when be cpu manager enabled",
@@ -269,6 +274,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "1-9",
 				preBECFSQuota: 10 * system.DefaultCPUCFSPeriod,
+				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
@@ -286,6 +292,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				"be-pod-numa": "1-9",
 			},
 			wantCPUSetPolicyStatus: &policyRecovered,
+			wantCPUIdle:              "0",
 		},
 		{
 			name: "suppress by cfsQuota calculate correctly for missing podMeta or transient metrics",
@@ -346,6 +353,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 10 * system.DefaultCPUCFSPeriod,
+				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
@@ -356,6 +364,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			wantCFSQuotaPolicyStatus: &policyUsing,
 			wantBECPUSet:             "0-15",
 			wantCPUSetPolicyStatus:   &policyRecovered,
+			wantCPUIdle:              "1",
 		},
 		{
 			name: "calculate be suppress cfsQuota correctly",
@@ -447,6 +456,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 15 * system.DefaultCPUCFSPeriod,
+				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
@@ -457,6 +467,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			wantCFSQuotaPolicyStatus: &policyUsing,
 			wantBECPUSet:             "0-15",
 			wantCPUSetPolicyStatus:   &policyRecovered,
+			wantCPUIdle:              "1",
 		},
 		{
 			name: "calculate be suppress cpus correctly",
@@ -548,6 +559,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 8 * system.DefaultCPUCFSPeriod,
+				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
 					CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
@@ -558,6 +570,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			wantCFSQuotaPolicyStatus: &policyRecovered,
 			wantBECPUSet:             "0-1",
 			wantCPUSetPolicyStatus:   &policyUsing,
+			wantCPUIdle:              "1",
 		},
 		{
 			name: "reset cpuset and cfs quota if cpu qos disabled",
@@ -649,6 +662,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				nodeCPUSet:    "0-15",
 				preBECPUSet:   "0-9",
 				preBECFSQuota: 8 * system.DefaultCPUCFSPeriod,
+				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](false),
 					CPUSuppressPolicy:           slov1alpha1.CPUSetPolicy,
@@ -659,6 +673,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			wantCFSQuotaPolicyStatus: &policyRecovered,
 			wantBECPUSet:             "0-15",
 			wantCPUSetPolicyStatus:   &policyRecovered,
+			wantCPUIdle:              "0",
 		},
 	}
 	defaultSandboxContainerIDPrefix := "containerd://sandbox-"
@@ -704,6 +719,14 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet, tt.args.preBECPUSet)
 			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, strconv.FormatInt(tt.args.preBECFSQuota, 10))
 			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, strconv.FormatInt(system.DefaultCPUCFSPeriod, 10))
+			// Create cpu.idle at kubepods.slice level for SupportedIfFileExistsInKubepods check
+			kubepodsCpuDir := filepath.Join(system.Conf.CgroupRootDir, "cpu", system.KubeRootNameSystemd)
+			os.MkdirAll(kubepodsCpuDir, 0755)
+			os.WriteFile(filepath.Join(kubepodsCpuDir, "cpu.idle"), []byte("0"), 0644)
+			// Also create cpu.idle at the BE cgroup level for the actual write
+			beCpuIdlePath := filepath.Join(system.Conf.CgroupRootDir, "cpu", koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "cpu.idle")
+			os.MkdirAll(filepath.Dir(beCpuIdlePath), 0755)
+			os.WriteFile(beCpuIdlePath, []byte("0"), 0644)
 			for _, podMeta := range tt.args.podMetas {
 				podMeta.CgroupDir = koordletutil.GetPodCgroupParentDir(podMeta.Pod)
 				helper.WriteCgroupFileContents(podMeta.CgroupDir, system.CPUSet, tt.args.preBECPUSet)
@@ -719,8 +742,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			}
 
 			assert.NoError(t, features.DefaultMutableKoordletFeatureGate.SetFromMap(map[string]bool{
-				string(features.BECPUManager):  tt.args.beCPUManagerEnabled,
-				string(features.BECPUSuppress): true}))
+				string(features.BECPUManager):       tt.args.beCPUManagerEnabled,
+				string(features.BECPUSuppress):       true,
+				string(features.BECPUIdleSuppress):   tt.args.beCPUIdleEnabled}))
 
 			opt := &framework.Options{
 				StatesInformer:      si,
@@ -751,6 +775,10 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			if tt.wantCPUSetPolicyStatus != nil {
 				assert.Equal(t, *tt.wantCPUSetPolicyStatus, gotCPUSetPolicyStatus, "check_CPUSetPolicyStatus_equal")
 			}
+			// check cpu.idle
+			gotCPUIdle := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUIdle)
+			assert.Equal(t, tt.wantCPUIdle, gotCPUIdle, "checkBECPUIdle")
+
 			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
 			assert.Equal(t, tt.wantBECPUSet, gotCPUSetBECgroup, "checkBECPUSet")
 			for _, podMeta := range tt.args.podMetas {
