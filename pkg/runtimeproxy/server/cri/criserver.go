@@ -72,7 +72,9 @@ func (c *RuntimeManagerCriServer) Run() error {
 	if err != nil {
 		return err
 	}
-	c.failOver()
+	if err := c.failOver(); err != nil {
+		return fmt.Errorf("recover runtime checkpoint: %w", err)
+	}
 
 	klog.Infof("do failOver done")
 
