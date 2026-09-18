@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"k8s.io/klog/v2"
 
@@ -88,7 +89,26 @@ func cgroupFileWrite(cgroupTaskDir string, r sysutil.Resource, value string) err
 	filePath := r.Path(cgroupTaskDir)
 	klog.V(5).Infof("write %s [%s]", filePath, value)
 
-	return os.WriteFile(filePath, []byte(value), 0644)
+	if err := cgroupWriteFile(filePath, []byte(value), 0644); err != nil {
+		return wrapCgroupWriteErr(r, err)
+	}
+	return nil
+}
+
+// cgroupWriteFile is the underlying cgroup file write function, which is overridable in tests to
+// simulate kernel write errors (e.g. EINVAL).
+var cgroupWriteFile = os.WriteFile
+
+// wrapCgroupWriteErr classifies a cgroup write error. Some kernels (e.g. TencentOS 3.3 with cgroup-v1)
+// expose cgroup interfaces whose write handler returns EINVAL, although the file exists and is readable.
+// Such EINVAL means the resource is effectively unsupported on the node, so it is wrapped as a
+// resource-unsupported error and the executor stops retrying it. The original error chain is preserved
+// for errors.Is checks. Other errors are returned as-is.
+func wrapCgroupWriteErr(r sysutil.Resource, err error) error {
+	if errors.Is(err, syscall.EINVAL) {
+		return sysutil.WrapResourceUnsupportedErr(fmt.Errorf("write cgroup %s failed, err: %w", r.ResourceType(), err))
+	}
+	return err
 }
 
 // CgroupFileReadInt reads the cgroup file and returns an int64 value.

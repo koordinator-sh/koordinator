@@ -17,6 +17,9 @@ limitations under the License.
 package resourceexecutor
 
 import (
+	"fmt"
+	"sync/atomic"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -245,4 +248,88 @@ func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
 			e.UpdateBatch(tt.args.isCacheable, tt.args.resources...)
 		})
 	}
+}
+
+// TestResourceUpdateExecutor_UnsupportedErrNotRetried verifies that a resource whose update fails with an
+// unsupported-classified error (e.g. a cgroup write rejected with EINVAL, see wrapCgroupWriteErr) is marked
+// as done in the resource cache and is not retried by subsequent update batches.
+func TestResourceUpdateExecutor_UnsupportedErrNotRetried(t *testing.T) {
+	var calls int32
+	updateFn := func(r ResourceUpdater) error {
+		atomic.AddInt32(&calls, 1)
+		return sysutil.WrapResourceUnsupportedErr(fmt.Errorf("write cgroup memory.high failed, err: %w", syscall.EINVAL))
+	}
+	updater, err := NewCommonDefaultUpdaterWithUpdateFunc("test-einval-unsupported", "/tmp/cgroup/memory.high", "1024", updateFn, &audit.EventHelper{})
+	assert.NoError(t, err)
+
+	e := &ResourceUpdateExecutorImpl{
+		ResourceCache: cache.NewCacheDefault(),
+		Config:        NewDefaultConfig(),
+	}
+	stop := make(chan struct{})
+	defer close(stop)
+	e.Run(stop)
+
+	// the first batch invokes the update once
+	e.UpdateBatch(true, updater)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&calls))
+
+	// the failed task is cached as unsupported, so the following batches do not retry it
+	e.UpdateBatch(true, updater)
+	e.UpdateBatch(true, updater)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&calls))
+
+	// LeveledUpdateBatch also stops retrying the unsupported resource
+	e.LeveledUpdateBatch([][]ResourceUpdater{{updater}})
+	assert.Equal(t, int32(1), atomic.LoadInt32(&calls))
+}
+
+// TestResourceUpdateExecutor_NonUnsupportedErrStillRetried verifies that errors which are not classified as
+// unsupported (e.g. EACCES) do not stop the retry: the task stays queued and is attempted again in the next
+// batch.
+func TestResourceUpdateExecutor_NonUnsupportedErrStillRetried(t *testing.T) {
+	var calls int32
+	updateFn := func(r ResourceUpdater) error {
+		atomic.AddInt32(&calls, 1)
+		return fmt.Errorf("open %s: %w", r.Path(), syscall.EACCES)
+	}
+	updater, err := NewCommonDefaultUpdaterWithUpdateFunc("test-eacces-retry", "/tmp/cgroup/memory.high", "1024", updateFn, &audit.EventHelper{})
+	assert.NoError(t, err)
+
+	e := &ResourceUpdateExecutorImpl{
+		ResourceCache: cache.NewCacheDefault(),
+		Config:        NewDefaultConfig(),
+	}
+	stop := make(chan struct{})
+	defer close(stop)
+	e.Run(stop)
+
+	e.UpdateBatch(true, updater)
+	e.UpdateBatch(true, updater)
+	assert.Equal(t, int32(2), atomic.LoadInt32(&calls))
+}
+
+// TestResourceUpdateExecutor_CgroupDirErrStillRetried verifies the pre-existing behavior is kept: a cgroup
+// dir-not-exist error is ignored (not surfaced to callers) but is NOT cached as done, so the task is
+// retried, e.g. when the pod cgroup is created later.
+func TestResourceUpdateExecutor_CgroupDirErrStillRetried(t *testing.T) {
+	var calls int32
+	updateFn := func(r ResourceUpdater) error {
+		atomic.AddInt32(&calls, 1)
+		return ResourceCgroupDirErr("write cgroup memory.high failed, msg: cgroup dir not exist")
+	}
+	updater, err := NewCommonDefaultUpdaterWithUpdateFunc("test-cgroupdir-retry", "/tmp/cgroup/memory.high", "1024", updateFn, &audit.EventHelper{})
+	assert.NoError(t, err)
+
+	e := &ResourceUpdateExecutorImpl{
+		ResourceCache: cache.NewCacheDefault(),
+		Config:        NewDefaultConfig(),
+	}
+	stop := make(chan struct{})
+	defer close(stop)
+	e.Run(stop)
+
+	e.UpdateBatch(true, updater)
+	e.UpdateBatch(true, updater)
+	assert.Equal(t, int32(2), atomic.LoadInt32(&calls))
 }
