@@ -161,6 +161,7 @@ const (
 	MemoryCurrentName          = "memory.current"
 	MemoryPriorityName         = "memory.priority"
 	MemoryUsePriorityOomName   = "memory.use_priority_oom"
+	MemorySoftLimitName        = "memory.soft_limit_in_bytes"
 	MemoryOomGroupName         = "memory.oom.group"
 	MemoryIdlePageStatsName    = "memory.idle_page_stats"
 	// Anolis OS memcg page cache limit interfaces (kernel >= 5.10.134-14)
@@ -245,6 +246,7 @@ var (
 	MemoryPriority         = DefaultFactory.New(MemoryPriorityName, CgroupMemDir).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemorySoftLimit        = DefaultFactory.New(MemorySoftLimitName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryIdlePageStats    = DefaultFactory.New(MemoryIdlePageStatsName, CgroupMemDir).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	BlkioReadIops          = DefaultFactory.New(BlkioTRIopsName, CgroupBlkioDir).WithValidator(BlkioTRIopsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	BlkioReadBps           = DefaultFactory.New(BlkioTRBpsName, CgroupBlkioDir).WithValidator(BlkioTRBpsValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
@@ -285,6 +287,7 @@ var (
 		MemoryPriority,
 		MemoryUsePriorityOom,
 		MemoryOomGroup,
+		MemorySoftLimit,
 		MemoryIdlePageStats,
 		BlkioReadIops,
 		BlkioReadBps,
