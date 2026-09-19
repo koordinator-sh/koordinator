@@ -21,6 +21,7 @@ import (
 	"errors"
 	"math"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -70,6 +71,8 @@ type cgroupResourcesReconcile struct {
 	// reclaimGatedUntil is the atomic timestamp (UnixNano) before which reclaim is skipped due to consecutive EAGAIN.
 	// ponytail: atomic int64 used here to avoid a mutex; pod-level tracking is overkill since backoff is node-wide.
 	reclaimGatedUntil atomic.Int64
+	// reclaimWG tracks in-flight reclaim goroutines so tests can wait for completion before teardown.
+	reclaimWG sync.WaitGroup
 }
 
 // cgroupResourceSummary summarizes values of cgroup resources to update; nil value means not to update
@@ -207,6 +210,7 @@ func (m *cgroupResourcesReconcile) reclaimBEMemory(nodeSLO *slov1alpha1.NodeSLO)
 
 		// dispatch each reclaim to its own goroutine with timeout so a slow write does not block the reconcile loop.
 		// ponytail: goroutine-per-pod; a bounded worker pool is only needed if the node runs hundreds of BE pods.
+		m.reclaimWG.Add(1)
 		go m.doReclaim(podDir, reclaimBytes, pod)
 	}
 }
@@ -230,6 +234,7 @@ func (m *cgroupResourcesReconcile) isPressureAboveThreshold() bool {
 
 // doReclaim performs a single memory.reclaim write for the given BE pod with a context timeout.
 func (m *cgroupResourcesReconcile) doReclaim(podDir string, reclaimBytes int64, pod *corev1.Pod) {
+	defer m.reclaimWG.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), memoryReclaimTimeout)
 	defer cancel()
 

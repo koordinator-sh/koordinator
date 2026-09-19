@@ -1492,6 +1492,7 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory(t *testing.T) {
 
 			opt := &framework.Options{StatesInformer: statesInformer, Config: framework.NewDefaultConfig()}
 			reconciler := newTestCgroupResourcesReconcile(opt)
+			t.Cleanup(func() { waitReclaimDone(t, reconciler) })
 			stop := make(chan struct{})
 			assert.NotPanics(t, func() { reconciler.init(stop) })
 			defer func() { stop <- struct{}{} }()
@@ -1515,12 +1516,15 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory(t *testing.T) {
 			err := os.Chmod(reclaimFilePath, 0200)
 			assert.NoError(t, err)
 
-			// create a PSI file with avg10=10 (above threshold) to prevent PSI gating from short-circuiting reclaim.
+			// create PSI files with memory avg10=10 (above threshold) to prevent PSI gating from short-circuiting reclaim.
+			// ReadPSI reads CPU, Mem and IO pressure files, so all three must exist.
 			// Use os.WriteFile directly to avoid the helper's IsSupported check which needs the kubepods parent dir.
 			psiDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
-			helper.CreateCgroupFile(psiDir, system.CPUAcctMemoryPressureV2)
-			psiPath := system.GetCgroupFilePath(psiDir, system.CPUAcctMemoryPressureV2)
-			_ = os.WriteFile(psiPath, []byte("some avg10=10.00 avg60=5.00 avg300=2.00 total=1000\nfull avg10=5.00 avg60=2.00 avg300=1.00 total=500\n"), 0644)
+			for _, r := range []system.Resource{system.CPUAcctCPUPressureV2, system.CPUAcctMemoryPressureV2, system.CPUAcctIOPressureV2} {
+				helper.CreateCgroupFile(psiDir, r)
+				psiPath := system.GetCgroupFilePath(psiDir, r)
+				_ = os.WriteFile(psiPath, []byte("some avg10=10.00 avg60=5.00 avg300=2.00 total=1000\nfull avg10=5.00 avg60=2.00 avg300=1.00 total=500\n"), 0644)
+			}
 
 			nodeSLO := &slov1alpha1.NodeSLO{
 				Spec: slov1alpha1.NodeSLOSpec{
@@ -1538,6 +1542,7 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory(t *testing.T) {
 			}
 
 			reconciler.reclaimBEMemory(nodeSLO)
+			waitReclaimDone(t, reconciler)
 
 			// reclaim now runs in a goroutine; wait for it to complete.
 			assert.Eventually(t, func() bool {
@@ -1568,6 +1573,7 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory_PSIGating(t *testing.T) {
 
 	opt := &framework.Options{StatesInformer: statesInformer, Config: framework.NewDefaultConfig()}
 	reconciler := newTestCgroupResourcesReconcile(opt)
+	t.Cleanup(func() { waitReclaimDone(t, reconciler) })
 	stop := make(chan struct{})
 	assert.NotPanics(t, func() { reconciler.init(stop) })
 	defer func() { stop <- struct{}{} }()
@@ -1587,8 +1593,14 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory_PSIGating(t *testing.T) {
 	helper.WriteCgroupFileContents(podDir, system.MemoryUsageV2, "1073741824") // 1Gi usage
 	helper.WriteCgroupFileContents(podDir, system.MemoryLimitV2, "1073741824") // 1Gi limit
 
-	// write PSI with low avg10=1.0 (below 5.0 threshold) => reclaim should be skipped
-	helper.CreateCgroupFile(psiDir, system.CPUAcctMemoryPressureV2)
+	// write PSI with low memory avg10=1.0 (below 5.0 threshold) => reclaim should be skipped.
+	// Create CPU and IO PSI files as well since ReadPSI reads all three.
+	for _, r := range []system.Resource{system.CPUAcctCPUPressureV2, system.CPUAcctMemoryPressureV2, system.CPUAcctIOPressureV2} {
+		helper.CreateCgroupFile(psiDir, r)
+		psiPath := system.GetCgroupFilePath(psiDir, r)
+		_ = os.WriteFile(psiPath, []byte("some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"), 0644)
+	}
+	// overwrite memory pressure with low value
 	psiPath := system.GetCgroupFilePath(psiDir, system.CPUAcctMemoryPressureV2)
 	_ = os.WriteFile(psiPath, []byte("some avg10=1.00 avg60=0.50 avg300=0.20 total=100\nfull avg10=0.50 avg60=0.20 avg300=0.10 total=50\n"), 0644)
 
@@ -1608,6 +1620,7 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory_PSIGating(t *testing.T) {
 	}
 
 	reconciler.reclaimBEMemory(nodeSLO)
+	waitReclaimDone(t, reconciler)
 
 	// reclaim should be gated by PSI - memory.reclaim should remain unwritten
 	reclaimFilePath := system.GetCgroupFilePath(podDir, system.MemoryReclaimV2)
@@ -1627,6 +1640,7 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory_podFilter(t *testing.T) {
 
 		opt := &framework.Options{StatesInformer: statesInformer, Config: framework.NewDefaultConfig()}
 		reconciler := newTestCgroupResourcesReconcile(opt)
+		t.Cleanup(func() { waitReclaimDone(t, reconciler) })
 		stop := make(chan struct{})
 		assert.NotPanics(t, func() { reconciler.init(stop) })
 		defer func() { stop <- struct{}{} }()
@@ -1654,6 +1668,7 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory_podFilter(t *testing.T) {
 		}
 
 		reconciler.reclaimBEMemory(nodeSLO)
+		waitReclaimDone(t, reconciler)
 
 		reclaimFilePath := system.GetCgroupFilePath(nonBEPod.CgroupDir, system.MemoryReclaimV2)
 		// non-BE pod should not have been touched
@@ -1672,6 +1687,7 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory_podFilter(t *testing.T) {
 
 		opt := &framework.Options{StatesInformer: statesInformer, Config: framework.NewDefaultConfig()}
 		reconciler := newTestCgroupResourcesReconcile(opt)
+		t.Cleanup(func() { waitReclaimDone(t, reconciler) })
 		stop := make(chan struct{})
 		assert.NotPanics(t, func() { reconciler.init(stop) })
 		defer func() { stop <- struct{}{} }()
@@ -1699,6 +1715,7 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory_podFilter(t *testing.T) {
 		}
 
 		reconciler.reclaimBEMemory(nodeSLO)
+		waitReclaimDone(t, reconciler)
 
 		reclaimFilePath := system.GetCgroupFilePath(inactivePod.CgroupDir, system.MemoryReclaimV2)
 		info, err := os.Stat(reclaimFilePath)
@@ -1727,6 +1744,22 @@ func newTestCgroupResourcesReconcile(opt *framework.Options) *cgroupResourcesRec
 			Config:        resourceexecutor.NewDefaultConfig(),
 			ResourceCache: cache.NewCacheDefault(),
 		},
+	}
+}
+
+// waitReclaimDone waits for all in-flight reclaim goroutines to finish, with a timeout to prevent
+// indefinite hangs. Must be called after reclaimBEMemory and before test assertions/teardown.
+func waitReclaimDone(t *testing.T, reconciler *cgroupResourcesReconcile) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		reconciler.reclaimWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Errorf("timed out waiting for reclaim goroutines")
 	}
 }
 
