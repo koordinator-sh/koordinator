@@ -17,9 +17,11 @@ limitations under the License.
 package system
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"runtime"
+	"syscall"
 	"testing"
 	"time"
 
@@ -157,4 +159,28 @@ func BenchmarkGoWithNewThread(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestWrapResourceUnsupportedErr(t *testing.T) {
+	t.Run("wraps and preserves raw syscall error chain", func(t *testing.T) {
+		original := syscall.EINVAL
+		wrapped := WrapResourceUnsupportedErr(original)
+		assert.True(t, IsResourceUnsupportedErr(wrapped))
+		assert.True(t, errors.Is(wrapped, syscall.EINVAL), "errors.Is must still see EINVAL through %w chain")
+	})
+
+	t.Run("wraps and preserves wrapped error chain", func(t *testing.T) {
+		original := fmt.Errorf("inner: %w", syscall.EACCES)
+		wrapped := WrapResourceUnsupportedErr(original)
+		assert.True(t, IsResourceUnsupportedErr(wrapped))
+		assert.True(t, errors.Is(wrapped, syscall.EACCES), "errors.Is must reach EACCES through nested %w chain")
+	})
+
+	t.Run("nil input creates non-nil error", func(t *testing.T) {
+		wrapped := WrapResourceUnsupportedErr(nil)
+		assert.Error(t, wrapped)
+		assert.True(t, IsResourceUnsupportedErr(wrapped))
+		// nil → fmt.Errorf("%s, reason: %w", ..., nil) produces an error with "%!s(<nil>)" in message
+		assert.Contains(t, wrapped.Error(), ErrResourceUnsupportedPrefix)
+	})
 }
