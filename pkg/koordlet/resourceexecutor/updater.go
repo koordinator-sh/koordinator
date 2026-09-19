@@ -55,11 +55,13 @@ func init() {
 		sysutil.MemoryPriorityName,
 		sysutil.MemoryUsePriorityOomName,
 		sysutil.MemoryOomGroupName,
-		sysutil.MemoryReclaimName,
 		sysutil.NetClsClassIdName,
 	)
 	// special cases
 	DefaultCgroupUpdaterFactory.Register(NewCgroupUpdaterWithUpdateFunc(CgroupUpdateCPUSharesFunc), sysutil.CPUSharesName)
+	DefaultCgroupUpdaterFactory.Register(NewCgroupUpdaterWithUpdateFunc(CgroupUpdateDirectWriteFunc),
+		sysutil.MemoryReclaimName,
+	)
 	DefaultCgroupUpdaterFactory.Register(NewMergeableCgroupUpdaterWithConditionFunc(CgroupUpdateWithUnlimitedFunc, MergeConditionIfCFSQuotaIsLarger),
 		sysutil.CPUCFSQuotaName,
 	)
@@ -395,6 +397,22 @@ func CgroupUpdateCPUSharesFunc(resource ResourceUpdater) error {
 		c.value = strconv.FormatInt(v, 10)
 	}
 	return cgroupWriteIfDifferentWithLog(c)
+}
+
+// CgroupUpdateDirectWriteFunc writes the cgroup file directly without reading its current value first.
+// This is necessary for write-only cgroup files like memory.reclaim (cgroup v2) where reads return EPERM/EIO.
+// ponytail: direct-write only; a future "write tracking" abstraction could unify logging, but one file doesn't need it.
+func CgroupUpdateDirectWriteFunc(resource ResourceUpdater) error {
+	c := resource.(*CgroupResourceUpdater)
+	if err := cgroupFileWrite(c.parentDir, c.file, c.value); err != nil {
+		return err
+	}
+	if c.eventHelper != nil {
+		_ = c.eventHelper.Do()
+	} else {
+		_ = audit.V(3).Reason(ReasonUpdateCgroups).Message("update %v to %v", c.Path(), c.Value()).Do()
+	}
+	return nil
 }
 
 type MergeConditionFunc func(oldValue, newValue string) (mergedValue string, needMerge bool, err error)
