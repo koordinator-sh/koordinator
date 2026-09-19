@@ -235,7 +235,9 @@ func (m *cgroupResourcesReconcile) doReclaim(podDir string, reclaimBytes int64, 
 
 	done := make(chan error, 1)
 	go func() {
-		updater, err := resourceexecutor.NewCommonCgroupUpdater(system.MemoryReclaimName, podDir, strconv.FormatInt(reclaimBytes, 10), nil)
+		// use the direct-write updater to avoid the read-before-write pattern which fails on write-only files.
+		updaterFn := resourceexecutor.NewCgroupUpdaterWithUpdateFunc(resourceexecutor.CgroupUpdateDirectWriteFunc)
+		updater, err := updaterFn(system.MemoryReclaimName, podDir, strconv.FormatInt(reclaimBytes, 10), nil)
 		if err != nil {
 			done <- err
 			return
