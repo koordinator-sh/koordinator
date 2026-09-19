@@ -57,4 +57,5 @@ func init() {
 	internalMustRegister(KubeletStubCollector...)
 	internalMustRegister(RuntimeHookCollectors...)
 	internalMustRegister(HostApplicationCollectors...)
+	internalMustRegister(CgroupReconcileCollector...)
 }

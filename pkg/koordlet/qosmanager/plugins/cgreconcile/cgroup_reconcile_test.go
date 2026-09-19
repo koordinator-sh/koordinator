@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
@@ -38,6 +39,7 @@ import (
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -1485,6 +1487,10 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			// Register a node and reset metric counters for isolation.
+			metrics.Register(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}})
+			t.Cleanup(func() { metrics.Register(nil) })
+			metrics.MemoryReclaimRounds.Reset()
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 			statesInformer := mockstatesinformer.NewMockStatesInformer(ctrl)
@@ -1561,12 +1567,30 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory(t *testing.T) {
 				_ = os.Chmod(reclaimFilePath, 0644)
 				got := helper.ReadCgroupFileContents(podDir, system.MemoryReclaimV2)
 				assert.Equal(t, tt.wantValue, got)
+
+				// metric: success counter should be 1 (the one pod was reclaimed)
+				counter, err := metrics.MemoryReclaimRounds.GetMetricWithLabelValues("test-node", metrics.MemoryReclaimResultSuccess)
+				if assert.NoError(t, err) {
+					var m dto.Metric
+					assert.NoError(t, counter.Write(&m))
+					assert.Equal(t, float64(1), *m.Counter.Value)
+				}
+			} else {
+				// metric: no reclaim write happened, so success counter should be 0
+				counter, _ := metrics.MemoryReclaimRounds.GetMetricWithLabelValues("test-node", metrics.MemoryReclaimResultSuccess)
+				var m dto.Metric
+				assert.NoError(t, counter.Write(&m))
+				assert.Equal(t, float64(0), *m.Counter.Value)
 			}
 		})
 	}
 }
 
 func Test_cgroupResourcesReconcile_reclaimBEMemory_PSIGating(t *testing.T) {
+	metrics.Register(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}})
+	t.Cleanup(func() { metrics.Register(nil) })
+	metrics.MemoryReclaimRounds.Reset()
+
 	bePod := testutil.MockTestPodWithQOS(corev1.PodQOSBestEffort, apiext.QoSBE)
 	statesInformer := mockstatesinformer.NewMockStatesInformer(gomock.NewController(t))
 	statesInformer.EXPECT().GetAllPods().Return([]*statesinformer.PodMeta{bePod}).MaxTimes(1)
@@ -1628,6 +1652,14 @@ func Test_cgroupResourcesReconcile_reclaimBEMemory_PSIGating(t *testing.T) {
 		info, statErr := os.Stat(reclaimFilePath)
 		return statErr == nil && info.Size() == 0
 	}, 1*time.Second, 10*time.Millisecond)
+
+	// metric: gated counter should be 1 (PSI gating fired)
+	counter, err := metrics.MemoryReclaimRounds.GetMetricWithLabelValues("test-node", metrics.MemoryReclaimResultGated)
+	if assert.NoError(t, err) {
+		var m dto.Metric
+		assert.NoError(t, counter.Write(&m))
+		assert.Equal(t, float64(1), *m.Counter.Value)
+	}
 }
 
 func Test_cgroupResourcesReconcile_reclaimBEMemory_podFilter(t *testing.T) {

@@ -36,6 +36,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -169,12 +170,14 @@ func (m *cgroupResourcesReconcile) reclaimBEMemory(nodeSLO *slov1alpha1.NodeSLO)
 	// PSI pressure gating: skip reclaim when kubepods-level memory PSI is low.
 	if !m.isPressureAboveThreshold() {
 		klog.V(5).Infof("skip reclaiming BE memory since memory PSI is below threshold")
+		metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultGated)
 		return
 	}
 
 	// EAGAIN backoff: skip if we're in the backoff window from consecutive EAGAIN failures.
 	if time.Now().UnixNano() < m.reclaimGatedUntil.Load() {
 		klog.V(5).Infof("skip reclaiming BE memory due to EAGAIN backoff")
+		metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultLimited)
 		return
 	}
 
@@ -262,12 +265,14 @@ func (m *cgroupResourcesReconcile) doReclaim(podDir string, reclaimBytes int64, 
 	if err == nil {
 		// Success: reset the EAGAIN backoff gate.
 		m.reclaimGatedUntil.Store(0)
+		metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultSuccess)
 		klog.V(6).Infof("reclaimed BE pod %s: %d bytes", util.GetPodKey(pod), reclaimBytes)
 		return
 	}
 	if errors.Is(err, syscall.EAGAIN) {
 		// EAGAIN means the kernel reclaimed as much as possible without reaching the target; apply exponential backoff.
 		klog.V(5).Infof("reclaimed BE pod %s partially (EAGAIN), err: %v", util.GetPodKey(pod), err)
+		metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultSuccess) // partial reclaim still makes progress
 		now := time.Now()
 		backoff := m.reclaimGatedUntil.Load()
 		if backoff == 0 {
@@ -283,6 +288,7 @@ func (m *cgroupResourcesReconcile) doReclaim(podDir string, reclaimBytes int64, 
 	}
 	// Non-EAGAIN error, possibly transient; log and continue without backoff.
 	klog.V(5).Infof("failed to reclaim BE pod %s, err: %v", util.GetPodKey(pod), err)
+	metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultError)
 }
 
 func (m *cgroupResourcesReconcile) calculateAndUpdateResources(nodeSLO *slov1alpha1.NodeSLO) {
