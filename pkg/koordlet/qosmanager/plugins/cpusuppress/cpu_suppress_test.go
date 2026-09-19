@@ -114,13 +114,13 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 		{
 			name: "does not panic on empty (non-nil) input",
 			args: args{
-				node:          &corev1.Node{},
-				nodeCPUUsed:   nil,
-				podMetrics:    []podMetricSample{},
-				podMetas:      []*statesinformer.PodMeta{},
-				nodeCPUSet:    "0-15",
-				preBECPUSet:   "0-9",
-				preBECFSQuota: 16 * system.DefaultCPUCFSPeriod,
+				node:             &corev1.Node{},
+				nodeCPUUsed:      nil,
+				podMetrics:       []podMetricSample{},
+				podMetas:         []*statesinformer.PodMeta{},
+				nodeCPUSet:       "0-15",
+				preBECPUSet:      "0-9",
+				preBECFSQuota:    16 * system.DefaultCPUCFSPeriod,
 				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
@@ -132,7 +132,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			wantCFSQuotaPolicyStatus: nil,
 			wantBECPUSet:             "0-9",
 			wantCPUSetPolicyStatus:   nil,
-			wantCPUIdle:              "0", 
+			wantCPUIdle:              "0",
 		},
 		{
 			name: "recover when be cpu manager enabled",
@@ -271,9 +271,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 						},
 					},
 				},
-				nodeCPUSet:    "0-15",
-				preBECPUSet:   "1-9",
-				preBECFSQuota: 10 * system.DefaultCPUCFSPeriod,
+				nodeCPUSet:       "0-15",
+				preBECPUSet:      "1-9",
+				preBECFSQuota:    10 * system.DefaultCPUCFSPeriod,
 				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
@@ -292,7 +292,7 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 				"be-pod-numa": "1-9",
 			},
 			wantCPUSetPolicyStatus: &policyRecovered,
-			wantCPUIdle:              "0",
+			wantCPUIdle:            "0",
 		},
 		{
 			name: "suppress by cfsQuota calculate correctly for missing podMeta or transient metrics",
@@ -350,9 +350,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 						},
 					},
 				},
-				nodeCPUSet:    "0-15",
-				preBECPUSet:   "0-9",
-				preBECFSQuota: 10 * system.DefaultCPUCFSPeriod,
+				nodeCPUSet:       "0-15",
+				preBECPUSet:      "0-9",
+				preBECFSQuota:    10 * system.DefaultCPUCFSPeriod,
 				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
@@ -453,9 +453,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 						},
 					},
 				},
-				nodeCPUSet:    "0-15",
-				preBECPUSet:   "0-9",
-				preBECFSQuota: 15 * system.DefaultCPUCFSPeriod,
+				nodeCPUSet:       "0-15",
+				preBECPUSet:      "0-9",
+				preBECFSQuota:    15 * system.DefaultCPUCFSPeriod,
 				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
@@ -556,9 +556,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 						},
 					},
 				},
-				nodeCPUSet:    "0-15",
-				preBECPUSet:   "0-9",
-				preBECFSQuota: 8 * system.DefaultCPUCFSPeriod,
+				nodeCPUSet:       "0-15",
+				preBECPUSet:      "0-9",
+				preBECFSQuota:    8 * system.DefaultCPUCFSPeriod,
 				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](true),
@@ -659,9 +659,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 						},
 					},
 				},
-				nodeCPUSet:    "0-15",
-				preBECPUSet:   "0-9",
-				preBECFSQuota: 8 * system.DefaultCPUCFSPeriod,
+				nodeCPUSet:       "0-15",
+				preBECPUSet:      "0-9",
+				preBECFSQuota:    8 * system.DefaultCPUCFSPeriod,
 				beCPUIdleEnabled: true,
 				thresholdConfig: &slov1alpha1.ResourceThresholdStrategy{
 					Enable:                      ptr.To[bool](false),
@@ -742,9 +742,9 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 			}
 
 			assert.NoError(t, features.DefaultMutableKoordletFeatureGate.SetFromMap(map[string]bool{
-				string(features.BECPUManager):       tt.args.beCPUManagerEnabled,
-				string(features.BECPUSuppress):       true,
-				string(features.BECPUIdleSuppress):   tt.args.beCPUIdleEnabled}))
+				string(features.BECPUManager):      tt.args.beCPUManagerEnabled,
+				string(features.BECPUSuppress):     true,
+				string(features.BECPUIdleSuppress): tt.args.beCPUIdleEnabled}))
 
 			opt := &framework.Options{
 				StatesInformer:      si,
