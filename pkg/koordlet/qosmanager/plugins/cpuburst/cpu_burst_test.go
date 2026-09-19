@@ -19,6 +19,7 @@ package cpuburst
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"testing"
@@ -416,6 +417,72 @@ func TestCPUBurst_getNodeStateForBurst(t *testing.T) {
 	}
 }
 
+func Test_cpuNormalizedPod(t *testing.T) {
+	type args struct {
+		pod                 *corev1.Pod
+		nodeNormalizedRatio float64
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "ratio-equal-1.0",
+			args: args{
+				pod:                 newTestPodWithQOS("test-ls", apiext.QoSLS, 2000, 2000),
+				nodeNormalizedRatio: 1.0,
+			},
+			want: false,
+		},
+		{
+			name: "ratio-less-than-1.0",
+			args: args{
+				pod:                 newTestPodWithQOS("test-ls", apiext.QoSLS, 2000, 2000),
+				nodeNormalizedRatio: 0.8,
+			},
+			want: false,
+		},
+		{
+			name: "ls-pod-ratio-gt-1",
+			args: args{
+				pod:                 newTestPodWithQOS("test-ls", apiext.QoSLS, 2000, 2000),
+				nodeNormalizedRatio: 1.25,
+			},
+			want: true,
+		},
+		{
+			name: "none-pod-without-cpuset",
+			args: args{
+				pod:                 newTestPodWithQOS("test-none", apiext.QoSNone, 2000, 2000),
+				nodeNormalizedRatio: 1.25,
+			},
+			want: true,
+		},
+		{
+			name: "none-pod-with-cpuset",
+			args: args{
+				pod: func() *corev1.Pod {
+					pod := newTestPodWithQOS("test-none-cpuset", apiext.QoSNone, 2000, 2000)
+					pod.Annotations = map[string]string{
+						apiext.AnnotationResourceStatus: `{"cpuset":"0-3"}`,
+					}
+					return pod
+				}(),
+				nodeNormalizedRatio: 1.25,
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := &cpuBurst{}
+			got := b.cpuNormalizedPod(tt.args.pod, tt.args.nodeNormalizedRatio)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func Test_genPodBurstConfig(t *testing.T) {
 
 	type args struct {
@@ -724,6 +791,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 	type args struct {
 		burstCfg  slov1alpha1.CPUBurstConfig
 		nodeState nodeStateForBurst
+		node      *corev1.Node
 	}
 	type want struct {
 		podCFSQuotaVal       int64
@@ -1232,6 +1300,111 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "scale-reset-with-normalization",
+			fields: fields{
+				podName: testPodName1,
+				containerRes: map[string]corev1.ResourceRequirements{
+					testContainerName1: {
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
+						},
+					},
+				},
+				podCurCFSQuota: int64(2.5 * float64(system.CFSBasePeriodValue)),
+				containerCurCFSQuota: map[string]int64{
+					testContainerName1: int64(2.5 * float64(system.CFSBasePeriodValue)),
+				},
+				containerMetric: map[string]containerMetricSample{
+					testContainerName1: {testContainerID1, 1.5},
+				},
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
+				},
+			},
+			args: args{
+				burstCfg: slov1alpha1.CPUBurstConfig{
+					Policy:          slov1alpha1.CPUBurstOnly,
+					CPUBurstPercent: ptr.To[int64](1000),
+				},
+				nodeState: nodeBurstIdle,
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							apiext.AnnotationCPUNormalizationRatio: "1.25",
+						},
+					},
+				},
+			},
+			want: want{
+				// containerBaseCFS = ceil(200000 / 1.25) = 160000
+				// policy=CPUBurstOnly -> cfsQuotaBurstEnabled=false -> cfsReset -> target = 160000
+				podCFSQuotaVal: int64(math.Ceil(float64(2*system.CFSBasePeriodValue) / 1.25)),
+				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(math.Ceil(float64(2*system.CFSBasePeriodValue) / 1.25)),
+				},
+			},
+		},
+		{
+			name: "scale-up-exclude-none-cpuset-on-idle-state",
+			fields: fields{
+				podName: testPodName1,
+				containerRes: map[string]corev1.ResourceRequirements{
+					testContainerName1: {
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: *resource.NewMilliQuantity(1000, resource.DecimalSI),
+						},
+					},
+				},
+				podCurCFSQuota: 2 * system.CFSBasePeriodValue,
+				containerCurCFSQuota: map[string]int64{
+					testContainerName1: 2 * system.CFSBasePeriodValue,
+				},
+				containerMetric: map[string]containerMetricSample{
+					testContainerName1: {testContainerID1, 1.5},
+				},
+				containersThrottled: map[string]testThrottledMetrics{
+					testContainerName1: {
+						count: 1,
+						aggregateValues: map[metriccache.AggregationType]float64{
+							metriccache.AggregationTypeLast: 0.5,
+						},
+					},
+				},
+			},
+			args: args{
+				burstCfg:  defaultAutoBurstCfg,
+				nodeState: nodeBurstIdle,
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node",
+						Annotations: map[string]string{
+							apiext.AnnotationCPUNormalizationRatio: "1.25",
+						},
+					},
+				},
+			},
+			want: want{
+				// QoSNone + cpuset pod -> cpuNormalizedPod returns false -> no scaling
+				// base stays at 200000, scale-up -> 200000 * 1.2 = 240000
+				podCFSQuotaVal: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+				containerCFSQuotaVal: map[string]int64{
+					testContainerName1: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1244,7 +1417,11 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 
 			ctl := gomock.NewController(t)
 			mockStatesInformer := mock_statesinformer.NewMockStatesInformer(ctl)
-			mockStatesInformer.EXPECT().GetNode().Return(nil).AnyTimes()
+			if tt.args.node != nil {
+				mockStatesInformer.EXPECT().GetNode().Return(tt.args.node).AnyTimes()
+			} else {
+				mockStatesInformer.EXPECT().GetNode().Return(nil).AnyTimes()
+			}
 			mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
 			metriccache.DefaultAggregateResultFactory = mockResultFactory
 			mockQuerier := mock_metriccache.NewMockQuerier(ctl)
