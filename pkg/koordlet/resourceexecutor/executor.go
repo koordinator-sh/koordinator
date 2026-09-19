@@ -129,11 +129,7 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpd
 
 			mergedUpdater, err := updater.MergeUpdate()
 			if err != nil && e.isUpdateErrIgnored(err) {
-				if sysutil.IsResourceUnsupportedErr(err) {
-					klog.Warningf("resource %s is unsupported, skip subsequent updates, err: %v", updater.Key(), err)
-					updater.UpdateLastUpdateTimestamp(time.Now())
-					_ = e.ResourceCache.SetDefault(updater.Key(), updater)
-				}
+				e.cacheUnsupported(updater, err)
 				klog.V(5).Infof("failed to merge update resource %s to %v, ignored err: %v",
 					updater.Key(), updater.Value(), err)
 				continue
@@ -173,11 +169,7 @@ func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpd
 			}
 			err = updater.update()
 			if err != nil && e.isUpdateErrIgnored(err) {
-				if sysutil.IsResourceUnsupportedErr(err) {
-					klog.Warningf("resource %s is unsupported, skip subsequent updates, err: %v", updater.Key(), err)
-					updater.UpdateLastUpdateTimestamp(time.Now())
-					_ = e.ResourceCache.SetDefault(updater.Key(), updater)
-				}
+				e.cacheUnsupported(updater, err)
 				klog.V(5).Infof("failed to update resource %s to %v, ignored err: %v", updater.Key(), updater.Value(), err)
 				continue
 			}
@@ -252,11 +244,7 @@ func (e *ResourceUpdateExecutorImpl) updateByCache(updater ResourceUpdater) (boo
 		start := time.Now()
 		err := updater.update()
 		if err != nil && e.isUpdateErrIgnored(err) {
-			if sysutil.IsResourceUnsupportedErr(err) {
-				klog.Warningf("resource %s is unsupported, skip subsequent updates, err: %v", updater.Key(), err)
-				updater.UpdateLastUpdateTimestamp(time.Now())
-				_ = e.ResourceCache.SetDefault(updater.Key(), updater)
-			}
+			e.cacheUnsupported(updater, err)
 			klog.V(5).Infof("failed to cacheable update resource %s to %v, ignored err: %v", updater.Key(), updater.Value(), err)
 			return false, nil
 		}
@@ -276,6 +264,20 @@ func (e *ResourceUpdateExecutorImpl) updateByCache(updater ResourceUpdater) (boo
 		return true, nil
 	}
 	return false, nil
+}
+
+// cacheUnsupported caches the updater when its update failed with a resource-unsupported error, so that
+// needUpdate returns false and the resource is not retried in subsequent reconciliation cycles. It is a
+// no-op when the error is not an unsupported error (e.g. a transient cgroup-dir-not-exist error).
+func (e *ResourceUpdateExecutorImpl) cacheUnsupported(updater ResourceUpdater, err error) {
+	if !sysutil.IsResourceUnsupportedErr(err) {
+		return
+	}
+	klog.Warningf("resource %s is unsupported, skip subsequent updates, err: %v", updater.Key(), err)
+	updater.UpdateLastUpdateTimestamp(time.Now())
+	if err := e.ResourceCache.SetDefault(updater.Key(), updater); err != nil {
+		klog.V(5).Infof("failed to SetDefault in resourceCache for unsupported resource %s, err: %v", updater.Key(), err)
+	}
 }
 
 func (e *ResourceUpdateExecutorImpl) isUpdateErrIgnored(err error) bool {
