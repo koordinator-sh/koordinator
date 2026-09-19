@@ -18,6 +18,7 @@ package cpusuppress
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -2206,6 +2207,537 @@ func mockLSEPod() *corev1.Pod {
 			},
 		},
 	}
+}
+
+func Test_cpuSuppress_suppressBECPU_gateDisabled(t *testing.T) {
+	nodeCPUInfo := &metriccache.NodeCPUInfo{
+		ProcessorInfos: []koordletutil.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 0},
+			{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 0},
+			{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 0},
+			{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
+			{CPUID: 8, CoreID: 4, SocketID: 2, NodeID: 1},
+			{CPUID: 9, CoreID: 4, SocketID: 2, NodeID: 1},
+			{CPUID: 10, CoreID: 5, SocketID: 2, NodeID: 1},
+			{CPUID: 11, CoreID: 5, SocketID: 2, NodeID: 1},
+			{CPUID: 12, CoreID: 6, SocketID: 3, NodeID: 1},
+			{CPUID: 13, CoreID: 6, SocketID: 3, NodeID: 1},
+			{CPUID: 14, CoreID: 7, SocketID: 3, NodeID: 1},
+			{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
+		},
+	}
+	type podMetricSample struct {
+		UID     string
+		CPUUsed resource.Quantity
+	}
+	tests := []struct {
+		name                     string
+		beCPUIdleEnabled         bool
+		beCPUManagerEnabled      bool
+		enable                   bool
+		suppressPolicy           slov1alpha1.CPUSuppressPolicy
+		node                     *corev1.Node
+		nodeCPUUsed              *resource.Quantity
+		podMetrics               []podMetricSample
+		podMetas                 []*statesinformer.PodMeta
+		preBECPUSet              string
+		preBECFSQuota            int64
+		wantBECFSQuota           int64
+		wantCFSQuotaPolicyStatus *suppressPolicyStatus
+		wantBECPUSet             string
+		wantCPUSetPolicyStatus   *suppressPolicyStatus
+		wantCPUIdle              string
+	}{
+		{
+			name:                "gate disabled, beCPUManager path",
+			beCPUIdleEnabled:    false,
+			beCPUManagerEnabled: true,
+			enable:              true,
+			suppressPolicy:      slov1alpha1.CPUCfsQuotaPolicy,
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node0"},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("40G"),
+					},
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("40G"),
+					},
+				},
+			},
+			nodeCPUUsed: resource.NewQuantity(12, resource.DecimalSI),
+			podMetrics: []podMetricSample{
+				{UID: "ls-pod", CPUUsed: resource.MustParse("8")},
+				{UID: "be-pod", CPUUsed: resource.MustParse("2")},
+			},
+			podMetas: []*statesinformer.PodMeta{
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "ls-pod", UID: "ls-pod",
+							Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSLS)},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node",
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+									Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+								},
+							}},
+						},
+						Status: corev1.PodStatus{
+							Phase:             corev1.PodRunning,
+							ContainerStatuses: []corev1.ContainerStatus{{ContainerID: "containerd://ls-pod-container"}},
+						},
+					},
+				},
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "be-pod", UID: "be-pod",
+							Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSBE)},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node",
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+									Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+								},
+							}},
+						},
+						Status: corev1.PodStatus{
+							Phase:             corev1.PodRunning,
+							ContainerStatuses: []corev1.ContainerStatus{{ContainerID: "containerd://be-pod-container"}},
+						},
+					},
+				},
+			},
+			preBECPUSet:              "1-9",
+			preBECFSQuota:            10 * system.DefaultCPUCFSPeriod,
+			wantBECFSQuota:           -1,
+			wantCFSQuotaPolicyStatus: &policyRecovered,
+			wantBECPUSet:             "0-15",
+			wantCPUSetPolicyStatus:   &policyRecovered,
+			wantCPUIdle:              "2",
+		},
+		{
+			name:                "gate disabled, suppress disabled path",
+			enable:              false,
+			beCPUIdleEnabled:    false,
+			beCPUManagerEnabled: false,
+			suppressPolicy:      slov1alpha1.CPUSetPolicy,
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node0"},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("40G"),
+					},
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("40G"),
+					},
+				},
+			},
+			nodeCPUUsed: resource.NewQuantity(12, resource.DecimalSI),
+			podMetrics: []podMetricSample{
+				{UID: "ls-pod", CPUUsed: resource.MustParse("8")},
+				{UID: "be-pod", CPUUsed: resource.MustParse("2")},
+			},
+			podMetas: []*statesinformer.PodMeta{
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "ls-pod", UID: "ls-pod",
+							Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSLS)},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node",
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+									Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+								},
+							}},
+						},
+						Status: corev1.PodStatus{
+							Phase:             corev1.PodRunning,
+							ContainerStatuses: []corev1.ContainerStatus{{ContainerID: "containerd://ls-pod-container"}},
+						},
+					},
+				},
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "be-pod", UID: "be-pod",
+							Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSBE)},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node",
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+									Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+								},
+							}},
+						},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
+						},
+					},
+				},
+			},
+			preBECPUSet:              "0-9",
+			preBECFSQuota:            8 * system.DefaultCPUCFSPeriod,
+			wantBECFSQuota:           -1,
+			wantCFSQuotaPolicyStatus: &policyRecovered,
+			wantBECPUSet:             "0-15",
+			wantCPUSetPolicyStatus:   &policyRecovered,
+			wantCPUIdle:              "2",
+		},
+		{
+			name:                "gate disabled, cfsQuota suppress path",
+			beCPUIdleEnabled:    false,
+			beCPUManagerEnabled: false,
+			enable:              true,
+			suppressPolicy:      slov1alpha1.CPUCfsQuotaPolicy,
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node0"},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("40G"),
+					},
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("40G"),
+					},
+				},
+			},
+			nodeCPUUsed: resource.NewQuantity(12, resource.DecimalSI),
+			podMetrics: []podMetricSample{
+				{UID: "ls-pod", CPUUsed: resource.MustParse("8")},
+				{UID: "be-pod", CPUUsed: resource.MustParse("2")},
+			},
+			podMetas: []*statesinformer.PodMeta{
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "ls-pod", UID: "ls-pod",
+							Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSLS)},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node",
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+									Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+								},
+							}},
+						},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
+						},
+					},
+				},
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "be-pod", UID: "be-pod",
+							Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSBE)},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node",
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+									Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+								},
+							}},
+						},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
+						},
+					},
+				},
+			},
+			preBECPUSet:              "0-9",
+			preBECFSQuota:            15 * system.DefaultCPUCFSPeriod,
+			wantBECFSQuota:           int64(1.2 * float64(system.DefaultCPUCFSPeriod)),
+			wantCFSQuotaPolicyStatus: &policyUsing,
+			wantBECPUSet:             "0-15",
+			wantCPUSetPolicyStatus:   &policyRecovered,
+			wantCPUIdle:              "2",
+		},
+		{
+			name:                "gate disabled, cpuset suppress path",
+			beCPUIdleEnabled:    false,
+			beCPUManagerEnabled: false,
+			enable:              true,
+			suppressPolicy:      slov1alpha1.CPUSetPolicy,
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-node0"},
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("40G"),
+					},
+					Capacity: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("16"),
+						corev1.ResourceMemory: resource.MustParse("40G"),
+					},
+				},
+			},
+			nodeCPUUsed: resource.NewQuantity(12, resource.DecimalSI),
+			podMetrics: []podMetricSample{
+				{UID: "ls-pod", CPUUsed: resource.MustParse("8")},
+				{UID: "be-pod", CPUUsed: resource.MustParse("2")},
+			},
+			podMetas: []*statesinformer.PodMeta{
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "ls-pod", UID: "ls-pod",
+							Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSLS)},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node",
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+									Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+								},
+							}},
+						},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
+						},
+					},
+				},
+				{
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "be-pod", UID: "be-pod",
+							Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSBE)},
+						},
+						Spec: corev1.PodSpec{
+							NodeName: "test-node",
+							Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+									Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+								},
+							}},
+						},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
+						},
+					},
+				},
+			},
+			preBECPUSet:              "0-9",
+			preBECFSQuota:            8 * system.DefaultCPUCFSPeriod,
+			wantBECFSQuota:           -1,
+			wantCFSQuotaPolicyStatus: &policyRecovered,
+			wantBECPUSet:             "0-1",
+			wantCPUSetPolicyStatus:   &policyUsing,
+			wantCPUIdle:              "2",
+		},
+	}
+	defaultSandboxContainerIDPrefix := "containerd://sandbox-"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctl := gomock.NewController(t)
+			defer ctl.Finish()
+			si := mockstatesinformer.NewMockStatesInformer(ctl)
+			si.EXPECT().GetAllPods().Return(tt.podMetas).AnyTimes()
+			si.EXPECT().GetNode().Return(tt.node).AnyTimes()
+			si.EXPECT().GetNodeSLO().Return(testutil.GetNodeSLOByThreshold(&slov1alpha1.ResourceThresholdStrategy{
+				Enable:                      ptr.To[bool](tt.enable),
+				CPUSuppressPolicy:           tt.suppressPolicy,
+				CPUSuppressThresholdPercent: ptr.To[int64](70),
+			})).AnyTimes()
+			si.EXPECT().GetNodeTopo().Return(&topov1alpha1.NodeResourceTopology{}).AnyTimes()
+
+			mockMetricCache := mockmetriccache.NewMockMetricCache(ctl)
+			mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nodeCPUInfo, true).AnyTimes()
+			mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mockmetriccache.NewMockQuerier(ctl)
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+			nodeResult := mockmetriccache.NewMockAggregateResult(ctl)
+			if tt.nodeCPUUsed == nil {
+				nodeResult.EXPECT().Count().Return(0).AnyTimes()
+			} else {
+				nodeResult.EXPECT().Count().Return(1).AnyTimes()
+				nodeResult.EXPECT().Value(gomock.Any()).Return(float64(tt.nodeCPUUsed.Value()), nil).AnyTimes()
+			}
+			nodeCPUQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
+			assert.NoError(t, err)
+			mockResultFactory.EXPECT().New(nodeCPUQueryMeta).Return(nodeResult).AnyTimes()
+			mockQuerier.EXPECT().QueryAndClose(nodeCPUQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeResult).Return(nil).AnyTimes()
+
+			for _, podMetric := range tt.podMetrics {
+				podQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))
+				assert.NoError(t, err)
+				testutil.BuildMockQueryResult(ctl, mockQuerier, mockResultFactory, podQueryMeta, float64(podMetric.CPUUsed.Value()))
+			}
+
+			helper := system.NewFileTestUtil(t)
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, tt.preBECPUSet)
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet, tt.preBECPUSet)
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, strconv.FormatInt(tt.preBECFSQuota, 10))
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, strconv.FormatInt(system.DefaultCPUCFSPeriod, 10))
+			// Create cpu.idle at kubepods.slice level for SupportedIfFileExistsInKubepods check
+			kubepodsCpuDir := filepath.Join(system.Conf.CgroupRootDir, "cpu", system.KubeRootNameSystemd)
+			os.MkdirAll(kubepodsCpuDir, 0755)
+			os.WriteFile(filepath.Join(kubepodsCpuDir, "cpu.idle"), []byte("0"), 0644)
+			// Create cpu.idle at the BE cgroup level with non-default "2" to verify gate-disabled bypass
+			beCpuIdlePath := filepath.Join(system.Conf.CgroupRootDir, "cpu", koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "cpu.idle")
+			os.MkdirAll(filepath.Dir(beCpuIdlePath), 0755)
+			os.WriteFile(beCpuIdlePath, []byte("2"), 0644)
+			for _, podMeta := range tt.podMetas {
+				podMeta.CgroupDir = koordletutil.GetPodCgroupParentDir(podMeta.Pod)
+				helper.WriteCgroupFileContents(podMeta.CgroupDir, system.CPUSet, tt.preBECPUSet)
+				for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+					containerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, &containerStat)
+					assert.NoError(t, err)
+					helper.WriteCgroupFileContents(containerDir, system.CPUSet, tt.preBECPUSet)
+				}
+				defaultSandboxContainerID := defaultSandboxContainerIDPrefix + podMeta.Pod.Name
+				sandboxContainerDir, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, defaultSandboxContainerID)
+				assert.NoError(t, err)
+				helper.WriteCgroupFileContents(sandboxContainerDir, system.CPUSet, tt.preBECPUSet)
+			}
+
+			assert.NoError(t, features.DefaultMutableKoordletFeatureGate.SetFromMap(map[string]bool{
+				string(features.BECPUManager):      tt.beCPUManagerEnabled,
+				string(features.BECPUSuppress):     true,
+				string(features.BECPUIdleSuppress): tt.beCPUIdleEnabled}))
+
+			opt := &framework.Options{
+				StatesInformer:      si,
+				MetricCache:         mockMetricCache,
+				Config:              framework.NewDefaultConfig(),
+				MetricAdvisorConfig: maframework.NewDefaultConfig(),
+			}
+			cpuSuppress := newTestCPUSuppress(opt)
+			stop := make(chan struct{})
+			assert.NotPanics(t, func() {
+				cpuSuppress.init(stop)
+			})
+
+			cpuSuppress.suppressBECPU()
+
+			// checkCFSQuota
+			gotBECFSQuota := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota)
+			assert.Equal(t, strconv.FormatInt(tt.wantBECFSQuota, 10), gotBECFSQuota, koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort))
+			gotCFSQuotaPolicy, exist := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)]
+			assert.Equal(t, tt.wantCFSQuotaPolicyStatus == nil, !exist, "check_CFSQuotaPolicyStatus_exist")
+			if tt.wantCFSQuotaPolicyStatus != nil {
+				assert.Equal(t, *tt.wantCFSQuotaPolicyStatus, gotCFSQuotaPolicy, "check_CFSQuotaPolicyStatus_equal")
+			}
+
+			// checkCPUSet
+			gotCPUSetPolicyStatus, exist := cpuSuppress.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)]
+			assert.Equal(t, tt.wantCPUSetPolicyStatus == nil, !exist, "check_CPUSetPolicyStatus_exist")
+			if tt.wantCPUSetPolicyStatus != nil {
+				assert.Equal(t, *tt.wantCPUSetPolicyStatus, gotCPUSetPolicyStatus, "check_CPUSetPolicyStatus_equal")
+			}
+			// check cpu.idle — must remain unchanged when gate is disabled
+			gotCPUIdle := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUIdle)
+			assert.Equal(t, tt.wantCPUIdle, gotCPUIdle, "checkBECPUIdle")
+
+			gotCPUSetBECgroup := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+			assert.Equal(t, tt.wantBECPUSet, gotCPUSetBECgroup, "checkBECPUSet")
+			for _, podMeta := range tt.podMetas {
+				if apiext.GetKubeQosClass(podMeta.Pod) == corev1.PodQOSBestEffort {
+					gotPodCPUSet := helper.ReadCgroupFileContents(podMeta.CgroupDir, system.CPUSet)
+					assert.Equal(t, tt.wantBECPUSet, gotPodCPUSet, "checkPodCPUSet", podMeta.CgroupDir)
+					for _, containerStat := range podMeta.Pod.Status.ContainerStatuses {
+						sandboxContainerDir, err := koordletutil.GetContainerCgroupParentDir(podMeta.CgroupDir, &containerStat)
+						gotContainerCPUSet := helper.ReadCgroupFileContents(sandboxContainerDir, system.CPUSet)
+						assert.NoError(t, err)
+						assert.Equal(t, tt.wantBECPUSet, gotContainerCPUSet, "checkContainerCPUSet", sandboxContainerDir)
+					}
+					defaultSandboxContainerID := defaultSandboxContainerIDPrefix + podMeta.Pod.Name
+					sandboxContainerDir, err := koordletutil.GetContainerCgroupParentDirByID(podMeta.CgroupDir, defaultSandboxContainerID)
+					assert.NoError(t, err)
+					gotSandboxCPUSet := helper.ReadCgroupFileContents(sandboxContainerDir, system.CPUSet)
+					assert.Equal(t, tt.wantBECPUSet, gotSandboxCPUSet, "checkSandboxCPUSet", sandboxContainerDir)
+				}
+			}
+		})
+	}
+}
+
+// fakeExecutor is a minimal ResourceUpdateExecutor mock used to test error paths.
+type fakeExecutor struct {
+	updateErr error
+}
+
+func (f *fakeExecutor) Run(_ <-chan struct{}) {}
+func (f *fakeExecutor) Update(_ bool, _ resourceexecutor.ResourceUpdater) (bool, error) {
+	return false, f.updateErr
+}
+func (f *fakeExecutor) UpdateBatch(_ bool, _ ...resourceexecutor.ResourceUpdater) {}
+func (f *fakeExecutor) LeveledUpdateBatch(_ [][]resourceexecutor.ResourceUpdater) {}
+
+func Test_cpuSuppress_suppressBECPUIdle_updateError(t *testing.T) {
+	system.NewFileTestUtil(t)
+
+	opt := &framework.Options{
+		Config:              framework.NewDefaultConfig(),
+		MetricAdvisorConfig: maframework.NewDefaultConfig(),
+	}
+	cpuSuppress := newTestCPUSuppress(opt)
+	cpuSuppress.executor = &fakeExecutor{updateErr: fmt.Errorf("update error")}
+	stop := make(chan struct{})
+	assert.NotPanics(t, func() {
+		cpuSuppress.init(stop)
+	})
+
+	assert.NotPanics(t, func() {
+		cpuSuppress.suppressBECPUIdle()
+	})
+	// State should NOT be set to policyUsing since the update failed
+	_, exist := cpuSuppress.suppressPolicyStatuses[system.CPUIdleName]
+	assert.False(t, exist, "suppressPolicyStatuses should not contain CPUIdleName after failed update")
+}
+
+func Test_cpuSuppress_recoverBECpuIdleIfNeed_updateError(t *testing.T) {
+	system.NewFileTestUtil(t)
+
+	opt := &framework.Options{
+		Config:              framework.NewDefaultConfig(),
+		MetricAdvisorConfig: maframework.NewDefaultConfig(),
+	}
+	cpuSuppress := newTestCPUSuppress(opt)
+	cpuSuppress.executor = &fakeExecutor{updateErr: fmt.Errorf("update error")}
+	stop := make(chan struct{})
+	assert.NotPanics(t, func() {
+		cpuSuppress.init(stop)
+	})
+
+	// Pre-set status to policyUsing so recover is not short-circuited
+	cpuSuppress.suppressPolicyStatuses[system.CPUIdleName] = policyUsing
+
+	assert.NotPanics(t, func() {
+		cpuSuppress.recoverBECpuIdleIfNeed()
+	})
+	// State should remain policyUsing since the update failed
+	got, exist := cpuSuppress.suppressPolicyStatuses[system.CPUIdleName]
+	assert.True(t, exist, "suppressPolicyStatuses should still contain CPUIdleName")
+	assert.Equal(t, policyUsing, got, "CPUIdleName policy should remain policyUsing after failed update")
 }
 
 func TestCPUSuppress_applyBESuppressCPUSet(t *testing.T) {
