@@ -17,8 +17,13 @@ limitations under the License.
 package resourceexecutor
 
 import (
+	"errors"
+	"fmt"
 	"math"
+	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -220,4 +225,77 @@ func TestCgroupPathExist(t *testing.T) {
 			assert.Equal(t, tt.wantExist, isExist)
 		})
 	}
+}
+
+func TestWrapCgroupWriteErr(t *testing.T) {
+	r := sysutil.CPUShares
+
+	t.Run("raw EINVAL is classified unsupported and chain preserved", func(t *testing.T) {
+		err := wrapCgroupWriteErr(r, syscall.EINVAL)
+		assert.Error(t, err)
+		assert.True(t, sysutil.IsResourceUnsupportedErr(err))
+		assert.True(t, errors.Is(err, syscall.EINVAL))
+	})
+
+	t.Run("wrapped EINVAL is classified unsupported and chain preserved", func(t *testing.T) {
+		err := wrapCgroupWriteErr(r, fmt.Errorf("open /host-cgroup/cpu.shares: %w", syscall.EINVAL))
+		assert.Error(t, err)
+		assert.True(t, sysutil.IsResourceUnsupportedErr(err))
+		assert.True(t, errors.Is(err, syscall.EINVAL))
+	})
+
+	t.Run("EACCES is not classified unsupported", func(t *testing.T) {
+		err := wrapCgroupWriteErr(r, fmt.Errorf("open /host-cgroup/cpu.shares: %w", syscall.EACCES))
+		assert.Error(t, err)
+		assert.False(t, sysutil.IsResourceUnsupportedErr(err))
+		assert.True(t, errors.Is(err, syscall.EACCES))
+	})
+
+	t.Run("generic error is returned as-is", func(t *testing.T) {
+		sentinel := fmt.Errorf("some io error")
+		err := wrapCgroupWriteErr(r, sentinel)
+		assert.Equal(t, sentinel, err)
+		assert.False(t, sysutil.IsResourceUnsupportedErr(err))
+	})
+}
+
+func TestCgroupFileWriteEinvalClassifiedUnsupported(t *testing.T) {
+	helper := sysutil.NewFileTestUtil(t)
+	defer helper.Cleanup()
+
+	taskDir := "/"
+	r := sysutil.CPUShares
+	helper.CreateCgroupFile(taskDir, r)
+	helper.WriteCgroupFileContents(taskDir, r, "512")
+
+	origWriteFile := cgroupWriteFile
+	defer func() { cgroupWriteFile = origWriteFile }()
+
+	t.Run("write EINVAL returns unsupported-classified error", func(t *testing.T) {
+		cgroupWriteFile = func(name string, data []byte, perm os.FileMode) error {
+			return syscall.EINVAL
+		}
+		err := cgroupFileWrite(taskDir, r, "1024")
+		assert.Error(t, err)
+		assert.True(t, sysutil.IsResourceUnsupportedErr(err))
+		assert.True(t, errors.Is(err, syscall.EINVAL))
+		assert.True(t, strings.HasPrefix(err.Error(), sysutil.ErrResourceUnsupportedPrefix))
+	})
+
+	t.Run("write EACCES keeps normal error", func(t *testing.T) {
+		cgroupWriteFile = func(name string, data []byte, perm os.FileMode) error {
+			return fmt.Errorf("write %s: %w", name, syscall.EACCES)
+		}
+		err := cgroupFileWrite(taskDir, r, "1024")
+		assert.Error(t, err)
+		assert.False(t, sysutil.IsResourceUnsupportedErr(err))
+		assert.True(t, errors.Is(err, syscall.EACCES))
+	})
+
+	t.Run("write success after restore", func(t *testing.T) {
+		cgroupWriteFile = origWriteFile
+		err := cgroupFileWrite(taskDir, r, "1024")
+		assert.NoError(t, err)
+		assert.Equal(t, "1024", helper.ReadFileContents(r.Path(taskDir)))
+	})
 }

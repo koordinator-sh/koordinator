@@ -69,6 +69,13 @@ func ResourceUnsupportedErr(msg string) error {
 	return fmt.Errorf("%s, reason: %s", ErrResourceUnsupportedPrefix, msg)
 }
 
+// WrapResourceUnsupportedErr wraps the given error as a resource-unsupported error. The original error chain
+// is preserved so callers can still inspect it with errors.Is, while the message keeps the
+// ErrResourceUnsupportedPrefix recognized by IsResourceUnsupportedErr.
+func WrapResourceUnsupportedErr(err error) error {
+	return fmt.Errorf("%s, reason: %w", ErrResourceUnsupportedPrefix, err)
+}
+
 func IsResourceUnsupportedErr(err error) bool {
 	return strings.HasPrefix(err.Error(), ErrResourceUnsupportedPrefix)
 }
