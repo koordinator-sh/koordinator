@@ -61,3 +61,18 @@ type Scenario interface {
 		runID string,
 	) error
 }
+
+// ResultAugmenter is an optional interface a Scenario may implement to
+// contribute its own fields to BenchmarkResult (e.g. elasticquota's
+// QuotaBlockedPodCount) without the engine needing to know about
+// scenario-specific config fields. Checked via a type assertion in
+// pkg/framework — most scenarios don't need this and won't implement it.
+//
+// Note: this moves rather than removes the coupling — types.FailureStats
+// carries the quota-specific QuotaBlockedPodCount field, and the string that
+// identifies quota throttle events still lives in pkg/framework. That is
+// intentional: it keeps the engine/scenario boundary simple without requiring
+// a full plugin architecture.
+type ResultAugmenter interface {
+	Augment(stats types.FailureStats, result *types.BenchmarkResult)
+}

@@ -138,13 +138,14 @@ func (pl *FragmentationAware) Balance(ctx context.Context, nodes []*corev1.Node)
 			continue
 		}
 
-		stdBefore := scoreNodeImbalance(node, allPods, pl.args.Resources)
+		state := newNodeImbalanceState(node, allPods, pl.args.Resources)
+		stdBefore := state.score()
 
 		if stdBefore <= pl.args.ImbalanceThreshold {
 			continue
 		}
 
-		bestCandidate := pl.chooseBestEvictionCandidate(node, allPods, evictablePods, candidateNodes, stdBefore)
+		bestCandidate := pl.chooseBestEvictionCandidate(state, evictablePods, candidateNodes, stdBefore)
 		if bestCandidate == nil {
 			continue
 		}
@@ -183,7 +184,7 @@ type evictionCandidate struct {
 	stdAfter  float64
 }
 
-func (pl *FragmentationAware) chooseBestEvictionCandidate(node *corev1.Node, allPods []*corev1.Pod, evictablePods []*corev1.Pod, candidateNodes []*corev1.Node, stdBefore float64) *evictionCandidate {
+func (pl *FragmentationAware) chooseBestEvictionCandidate(state *nodeImbalanceState, evictablePods []*corev1.Pod, candidateNodes []*corev1.Node, stdBefore float64) *evictionCandidate {
 	var bestCandidate *evictionCandidate
 
 	for _, pod := range evictablePods {
@@ -193,14 +194,7 @@ func (pl *FragmentationAware) chooseBestEvictionCandidate(node *corev1.Node, all
 			}
 		}
 
-		var podsAfter []*corev1.Pod
-		for _, p := range allPods {
-			if p.UID != pod.UID {
-				podsAfter = append(podsAfter, p)
-			}
-		}
-
-		stdAfter := scoreNodeImbalance(node, podsAfter, pl.args.Resources)
+		stdAfter := state.scoreWithout(pod)
 		gain := stdBefore - stdAfter
 
 		if gain <= pl.args.MinImprovementThreshold {

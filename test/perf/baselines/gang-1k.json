@@ -1,0 +1,20 @@
+{
+  "name": "gang",
+  "runID": "79742604-9a16-4eb1-a7e0-32441edc73ca",
+  "timestamp": "2026-08-03T15:31:56Z",
+  "koordinatorVersion": "879d921e",
+  "nodeCount": 100,
+  "podCount": 1000,
+  "throughputPodsPerSec": 17.210823095731858,
+  "apiCreationDurationSec": 8.389471033,
+  "totalDurationSec": 58.102973602,
+  "latencyP50Sec": 44,
+  "latencyP90Sec": 49,
+  "latencyP99Sec": 58,
+  "gangCompletionP50Sec": 45,
+  "gangCompletionP99Sec": 56,
+  "thresholdBreached": false,
+  "timedOut": false,
+  "schedulingFailureCount": 0,
+  "schedulingFailureRate": 0
+}

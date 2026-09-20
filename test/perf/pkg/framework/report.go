@@ -43,6 +43,34 @@ func CompareToBaseline(result types.BenchmarkResult, baselinePath string, thresh
 		return false, fmt.Errorf("parsing baseline %q: %w", baselinePath, err)
 	}
 
+	if baseline.NodeCount > 0 && baseline.NodeCount != result.NodeCount {
+		return false, fmt.Errorf("baseline nodeCount %d != run nodeCount %d; re-capture the baseline against the correct config",
+			baseline.NodeCount, result.NodeCount)
+	}
+	if baseline.PodCount > 0 && baseline.PodCount != result.PodCount {
+		return false, fmt.Errorf("baseline podCount %d != run podCount %d; re-capture the baseline against the correct config",
+			baseline.PodCount, result.PodCount)
+	}
+
+	// Gate on scheduling failure rate rather than absolute count: a handful of
+	// transient FailedScheduling events (retries that clear on the next cycle)
+	// are normal; a rate above 1% indicates a systematic problem such as quota
+	// throttle or resource exhaustion. Scenarios that deliberately produce a
+	// high failure rate (e.g. elasticquota) override this via
+	// thresholds.failureRatePct so the gate reflects intent rather than
+	// treating expected throttling as a regression.
+	failureRateThreshold := 0.01
+	if thresholds.FailureRatePct != nil {
+		failureRateThreshold = *thresholds.FailureRatePct / 100
+	}
+	if result.SchedulingFailureRate > failureRateThreshold {
+		klog.InfoS("Threshold breached: scheduling failure rate too high",
+			"rate", fmt.Sprintf("%.2f%%", result.SchedulingFailureRate*100),
+			"threshold", fmt.Sprintf("%.2f%%", failureRateThreshold*100),
+			"count", result.SchedulingFailureCount)
+		return true, nil
+	}
+
 	if baseline.ThroughputPodsPerSec > 0 {
 		drop := (baseline.ThroughputPodsPerSec - result.ThroughputPodsPerSec) /
 			baseline.ThroughputPodsPerSec * 100

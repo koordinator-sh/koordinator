@@ -20,12 +20,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/url"
+	"os"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/wait"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 
@@ -1361,4 +1370,98 @@ func Test_isErrorConnectionClose(t *testing.T) {
 			assert.Equalf(t, tt.want, isErrorConnectionClosed(tt.args.err), "isErrorConnectionClosed(%v)", tt.args.err)
 		})
 	}
+}
+
+func TestIsRetryableTransientError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "server timeout", err: apierrors.NewServerTimeout(schema.GroupResource{}, "patch", 1), want: true},
+		{name: "timeout", err: apierrors.NewTimeoutError("timeout", 1), want: true},
+		{name: "too many requests", err: apierrors.NewTooManyRequests("too many requests", 1), want: true},
+		{name: "service unavailable", err: apierrors.NewServiceUnavailable("service unavailable"), want: true},
+		{name: "internal error", err: apierrors.NewInternalError(fmt.Errorf("internal error")), want: true},
+		{name: "unexpected server error", err: &apierrors.StatusError{ErrStatus: metav1.Status{Status: metav1.StatusFailure, Details: &metav1.StatusDetails{Causes: []metav1.StatusCause{{Type: metav1.CauseTypeUnexpectedServerResponse}}}}}, want: true},
+		{name: "connection refused", err: &url.Error{Op: "Patch", URL: "https://apiserver", Err: &net.OpError{Err: syscall.ECONNREFUSED}}, want: true},
+		{name: "connection reset", err: &url.Error{Op: "Patch", URL: "https://apiserver", Err: &net.OpError{Err: syscall.ECONNRESET}}, want: true},
+		{name: "broken pipe", err: &url.Error{Op: "Patch", URL: "https://apiserver", Err: &net.OpError{Op: "write", Err: syscall.EPIPE}}, want: true},
+		{name: "http2 connection force closed", err: &url.Error{Op: "Patch", URL: "https://172.16.0.1:443/api/v1/namespaces/default/pods/test-pod", Err: fmt.Errorf("http2: client connection force closed via ClientConn.Close")}, want: true},
+		{name: "http2 connection lost", err: &url.Error{Op: "Patch", URL: "https://apiserver", Err: fmt.Errorf("http2: client connection lost")}, want: true},
+		{name: "http2 GOAWAY probable EOF", err: &url.Error{Op: "Patch", URL: "https://apiserver", Err: fmt.Errorf("http2: server sent GOAWAY and closed the connection; LastStreamID=1113, ErrCode=NO_ERROR, debug=\"\"")}, want: true},
+		{name: "EOF", err: &url.Error{Op: "Patch", URL: "https://apiserver", Err: io.EOF}, want: true},
+		{name: "transport timeout", err: &url.Error{Op: "Patch", URL: "https://apiserver", Err: &net.OpError{Op: "read", Err: os.ErrDeadlineExceeded}}, want: true},
+		{name: "not found", err: apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, "test-pod"), want: false},
+		{name: "conflict", err: apierrors.NewConflict(schema.GroupResource{Resource: "pods"}, "test-pod", fmt.Errorf("conflict")), want: false},
+		{name: "forbidden", err: apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "test-pod", fmt.Errorf("forbidden")), want: false},
+		{name: "bad request", err: apierrors.NewBadRequest("bad request"), want: false},
+		{name: "generic error", err: fmt.Errorf("some error"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsRetryableTransientError(tt.err))
+		})
+	}
+}
+
+func TestRetryOnTransientError(t *testing.T) {
+	brokenPipeErr := &url.Error{Op: "Patch", URL: "https://apiserver", Err: &net.OpError{Op: "write", Net: "tcp", Err: syscall.EPIPE}}
+	permanentErr := apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, "test-pod")
+
+	t.Run("succeed without retry", func(t *testing.T) {
+		attempts := 0
+		err := RetryOnTransientError(context.TODO(), func() error {
+			attempts++
+			return nil
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, 1, attempts)
+	})
+
+	t.Run("retry transient error then succeed", func(t *testing.T) {
+		attempts := 0
+		err := RetryOnTransientError(context.TODO(), func() error {
+			attempts++
+			if attempts <= 2 {
+				return brokenPipeErr
+			}
+			return nil
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, 3, attempts)
+	})
+
+	t.Run("exhaust attempts on transient error", func(t *testing.T) {
+		attempts := 0
+		err := RetryOnTransientErrorWithBackoff(context.TODO(), wait.Backoff{Steps: 2, Duration: time.Millisecond, Factor: 1.0}, func() error {
+			attempts++
+			return brokenPipeErr
+		})
+		assert.Equal(t, brokenPipeErr, err)
+		assert.Equal(t, 2, attempts)
+	})
+
+	t.Run("no retry on permanent error", func(t *testing.T) {
+		attempts := 0
+		err := RetryOnTransientError(context.TODO(), func() error {
+			attempts++
+			return permanentErr
+		})
+		assert.Equal(t, permanentErr, err)
+		assert.Equal(t, 1, attempts)
+	})
+
+	t.Run("fail fast on canceled context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		attempts := 0
+		err := RetryOnTransientError(ctx, func() error {
+			attempts++
+			return nil
+		})
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Equal(t, 0, attempts, "a canceled context should fail fast without any attempt")
+	})
 }

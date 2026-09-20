@@ -43,6 +43,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&NodeResourcesFitPlusArgs{},
 		&ScarceResourceAvoidanceArgs{},
 		&SchedulingHintArgs{},
+		&ScheduleAdmissionArgs{},
+		&DefaultPreBindArgs{},
 	)
 	return nil
 }

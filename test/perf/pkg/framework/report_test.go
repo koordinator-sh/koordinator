@@ -99,3 +99,21 @@ func TestCompareToBaseline_missingFile(t *testing.T) {
 		t.Error("expected error for missing baseline file")
 	}
 }
+
+func TestCompareToBaseline_failureRatePctOverride(t *testing.T) {
+	pct := 75.0
+	thresholds := types.Thresholds{FailureRatePct: &pct}
+	// 70% failure rate would breach the default 1% gate but is under the 75% override.
+	result := types.BenchmarkResult{SchedulingFailureRate: 0.70}
+	// Write a minimal baseline so the comparison runs.
+	path := writeBaseline(t, types.BenchmarkResult{NodeCount: 0, PodCount: 0})
+	breached, err := CompareToBaseline(result, path, thresholds)
+	if err != nil {
+		t.Fatalf("CompareToBaseline() error = %v", err)
+	}
+	if breached {
+		t.Errorf("thresholdBreached = true, want false — 70%% is under the 75%% override")
+	}
+}
+
+func floatPtr(f float64) *float64 { return &f }

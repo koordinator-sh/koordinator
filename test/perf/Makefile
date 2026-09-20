@@ -8,11 +8,18 @@ OUTPUT     ?= results/result.json
 KUBECONFIG ?= $(HOME)/.kube/config
 BASELINE   ?=
 
-# Prefer an annotated tag; fall back to short commit SHA.
-GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+# Use the short commit SHA directly rather than git describe --dirty.
+# hack/setup-cluster.sh runs hack/deploy_kind.sh, which rewrites tracked
+# files under config/manager/ (kustomization.yaml unconditionally via
+# "kustomize edit set image"; scheduler.yaml via sed on the feature-gates
+# line when KUBERNETES_VERSION < 1.34), making the working tree
+# deterministically dirty from the setup step onward. --dirty would
+# therefore always fire, poisoning the koordinatorVersion field stamped
+# into every baseline JSON.
+GIT_VERSION := $(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
 VERSION_FLAG := -X github.com/koordinator-sh/koordinator/test/perf/pkg/framework.Version=$(GIT_VERSION)
 
-.PHONY: benchmark setup teardown clean test help
+.PHONY: benchmark setup teardown clean test fmt-check help
 
 ## Run a single scenario benchmark. Override CONFIG directly to use any
 ## config file, e.g. `make benchmark CONFIG=configs/scenarios/basic-100.yaml`
@@ -36,8 +43,15 @@ teardown:
 clean:
 	rm -rf results/
 
-## Run unit tests
-test:
+## Fail if any .go file under test/perf is not gofmt-formatted
+fmt-check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "Not gofmt-formatted:"; echo "$$unformatted"; exit 1; \
+	fi
+
+## Run unit tests (includes format check)
+test: fmt-check
 	go test ./...
 
 ## Show available targets

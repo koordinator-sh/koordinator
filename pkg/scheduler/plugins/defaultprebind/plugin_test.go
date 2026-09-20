@@ -18,21 +18,45 @@ package defaultprebind
 
 import (
 	"context"
+	"fmt"
+	"net"
+	"net/url"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	clientset "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 )
+
+// newTestPlugin builds the plugin with the default retry parameters, the same as New with nil args.
+func newTestPlugin(clientSet clientset.Interface, koordClientSet koordinatorclientset.Interface) *Plugin {
+	return &Plugin{
+		clientSet:      clientSet,
+		koordClientSet: koordClientSet,
+		maxAttempts:    defaultMaxAttempts,
+		initialBackoff: defaultRetryInitialBackoff,
+		maxBackoff:     defaultRetryMaxBackoff,
+	}
+}
 
 func TestApplyPatch(t *testing.T) {
 	now := metav1.Now()
@@ -436,10 +460,7 @@ func TestApplyPatch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pl := &Plugin{
-				clientSet:      kubefake.NewSimpleClientset(),
-				koordClientSet: koordfake.NewSimpleClientset(),
-			}
+			pl := newTestPlugin(kubefake.NewSimpleClientset(), koordfake.NewSimpleClientset())
 
 			if pod, ok := tt.originalObj.(*corev1.Pod); ok {
 				_, err := pl.clientSet.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
@@ -514,10 +535,7 @@ func TestApplyPatchWithDeletionAfterPatch(t *testing.T) {
 		}
 		modifiedPod.DeletionTimestamp = &deleteTime
 
-		pl := &Plugin{
-			clientSet:      kubefake.NewSimpleClientset(podWithDeletion),
-			koordClientSet: koordfake.NewSimpleClientset(),
-		}
+		pl := newTestPlugin(kubefake.NewSimpleClientset(podWithDeletion), koordfake.NewSimpleClientset())
 
 		// Try to patch - this should fail because the returned pod has DeletionTimestamp
 		status := pl.ApplyPatch(context.TODO(), framework.NewCycleState(), originalPod, modifiedPod)
@@ -564,10 +582,7 @@ func TestApplyPatchWithDeletionAfterPatch(t *testing.T) {
 		}
 		modifiedReservation.DeletionTimestamp = &deleteTime
 
-		pl := &Plugin{
-			clientSet:      kubefake.NewSimpleClientset(),
-			koordClientSet: koordfake.NewSimpleClientset(reservationWithDeletion),
-		}
+		pl := newTestPlugin(kubefake.NewSimpleClientset(), koordfake.NewSimpleClientset(reservationWithDeletion))
 
 		// Try to patch - this should fail because the returned reservation has DeletionTimestamp
 		status := pl.ApplyPatch(context.TODO(), framework.NewCycleState(), originalReservation, modifiedReservation)
@@ -609,10 +624,7 @@ func TestApplyPatchWithPatchFailure(t *testing.T) {
 		}
 
 		// Create plugin with empty client (pod doesn't exist)
-		pl := &Plugin{
-			clientSet:      kubefake.NewSimpleClientset(),
-			koordClientSet: koordfake.NewSimpleClientset(),
-		}
+		pl := newTestPlugin(kubefake.NewSimpleClientset(), koordfake.NewSimpleClientset())
 
 		// Try to patch non-existent pod - should fail
 		status := pl.ApplyPatch(context.TODO(), framework.NewCycleState(), originalPod, modifiedPod)
@@ -654,10 +666,7 @@ func TestApplyPatchWithPatchFailure(t *testing.T) {
 		}
 
 		// Create plugin with empty client (reservation doesn't exist)
-		pl := &Plugin{
-			clientSet:      kubefake.NewSimpleClientset(),
-			koordClientSet: koordfake.NewSimpleClientset(),
-		}
+		pl := newTestPlugin(kubefake.NewSimpleClientset(), koordfake.NewSimpleClientset())
 
 		// Try to patch non-existent reservation - should fail
 		status := pl.ApplyPatch(context.TODO(), framework.NewCycleState(), originalReservation, modifiedReservation)
@@ -696,10 +705,7 @@ func TestApplyPatchWithPatchFailure(t *testing.T) {
 			"testAnnotation": "1",
 		}
 
-		pl := &Plugin{
-			clientSet:      kubefake.NewSimpleClientset(originalPod),
-			koordClientSet: koordfake.NewSimpleClientset(),
-		}
+		pl := newTestPlugin(kubefake.NewSimpleClientset(originalPod), koordfake.NewSimpleClientset())
 
 		// Patch should succeed even with conflict retry logic
 		status := pl.ApplyPatch(context.TODO(), framework.NewCycleState(), originalPod, modifiedPod)
@@ -744,10 +750,7 @@ func TestApplyPatchWithPatchFailure(t *testing.T) {
 			"testAnnotation": "1",
 		}
 
-		pl := &Plugin{
-			clientSet:      kubefake.NewSimpleClientset(),
-			koordClientSet: koordfake.NewSimpleClientset(originalReservation),
-		}
+		pl := newTestPlugin(kubefake.NewSimpleClientset(), koordfake.NewSimpleClientset(originalReservation))
 
 		// Patch should succeed even with conflict retry logic
 		status := pl.ApplyPatch(context.TODO(), framework.NewCycleState(), originalReservation, modifiedReservation)
@@ -757,5 +760,188 @@ func TestApplyPatchWithPatchFailure(t *testing.T) {
 		got, err := pl.koordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), originalReservation.Name, metav1.GetOptions{})
 		assert.NoError(t, err)
 		assert.Equal(t, modifiedReservation.Annotations, got.Annotations)
+	})
+}
+
+// fakeKoordClientSetHandle is a minimal fwktype.Handle that also provides the koordinator clientset.
+type fakeKoordClientSetHandle struct {
+	fwktype.Handle
+	clientSet      clientset.Interface
+	koordClientSet koordinatorclientset.Interface
+}
+
+func (f *fakeKoordClientSetHandle) ClientSet() clientset.Interface { return f.clientSet }
+
+func (f *fakeKoordClientSetHandle) KoordinatorClientSet() koordinatorclientset.Interface {
+	return f.koordClientSet
+}
+
+// fakeUnexpectedArgs is a runtime.Object of an unexpected args type for the New tests.
+type fakeUnexpectedArgs struct {
+	metav1.TypeMeta
+}
+
+func (f *fakeUnexpectedArgs) DeepCopyObject() runtime.Object { return f }
+
+func TestNew(t *testing.T) {
+	handle := &fakeKoordClientSetHandle{
+		clientSet:      kubefake.NewSimpleClientset(),
+		koordClientSet: koordfake.NewSimpleClientset(),
+	}
+
+	t.Run("nil args applies the defaults", func(t *testing.T) {
+		p, err := New(context.TODO(), nil, handle)
+		assert.NoError(t, err)
+		pl := p.(*Plugin)
+		assert.Equal(t, defaultMaxAttempts, pl.maxAttempts)
+		assert.Equal(t, defaultRetryInitialBackoff, pl.initialBackoff)
+		assert.Equal(t, defaultRetryMaxBackoff, pl.maxBackoff)
+	})
+
+	t.Run("valid args", func(t *testing.T) {
+		p, err := New(context.TODO(), &config.DefaultPreBindArgs{
+			MaxAttempts:         2,
+			RetryInitialBackoff: metav1.Duration{Duration: 100 * time.Millisecond},
+			RetryMaxBackoff:     metav1.Duration{Duration: time.Second},
+		}, handle)
+		assert.NoError(t, err)
+		pl := p.(*Plugin)
+		assert.Equal(t, 2, pl.maxAttempts)
+		assert.Equal(t, 100*time.Millisecond, pl.initialBackoff)
+		assert.Equal(t, time.Second, pl.maxBackoff)
+	})
+
+	t.Run("invalid args", func(t *testing.T) {
+		_, err := New(context.TODO(), &config.DefaultPreBindArgs{}, handle)
+		assert.Error(t, err)
+	})
+
+	t.Run("unexpected args type", func(t *testing.T) {
+		_, err := New(context.TODO(), &fakeUnexpectedArgs{}, handle)
+		assert.Error(t, err)
+	})
+
+	t.Run("handle without koordinator clientset", func(t *testing.T) {
+		_, err := New(context.TODO(), nil, nil)
+		assert.Error(t, err)
+	})
+}
+
+func TestApplyPodPatchRetry(t *testing.T) {
+	originalPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       types.UID("test-pod-uid"),
+		},
+	}
+	modifiedPod := originalPod.DeepCopy()
+	modifiedPod.Annotations = map[string]string{"testAnnotation": "1"}
+	// the same shape as the production broken pipe error:
+	// Patch "https://.../pods/test-pod": write tcp ...: write: broken pipe
+	brokenPipeErr := &url.Error{
+		Op:  "Patch",
+		URL: "https://172.16.0.1:443/api/v1/namespaces/default/pods/test-pod",
+		Err: &net.OpError{Op: "write", Net: "tcp", Err: syscall.EPIPE},
+	}
+
+	t.Run("retry transient error then succeed", func(t *testing.T) {
+		client := kubefake.NewSimpleClientset(originalPod)
+		var attempts int32
+		client.PrependReactor("patch", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			if atomic.AddInt32(&attempts, 1) <= 2 {
+				return true, nil, brokenPipeErr
+			}
+			return false, nil, nil
+		})
+		pl := newTestPlugin(client, koordfake.NewSimpleClientset())
+		status := pl.ApplyPatch(context.TODO(), framework.NewCycleState(), originalPod, modifiedPod)
+		assert.Nil(t, status, "expected success but got: %v", status)
+		assert.Equal(t, int32(3), atomic.LoadInt32(&attempts))
+		got, err := client.CoreV1().Pods(originalPod.Namespace).Get(context.TODO(), originalPod.Name, metav1.GetOptions{})
+		assert.NoError(t, err)
+		assert.Equal(t, modifiedPod.Annotations, got.Annotations)
+	})
+
+	t.Run("exhaust attempts on transient error", func(t *testing.T) {
+		client := kubefake.NewSimpleClientset(originalPod)
+		var attempts int32
+		client.PrependReactor("patch", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			atomic.AddInt32(&attempts, 1)
+			return true, nil, brokenPipeErr
+		})
+		pl := newTestPlugin(client, koordfake.NewSimpleClientset())
+		status := pl.ApplyPatch(context.TODO(), framework.NewCycleState(), originalPod, modifiedPod)
+		assert.NotNil(t, status)
+		assert.False(t, status.IsSuccess())
+		assert.Equal(t, int32(defaultMaxAttempts), atomic.LoadInt32(&attempts))
+	})
+
+	t.Run("no retry on permanent error", func(t *testing.T) {
+		conflictErr := apierrors.NewConflict(schema.GroupResource{Resource: "pods"}, "test-pod", fmt.Errorf("the object has been modified"))
+		client := kubefake.NewSimpleClientset(originalPod)
+		var attempts int32
+		client.PrependReactor("patch", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			atomic.AddInt32(&attempts, 1)
+			return true, nil, conflictErr
+		})
+		pl := newTestPlugin(client, koordfake.NewSimpleClientset())
+		status := pl.ApplyPatch(context.TODO(), framework.NewCycleState(), originalPod, modifiedPod)
+		assert.NotNil(t, status)
+		assert.False(t, status.IsSuccess())
+		assert.Equal(t, int32(1), atomic.LoadInt32(&attempts), "a permanent failure should fail immediately without retry")
+	})
+
+	t.Run("fail fast on canceled context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		client := kubefake.NewSimpleClientset(originalPod)
+		var attempts int32
+		client.PrependReactor("patch", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			atomic.AddInt32(&attempts, 1)
+			return false, nil, nil
+		})
+		pl := newTestPlugin(client, koordfake.NewSimpleClientset())
+		status := pl.ApplyPatch(ctx, framework.NewCycleState(), originalPod, modifiedPod)
+		assert.NotNil(t, status)
+		assert.False(t, status.IsSuccess())
+		assert.Equal(t, int32(0), atomic.LoadInt32(&attempts), "a canceled context should fail fast without any request")
+	})
+}
+
+// TestApplyReservationPatchRetry verifies the retry behavior of ApplyPatch for Reservation,
+// symmetric to TestApplyPodPatchRetry. The canceled-context case specifically protects against
+// regression of the patchedReservation == nil sentinel in applyReservationPatch.
+func TestApplyReservationPatchRetry(t *testing.T) {
+	originalReservation := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-reservation",
+			UID:  types.UID("test-reservation-uid"),
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "main"}},
+				},
+			},
+		},
+	}
+	modifiedReservation := originalReservation.DeepCopy()
+	modifiedReservation.Annotations = map[string]string{"testAnnotation": "1"}
+
+	t.Run("fail fast on canceled context", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		client := koordfake.NewSimpleClientset(originalReservation)
+		var attempts int32
+		client.PrependReactor("patch", "reservations", func(action clienttesting.Action) (bool, runtime.Object, error) {
+			atomic.AddInt32(&attempts, 1)
+			return false, nil, nil
+		})
+		pl := newTestPlugin(kubefake.NewSimpleClientset(), client)
+		status := pl.ApplyPatch(ctx, framework.NewCycleState(), originalReservation, modifiedReservation)
+		assert.NotNil(t, status)
+		assert.False(t, status.IsSuccess())
+		assert.Equal(t, int32(0), atomic.LoadInt32(&attempts), "a canceled context should fail fast without any request")
 	})
 }

@@ -433,3 +433,31 @@ type SchedulingHintArgs struct {
 	// Defaults to 100 if unspecified.
 	MaxHintNodes int32
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// ScheduleAdmissionArgs holds arguments used to configure the ScheduleAdmission plugin.
+type ScheduleAdmissionArgs struct {
+	metav1.TypeMeta
+
+	// EnablePrefixMatch controls how schedule-admission labels are matched.
+	// When false (default), only the fixed schedule-admission label is checked (fast path).
+	// When true, any label with the schedule-admission prefix also gates the pod.
+	EnablePrefixMatch bool
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// DefaultPreBindArgs holds arguments used to configure the DefaultPreBind plugin.
+type DefaultPreBindArgs struct {
+	metav1.TypeMeta
+
+	// MaxAttempts is the total number of patch attempts including the first one.
+	// Setting it to 1 disables the in-place retry.
+	MaxAttempts int32
+	// RetryInitialBackoff is the backoff duration before the first retry,
+	// and it is doubled after each retry attempt.
+	RetryInitialBackoff metav1.Duration
+	// RetryMaxBackoff caps the backoff duration between retry attempts.
+	RetryMaxBackoff metav1.Duration
+}

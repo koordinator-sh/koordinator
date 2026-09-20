@@ -57,18 +57,18 @@ func makeNode(cpu int64, mem int64) *corev1.Node {
 	}
 }
 
-func TestScoreNodeImbalance(t *testing.T) {
+func TestImbalanceScoring(t *testing.T) {
 	resources := []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory}
 
 	t.Run("nil node returns zero", func(t *testing.T) {
-		stdDev := scoreNodeImbalance(nil, nil, resources)
+		stdDev := newNodeImbalanceState(nil, nil, resources).score()
 		assert.Equal(t, 0.0, stdDev)
 	})
 
 	t.Run("no scored resources returns zero", func(t *testing.T) {
 		node := makeNode(1000, 1024)
 
-		stdDev := scoreNodeImbalance(node, nil, nil)
+		stdDev := newNodeImbalanceState(node, nil, nil).score()
 		assert.Equal(t, 0.0, stdDev)
 	})
 
@@ -78,7 +78,7 @@ func TestScoreNodeImbalance(t *testing.T) {
 			makePod("p1", 500, 512),
 		}
 
-		stdDev := scoreNodeImbalance(node, pods, resources)
+		stdDev := newNodeImbalanceState(node, pods, resources).score()
 		assert.True(t, stdDev < 0.01)
 	})
 
@@ -88,7 +88,7 @@ func TestScoreNodeImbalance(t *testing.T) {
 			makePod("p1", 900, 100),
 		}
 
-		stdDev := scoreNodeImbalance(node, pods, resources)
+		stdDev := newNodeImbalanceState(node, pods, resources).score()
 		assert.True(t, stdDev > 0.1)
 	})
 
@@ -98,7 +98,7 @@ func TestScoreNodeImbalance(t *testing.T) {
 			makePod("p1", 500, 512),
 		}
 
-		stdDev := scoreNodeImbalance(node, pods, resources)
+		stdDev := newNodeImbalanceState(node, pods, resources).score()
 		assert.True(t, stdDev == 0, "only CPU is considered, variance of 1 element is 0")
 	})
 
@@ -123,10 +123,96 @@ func TestScoreNodeImbalance(t *testing.T) {
 		}
 
 		customRes := []corev1.ResourceName{"example.com/gpu", corev1.ResourceCPU}
-		stdDev := scoreNodeImbalance(node, pods, customRes)
+		stdDev := newNodeImbalanceState(node, pods, customRes).score()
 		// GPU = 1/2 = 0.5, CPU = 0/1000 = 0
 		// mean = 0.25
 		// std = sqrt((0.5-0.25)^2 + (0-0.25)^2) / 2 = sqrt(0.0625) = 0.25
 		assert.Equal(t, 0.25, stdDev)
+	})
+}
+
+func TestNodeImbalanceState(t *testing.T) {
+	resources := []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory}
+
+	t.Run("nil node returns nil state", func(t *testing.T) {
+		state := newNodeImbalanceState(nil, nil, resources)
+		assert.Nil(t, state)
+		assert.Equal(t, 0.0, (*nodeImbalanceState)(nil).score())
+		assert.Equal(t, 0.0, (*nodeImbalanceState)(nil).scoreWithout(makePod("p", 100, 100)))
+	})
+
+	t.Run("score returns expected value", func(t *testing.T) {
+		node := makeNode(4000, 4000)
+		pods := []*corev1.Pod{
+			makePod("p1", 2500, 500),
+			makePod("p2", 500, 500),
+		}
+		state := newNodeImbalanceState(node, pods, resources)
+		// CPU = 3000/4000 = 0.75, Memory = 1000/4000 = 0.25
+		// mean = 0.5, stddev = sqrt(((0.75-0.5)^2 + (0.25-0.5)^2) / 2) = 0.25
+		assert.InDelta(t, 0.25, state.score(), 1e-12)
+	})
+
+	t.Run("scoreWithout matches from-scratch scoring", func(t *testing.T) {
+		node := makeNode(4000, 4000)
+		pods := []*corev1.Pod{
+			makePod("p1", 2500, 500),
+			makePod("p2", 500, 500),
+			makePod("p3", 200, 1000),
+		}
+		state := newNodeImbalanceState(node, pods, resources)
+
+		for i, removePod := range pods {
+			var remaining []*corev1.Pod
+			for j, p := range pods {
+				if j != i {
+					remaining = append(remaining, p)
+				}
+			}
+			fromScratch := newNodeImbalanceState(node, remaining, resources).score()
+			incremental := state.scoreWithout(removePod)
+			assert.InDelta(t, fromScratch, incremental, 1e-12,
+				"mismatch when removing pod %d", i)
+		}
+	})
+
+	t.Run("scoreWithout with zero allocatable resource", func(t *testing.T) {
+		node := makeNode(4000, 0) // memory allocatable is 0
+		pods := []*corev1.Pod{
+			makePod("p1", 2000, 500),
+			makePod("p2", 1000, 300),
+		}
+		state := newNodeImbalanceState(node, pods, resources)
+		// Only CPU is tracked; stddev of a single value is 0
+		assert.Equal(t, 0.0, state.score())
+
+		remaining := []*corev1.Pod{pods[1]}
+		assert.InDelta(t, newNodeImbalanceState(node, remaining, resources).score(),
+			state.scoreWithout(pods[0]), 1e-12)
+	})
+
+	t.Run("scoreWithout with pods resource matches from-scratch", func(t *testing.T) {
+		node := makeNode(4000, 4000)
+		node.Status.Allocatable[corev1.ResourcePods] = *resource.NewQuantity(10, resource.DecimalSI)
+		pods := []*corev1.Pod{
+			makePod("p1", 2500, 500),
+			makePod("p2", 500, 500),
+			makePod("p3", 200, 1000),
+		}
+		withPods := []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory, corev1.ResourcePods}
+		state := newNodeImbalanceState(node, pods, withPods)
+
+		for i, removePod := range pods {
+			var remaining []*corev1.Pod
+			for j, p := range pods {
+				if j != i {
+					remaining = append(remaining, p)
+				}
+			}
+			fromScratch := newNodeImbalanceState(node, remaining, withPods).score()
+			incremental := state.scoreWithout(removePod)
+			assert.InDelta(t, fromScratch, incremental, 1e-12,
+				"mismatch when removing pod %d", i)
+		}
 	})
 }

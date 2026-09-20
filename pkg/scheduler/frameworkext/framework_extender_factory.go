@@ -461,6 +461,7 @@ func (f *FrameworkExtenderFactory) CollectSchedulePodResult(sched *scheduler.Sch
 
 func (f *FrameworkExtenderFactory) InterceptSchedulerError(sched *scheduler.Scheduler) {
 	f.errorHandlerDispatcher.setDefaultHandler(sched.FailureHandler)
+	f.errorHandlerDispatcher.setSchedulingQueue(&queueAdapter{sched})
 	sched.FailureHandler = func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) {
 		f.errorHandlerDispatcher.Error(ctx, fwk, podInfo, status, nominatingInfo, start)
 		f.monitor.Complete(podInfo.Pod, status)

@@ -49,10 +49,7 @@ func (p *Provider) CreateNodes(ctx context.Context, runID string, spec types.Nod
 		klog.InfoS("kwok stub: skipping node creation", "count", count, "runID", runID)
 		return nil
 	}
-	runIDPrefix := runID
-	if len(runIDPrefix) > 8 {
-		runIDPrefix = runIDPrefix[:8]
-	}
+	runIDPrefix := types.ShortID(runID)
 
 	workers := spec.NodeCreationWorkers
 	if workers <= 0 {

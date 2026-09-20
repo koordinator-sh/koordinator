@@ -18,6 +18,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -773,4 +774,115 @@ func Test_calculateNodeExistingPodsNum(t *testing.T) {
 			assert.Equal(t, tt.want, calculateNodeExistingPodsNum(context.TODO(), parallelize.NewParallelizer(16), tt.args.selectorKey, nodeInfos))
 		})
 	}
+}
+
+func TestBuildTopologyNodeSummary(t *testing.T) {
+	makeNodes := func(names []string, offerSlots []int) []*networktopology.TreeNode {
+		nodes := make([]*networktopology.TreeNode, 0, len(names))
+		for i := range names {
+			nodes = append(nodes, &networktopology.TreeNode{
+				TreeNodeMeta: networktopology.TreeNodeMeta{
+					Layer: schedulingv1alpha1.TopologyLayer("SpineLayer"),
+					Name:  names[i],
+				},
+				OfferSlot: offerSlots[i],
+			})
+		}
+		return nodes
+	}
+
+	t.Run("summary reports the largest offer slot", func(t *testing.T) {
+		nodes := makeNodes([]string{"s1", "s2", "s3"}, []int{2, 3, 1})
+		assert.Equal(t, "max offer slot among 3 must-gather topology nodes: 3", buildTopologyNodeSummary(nodes))
+		// the input slice must not be mutated
+		assert.Equal(t, "s1", nodes[0].Name)
+	})
+
+	// The production pattern: thousands of topology nodes whose member nodes all fail the
+	// filters, so none of them offers any slot. The summary stays a single bounded phrase
+	// instead of enumerating every topology node.
+	t.Run("large all-zero topology stays bounded", func(t *testing.T) {
+		names := make([]string, 0, 1836)
+		offerSlots := make([]int, 0, 1836)
+		for i := 0; i < 1836; i++ {
+			names = append(names, fmt.Sprintf("e01-cn-%d", i))
+			offerSlots = append(offerSlots, 0)
+		}
+		assert.Equal(t, "max offer slot among 1836 must-gather topology nodes: 0", buildTopologyNodeSummary(makeNodes(names, offerSlots)))
+	})
+
+	// Scenario: job needs desiredOfferSlot 8 within one hypernode, but the best hypernode
+	// holds 5 pods and the second best holds 3, while the remaining hypernodes have no
+	// member node passing the filters. Only the best offer slot is surfaced, telling how
+	// far the must-gather layer is from the desired offer slot.
+	t.Run("near-miss hypernodes are summarized by the best offer slot", func(t *testing.T) {
+		makeHyperNode := func(name string, offerSlot int) *networktopology.TreeNode {
+			return &networktopology.TreeNode{
+				TreeNodeMeta: networktopology.TreeNodeMeta{
+					Layer: schedulingv1alpha1.TopologyLayer("HyperNodeTopologyLayer"),
+					Name:  name,
+				},
+				OfferSlot: offerSlot,
+			}
+		}
+		nodes := []*networktopology.TreeNode{
+			makeHyperNode("hypernode-A", 5),
+			makeHyperNode("hypernode-B", 3),
+			makeHyperNode("hypernode-C", 0),
+			makeHyperNode("hypernode-D", 0),
+			makeHyperNode("hypernode-E", 0),
+			makeHyperNode("hypernode-F", 0),
+		}
+		assert.Equal(t, "max offer slot among 6 must-gather topology nodes: 5", buildTopologyNodeSummary(nodes))
+	})
+
+	t.Run("empty must-gather layer", func(t *testing.T) {
+		assert.Equal(t, "max offer slot among 0 must-gather topology nodes: 0", buildTopologyNodeSummary(nil))
+	})
+}
+
+func TestBuildDiagnosticTopologyNodeReasons(t *testing.T) {
+	makeHyperNode := func(name string, offerSlot int) *networktopology.TreeNode {
+		return &networktopology.TreeNode{
+			TreeNodeMeta: networktopology.TreeNodeMeta{
+				Layer: schedulingv1alpha1.TopologyLayer("HyperNodeTopologyLayer"),
+				Name:  name,
+			},
+			OfferSlot: offerSlot,
+		}
+	}
+
+	// The diagnostic log keeps the per-topology-node breakdown that the bounded status
+	// message reduces to a single max-offer-slot summary, largest offer slot first.
+	t.Run("breakdown is listed by offer slot desc", func(t *testing.T) {
+		nodes := []*networktopology.TreeNode{
+			makeHyperNode("hypernode-B", 3),
+			makeHyperNode("hypernode-A", 0),
+			makeHyperNode("hypernode-C", 0),
+		}
+		got := buildDiagnosticTopologyNodeReasons(nodes)
+		assert.Equal(t, []string{
+			"topology topologyNode HyperNodeTopologyLayer/hypernode-B: 3",
+			"topology topologyNode HyperNodeTopologyLayer/hypernode-A: 0",
+			"topology topologyNode HyperNodeTopologyLayer/hypernode-C: 0",
+		}, got)
+		// the input slice must not be mutated
+		assert.Equal(t, "hypernode-B", nodes[0].Name)
+	})
+
+	// The production pattern: thousands of topology nodes whose member nodes all fail the
+	// filters. The breakdown is capped, and the near-miss topology nodes keep their place
+	// at the head of the list so truncation never hides them.
+	t.Run("breakdown beyond the cap is truncated", func(t *testing.T) {
+		nodes := []*networktopology.TreeNode{}
+		for i := 0; i < 1836; i++ {
+			nodes = append(nodes, makeHyperNode(fmt.Sprintf("e01-cn-%d", i), 0))
+		}
+		nodes = append(nodes, makeHyperNode("hypernode-A", 5), makeHyperNode("hypernode-B", 3))
+		got := buildDiagnosticTopologyNodeReasons(nodes)
+		assert.Len(t, got, maxDiagnosticTopologyNodeReasons+1)
+		assert.Equal(t, "topology topologyNode HyperNodeTopologyLayer/hypernode-A: 5", got[0])
+		assert.Equal(t, "topology topologyNode HyperNodeTopologyLayer/hypernode-B: 3", got[1])
+		assert.Equal(t, fmt.Sprintf("and %d more topology nodes", 1838-maxDiagnosticTopologyNodeReasons), got[maxDiagnosticTopologyNodeReasons])
+	})
 }

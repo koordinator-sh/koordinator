@@ -1,0 +1,22 @@
+{
+  "name": "elasticquota",
+  "runID": "d8fbc028-54d1-45d3-9fbc-13754493712e",
+  "timestamp": "2026-08-27T20:00:50Z",
+  "koordinatorVersion": "619bbe1",
+  "nodeCount": 100,
+  "podCount": 1000,
+  "throughputPodsPerSec": 30,
+  "apiCreationDurationSec": 8.64,
+  "totalDurationSec": 24.09,
+  "latencyP50Sec": 7,
+  "latencyP90Sec": 8,
+  "latencyP99Sec": 9,
+  "gangCompletionP50Sec": null,
+  "gangCompletionP99Sec": null,
+  "quotaBlockedPodCount": 701,
+  "thresholdBreached": false,
+  "timedOut": false,
+  "schedulingFailureCount": 703,
+  "schedulingFailureRate": 0.701,
+  "createFailureCount": 0
+}
