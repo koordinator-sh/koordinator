@@ -175,7 +175,7 @@ func TestBuildQuotaNodes(t *testing.T) {
 		"goneOK": makeQuotaNodeInfo("goneOK", "4", "8Gi", 10),
 	}}}
 
-	nodes := buildQuotaNodes(pod, []string{"fits", "full", "zero", "missing"}, lister)
+	nodes := buildQuotaNodesWithPlugins(context.Background(), nil, pod, []string{"fits", "full", "zero", "missing"}, lister, nil)
 
 	assert.Equal(t, []equivalenceClassNode{{name: "fits", quota: 10}}, nodes,
 		"full/zero-quota/missing nodes must not enter the cache")

@@ -202,17 +202,25 @@ func TestBindingLimiterConcurrentDistinctPods(t *testing.T) {
 	l := newBindingLimiter(capacity)
 
 	var wg sync.WaitGroup
+	errCh := make(chan error, pods)
 	for i := 0; i < pods; i++ {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
 			pod := makeSandboxPod(fmt.Sprintf("p-%d", i), "hash-a")
 			pod.UID = types.UID(fmt.Sprintf("uid-%d", i))
-			require.NoError(t, l.Acquire(context.Background(), pod))
+			if err := l.Acquire(context.Background(), pod); err != nil {
+				errCh <- err
+				return
+			}
 			l.Release(pod)
 		}(i)
 	}
 	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
 
 	assert.Len(t, l.slots, 0, "no slot must leak after all binders finish")
 	assert.Len(t, l.held, 0, "no pod must remain tracked after all binders finish")
@@ -228,17 +236,24 @@ func TestBindingLimiterConcurrentSameUID(t *testing.T) {
 	pod := makeSandboxPod("same", "hash-a")
 
 	var wg sync.WaitGroup
+	errCh := make(chan error, goroutines)
 	start := make(chan struct{})
 	for i := 0; i < goroutines; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			<-start
-			require.NoError(t, l.Acquire(context.Background(), pod))
+			if err := l.Acquire(context.Background(), pod); err != nil {
+				errCh <- err
+			}
 		}()
 	}
 	close(start)
 	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
 
 	assert.Len(t, l.slots, 1, "concurrent Acquire of the same UID must hold exactly one slot")
 	assert.Len(t, l.held, 1)

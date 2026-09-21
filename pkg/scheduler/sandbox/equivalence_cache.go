@@ -166,7 +166,7 @@ func (c *equivalenceClassCache) recordConsumption(key, node string, cycle int64)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry := c.entries[key]
-	if entry == nil || entry.key != key || entry.cycle != cycle {
+	if entry == nil || entry.cycle != cycle {
 		return
 	}
 	c.lru.MoveToFront(entry.lruElement)
@@ -179,7 +179,12 @@ func (c *equivalenceClassCache) recordConsumption(key, node string, cycle int64)
 	}
 }
 
-// rejectNode cancels the provisional consumption from next and discards the candidate.
+// rejectNode cancels the provisional consumption from next and discards the candidate by
+// zeroing its quota. Zeroing is intentionally permanent for this entry: a fast-path Filter
+// rejection may be transient (e.g. nominated-pod interference), but the full-path rebuild
+// will re-evaluate the node, so the cost of a false reject is one cache miss — never an
+// overcommit. consumed-- is unconditional to undo the next() increment even when the node
+// was already removed from the entry by a concurrent removeNode.
 func (c *equivalenceClassCache) rejectNode(key, node string, cycle int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -242,6 +247,13 @@ func (c *equivalenceClassCache) next(key string, cycle int64) (string, bool, equ
 	}
 	c.removeLocked(entry)
 	return "", false, equivalenceCacheMissQuotaExhausted
+}
+
+// len returns the number of cached entries. It is safe for concurrent use.
+func (c *equivalenceClassCache) len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.entries)
 }
 
 // flush drops all cached classes. It is used for invalidations that cannot be scoped to one node.

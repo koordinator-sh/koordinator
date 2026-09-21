@@ -21,34 +21,36 @@ import (
 	"math"
 
 	corev1 "k8s.io/api/core/v1"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/component-helpers/resource"
 	fwktype "k8s.io/kube-scheduler/framework"
+	k8sfeatures "k8s.io/kubernetes/pkg/features"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
-// podRequestsForQuota is the authoritative per-pod request aggregate (init-container max,
-// pod-level resources, overhead, and extended resources). A conservative quota is preferable
-// to overestimating capacity when a profile enables pod-level resource accounting.
+// podRequestsForQuota returns the per-pod request aggregate used for equivalence-class quota
+// computation. It mirrors upstream NodeResourcesFit's PreFilter accounting (init-container max,
+// overhead, extended resources) and respects the PodLevelResources feature gate the same way,
+// so the cached quota stays consistent with the Filter that validates it on the fast path.
 func podRequestsForQuota(pod *corev1.Pod) corev1.ResourceList {
-	return resource.PodRequests(pod, resource.PodResourcesOptions{})
+	return resource.PodRequests(pod, resource.PodResourcesOptions{
+		SkipPodLevelResources: !utilfeature.DefaultFeatureGate.Enabled(k8sfeatures.PodLevelResources),
+	})
 }
 
-// buildQuotaNodes computes the per-node capacity quota for the class at backfill time. Pods of
-// one class are template-identical, so the per-node fit check collapses into one division per
-// resource dimension: quota = (allocatable - requested) / podRequest. The requested baseline is
+// buildQuotaNodesWithPlugins computes the per-node capacity quota for the class at backfill time.
+// Pods of one class are template-identical, so the per-node fit check collapses into one division
+// per resource dimension: quota = (allocatable - requested) / podRequest. The requested baseline is
 // the snapshot's aggregate of every pod already on the node — running and assumed alike — so
 // existing occupants of any origin (other classes, other schedulers, daemonsets) are fully
 // accounted for. Occupancy changes after the backfill are not; the drift threshold, node-event
-// flush, and TTL bound that window. Pods of this class placed afterwards are accounted exactly by
-// the quota decrements in next/recordConsumption.
-func buildQuotaNodes(pod *corev1.Pod, nodeNames []string, lister fwktype.SharedLister) []equivalenceClassNode {
-	return buildQuotaNodesWithPlugins(context.Background(), nil, pod, nodeNames, lister, nil)
-}
-
-// buildQuotaNodesWithPlugins computes resource-based quotas and lets registered
-// plugins refine them for stateful constraints that cannot be represented by
-// additive resource dimensions alone.
+// flush, and TTL bound that window. Pods of this class placed by the full path afterwards are
+// accounted by the quota decrements in next/recordConsumption; pods placed via a nominated node
+// skip both and are bounded by the same TTL.
+//
+// Registered plugins may further refine quotas for stateful constraints that cannot be
+// represented by additive resource dimensions alone.
 func buildQuotaNodesWithPlugins(
 	ctx context.Context,
 	state fwktype.CycleState,
