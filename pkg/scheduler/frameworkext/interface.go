@@ -94,8 +94,9 @@ type FrameworkExtender interface {
 	GetSchedulingDecisionProviders() []SchedulingDecisionProvider
 
 	// SetBindingLimiter registers a BindingLimiter that bounds the number of concurrent binding
-	// cycles for the pods it handles. It is registered externally (e.g. by a custom workflow) to
-	// avoid import cycles. A nil limiter disables the bound.
+	// cycles for the pods it handles. It must be called during setup, before scheduling starts.
+	// It is registered externally (e.g. by a custom workflow) to avoid import cycles.
+	// A nil limiter disables the bound.
 	SetBindingLimiter(limiter BindingLimiter)
 
 	// RunFindOneNodePlugin invokes the registered FindOneNodePlugin (if any) during the PreFilter phase.

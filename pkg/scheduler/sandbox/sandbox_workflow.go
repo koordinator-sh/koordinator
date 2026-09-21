@@ -70,14 +70,18 @@ func (w *SandboxCustomWorkflow) AddFlags(fs *pflag.FlagSet) {
 	)
 }
 
+// Name returns the workflow name "sandbox".
 func (w *SandboxCustomWorkflow) Name() string {
 	return Name
 }
 
+// IsEnabled reports whether the SandboxCustomWorkflow feature gate is on.
 func (w *SandboxCustomWorkflow) IsEnabled() bool {
 	return utilfeature.DefaultFeatureGate.Enabled(koordfeatures.SandboxCustomWorkflow)
 }
 
+// Setup creates the equivalence-class scheduling engine and binding limiter, then registers
+// them on every profile's FrameworkExtender.
 func (w *SandboxCustomWorkflow) Setup(_ context.Context, opts *app.CustomWorkflowOptions) error {
 	if !w.IsEnabled() {
 		w.limiter = nil

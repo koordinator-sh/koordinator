@@ -426,7 +426,7 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 		return scheduleResult, err
 	}
 
-	extender, ok := fwk.(*frameworkExtenderImpl)
+	extender, ok := fwk.(FrameworkExtender)
 	if ok {
 		// Due to some ResizePod plugins need the reservation nomination before the real Reserve phase,
 		// and the PreScore phase might be skipped, we force to nominate reservation here.

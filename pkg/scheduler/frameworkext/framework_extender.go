@@ -263,7 +263,7 @@ func (ext *frameworkExtenderImpl) RegisterSchedulingDecisionProvider(provider Sc
 }
 
 func (ext *frameworkExtenderImpl) GetSchedulingDecisionProviders() []SchedulingDecisionProvider {
-	return ext.schedulingDecisionProviders
+	return append([]SchedulingDecisionProvider(nil), ext.schedulingDecisionProviders...)
 }
 
 func (ext *frameworkExtenderImpl) SetBindingLimiter(limiter BindingLimiter) {
@@ -627,13 +627,12 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state f
 	if limiter := ext.bindingLimiter; limiter != nil && limiter.Handles(pod) {
 		// Waiting here bounds PreBind/Bind concurrency without blocking the scheduling loop.
 		// PostBind or Unreserve releases the slot; a PreBind failure releases it immediately.
-		limitedPod := pod
-		if err := limiter.Acquire(ctx, limitedPod); err != nil {
+		if err := limiter.Acquire(ctx, pod); err != nil {
 			return fwktype.AsStatus(err)
 		}
 		defer func() {
 			if !status.IsSuccess() {
-				limiter.Release(limitedPod)
+				limiter.Release(pod)
 			}
 		}()
 	}
@@ -658,9 +657,9 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state f
 
 		original := pod
 		pod = pod.DeepCopy()
-		status := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
-		if !status.IsSuccess() {
-			return status
+		preBindStatus := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
+		if !preBindStatus.IsSuccess() {
+			return preBindStatus
 		}
 		return ext.runPreBindExtensionPlugins(ctx, state, original, pod)
 	}

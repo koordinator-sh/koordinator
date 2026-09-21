@@ -282,6 +282,17 @@ const (
 	TypeUtilization = "utilization"
 )
 
+const (
+	SchedulingPathFast = "fast"
+	SchedulingPathFull = "full"
+)
+
+const (
+	SchedulingResultSuccess       = "success"
+	SchedulingResultError         = "error"
+	SchedulingResultUnschedulable = "unschedulable"
+)
+
 var registerMetrics sync.Once
 
 // Register all metrics.
