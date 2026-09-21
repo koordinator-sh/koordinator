@@ -85,6 +85,9 @@ type frameworkExtenderImpl struct {
 
 	findOneNodePlugin FindOneNodePlugin
 	preferNodesPlugin PreferNodesPlugin
+	// gangActivator exposes the gang-aware pod activation of the gang scheduling plugin to the other
+	// plugins. It is registered in updatePlugins and is nil when the gang scheduling is not enabled.
+	gangActivator GangActivator
 	// batchScheduler batch-schedules a whole job when a FindOneNodePlugin returns a placement plan.
 	// It is registered externally (see SetBatchScheduler) to avoid import cycles. Nil disables the inline path.
 	batchScheduler BatchScheduler
@@ -225,6 +228,14 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 			klog.Warningf("framework extender got multiple PreferNodesPlugin registered, using the first one with name: %s", ext.preferNodesPlugin.Name())
 		}
 	}
+	if p, ok := pl.(GangActivator); ok {
+		if ext.gangActivator == nil {
+			ext.gangActivator = p
+			klog.V(4).InfoS("framework extender got GangActivator registered", "profile", ext.ProfileName(), "plugin", pl.Name())
+		} else {
+			klog.Warningf("framework extender got multiple GangActivator registered, using the first one with name: %s", ext.gangActivator.Name())
+		}
+	}
 }
 
 func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plugins) {
@@ -286,6 +297,10 @@ func (ext *frameworkExtenderImpl) GetReservationCache() ReservationCache {
 
 func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator {
 	return ext.reservationNominator
+}
+
+func (ext *frameworkExtenderImpl) GetGangActivator() GangActivator {
+	return ext.gangActivator
 }
 
 func (ext *frameworkExtenderImpl) GetNetworkTopologyTreeManager() networktopology.TreeManager {
