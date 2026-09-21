@@ -1,5 +1,6 @@
 /*
 Copyright 2022 The Koordinator Authors.
+Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,9 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"sort"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	extenderv1 "k8s.io/kube-scheduler/extender/v1"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/backend/cache"
@@ -44,6 +42,7 @@ import (
 	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
+// These constants mirror upstream's package-level constants in schedule_one.go.
 const (
 	// minFeasibleNodesToFind is the minimum number of nodes that would be scored
 	// in each scheduling cycle. This is a semi-arbitrary value to ensure that a
@@ -94,6 +93,12 @@ func (s *equivalenceScheduling) handleNodeAdd(obj interface{}) {
 		return
 	}
 	// A new node changes the candidate set and can change normalized scores for every class.
+	// Skip the flush when the cache is already empty (e.g. the informer's initial sync delivers
+	// one Add per existing node): flushing an empty cache is a no-op that would only inflate
+	// the flush metric.
+	if s.equivalence.len() == 0 {
+		return
+	}
 	s.flushNodeEventCache()
 }
 
@@ -206,13 +211,13 @@ func (s *equivalenceScheduling) runSandboxPreFilter(ctx context.Context, state f
 // ScheduleResult does not expose.
 func (s *equivalenceScheduling) decide(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod) (result scheduler.ScheduleResult, err error) {
 	start := time.Now()
-	path := "full"
-	resultLabel := "error"
+	path := koordmetrics.SchedulingPathFull
+	resultLabel := koordmetrics.SchedulingResultError
 	defer func() {
 		if err == nil {
-			resultLabel = "success"
+			resultLabel = koordmetrics.SchedulingResultSuccess
 		} else if _, ok := err.(*framework.FitError); ok {
-			resultLabel = "unschedulable"
+			resultLabel = koordmetrics.SchedulingResultUnschedulable
 		}
 		koordmetrics.RecordSandboxSchedulingDuration(schedFramework.ProfileName(), path, resultLabel, time.Since(start))
 	}()
@@ -246,7 +251,7 @@ func (s *equivalenceScheduling) decide(ctx context.Context, state fwktype.CycleS
 		var reason equivalenceCacheMissReason
 		fastResult, reason = s.scheduleFromEquivalenceClass(ctx, state, schedFramework, pod, cacheKey, snapshot, preFilter)
 		if fastResult.SuggestedHost != "" {
-			path = "fast"
+			path = koordmetrics.SchedulingPathFast
 			koordmetrics.RecordSandboxEquivalenceClassHit(schedFramework.ProfileName())
 			return fastResult, nil
 		}
@@ -290,9 +295,6 @@ func (s *equivalenceScheduling) updateSnapshot(logger klog.Logger, schedFramewor
 // state (e.g. NodeResourcesFit's Filter reads the PreFilter-computed pod requests). An empty
 // SuggestedHost and a miss reason tell the caller to fall back to full scheduling.
 func (s *equivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod, cacheKey string, snapshot *cache.Snapshot, preFilter sandboxPreFilterResult) (result scheduler.ScheduleResult, missReason equivalenceCacheMissReason) {
-	if !preFilter.status.IsSuccess() {
-		return result, equivalenceCacheMissPreFilter
-	}
 	var sawFilterRejected, sawSnapshotError bool
 	cycle := s.sched.CurrentCycle()
 	plugins := s.equivalenceCapacityPlugins(schedFramework)
@@ -335,6 +337,9 @@ func (s *equivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context
 		// Plugins may compute pod-specific capacity during Filter, including lazy restoration.
 		quota, reusable := equivalencePluginCapacity(ctx, state, pod, nodeInfo, plugins)
 		if !reusable {
+			// Drop the entry so the next pod of this class does not waste a fast-path attempt
+			// on a decision the plugin has already rejected.
+			s.flushEquivalenceCache(equivalenceCacheMissPluginVeto.String())
 			return result, equivalenceCacheMissPluginVeto
 		}
 		if quota <= 0 {
@@ -380,6 +385,9 @@ func advanceNodeIndex(index *atomic.Int64, delta, nodeCount int64) {
 // scheduleSandboxPod mirrors node selection in Kubernetes v1.35.6's schedule_one.go.
 // DIFF: accept the refreshed snapshot and per-pod PreFilter result from decide, and return
 // every scored candidate for quota backfill. The upstream Run/ScheduleOne own the lifecycle.
+// DIFF(upstream->local): drops fwk.StoreScheduleResults (OpportunisticBatching hint mechanism).
+// The equivalence-class cache replaces the per-node hint; the upstream hint is never written.
+// DIFF(upstream->local): drops utiltrace instrumentation.
 func (s *equivalenceScheduling) scheduleSandboxPod(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod, snapshot *cache.Snapshot, preFilter sandboxPreFilterResult) (scheduler.ScheduleResult, []string, error) {
 	var result scheduler.ScheduleResult
 
@@ -427,8 +435,16 @@ func (s *equivalenceScheduling) scheduleSandboxPod(ctx context.Context, state fw
 }
 
 // findNodesThatFitPod mirrors scheduler.findNodesThatFitPod.
-// DIFF: equivalence reuse replaces the opportunistic-batching node hint; nominated nodes
-// still take precedence.
+// DIFF(upstream->local): equivalence reuse replaces the opportunistic-batching node hint; nominated
+// nodes still take precedence.
+// DIFF(upstream->local): PreFilter runs once in decide and its result is reused by both the
+// equivalence-class fast path and the full fallback path, so it is passed in as a parameter
+// instead of being invoked inside this function.
+// DIFF(upstream->local): returns 3 values instead of 5 (drops nodeHint and signature).
+// DIFF(upstream->local): accepts a refreshed snapshot as a parameter instead of reading
+// sched.nodeInfoSnapshot.
+// DIFF(upstream->local): uses the equivalenceScheduling atomic node cursor instead of
+// sched.nextStartNodeIndex.
 func (s *equivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFramework framework.Framework, state fwktype.CycleState, pod *corev1.Pod, snapshot *cache.Snapshot, preFilter sandboxPreFilterResult) ([]fwktype.NodeInfo, framework.Diagnosis, error) {
 	logger := klog.FromContext(ctx)
 	diagnosis := framework.Diagnosis{
@@ -439,8 +455,6 @@ func (s *equivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFr
 	if err != nil {
 		return nil, diagnosis, err
 	}
-	// DIFF: PreFilter runs once in decide and its result is reused by both the
-	// equivalence-class fast path and the full fallback path.
 	preRes := preFilter.result
 	status := preFilter.status
 	diagnosis.UnschedulablePlugins = preFilter.unscheduledPlugins
@@ -448,10 +462,7 @@ func (s *equivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFr
 		if !status.IsRejected() {
 			return nil, diagnosis, status.AsError()
 		}
-		// All nodes in NodeToStatus will have the same status so that they can be handled in the preemption.
 		diagnosis.NodeToStatus.SetAbsentNodesStatus(status)
-
-		// Record the messages from PreFilter in Diagnosis.PreFilterMsg.
 		msg := status.Message()
 		diagnosis.PreFilterMsg = msg
 		logger.V(5).Info("Status after running PreFilter plugins for pod", "pod", klog.KObj(pod), "status", msg)
@@ -459,14 +470,11 @@ func (s *equivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFr
 		return nil, diagnosis, nil
 	}
 
-	// "NominatedNodeName" can potentially be set in a previous scheduling cycle as a result of preemption.
-	// This node is likely the only candidate that will fit the pod, and hence we try it first before iterating over all nodes.
 	if len(pod.Status.NominatedNodeName) > 0 {
-		feasibleNodes, err := s.evaluateNominatedNode(ctx, pod, schedFramework, state, "", snapshot, diagnosis)
+		feasibleNodes, err := s.evaluateNominatedNode(ctx, pod, schedFramework, state, snapshot, diagnosis)
 		if err != nil {
 			utilruntime.HandleErrorWithContext(ctx, err, "Evaluation failed on nominated node", "pod", klog.KObj(pod), "node", pod.Status.NominatedNodeName)
 		}
-		// Nominated node passes all the filters, scheduler is good to assign this node to the pod.
 		if len(feasibleNodes) != 0 {
 			return feasibleNodes, diagnosis, nil
 		}
@@ -476,8 +484,6 @@ func (s *equivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFr
 	if !preRes.AllNodes() {
 		nodes = make([]fwktype.NodeInfo, 0, len(preRes.NodeNames))
 		for nodeName := range preRes.NodeNames {
-			// PreRes may return nodeName(s) which do not exist; we verify
-			// node exists in the Snapshot.
 			if nodeInfo, err := snapshot.Get(nodeName); err == nil {
 				nodes = append(nodes, nodeInfo)
 			}
@@ -485,8 +491,6 @@ func (s *equivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFr
 		diagnosis.NodeToStatus.SetAbsentNodesStatus(fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, fmt.Sprintf("node(s) didn't satisfy plugin(s) %v", sets.List(preFilter.unscheduledPlugins))))
 	}
 	feasibleNodes, err := s.findNodesThatPassFilters(ctx, schedFramework, state, pod, &diagnosis, nodes)
-	// always try to update the nextStartNodeIndex regardless of whether an error has occurred
-	// this is helpful to make sure that all the nodes have a chance to be searched
 	processedNodes := len(feasibleNodes) + diagnosis.NodeToStatus.Len()
 	advanceNodeIndex(&s.nextStartNodeIndex, int64(processedNodes), int64(len(allNodes)))
 	if err != nil {
@@ -498,14 +502,6 @@ func (s *equivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFr
 		return nil, diagnosis, err
 	}
 	if len(feasibleNodesAfterExtender) != len(feasibleNodes) {
-		// Extenders filtered out some nodes.
-		//
-		// Extender doesn't support any kind of requeueing feature like EnqueueExtensions in the scheduling framework.
-		// When Extenders reject some Nodes and the pod ends up being unschedulable,
-		// we put fwk.ExtenderName to pInfo.UnschedulablePlugins.
-		// This Pod will be requeued from unschedulable pod pool to activeQ/backoffQ
-		// by any kind of cluster events.
-		// https://github.com/kubernetes/kubernetes/issues/122019
 		if diagnosis.UnschedulablePlugins == nil {
 			diagnosis.UnschedulablePlugins = sets.New[string]()
 		}
@@ -515,21 +511,19 @@ func (s *equivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFr
 	return feasibleNodesAfterExtender, diagnosis, nil
 }
 
+// evaluateNominatedNode mirrors scheduler.evaluateNominatedNode.
+// DIFF(upstream->local): accepts a snapshot parameter instead of reading sched.nodeInfoSnapshot.
+// DIFF(upstream->local): calls the equivalenceScheduling findNodesThatPassFilters.
+// DIFF(upstream->local): drops the nodeHint parameter (upstream opportunistic-batching hint is not used).
 func (s *equivalenceScheduling) evaluateNominatedNode(
 	ctx context.Context,
 	pod *corev1.Pod,
 	schedFramework framework.Framework,
 	state fwktype.CycleState,
-	nodeHint string,
 	snapshot *cache.Snapshot,
 	diagnosis framework.Diagnosis,
 ) ([]fwktype.NodeInfo, error) {
-	// In the future we could potentially use the hint if the nominated node failed.
-	// https://github.com/kubernetes/kubernetes/issues/135163
 	nnn := pod.Status.NominatedNodeName
-	if len(nnn) == 0 {
-		nnn = nodeHint
-	}
 
 	nodeInfo, err := snapshot.Get(nnn)
 	if err != nil {
@@ -550,6 +544,7 @@ func (s *equivalenceScheduling) evaluateNominatedNode(
 }
 
 // hasScoring checks if scoring nodes is configured.
+// DIFF(upstream->local): receiver is equivalenceScheduling; reads s.sched.Extenders.
 func (s *equivalenceScheduling) hasScoring(fwk framework.Framework) bool {
 	if fwk.HasScorePlugins() {
 		return true
@@ -563,6 +558,7 @@ func (s *equivalenceScheduling) hasScoring(fwk framework.Framework) bool {
 }
 
 // hasExtenderFilters checks if any extenders filter nodes.
+// DIFF(upstream->local): receiver is equivalenceScheduling; reads s.sched.Extenders.
 func (s *equivalenceScheduling) hasExtenderFilters() bool {
 	for _, extender := range s.sched.Extenders {
 		if extender.IsFilter() {
@@ -573,7 +569,10 @@ func (s *equivalenceScheduling) hasExtenderFilters() bool {
 }
 
 // findNodesThatPassFilters mirrors scheduler.findNodesThatPassFilters.
-// DIFF: use this provider's node cursor, not the scheduler's private cursor.
+// DIFF(upstream->local): uses the equivalenceScheduling atomic node cursor instead of
+// sched.nextStartNodeIndex.
+// DIFF(upstream->local): adds a numAllNodes == 0 guard because a PreFilter restriction can
+// contain only nodes absent from the snapshot.
 func (s *equivalenceScheduling) findNodesThatPassFilters(
 	ctx context.Context,
 	schedFramework framework.Framework,
@@ -582,7 +581,6 @@ func (s *equivalenceScheduling) findNodesThatPassFilters(
 	diagnosis *framework.Diagnosis,
 	nodes []fwktype.NodeInfo) ([]fwktype.NodeInfo, error) {
 	numAllNodes := len(nodes)
-	// DIFF: a PreFilter restriction can contain only nodes absent from the snapshot.
 	if numAllNodes == 0 {
 		return nil, nil
 	}
@@ -591,8 +589,6 @@ func (s *equivalenceScheduling) findNodesThatPassFilters(
 		numNodesToFind = 1
 	}
 
-	// Create feasible list with enough space to avoid growing it
-	// and allow assigning.
 	feasibleNodes := make([]fwktype.NodeInfo, numNodesToFind)
 	startNodeIndex := int(s.nextStartNodeIndex.Load()) % numAllNodes
 
@@ -614,8 +610,6 @@ func (s *equivalenceScheduling) findNodesThatPassFilters(
 	}
 	result := make([]*nodeStatus, numAllNodes)
 	checkNode := func(i int) {
-		// We check the nodes starting from where we left off in the previous scheduling cycle,
-		// this is to make sure all nodes have the same chance of being examined across pods.
 		nodeInfo := nodes[(startNodeIndex+i)%numAllNodes]
 		status := schedFramework.RunFilterPluginsWithNominatedPods(ctx, state, pod, nodeInfo)
 		if status.Code() == fwktype.Error {
@@ -640,14 +634,9 @@ func (s *equivalenceScheduling) findNodesThatPassFilters(
 	beginCheckNode := time.Now()
 	statusCode := fwktype.Success
 	defer func() {
-		// We record Filter extension point latency here instead of in framework.go because framework.RunFilterPlugins
-		// function is called for each node, whereas we want to have an overall latency for all nodes per scheduling cycle.
-		// Note that this latency also includes latency for `addNominatedPods`, which calls framework.RunPreFilterAddPod.
 		metrics.FrameworkExtensionPointDuration.WithLabelValues(metrics.Filter, statusCode.String(), schedFramework.ProfileName()).Observe(metrics.SinceInSeconds(beginCheckNode))
 	}()
 
-	// Stops searching for more nodes once the configured number of feasible nodes
-	// are found.
 	schedFramework.Parallelizer().Until(ctx, numAllNodes, checkNode, metrics.Filter)
 	feasibleNodes = feasibleNodes[:feasibleNodesLen]
 	for _, item := range result {
@@ -664,14 +653,14 @@ func (s *equivalenceScheduling) findNodesThatPassFilters(
 	return feasibleNodes, nil
 }
 
-// numFeasibleNodesToFind returns the number of feasible nodes that once found, the scheduler stops
-// its search for more feasible nodes.
+// numFeasibleNodesToFind returns the number of feasible nodes that once found, the scheduler
+// stops its search for more feasible nodes.
+// DIFF(upstream->local): receiver is equivalenceScheduling; reads s.percentageOfNodesToScore.
 func (s *equivalenceScheduling) numFeasibleNodesToFind(percentageOfNodesToScore *int32, numAllNodes int32) (numNodes int32) {
 	if numAllNodes < minFeasibleNodesToFind {
 		return numAllNodes
 	}
 
-	// Use profile percentageOfNodesToScore if it's set. Otherwise, use global percentageOfNodesToScore.
 	var percentage int32
 	if percentageOfNodesToScore != nil {
 		percentage = *percentageOfNodesToScore
@@ -692,168 +681,4 @@ func (s *equivalenceScheduling) numFeasibleNodesToFind(percentageOfNodesToScore 
 	}
 
 	return numNodes
-}
-
-func findNodesThatPassExtenders(ctx context.Context, extenders []fwktype.Extender, pod *corev1.Pod, feasibleNodes []fwktype.NodeInfo, statuses *framework.NodeToStatus) ([]fwktype.NodeInfo, error) {
-	logger := klog.FromContext(ctx)
-
-	// Extenders are called sequentially.
-	// Nodes in original feasibleNodes can be excluded in one extender, and pass on to the next
-	// extender in a decreasing manner.
-	for _, extender := range extenders {
-		if len(feasibleNodes) == 0 {
-			break
-		}
-		if !extender.IsInterested(pod) {
-			continue
-		}
-
-		// Status of failed nodes in failedAndUnresolvableMap will be added to <statuses>,
-		// so that the scheduler framework can respect the UnschedulableAndUnresolvable status for
-		// particular nodes, and this may eventually improve preemption efficiency.
-		// Note: users are recommended to configure the extenders that may return UnschedulableAndUnresolvable
-		// status ahead of others.
-		feasibleList, failedMap, failedAndUnresolvableMap, err := extender.Filter(pod, feasibleNodes)
-		if err != nil {
-			if extender.IsIgnorable() {
-				logger.Info("Skipping extender as it returned error and has ignorable flag set", "extender", extender, "err", err)
-				continue
-			}
-			return nil, err
-		}
-
-		for failedNodeName, failedMsg := range failedAndUnresolvableMap {
-			statuses.Set(failedNodeName, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, failedMsg))
-		}
-
-		for failedNodeName, failedMsg := range failedMap {
-			if _, found := failedAndUnresolvableMap[failedNodeName]; found {
-				// failedAndUnresolvableMap takes precedence over failedMap
-				// note that this only happens if the extender returns the node in both maps
-				continue
-			}
-			statuses.Set(failedNodeName, fwktype.NewStatus(fwktype.Unschedulable, failedMsg))
-		}
-
-		feasibleNodes = feasibleList
-	}
-	return feasibleNodes, nil
-}
-
-// prioritizeNodes prioritizes the nodes by running the score plugins,
-// which return a score for each node from the call to RunScorePlugins().
-// The scores from each plugin are added together to make the score for that node, then
-// any extenders are run as well.
-// All scores are finally combined (added) to get the total weighted scores of all nodes.
-func prioritizeNodes(
-	ctx context.Context,
-	extenders []fwktype.Extender,
-	schedFramework framework.Framework,
-	state fwktype.CycleState,
-	pod *corev1.Pod,
-	nodes []fwktype.NodeInfo,
-) ([]fwktype.NodePluginScores, error) {
-	logger := klog.FromContext(ctx)
-	// If no priority configs are provided, then all nodes will have a score of one.
-	// This is required to generate the priority list in the required format
-	if len(extenders) == 0 && !schedFramework.HasScorePlugins() {
-		result := make([]fwktype.NodePluginScores, 0, len(nodes))
-		for i := range nodes {
-			result = append(result, fwktype.NodePluginScores{
-				Name:       nodes[i].Node().Name,
-				TotalScore: 1,
-			})
-		}
-		return result, nil
-	}
-
-	// Run PreScore plugins.
-	preScoreStatus := schedFramework.RunPreScorePlugins(ctx, state, pod, nodes)
-	if !preScoreStatus.IsSuccess() {
-		return nil, preScoreStatus.AsError()
-	}
-
-	// Run the Score plugins.
-	nodesScores, scoreStatus := schedFramework.RunScorePlugins(ctx, state, pod, nodes)
-	if !scoreStatus.IsSuccess() {
-		return nil, scoreStatus.AsError()
-	}
-
-	// Additional details logged at level 10 if enabled.
-	loggerVTen := logger.V(10)
-	if loggerVTen.Enabled() {
-		for _, nodeScore := range nodesScores {
-			for _, pluginScore := range nodeScore.Scores {
-				loggerVTen.Info("Plugin scored node for pod", "pod", klog.KObj(pod), "plugin", pluginScore.Name, "node", nodeScore.Name, "score", pluginScore.Score)
-			}
-		}
-	}
-
-	if len(extenders) != 0 && nodes != nil {
-		// allNodeExtendersScores has all extenders scores for all nodes.
-		// It is keyed with node name.
-		allNodeExtendersScores := make(map[string]*fwktype.NodePluginScores, len(nodes))
-		var mu sync.Mutex
-		var wg sync.WaitGroup
-		for i := range extenders {
-			if !extenders[i].IsInterested(pod) {
-				continue
-			}
-			wg.Add(1)
-			go func(extIndex int) {
-				metrics.Goroutines.WithLabelValues(metrics.PrioritizingExtender).Inc()
-				defer func() {
-					metrics.Goroutines.WithLabelValues(metrics.PrioritizingExtender).Dec()
-					wg.Done()
-				}()
-				prioritizedList, weight, err := extenders[extIndex].Prioritize(pod, nodes)
-				if err != nil {
-					// Prioritization errors from extender can be ignored, let k8s/other extenders determine the priorities
-					logger.V(5).Info("Failed to run extender's priority function. No score given by this extender.", "error", err, "pod", klog.KObj(pod), "extender", extenders[extIndex].Name())
-					return
-				}
-				mu.Lock()
-				defer mu.Unlock()
-				for i := range *prioritizedList {
-					nodename := (*prioritizedList)[i].Host
-					score := (*prioritizedList)[i].Score
-					if loggerVTen.Enabled() {
-						loggerVTen.Info("Extender scored node for pod", "pod", klog.KObj(pod), "extender", extenders[extIndex].Name(), "node", nodename, "score", score)
-					}
-
-					// MaxExtenderPriority may diverge from the max priority used in the scheduler and defined by MaxNodeScore,
-					// therefore we need to scale the score returned by extenders to the score range used by the scheduler.
-					finalscore := score * weight * (fwktype.MaxNodeScore / extenderv1.MaxExtenderPriority)
-
-					if allNodeExtendersScores[nodename] == nil {
-						allNodeExtendersScores[nodename] = &fwktype.NodePluginScores{
-							Name:   nodename,
-							Scores: make([]fwktype.PluginScore, 0, len(extenders)),
-						}
-					}
-					allNodeExtendersScores[nodename].Scores = append(allNodeExtendersScores[nodename].Scores, fwktype.PluginScore{
-						Name:  extenders[extIndex].Name(),
-						Score: finalscore,
-					})
-					allNodeExtendersScores[nodename].TotalScore += finalscore
-				}
-			}(i)
-		}
-		// wait for all go routines to finish
-		wg.Wait()
-		for i := range nodesScores {
-			if score, ok := allNodeExtendersScores[nodes[i].Node().Name]; ok {
-				nodesScores[i].Scores = append(nodesScores[i].Scores, score.Scores...)
-				nodesScores[i].TotalScore += score.TotalScore
-				nodesScores[i].Randomizer = rand.Int()
-			}
-		}
-	}
-
-	if loggerVTen.Enabled() {
-		for i := range nodesScores {
-			loggerVTen.Info("Calculated node's final score for pod", "pod", klog.KObj(pod), "node", nodesScores[i].Name, "score", nodesScores[i].TotalScore)
-		}
-	}
-	return nodesScores, nil
 }
