@@ -237,6 +237,7 @@ type FakeQueue struct {
 	UnschedulablePods   map[string]*corev1.Pod
 	AssignedPods        map[string]*corev1.Pod
 	AssignedUpdatedPods map[string]*corev1.Pod
+	ActivatedPods       []*corev1.Pod
 	// MovedEvents records the arguments of every MoveAllToActiveOrBackoffQueue call so tests
 	// can assert the event and the carried objects (e.g. the oldObj must not be nil).
 	MovedEvents []MovedEvent
@@ -365,6 +366,9 @@ func (f *FakeQueue) MoveAllToActiveOrBackoffQueue(logger klog.Logger, event fwkt
 }
 
 func (f *FakeQueue) Activate(logger klog.Logger, pods map[string]*corev1.Pod) {
+	for _, pod := range pods {
+		f.ActivatedPods = append(f.ActivatedPods, pod)
+	}
 }
 
 func (f *FakeQueue) Done(pod types.UID) {

@@ -358,6 +358,13 @@ func (gang *Gang) getGangMatchPolicy() string {
 	return gang.GangMatchPolicy
 }
 
+func (gang *Gang) isGangInitialized() bool {
+	gang.lock.RLock()
+	defer gang.lock.RUnlock()
+
+	return gang.HasGangInit
+}
+
 func (gang *Gang) getGangAssumedPods() int {
 	gang.lock.RLock()
 	defer gang.lock.RUnlock()
@@ -552,6 +559,23 @@ func (gang *Gang) pickSomeChildren() *v1.Pod {
 		return pod
 	}
 	return nil
+}
+
+// resolveActivationRepresentative atomically resolves the gang group's representative for activation
+// and returns the pending child pod to activate. It keeps the recorded representative when it is
+// still a pending child of this gang, otherwise it installs a new one from the pending children.
+// The pending check and the install both happen under gang.lock (ResolveRepresentative only reads
+// PendingChildren and guards the representative key with the gang group lock), so a pod that
+// concurrently leaves PendingChildren can never be installed as the representative. It returns nil
+// when the gang has no pending children.
+func (gang *Gang) resolveActivationRepresentative() *v1.Pod {
+	gang.lock.Lock()
+	defer gang.lock.Unlock()
+	representativeKey := gang.GangGroupInfo.ResolveRepresentative(gang.PendingChildren)
+	if representativeKey == "" {
+		return nil
+	}
+	return gang.PendingChildren[representativeKey]
 }
 
 func (gang *Gang) isGangValidForPermit() bool {
