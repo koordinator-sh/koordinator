@@ -18,39 +18,45 @@ package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
+	k8smetrics "k8s.io/component-base/metrics"
 
 	"github.com/koordinator-sh/koordinator/pkg/util/metrics"
 )
 
 var (
-	KoordletStartTime = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "start_time",
-		Help:      "the start time of koordlet",
+	KoordletStartTime = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "start_time",
+		Help:           "the start time of koordlet",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey})
 
-	CollectNodeCPUInfoStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "collect_node_cpu_info_status",
-		Help:      "the count of CollectNodeCPUInfo status",
+	CollectNodeCPUInfoStatus = k8smetrics.NewCounterVec(&k8smetrics.CounterOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "collect_node_cpu_info_status",
+		Help:           "the count of CollectNodeCPUInfo status",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, StatusKey})
 
-	CollectNodeNUMAInfoStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "collect_node_numa_info_status",
-		Help:      "the count of CollectNodeNUMAInfo status",
+	CollectNodeNUMAInfoStatus = k8smetrics.NewCounterVec(&k8smetrics.CounterOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "collect_node_numa_info_status",
+		Help:           "the count of CollectNodeNUMAInfo status",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, StatusKey})
 
-	CollectNodeLocalStorageInfoStatus = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "collect_node_local_storage_info_status",
-		Help:      "the count of CollectNodeLocalStorageInfo status",
+	CollectNodeLocalStorageInfoStatus = k8smetrics.NewCounterVec(&k8smetrics.CounterOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "collect_node_local_storage_info_status",
+		Help:           "the count of CollectNodeLocalStorageInfo status",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, StatusKey})
 
-	PodEviction = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "pod_eviction",
-		Help:      "Number of eviction launched by koordlet",
+	PodEviction = k8smetrics.NewCounterVec(&k8smetrics.CounterOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "pod_eviction",
+		Help:           "Number of eviction launched by koordlet",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, EvictionReasonKey})
 
 	PodEvictionDetail = metrics.NewGCCounterVec("pod_eviction_detail", prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -59,27 +65,37 @@ var (
 		Help:      "evict detail launched by koordlet",
 	}, []string{NodeKey, PodNamespace, PodName, EvictionReasonKey}))
 
-	NodeUsedCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "node_used_cpu_cores",
-		Help:      "Number of cpu cores used by node in realtime",
+	NodeUsedCPU = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "node_used_cpu_cores",
+		Help:           "Number of cpu cores used by node in realtime",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey})
 
-	NodeUsedMemory = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "node_used_memory_bytes",
-		Help:      "Memory used by node in realtime",
+	NodeUsedMemory = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "node_used_memory_bytes",
+		Help:           "Memory used by node in realtime",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey})
 
-	CommonCollectors = []prometheus.Collector{
+	// CommonRegisterableCollectors holds the metrics defined with k8s.io/component-base/metrics, registered
+	// through internalKubeMustRegister so the stability framework applies to them.
+	CommonRegisterableCollectors = []k8smetrics.Registerable{
 		KoordletStartTime,
 		CollectNodeCPUInfoStatus,
 		CollectNodeNUMAInfoStatus,
 		CollectNodeLocalStorageInfoStatus,
 		PodEviction,
-		PodEvictionDetail.GetCounterVec(),
 		NodeUsedCPU,
 		NodeUsedMemory,
+	}
+
+	// CommonCollectors keeps the collectors that cannot implement k8smetrics.Registerable: the pkg/util/metrics
+	// GC wrappers expose the wrapped prometheus.Collector, and that wrapper captures the underlying MetricVec at
+	// construction, which a component-base vec does not have until registration creates it.
+	CommonCollectors = []prometheus.Collector{
+		PodEvictionDetail.GetCounterVec(),
 	}
 )
 
