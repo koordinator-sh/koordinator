@@ -11,6 +11,9 @@ nodes.
 
 - Go 1.21+
 - Docker
+- `make`
+- `kubectl`
+- `jq`
 - [kind](https://kind.sigs.k8s.io/)
 
 The setup script downloads the kwok release manifests automatically; a
