@@ -241,6 +241,16 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 	}
 
 	startInformersAndWaitForSync := func(ctx context.Context) error {
+		// Start the opt-in shared plugin caches before any informer factory: this wires the
+		// unified pod/node dispatcher on cc.InformerFactory and invokes Start on every
+		// SharedPluginCache registered by plugins during New(). Doing it here (rather than in
+		// Setup) keeps all runtime startup in Run, and runs it in both the immediate and the
+		// leader-election paths (StartSharedCaches is idempotent). It must precede
+		// cc.InformerFactory.Start() below so no event fires before its handler is wired.
+		if err := extenderFactory.StartSharedCaches(ctx, cc.InformerFactory); err != nil {
+			return err
+		}
+
 		// Startup order matters for data-race freedom: some plugins register
 		// AfterPluginInformersSynced hooks (via frameworkexthelper) that rebuild
 		// internal state from an initial-list snapshot of their private informers
@@ -272,6 +282,14 @@ func Run(ctx context.Context, cc *schedulerserverconfig.CompletedConfig, sched *
 		}
 
 		// Step 3: start the remaining informer factories.
+		// Defensive invariant: the shared plugin caches (and their unified pod/node
+		// dispatcher registered on cc.InformerFactory) must be started before this factory
+		// starts, or events would be missed and shared caches read while unpopulated — the
+		// regression class this PR guards against. In the current structure StartSharedCaches
+		// above always runs first; this check fails loudly if a future edit ever reorders it.
+		if !extenderFactory.SharedCachesStarted() {
+			return fmt.Errorf("shared plugin caches must be started before the main informer factory (StartSharedCaches not called)")
+		}
 		cc.InformerFactory.Start(ctx.Done())
 		// DynInformerFactory can be nil in tests.
 		if cc.DynInformerFactory != nil {

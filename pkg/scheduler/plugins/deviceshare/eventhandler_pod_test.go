@@ -17,6 +17,7 @@ limitations under the License.
 package deviceshare
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,11 +25,30 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
+	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 )
+
+// registerPodEventHandlerForTest wires the deviceCache's pod handlers directly onto the K8s
+// Pod informer. In production these events flow through the framework's unified
+// SharedPluginCache dispatcher (FrameworkExtenderFactory.StartSharedCaches), which is not
+// present in plugin-level unit tests. Tests that rely on pod-informer-driven cache population
+// register the handlers themselves, replicating the pre-migration registerPodEventHandler.
+func registerPodEventHandlerForTest(deviceCache *nodeDeviceCache, sharedInformerFactory informers.SharedInformerFactory, koordSharedInformerFactory koordinatorinformers.SharedInformerFactory) {
+	podInformer := sharedInformerFactory.Core().V1().Pods().Informer()
+	eventHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc:    deviceCache.onPodAdd,
+		UpdateFunc: deviceCache.onPodUpdate,
+		DeleteFunc: deviceCache.onPodDelete,
+	}
+	frameworkexthelper.ForceSyncFromInformer(context.TODO().Done(), sharedInformerFactory, podInformer, eventHandler)
+	registerReservationEventHandler(deviceCache, koordSharedInformerFactory)
+}
 
 func Test_nodeDeviceCache_onPodAdd(t *testing.T) {
 	podNamespacedName := types.NamespacedName{
@@ -238,7 +258,7 @@ func Test_nodeDeviceCache_onPodAdd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
-				deviceCache = newNodeDeviceCache()
+				deviceCache = newNodeDeviceCache(nil)
 			}
 			deviceCache.onPodAdd(tt.pod)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
@@ -499,7 +519,7 @@ func Test_nodeDeviceCache_onPodUpdate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
-				deviceCache = newNodeDeviceCache()
+				deviceCache = newNodeDeviceCache(nil)
 			}
 			deviceCache.onPodUpdate(tt.oldPod, tt.pod)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
@@ -721,7 +741,7 @@ func Test_nodeDeviceCache_onPodDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			deviceCache := tt.deviceCache
 			if deviceCache == nil {
-				deviceCache = newNodeDeviceCache()
+				deviceCache = newNodeDeviceCache(nil)
 			}
 			deviceCache.onPodDelete(tt.pod)
 			assert.Equal(t, tt.wantCache, deviceCache.nodeDeviceInfos)
