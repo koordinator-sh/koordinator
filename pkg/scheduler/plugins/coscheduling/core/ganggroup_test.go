@@ -380,3 +380,59 @@ func TestGangGroupInfo_FullLifecycle(t *testing.T) {
 	gg.DeleteIfRepresentative(rep, ReasonPodBound)
 	assert.Equal(t, "", gg.RepresentativePodKey)
 }
+
+func TestGangGroupInfo_ResolveRepresentative(t *testing.T) {
+	podA := makePod("default", "pod-a")
+	podB := makePod("default", "pod-b")
+
+	tests := []struct {
+		name            string
+		currentRep      string
+		pendingChildren map[string]*corev1.Pod
+		wantKey         string
+		wantRepSet      bool
+	}{
+		{
+			name:            "empty candidates keeps representative unset",
+			currentRep:      "",
+			pendingChildren: map[string]*corev1.Pod{},
+			wantKey:         "",
+			wantRepSet:      false,
+		},
+		{
+			name:            "no representative picks one from candidates",
+			currentRep:      "",
+			pendingChildren: map[string]*corev1.Pod{"default/pod-a": podA},
+			wantKey:         "default/pod-a",
+			wantRepSet:      true,
+		},
+		{
+			name:            "valid representative is kept",
+			currentRep:      "default/pod-b",
+			pendingChildren: map[string]*corev1.Pod{"default/pod-a": podA, "default/pod-b": podB},
+			wantKey:         "default/pod-b",
+			wantRepSet:      true,
+		},
+		{
+			name:            "stale representative is reselected from candidates",
+			currentRep:      "default/gone",
+			pendingChildren: map[string]*corev1.Pod{"default/pod-a": podA},
+			wantKey:         "default/pod-a",
+			wantRepSet:      true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gg := NewGangGroupInfo("default/gang-a", []string{"default/gang-a"})
+			gg.RepresentativePodKey = tt.currentRep
+			got := gg.ResolveRepresentative(tt.pendingChildren)
+			assert.Equal(t, tt.wantKey, got)
+			if tt.wantRepSet {
+				assert.NotEmpty(t, gg.RepresentativePodKey)
+				assert.Contains(t, tt.pendingChildren, gg.RepresentativePodKey)
+			} else {
+				assert.Empty(t, gg.RepresentativePodKey)
+			}
+		})
+	}
+}

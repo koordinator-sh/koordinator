@@ -12,13 +12,13 @@ jobs:
   golangci-lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - uses: actions/setup-go@v5
       with:
         cache: false
         go-version-file: go.mod
     - run: sudo apt update && sudo apt install -y libpfm4 libpfm4-dev
-    - uses: golangci/golangci-lint-action@v7
+    - uses: golangci/golangci-lint-action@v9
       with:
         version: v2.11.3
         # Skip the optional config verification: it downloads the JSON schema
@@ -57,12 +57,12 @@ jobs:
     name: unit-tests(${{ matrix.name }})
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - uses: actions/setup-go@v5
       with:
         cache: false
         go-version-file: go.mod
-    - uses: actions/cache@v4
+    - uses: actions/cache@v6
       with:
         path: |
           ~/.cache/go-build
@@ -76,14 +76,16 @@ jobs:
         ${{ matrix.command }}
     - if: matrix.step == 'test'
       name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v7
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         flags: unittests
         file: cover.out
-        fail_ci_if_error: true
+        # Dependabot PRs cannot access actions secrets, so the Codecov upload
+        # always fails on them and needlessly fails the unit-tests job.
+        fail_ci_if_error: ${{ github.actor != 'dependabot[bot]' }}
 
   build-and-push:
     needs: [ golangci-lint, unit-tests ]
@@ -105,7 +107,7 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     - name: Build the image
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
       with:
         platforms: linux/amd64
         push: false
@@ -137,11 +139,17 @@ jobs:
         password: ${{ secrets.ALIYUN_PWD }}
     - if: github.ref == 'refs/heads/main'
       name: Build and push the multi-arch images
-      uses: docker/build-push-action@v5
+      uses: docker/build-push-action@v7
       with:
         platforms: linux/amd64,linux/arm64
         push: true
         pull: true
+        # Aliyun ACR rejects the OCI 1.1 attestation manifests that newer
+        # BuildKit versions attach by default (denied: unknown manifest
+        # class for application/vnd.oci.empty.v1+json), which has failed
+        # every build-and-push on main since 2026-08-25.
+        provenance: false
+        sbom: false
         file: docker/${{ matrix.target }}.dockerfile
         labels: |
           org.opencontainers.image.title=${{ matrix.target }}

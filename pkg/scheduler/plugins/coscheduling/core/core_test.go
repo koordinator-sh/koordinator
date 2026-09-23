@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/informers"
@@ -1170,4 +1171,209 @@ func TestAfterPostFilter_PatchConditionOnlyOnce(t *testing.T) {
 		}
 	}
 	assert.Equal(t, firstCallPatches, secondCallPatches, "no additional patches should be made on second call")
+}
+
+// fakeActivateHandle only overrides Scheduler(); the rest of ExtendedHandle is never called on the
+// ActivateGang path, so the embedded nil interface is safe.
+type fakeActivateHandle struct {
+	frameworkext.ExtendedHandle
+	scheduler frameworkext.Scheduler
+}
+
+func (h *fakeActivateHandle) Scheduler() frameworkext.Scheduler { return h.scheduler }
+
+func newActivateTestMgr() (*PodGroupManager, *frameworkext.FakeQueue) {
+	args := &config.CoschedulingArgs{
+		DefaultTimeout:     metav1.Duration{Duration: 300 * time.Second},
+		DefaultMatchPolicy: extension.GangMatchPolicyOnceSatisfied,
+	}
+	fakeScheduler := frameworkext.NewFakeScheduler()
+	cache := NewGangCache(args, nil, nil, nil, nil)
+	pgMgr := &PodGroupManager{
+		handle: &fakeActivateHandle{scheduler: fakeScheduler},
+		args:   args,
+		cache:  cache,
+	}
+	return pgMgr, fakeScheduler.Queue
+}
+
+func newGangPod(ns, name, gangName, matchPolicy string) *corev1.Pod {
+	annotations := map[string]string{
+		extension.AnnotationGangName:     gangName,
+		extension.AnnotationGangMinNum:   "1",
+		extension.AnnotationGangWaitTime: "30s",
+	}
+	if matchPolicy != "" {
+		annotations[extension.AnnotationGangMatchPolicy] = matchPolicy
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:   ns,
+			Name:        name,
+			UID:         types.UID(ns + "/" + name),
+			Annotations: annotations,
+		},
+	}
+}
+
+func activatedKeys(queue *frameworkext.FakeQueue) []string {
+	keys := make([]string, 0, len(queue.ActivatedPods))
+	for _, pod := range queue.ActivatedPods {
+		keys = append(keys, util.GetId(pod.Namespace, pod.Name))
+	}
+	return keys
+}
+
+func TestPodGroupManager_ActivateGang(t *testing.T) {
+	const gangId = "default/ganga"
+
+	t.Run("activates representative and occupies the slot when empty", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		pod := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnlyWaiting)
+		pgMgr.cache.onPodAdd(pod)
+
+		pgMgr.ActivateGang(pod)
+
+		assert.Equal(t, []string{"default/pod-1"}, activatedKeys(queue))
+		gang := pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+		assert.Equal(t, "default/pod-1", gang.GangGroupInfo.RepresentativePodKey)
+	})
+
+	t.Run("activates the representative even when the caller passes another pod", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		pod1 := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnlyWaiting)
+		pod2 := newGangPod("default", "pod-2", "ganga", extension.GangMatchPolicyOnlyWaiting)
+		pgMgr.cache.onPodAdd(pod1)
+		pgMgr.cache.onPodAdd(pod2)
+		gang := pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+		// the representative slot is occupied by pod-2 between two scheduling cycles
+		assert.NoError(t, gang.RecordIfNoRepresentatives(pod2))
+
+		// the caller passes the non-representative pod-1
+		pgMgr.ActivateGang(pod1)
+
+		// the representative pod-2 must be activated; this is exactly the bug being fixed
+		assert.Equal(t, []string{"default/pod-2"}, activatedKeys(queue))
+	})
+
+	t.Run("reselects when the recorded representative is stale", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		pod := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnlyWaiting)
+		pgMgr.cache.onPodAdd(pod)
+		gang := pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+		gang.GangGroupInfo.RepresentativePodKey = "default/gone"
+
+		pgMgr.ActivateGang(pod)
+
+		assert.Equal(t, []string{"default/pod-1"}, activatedKeys(queue))
+		assert.Equal(t, "default/pod-1", gang.GangGroupInfo.RepresentativePodKey)
+	})
+
+	t.Run("once-satisfied gang bypasses and does not touch the representative", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		pod := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnceSatisfied)
+		pgMgr.cache.onPodAdd(pod)
+		gang := pgMgr.cache.getGangFromCacheByGangId(gangId, false)
+		gang.setResourceSatisfied()
+
+		pgMgr.ActivateGang(pod)
+
+		assert.Equal(t, []string{"default/pod-1"}, activatedKeys(queue))
+		assert.Empty(t, gang.GangGroupInfo.RepresentativePodKey)
+	})
+
+	t.Run("in-flight gang group is a no-op", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		pod := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnlyWaiting)
+		pgMgr.cache.onPodAdd(pod)
+		pgMgr.holder.setGangSchedulingContext(&GangSchedulingContext{
+			firstPod:    pod,
+			gangGroup:   sets.New[string](gangId),
+			gangGroupID: gangId,
+		}, "test")
+
+		pgMgr.ActivateGang(pod)
+
+		assert.Empty(t, queue.ActivatedPods)
+	})
+
+	t.Run("no pending children is a no-op", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		pod := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnlyWaiting)
+		pod.Spec.NodeName = "node-1" // bound, so it is not a pending child
+		pgMgr.cache.onPodAdd(pod)
+
+		pgMgr.ActivateGang(pod)
+
+		assert.Empty(t, queue.ActivatedPods)
+	})
+
+	t.Run("non-gang pod falls back to activating itself", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "solo"}}
+
+		pgMgr.ActivateGang(pod)
+
+		assert.Equal(t, []string{"default/solo"}, activatedKeys(queue))
+	})
+
+	t.Run("gang not in cache falls back to activating itself", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		pod := newGangPod("default", "pod-x", "ghostgang", extension.GangMatchPolicyOnlyWaiting)
+
+		pgMgr.ActivateGang(pod)
+
+		assert.Equal(t, []string{"default/pod-x"}, activatedKeys(queue))
+	})
+
+	t.Run("stale input object is re-resolved from the gang cache", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		cached := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnlyWaiting)
+		pgMgr.cache.onPodAdd(cached)
+		stale := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnlyWaiting)
+		stale.UID = "old-uid-generation"
+
+		pgMgr.ActivateGang(stale)
+
+		assert.Len(t, queue.ActivatedPods, 1)
+		// the activated object must be the cache's latest one, not the stale input
+		assert.Equal(t, types.UID("default/pod-1"), queue.ActivatedPods[0].UID)
+	})
+
+	t.Run("uninitialized gang is skipped", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+		pod := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnlyWaiting)
+		// create the gang in cache but leave it uninitialized, simulating the window before the gang
+		// config is applied; activating now would only burn a scheduling cycle.
+		gang := pgMgr.cache.getGangFromCacheByGangId(gangId, true)
+		gang.setChild(pod)
+		assert.False(t, gang.isGangInitialized())
+
+		pgMgr.ActivateGang(pod)
+
+		assert.Empty(t, queue.ActivatedPods)
+	})
+
+	t.Run("nil pod is a no-op", func(t *testing.T) {
+		pgMgr, queue := newActivateTestMgr()
+
+		pgMgr.ActivateGang(nil)
+
+		assert.Empty(t, queue.ActivatedPods)
+	})
+}
+
+func BenchmarkPodGroupManager_ActivateGang(b *testing.B) {
+	pgMgr, queue := newActivateTestMgr()
+	pod := newGangPod("default", "pod-1", "ganga", extension.GangMatchPolicyOnlyWaiting)
+	pgMgr.cache.onPodAdd(pod)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// keep the fake queue's recorded slice flat so the benchmark measures the activation path
+		// rather than slice growth.
+		queue.ActivatedPods = nil
+		pgMgr.ActivateGang(pod)
+	}
 }

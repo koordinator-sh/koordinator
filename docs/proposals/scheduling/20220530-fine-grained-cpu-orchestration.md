@@ -299,13 +299,17 @@ If there is no `node.koordinator.sh/cpu-bind-policy` in the node's label, it wil
 The label `node.koordinator.sh/numa-allocate-strategy` indicates how to choose satisfied NUMA Nodes when scheduling. The following is the specific value definition:
 - `MostAllocated` indicates that allocates from the NUMA Node with the least amount of available resource.
 - `LeastAllocated` indicates that allocates from the NUMA Node with the most amount of available resource.
-- `DistributeEvenly` indicates that evenly distribute CPUs across NUMA Nodes.
+- `DistributeEvenly` indicates that evenly distributes the Pod's CPUs and memory across as many NUMA Nodes as feasible instead of packing them into the fewest, e.g. for Pods whose memory is interleaved across NUMA Nodes at runtime.
 
 If the cluster administrator does not set label `node.koordinator.sh/numa-allocate-strategy` on Node, but `kubelet.koordinator.sh/cpu-manager-policy` in `NodeResourceTopology` has option `distribute-cpus-across-numa=true`, then follow the semantic allocation of `distribute-cpus-across-numa`. 
 
 If there is no `node.koordinator.sh/numa-allocate-strategy` in the node's label and no `kubelet.koordinator.sh/cpu-manager-policy` with `distribute-cpus-across-numa` option in `NodeResourceTopology`, it will be executed according to the policy configured by the koord-scheduler.
 
 If both `node.koordinator.sh/numa-allocate-strategy` and `kubelet.koordinator.sh/cpu-manager-policy` are defined, `node.koordinator.sh/numa-allocate-strategy` is used first.
+
+Besides the node-level label, a Pod can opt into even spread per Pod via the `numaAllocateStrategy` field of the `scheduling.koordinator.sh/numa-topology-spec` annotation. At the Pod level only `DistributeEvenly` is honored and any other value is rejected at scheduling, because `MostAllocated`/`LeastAllocated` remain node-level strategies. The resolution order is Pod annotation > node label > koord-scheduler default.
+
+Since `DistributeEvenly` needs the NUMA-level accounting and topology hints to run, koord-scheduler upgrades an effective `None` NUMA topology policy to `BestEffort` for such a Pod and prefers the widest feasible NUMA affinity when generating hints. The upgrade applies only when the Node actually exposes NUMA resources (i.e. it has a `NodeResourceTopology`) and the Pod is not confined to a single NUMA Node: a Pod that requests the `SingleNUMANode` policy or `Required` single-NUMA exclusivity keeps its own intent, and a Node without NUMA topology keeps its prior behavior. Even spread never changes `Restricted`/`SingleNUMANode` admission.
 
 ##### NUMA topology policy
 
