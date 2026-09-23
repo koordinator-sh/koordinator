@@ -54,6 +54,7 @@ type Coscheduling struct {
 
 var _ fwktype.PreEnqueuePlugin = &Coscheduling{}
 var _ frameworkext.NextPodPlugin = &Coscheduling{}
+var _ frameworkext.GangActivator = &Coscheduling{}
 var _ frameworkext.PreFilterTransformer = &Coscheduling{}
 var _ fwktype.PreFilterPlugin = &Coscheduling{}
 var _ frameworkext.FindOneNodePluginProvider = &Coscheduling{}
@@ -132,6 +133,12 @@ func (cs *Coscheduling) PreEnqueue(ctx context.Context, pod *v1.Pod) *fwktype.St
 
 func (cs *Coscheduling) NextPod() *v1.Pod {
 	return cs.pgMgr.NextPod()
+}
+
+// ActivateGang re-activates the gang of the given pod so a new scheduling cycle can start without
+// waiting for the backoff timer.
+func (cs *Coscheduling) ActivateGang(pod *v1.Pod) {
+	cs.pgMgr.ActivateGang(pod)
 }
 
 func (cs *Coscheduling) FindOneNodePlugin() frameworkext.FindOneNodePlugin {
