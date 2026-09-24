@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sandbox
+package equivalence
 
 import (
 	"context"
@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/events"
@@ -51,6 +50,7 @@ import (
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
@@ -59,7 +59,7 @@ type countingPreFilterPlugin struct {
 }
 
 func (p *countingPreFilterPlugin) Name() string {
-	return "SandboxCountingPreFilter"
+	return "CountingPreFilter"
 }
 
 func (p *countingPreFilterPlugin) PreFilter(context.Context, fwktype.CycleState, *corev1.Pod, []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
@@ -74,7 +74,7 @@ func (p *countingPreFilterPlugin) PreFilterExtensions() fwktype.PreFilterExtensi
 type rejectingPreFilterPlugin struct{}
 
 func (p *rejectingPreFilterPlugin) Name() string {
-	return "SandboxRejectingPreFilter"
+	return "RejectingPreFilter"
 }
 
 func (p *rejectingPreFilterPlugin) PreFilter(context.Context, fwktype.CycleState, *corev1.Pod, []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
@@ -112,28 +112,23 @@ func makeNode(name string, cpu, memory string) *corev1.Node {
 	}
 }
 
-func makeSandboxPod(name, hash string) *corev1.Pod {
-	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "ns",
-			Name:      name,
-			UID:       types.UID("uid-" + name),
-			Labels: map[string]string{
-				apiext.LabelSandbox:             "true",
-				apiext.LabelSandboxTemplateHash: hash,
-			},
-		},
-		Spec: corev1.PodSpec{SchedulerName: "koord-scheduler"},
-	}
+// fakeClass is the EquivalenceClass under test. Real workload classes declare membership their own
+// way; this one groups the pods carrying the fake equivalence class labels.
+var fakeClass = frameworkext.NewFakeEquivalenceClass()
+
+// makeClassPod builds a pod of the fake class. An empty key yields a marked pod the class does not
+// handle.
+func makeClassPod(name, key string) *corev1.Pod {
+	return fakeClass.MakePod(name, key)
 }
 
-// newSandboxTestScheduling builds an equivalence scheduling path with a real scheduler cache holding the given nodes
+// newTestScheduling builds an equivalence scheduling path with a real scheduler cache holding the given nodes
 // and a real framework wired with NodeResourcesFit for PreFilter/Filter/Score.
-func newSandboxTestScheduling(t *testing.T, ctx context.Context, nodes ...*corev1.Node) *equivalenceScheduling {
-	return newSandboxTestSchedulingWithPlugins(t, ctx, nil, nodes...)
+func newTestScheduling(t *testing.T, ctx context.Context, nodes ...*corev1.Node) *EquivalenceScheduling {
+	return newTestSchedulingWithPlugins(t, ctx, nil, nodes...)
 }
 
-func newSandboxTestSchedulingWithPlugins(t *testing.T, ctx context.Context, extraPlugins []schedulertesting.RegisterPluginFunc, nodes ...*corev1.Node) *equivalenceScheduling {
+func newTestSchedulingWithPlugins(t *testing.T, ctx context.Context, extraPlugins []schedulertesting.RegisterPluginFunc, nodes ...*corev1.Node) *EquivalenceScheduling {
 	t.Helper()
 	logger, _ := ktesting.NewTestContext(t)
 	metrics.Register()
@@ -160,26 +155,25 @@ func newSandboxTestSchedulingWithPlugins(t *testing.T, ctx context.Context, extr
 	)
 	require.NoError(t, err)
 
-	s := newEquivalenceScheduling(&scheduler.Scheduler{
+	s := NewEquivalenceScheduling(&scheduler.Scheduler{
 		Cache: c,
 		Profiles: profile.Map{
 			"koord-scheduler": fwk,
 		},
-	}, nil, defaultEquivalenceClassCacheSize)
-	s.equivalence = newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
+	}, nil, DefaultEquivalenceClassCacheSize, fakeClass)
+	s.equivalence = newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 	return s
 }
 
-func TestEquivalenceSchedulingHandlesSandboxPodsWithTemplateHash(t *testing.T) {
-	s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+func TestEquivalenceSchedulingHandlesClassPods(t *testing.T) {
+	s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 
-	assert.True(t, s.handles(makeSandboxPod("sandbox", "hash-a")))
-	assert.False(t, s.handles(makeSandboxPod("missing-hash", "")))
-	assert.False(t, s.handles(&corev1.Pod{
+	assert.True(t, s.Handles(makeClassPod("member", "key-a")))
+	assert.False(t, s.Handles(makeClassPod("member-no-key", "")))
+	// The class owns membership: a key without the membership marker is not a member.
+	assert.False(t, s.Handles(&corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{
-				apiext.LabelSandboxTemplateHash: "hash-a",
-			},
+			Labels: map[string]string{frameworkext.FakeEquivalenceClassKeyLabel: "key-a"},
 		},
 	}))
 }
@@ -191,7 +185,7 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 			name = "uncordon"
 		}
 		t.Run(name, func(t *testing.T) {
-			s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+			s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 			s.equivalence.store("class", quotaNodes(10, "node-a"), 1, nil)
 			oldNode := makeNode("node-a", "4", "8Gi")
 			oldNode.Spec.Unschedulable = !unschedulable
@@ -207,7 +201,7 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 	}
 
 	t.Run("irrelevant update keeps the cached node", func(t *testing.T) {
-		s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
 		oldNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
 			Name:            "node-a",
@@ -225,7 +219,7 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 	})
 
 	t.Run("allocatable update removes only the affected node", func(t *testing.T) {
-		s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 		s.equivalence.store("class", quotaNodes(1, "node-a", "node-b"), 1,
 			corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")})
 		oldNode := makeNode("node-a", "4", "8Gi")
@@ -241,7 +235,7 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 	})
 
 	t.Run("label update removes the affected node", func(t *testing.T) {
-		s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
 		oldNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
 		newNode := oldNode.DeepCopy()
@@ -255,7 +249,7 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 	})
 
 	t.Run("Koordinator annotation update removes the affected node", func(t *testing.T) {
-		s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
 		oldNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
 		newNode := oldNode.DeepCopy()
@@ -271,7 +265,7 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 	})
 
 	t.Run("delete tombstone flushes conservatively", func(t *testing.T) {
-		s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
 
 		s.handleNodeDelete(toolscache.DeletedFinalStateUnknown{Key: "node-a", Obj: &corev1.Node{
@@ -284,7 +278,7 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 	})
 
 	t.Run("unknown update flushes conservatively", func(t *testing.T) {
-		s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
 
 		s.handleNodeUpdate(&corev1.Pod{}, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}})
@@ -344,7 +338,7 @@ func TestEquivalenceSchedulingAllocatableInvalidation(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			koordmetrics.Register()
-			s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+			s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 			t.Cleanup(s.equivalence.flush)
 			for key, requests := range classes {
 				s.equivalence.store(key, quotaNodes(10, "node-a"), 1, requests)
@@ -363,15 +357,15 @@ func TestEquivalenceSchedulingAllocatableInvalidation(t *testing.T) {
 			if tt.alsoChanged != "" {
 				newNode.Status.Allocatable[tt.alsoChanged] = resource.MustParse("1")
 			}
-			before, err := testutil.GetGaugeMetricValue(koordmetrics.SandboxEquivalenceClassCacheEntries)
+			before, err := testutil.GetGaugeMetricValue(koordmetrics.EquivalenceClassCacheEntries)
 			require.NoError(t, err)
-			flushCounter := koordmetrics.SandboxEquivalenceClassFlushes.WithLabelValues(equivalenceCacheMissNodeEvent.String())
+			flushCounter := koordmetrics.EquivalenceClassFlushes.WithLabelValues(equivalenceCacheMissNodeEvent.String())
 			flushBefore, err := testutil.GetCounterMetricValue(flushCounter)
 			require.NoError(t, err)
 
 			s.handleNodeUpdate(oldNode, newNode)
 
-			after, err := testutil.GetGaugeMetricValue(koordmetrics.SandboxEquivalenceClassCacheEntries)
+			after, err := testutil.GetGaugeMetricValue(koordmetrics.EquivalenceClassCacheEntries)
 			require.NoError(t, err)
 			assert.Equal(t, before-float64(len(tt.invalidated)), after)
 			flushAfter, err := testutil.GetCounterMetricValue(flushCounter)
@@ -417,7 +411,7 @@ func TestEquivalenceSchedulingMixedNodeUpdates(t *testing.T) {
 		"cordon": func(node *corev1.Node) { node.Spec.Unschedulable = true },
 	} {
 		t.Run(name, func(t *testing.T) {
-			s := newEquivalenceScheduling(nil, nil, defaultEquivalenceClassCacheSize)
+			s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
 			t.Cleanup(s.equivalence.flush)
 			s.equivalence.store("cpu", quotaNodes(10, "node-a"), 1,
 				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")})
@@ -438,15 +432,15 @@ func TestEquivalenceSchedulingMixedNodeUpdates(t *testing.T) {
 	}
 }
 
-func TestSandboxUnrequestedAllocatableUpdateKeepsBackfill(t *testing.T) {
+func TestUnrequestedAllocatableUpdateKeepsBackfill(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	oldNode := makeNode("node-a", "4", "8Gi")
 	oldNode.Status.Allocatable[apiext.MidCPU] = resource.MustParse("2000")
-	s := newSandboxTestScheduling(t, ctx, oldNode)
+	s := newTestScheduling(t, ctx, oldNode)
 	t.Cleanup(s.equivalence.flush)
 	fwk := s.sched.Profiles["koord-scheduler"]
-	pod := makeSandboxPod("p1", "hash")
+	pod := makeClassPod("p1", "hash")
 	pod.Spec.Containers = makeQuotaPod("100m", "100Mi").Spec.Containers
 	_, err := s.decide(ctx, framework.NewCycleState(), fwk, pod)
 	require.NoError(t, err)
@@ -467,13 +461,13 @@ func TestSandboxUnrequestedAllocatableUpdateKeepsBackfill(t *testing.T) {
 	assert.Equal(t, "node-a", node)
 }
 
-func TestDecideSandboxFullPathBackfillsClass(t *testing.T) {
+func TestDecideFullPathBackfillsClass(t *testing.T) {
 	ctx := context.Background()
-	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 	state := framework.NewCycleState()
 
-	pod := makeSandboxPod("p1", "hash-a")
+	pod := makeClassPod("p1", "hash-a")
 	result, err := s.decide(ctx, state, fwk, pod)
 	assert.NoError(t, err)
 	assert.Contains(t, []string{"node-1", "node-2"}, result.SuggestedHost)
@@ -484,18 +478,18 @@ func TestDecideSandboxFullPathBackfillsClass(t *testing.T) {
 	assert.True(t, ok, "class should be backfilled after the full path")
 }
 
-func TestDecideSandboxFastPath(t *testing.T) {
+func TestDecideFastPath(t *testing.T) {
 	ctx := context.Background()
-	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 
 	// The first pod of the class pays the full path, which refreshes the shared snapshot and
 	// backfills the class; only then can following pods take the fast path.
-	pod := makeSandboxPod("p1", "hash-a")
+	pod := makeClassPod("p1", "hash-a")
 	_, err := s.decide(ctx, framework.NewCycleState(), fwk, pod)
 	assert.NoError(t, err)
 
-	pod = makeSandboxPod("p2", "hash-a")
+	pod = makeClassPod("p2", "hash-a")
 	result, err := s.decide(ctx, framework.NewCycleState(), fwk, pod)
 	assert.NoError(t, err)
 	assert.Contains(t, []string{"node-1", "node-2"}, result.SuggestedHost)
@@ -503,30 +497,30 @@ func TestDecideSandboxFastPath(t *testing.T) {
 	assert.Equal(t, 1, result.FeasibleNodes)
 
 	// The second fast-path pod consumes the next cached node.
-	pod = makeSandboxPod("p3", "hash-a")
+	pod = makeClassPod("p3", "hash-a")
 	result, err = s.decide(ctx, framework.NewCycleState(), fwk, pod)
 	assert.NoError(t, err)
 	assert.Contains(t, []string{"node-1", "node-2"}, result.SuggestedHost)
 }
 
-func TestDecideSandboxCacheIsProfileScoped(t *testing.T) {
+func TestDecideCacheIsProfileScoped(t *testing.T) {
 	ctx := context.Background()
-	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 	otherProfile := &namedFramework{Framework: fwk, name: "other-scheduler"}
 
-	_, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-a"))
+	_, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-a"))
 	require.NoError(t, err)
 
-	result, err := s.decide(ctx, framework.NewCycleState(), otherProfile, makeSandboxPod("p2", "hash-a"))
+	result, err := s.decide(ctx, framework.NewCycleState(), otherProfile, makeClassPod("p2", "hash-a"))
 	require.NoError(t, err)
 	assert.Equal(t, 2, result.EvaluatedNodes, "a cache entry from another profile must not take the fast path")
 	assert.Len(t, s.equivalence.entries, 2)
 }
 
-func TestDecideSandboxFastPathRunsExtenderFilters(t *testing.T) {
+func TestDecideFastPathRunsExtenderFilters(t *testing.T) {
 	ctx := context.Background()
-	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 	var checks atomic.Int32
 	s.sched.Extenders = []fwktype.Extender{
@@ -542,16 +536,16 @@ func TestDecideSandboxFastPathRunsExtenderFilters(t *testing.T) {
 	}
 	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(1, "node-1", "node-2"), s.sched.CurrentCycle(), nil)
 
-	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-a"))
+	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-a"))
 	require.NoError(t, err)
 	assert.Equal(t, "node-2", result.SuggestedHost, "the fast path must honor extender filters before returning a cached node")
 	assert.Equal(t, int32(2), checks.Load())
 	assert.Equal(t, 2, result.EvaluatedNodes)
 }
 
-func TestSandboxFastPathChecksRejectedNodeOnce(t *testing.T) {
+func TestFastPathChecksRejectedNodeOnce(t *testing.T) {
 	ctx := context.Background()
-	s := newSandboxTestScheduling(t, ctx, makeNode("rejected", "4", "8Gi"), makeNode("spent-1", "4", "8Gi"), makeNode("spent-2", "4", "8Gi"))
+	s := newTestScheduling(t, ctx, makeNode("rejected", "4", "8Gi"), makeNode("spent-1", "4", "8Gi"), makeNode("spent-2", "4", "8Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 	var checks atomic.Int32
 	s.sched.Extenders = []fwktype.Extender{&schedulertesting.FakeExtender{
@@ -570,8 +564,8 @@ func TestSandboxFastPathChecksRejectedNodeOnce(t *testing.T) {
 	snapshot, err := s.updateSnapshot(logger, fwk)
 	require.NoError(t, err)
 	state := framework.NewCycleState()
-	pod := makeSandboxPod("p1", "hash-a")
-	preFilter := s.runSandboxPreFilter(ctx, state, fwk, pod)
+	pod := makeClassPod("p1", "hash-a")
+	preFilter := s.runPreFilter(ctx, state, fwk, pod)
 
 	result, reason := s.scheduleFromEquivalenceClass(ctx, state, fwk, pod, key, snapshot, preFilter)
 
@@ -581,7 +575,7 @@ func TestSandboxFastPathChecksRejectedNodeOnce(t *testing.T) {
 	assert.Equal(t, equivalenceCacheMissFilterRejected, reason)
 }
 
-func TestSandboxFastPathFailureReasons(t *testing.T) {
+func TestFastPathFailureReasons(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
 		plugins   []schedulertesting.RegisterPluginFunc
@@ -616,7 +610,7 @@ func TestSandboxFastPathFailureReasons(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			s := newSandboxTestSchedulingWithPlugins(t, ctx, tt.plugins, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
+			s := newTestSchedulingWithPlugins(t, ctx, tt.plugins, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
 			s.sched.Extenders = tt.extenders
 			fwk := s.sched.Profiles["koord-scheduler"]
 			key := equivalenceCacheKey(fwk.ProfileName(), "hash")
@@ -624,9 +618,9 @@ func TestSandboxFastPathFailureReasons(t *testing.T) {
 			logger, _ := ktesting.NewTestContext(t)
 			snapshot, err := s.updateSnapshot(logger, fwk)
 			require.NoError(t, err)
-			pod := makeSandboxPod("pod", "hash")
+			pod := makeClassPod("pod", "hash")
 			state := framework.NewCycleState()
-			result, reason := s.scheduleFromEquivalenceClass(ctx, state, fwk, pod, key, snapshot, s.runSandboxPreFilter(ctx, state, fwk, pod))
+			result, reason := s.scheduleFromEquivalenceClass(ctx, state, fwk, pod, key, snapshot, s.runPreFilter(ctx, state, fwk, pod))
 			assert.Empty(t, result.SuggestedHost)
 			assert.Equal(t, tt.evaluated, result.EvaluatedNodes)
 			assert.Equal(t, tt.reason, reason)
@@ -635,23 +629,23 @@ func TestSandboxFastPathFailureReasons(t *testing.T) {
 	}
 }
 
-func TestSandboxFallbackCountsFastFilterRejection(t *testing.T) {
+func TestFallbackCountsFastFilterRejection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s := newSandboxTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+	s := newTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
 		schedulertesting.RegisterFilterPlugin("FakeFilter", schedulertesting.NewFakeFilterPlugin(map[string]fwktype.Code{"node-1": fwktype.Unschedulable})),
 	}, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 	key := equivalenceCacheKey(fwk.ProfileName(), "hash")
 	s.equivalence.store(key, quotaNodes(100, "node-1"), s.sched.CurrentCycle(), nil)
-	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("pod", "hash"))
+	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("pod", "hash"))
 	require.NoError(t, err)
 	assert.Equal(t, "node-2", result.SuggestedHost)
 	assert.Equal(t, 3, result.EvaluatedNodes, "one fast rejection plus two full-path evaluations")
 	assert.Equal(t, []equivalenceClassNode{{name: "node-2", quota: 109}}, s.equivalence.entries[key].nodes)
 }
 
-func TestSandboxFullPathScoreErrors(t *testing.T) {
+func TestFullPathScoreErrors(t *testing.T) {
 	for _, stage := range []string{"PreScore", "Score"} {
 		t.Run(stage, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
@@ -663,11 +657,11 @@ func TestSandboxFullPathScoreErrors(t *testing.T) {
 			} else {
 				score = status
 			}
-			s := newSandboxTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+			s := newTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterPluginAsExtensions("ScoreFailure",
 					schedulertesting.NewFakePreScoreAndScorePlugin("ScoreFailure", 1, preScore, score), "PreScore", "Score"),
 			}, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
-			result, err := s.decide(ctx, framework.NewCycleState(), s.sched.Profiles["koord-scheduler"], makeSandboxPod("pod", "hash"))
+			result, err := s.decide(ctx, framework.NewCycleState(), s.sched.Profiles["koord-scheduler"], makeClassPod("pod", "hash"))
 			require.ErrorContains(t, err, stage+" failed")
 			assert.Empty(t, result.SuggestedHost)
 			assert.Empty(t, s.equivalence.entries)
@@ -684,10 +678,10 @@ func (f *fixedScoreFramework) RunScorePlugins(context.Context, fwktype.CycleStat
 	return append([]fwktype.NodePluginScores(nil), f.scores...), nil
 }
 
-func TestSandboxCandidateOrder(t *testing.T) {
+func TestCandidateOrder(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s := newSandboxTestScheduling(t, ctx, makeNode("low", "4", "8Gi"), makeNode("tie-low", "4", "8Gi"), makeNode("tie-high", "4", "8Gi"))
+	s := newTestScheduling(t, ctx, makeNode("low", "4", "8Gi"), makeNode("tie-low", "4", "8Gi"), makeNode("tie-high", "4", "8Gi"))
 	fwk := &fixedScoreFramework{
 		Framework: s.sched.Profiles["koord-scheduler"],
 		scores: []fwktype.NodePluginScores{
@@ -699,18 +693,18 @@ func TestSandboxCandidateOrder(t *testing.T) {
 	logger, _ := ktesting.NewTestContext(t)
 	snapshot, err := s.updateSnapshot(logger, fwk)
 	require.NoError(t, err)
-	pod := makeSandboxPod("pod", "hash")
+	pod := makeClassPod("pod", "hash")
 	state := framework.NewCycleState()
-	result, ordered, err := s.scheduleSandboxPod(ctx, state, fwk, pod, snapshot, s.runSandboxPreFilter(ctx, state, fwk, pod))
+	result, ordered, err := s.schedulePod(ctx, state, fwk, pod, snapshot, s.runPreFilter(ctx, state, fwk, pod))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"tie-high", "tie-low", "low"}, ordered)
 	assert.Equal(t, ordered[0], result.SuggestedHost)
 }
 
-func TestSandboxExtenderScoring(t *testing.T) {
+func TestExtenderScoring(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s := newSandboxTestScheduling(t, ctx, makeNode("node1", "4", "8Gi"), makeNode("node2", "4", "8Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node1", "4", "8Gi"), makeNode("node2", "4", "8Gi"))
 	s.sched.Extenders = []fwktype.Extender{
 		&schedulertesting.FakeExtender{ExtenderName: "scorer", Weight: 1,
 			Prioritizers: []schedulertesting.PriorityConfig{{Function: schedulertesting.Node2PrioritizerExtender, Weight: 1}}},
@@ -718,16 +712,16 @@ func TestSandboxExtenderScoring(t *testing.T) {
 			Prioritizers: []schedulertesting.PriorityConfig{{Function: schedulertesting.ErrorPrioritizerExtender, Weight: 1}}},
 		&schedulertesting.FakeExtender{ExtenderName: "uninterested", UnInterested: true},
 	}
-	result, err := s.decide(ctx, framework.NewCycleState(), s.sched.Profiles["koord-scheduler"], makeSandboxPod("pod", "hash"))
+	result, err := s.decide(ctx, framework.NewCycleState(), s.sched.Profiles["koord-scheduler"], makeClassPod("pod", "hash"))
 	require.NoError(t, err, "extender scoring errors must not fail the full path")
 	assert.Equal(t, "node2", result.SuggestedHost)
 	assert.Equal(t, 2, result.EvaluatedNodes)
 }
 
-func TestDecideSandboxNominatedNodeSkipsFastPath(t *testing.T) {
+func TestDecideNominatedNodeSkipsFastPath(t *testing.T) {
 	ctx := context.Background()
 	koordmetrics.Register()
-	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 
 	// Prime the class so the fast path would place any pod of hash-a on node-1. The primed node has
@@ -735,13 +729,13 @@ func TestDecideSandboxNominatedNodeSkipsFastPath(t *testing.T) {
 	// it is skipped: this is what makes node-2 a discriminating outcome rather than a coincidence.
 	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(10, "node-1"), s.sched.CurrentCycle(), nil)
 
-	missCounter := koordmetrics.SandboxEquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), equivalenceCacheMissNominated.String())
+	missCounter := koordmetrics.EquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), equivalenceCacheMissNominated.String())
 	before, err := testutil.GetCounterMetricValue(missCounter)
 	require.NoError(t, err)
 
 	// A pod re-queued after preemption carries a NominatedNodeName. It must land on the nominated
 	// node the full path evaluates first, not the cached fast-path node.
-	pod := makeSandboxPod("p1", "hash-a")
+	pod := makeClassPod("p1", "hash-a")
 	pod.Status.NominatedNodeName = "node-2"
 
 	result, err := s.decide(ctx, framework.NewCycleState(), fwk, pod)
@@ -757,42 +751,42 @@ func TestDecideSandboxNominatedNodeSkipsFastPath(t *testing.T) {
 	assert.Equal(t, "node-1", node, "a nominated pod must not overwrite the class with its single-node result")
 }
 
-func TestDecideSandboxFastPathHitConsumesQuotaWithoutReclaim(t *testing.T) {
+func TestDecideFastPathHitConsumesQuotaWithoutReclaim(t *testing.T) {
 	ctx := context.Background()
-	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 
 	// Prime the class with a single slot on node-1. The first pod takes the fast path and consumes
 	// that slot; nothing binds in this test, mirroring a pod whose binding cycle later fails.
 	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(1, "node-1"), s.sched.CurrentCycle(), nil)
 
-	first, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-a"))
+	first, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-a"))
 	require.NoError(t, err)
 	assert.Equal(t, "node-1", first.SuggestedHost)
 	assert.Equal(t, 1, first.EvaluatedNodes, "the first pod must take the fast path")
 
 	// The slot is not reclaimed for the next pod: the exhausted class misses and the second pod
 	// pays the full path instead of reusing the consumed slot.
-	second, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p2", "hash-a"))
+	second, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p2", "hash-a"))
 	require.NoError(t, err)
 	assert.Equal(t, 2, second.FeasibleNodes, "the consumed slot must not be reclaimed; the second pod falls back to the full path")
 }
 
-func TestDecideSandboxPreFilterRejectionFallsBackToFullPath(t *testing.T) {
+func TestDecidePreFilterRejectionFallsBackToFullPath(t *testing.T) {
 	ctx := context.Background()
 	koordmetrics.Register()
-	s := newSandboxTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
-		schedulertesting.RegisterPreFilterPlugin("SandboxRejectingPreFilter", func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
+	s := newTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterPreFilterPlugin("RejectingPreFilter", func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
 			return &rejectingPreFilterPlugin{}, nil
 		}),
 	}, makeNode("node-1", "4", "8Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 
-	missCounter := koordmetrics.SandboxEquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), equivalenceCacheMissPreFilter.String())
+	missCounter := koordmetrics.EquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), equivalenceCacheMissPreFilter.String())
 	before, err := testutil.GetCounterMetricValue(missCounter)
 	require.NoError(t, err)
 
-	_, err = s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-a"))
+	_, err = s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-a"))
 	var fitErr *framework.FitError
 	require.ErrorAs(t, err, &fitErr, "a rejecting PreFilter must surface as an unschedulable FitError")
 
@@ -801,13 +795,13 @@ func TestDecideSandboxPreFilterRejectionFallsBackToFullPath(t *testing.T) {
 	assert.Equal(t, float64(1), after-before, "a PreFilter rejection must be recorded as a prefilter_failed miss before falling back")
 }
 
-func TestDecideSandboxFastPathRefreshesSnapshot(t *testing.T) {
+func TestDecideFastPathRefreshesSnapshot(t *testing.T) {
 	ctx := context.Background()
 	logger, _ := ktesting.NewTestContext(t)
-	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 
-	firstPod := makeSandboxPod("p1", "hash-a")
+	firstPod := makeClassPod("p1", "hash-a")
 	firstPod.Spec.Containers = []corev1.Container{{
 		Name: "main",
 		Ports: []corev1.ContainerPort{{
@@ -832,48 +826,48 @@ func TestDecideSandboxFastPathRefreshesSnapshot(t *testing.T) {
 	assert.Contains(t, fitErr.Diagnosis.UnschedulablePlugins, nodeports.Name)
 }
 
-func TestDecideSandboxFastPathMissFallsBackToFullPath(t *testing.T) {
+func TestDecideFastPathMissFallsBackToFullPath(t *testing.T) {
 	ctx := context.Background()
-	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 
 	snapshot, ok := fwk.SnapshotSharedLister().(*cache.Snapshot)
 	require.True(t, ok)
 	state := framework.NewCycleState()
-	preFilter := s.runSandboxPreFilter(ctx, state, fwk, makeSandboxPod("p1", "unknown"))
-	fastResult, _ := s.scheduleFromEquivalenceClass(ctx, state, fwk, makeSandboxPod("p1", "unknown"), equivalenceCacheKey(fwk.ProfileName(), "unknown"), snapshot, preFilter)
+	preFilter := s.runPreFilter(ctx, state, fwk, makeClassPod("p1", "unknown"))
+	fastResult, _ := s.scheduleFromEquivalenceClass(ctx, state, fwk, makeClassPod("p1", "unknown"), equivalenceCacheKey(fwk.ProfileName(), "unknown"), snapshot, preFilter)
 	assert.Empty(t, fastResult.SuggestedHost, "unknown class should miss")
 
 	// A miss falls back to the full path inside decide and backfills the class.
-	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-b"))
+	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-b"))
 	assert.NoError(t, err)
 	assert.Equal(t, "node-1", result.SuggestedHost)
 	_, ok, _ = s.equivalence.next(equivalenceCacheKey(fwk.ProfileName(), "hash-b"), s.sched.CurrentCycle())
 	assert.True(t, ok, "class should be backfilled after fallback")
 }
 
-func TestDecideSandboxRunsPreFilterOnceOnFullPath(t *testing.T) {
+func TestDecideRunsPreFilterOnceOnFullPath(t *testing.T) {
 	ctx := context.Background()
 	var preFilter *countingPreFilterPlugin
-	s := newSandboxTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
-		schedulertesting.RegisterPreFilterPlugin("SandboxCountingPreFilter", func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
+	s := newTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterPreFilterPlugin("CountingPreFilter", func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
 			preFilter = &countingPreFilterPlugin{}
 			return preFilter, nil
 		}),
 	}, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 
-	_, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-a"))
+	_, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-a"))
 	require.NoError(t, err)
 	assert.Equal(t, int32(1), preFilter.calls.Load(), "a full-path miss must not run PreFilter twice")
 }
 
-func TestDecideSandboxNoNodes(t *testing.T) {
+func TestDecideNoNodes(t *testing.T) {
 	ctx := context.Background()
-	s := newSandboxTestScheduling(t, ctx)
+	s := newTestScheduling(t, ctx)
 	fwk := s.sched.Profiles["koord-scheduler"]
 
-	_, err := s.decide(ctx, framework.NewCycleState(), fwk, makeSandboxPod("p1", "hash-a"))
+	_, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-a"))
 	assert.ErrorIs(t, err, scheduler.ErrNoNodesAvailable)
 }
 
@@ -882,10 +876,10 @@ func TestNumFeasibleNodesToFind(t *testing.T) {
 	fivePercent := int32(5)
 	allNodes := int32(100)
 	globalTenPercent := int32(10)
-	s := &equivalenceScheduling{percentageOfNodesToScore: globalTenPercent}
+	s := &EquivalenceScheduling{percentageOfNodesToScore: globalTenPercent}
 
 	assert.Equal(t, int32(200), s.numFeasibleNodesToFind(nil, 2000))
-	assert.Equal(t, int32(680), (&equivalenceScheduling{}).numFeasibleNodesToFind(nil, 2000))
+	assert.Equal(t, int32(680), (&EquivalenceScheduling{}).numFeasibleNodesToFind(nil, 2000))
 	assert.Equal(t, int32(680), s.numFeasibleNodesToFind(&adaptive, 2000))
 	assert.Equal(t, int32(100), s.numFeasibleNodesToFind(&fivePercent, 2000))
 	assert.Equal(t, int32(2000), s.numFeasibleNodesToFind(&allNodes, 2000))
@@ -914,11 +908,11 @@ func TestAdvanceNodeIndexConcurrent(t *testing.T) {
 
 func TestFindNodesThatPassFiltersWithNoCandidates(t *testing.T) {
 	ctx := context.Background()
-	s := newSandboxTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"))
+	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 	diagnosis := framework.Diagnosis{NodeToStatus: framework.NewDefaultNodeToStatus()}
 
-	nodes, err := s.findNodesThatPassFilters(ctx, fwk, framework.NewCycleState(), makeSandboxPod("p1", "hash"), &diagnosis, nil)
+	nodes, err := s.findNodesThatPassFilters(ctx, fwk, framework.NewCycleState(), makeClassPod("p1", "hash"), &diagnosis, nil)
 	require.NoError(t, err)
 	assert.Empty(t, nodes)
 }

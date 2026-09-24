@@ -95,7 +95,7 @@ type FrameworkExtender interface {
 
 	// SetBindingLimiter registers a BindingLimiter that bounds the number of concurrent binding
 	// cycles for the pods it handles. It must be called during setup, before scheduling starts.
-	// It is registered externally (e.g. by a custom workflow) to avoid import cycles.
+	// It is registered externally (e.g. by a scheduling assembly package) to avoid import cycles.
 	// A nil limiter disables the bound.
 	SetBindingLimiter(limiter BindingLimiter)
 
@@ -125,7 +125,7 @@ type FrameworkExtender interface {
 	RunResizePod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status
 }
 
-// SchedulingDecisionProvider lets a custom workflow override the node-selection decision for the
+// SchedulingDecisionProvider lets a scheduling extension override the node-selection decision for the
 // pods it handles, while keeping the upstream Scheduler.Run/ScheduleOne loop and reusing
 // FrameworkExtenderFactory.scheduleOne's Koordinator lifecycle hooks (diagnosis, monitor, auditor,
 // reservation nomination, ResizePod). FrameworkExtenderFactory.scheduleOne calls SchedulePod instead
@@ -152,6 +152,18 @@ type BindingLimiter interface {
 	// Release returns the slot held for the pod. It is a no-op when the pod holds no slot, so
 	// repeated calls across the binding lifecycle are harmless.
 	Release(pod *corev1.Pod)
+}
+
+// EquivalenceClass groups pods whose scheduling decisions are interchangeable. Implementations own
+// the grouping semantics — membership and identity — so consumers (equivalence-class scheduling,
+// binding concurrency limiting) stay agnostic of how pods are grouped and the same machinery can
+// serve any workload class. Key must be non-empty whenever Handles reports true, and pods sharing a
+// Key must be equivalent in every scheduling-relevant field.
+type EquivalenceClass interface {
+	// Handles reports whether the pod participates in this grouping.
+	Handles(pod *corev1.Pod) bool
+	// Key returns the identity of the group the pod belongs to, or "" when it has none.
+	Key(pod *corev1.Pod) string
 }
 
 // SchedulingTransformer is the parent type for all the custom transformer plugins.

@@ -157,9 +157,9 @@ const (
 	// owner: @tan90github
 	// alpha: v1.9
 	//
-	// SandboxCustomWorkflow enables equivalence-class node selection and binding concurrency
+	// EnableSandboxEquivalenceScheduling enables equivalence-class node selection and binding concurrency
 	// limits for sandbox pods while reusing the upstream scheduler loop.
-	SandboxCustomWorkflow featuregate.Feature = "SandboxCustomWorkflow"
+	EnableSandboxEquivalenceScheduling featuregate.Feature = "EnableSandboxEquivalenceScheduling"
 )
 
 var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
@@ -191,7 +191,7 @@ var defaultSchedulerFeatureGates = map[featuregate.Feature]featuregate.FeatureSp
 	GangPendingPodsConditionPatch:             {Default: true, PreRelease: featuregate.Beta},
 	EnableInlineBatchSchedule:                 {Default: false, PreRelease: featuregate.Alpha},
 	EnableBatchScheduleNodeSnapshot:           {Default: true, PreRelease: featuregate.Beta},
-	SandboxCustomWorkflow:                     {Default: false, PreRelease: featuregate.Alpha},
+	EnableSandboxEquivalenceScheduling:        {Default: false, PreRelease: featuregate.Alpha},
 }
 
 func init() {

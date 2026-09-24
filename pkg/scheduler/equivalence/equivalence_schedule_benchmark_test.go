@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sandbox
+package equivalence
 
 import (
 	"context"
@@ -44,9 +44,9 @@ import (
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 )
 
-const sandboxBenchmarkNodeCount = 2000
+const benchmarkNodeCount = 2000
 
-func BenchmarkSandboxScorePercentage(b *testing.B) {
+func BenchmarkEquivalenceScorePercentage(b *testing.B) {
 	fivePercent := int32(5)
 	kubernetesAdaptive := int32(0)
 	allNodes := int32(100)
@@ -55,31 +55,31 @@ func BenchmarkSandboxScorePercentage(b *testing.B) {
 		name       string
 		percentage *int32
 	}{
-		{name: "sandbox-5", percentage: &fivePercent},
-		{name: "kubernetes-adaptive-34", percentage: &kubernetesAdaptive},
-		{name: "all-100", percentage: &allNodes},
+		{name: "5-percent", percentage: &fivePercent},
+		{name: "kubernetes-adaptive", percentage: &kubernetesAdaptive},
+		{name: "100-percent", percentage: &allNodes},
 	}
 
 	for _, tt := range testCases {
 		b.Run(tt.name, func(b *testing.B) {
 			b.Run("equivalence", func(b *testing.B) {
-				benchmarkSandboxDecisions(b, tt.percentage, true)
+				benchmarkDecisions(b, tt.percentage, true)
 			})
 			b.Run("full-path", func(b *testing.B) {
-				benchmarkSandboxDecisions(b, tt.percentage, false)
+				benchmarkDecisions(b, tt.percentage, false)
 			})
 		})
 	}
 }
 
-func benchmarkSandboxDecisions(b *testing.B, percentage *int32, equivalence bool) {
+func benchmarkDecisions(b *testing.B, percentage *int32, equivalence bool) {
 	b.Helper()
 	b.StopTimer()
 
 	ctx := context.Background()
-	s := newSandboxBenchmarkScheduling(b, ctx, percentage, sandboxBenchmarkNodeCount)
+	s := newBenchmarkScheduling(b, ctx, percentage, benchmarkNodeCount)
 	fwk := s.sched.Profiles["koord-scheduler"]
-	pod := makeSandboxPod("benchmark", "benchmark-hash")
+	pod := makeClassPod("benchmark", "benchmark-hash")
 	pod.Spec.Containers = []corev1.Container{{
 		Name: "main",
 		Resources: corev1.ResourceRequirements{
@@ -117,8 +117,8 @@ func benchmarkSandboxDecisions(b *testing.B, percentage *int32, equivalence bool
 		if err != nil {
 			b.Fatal(err)
 		}
-		preFilter := s.runSandboxPreFilter(ctx, state, fwk, pod)
-		result, _, err := s.scheduleSandboxPod(ctx, state, fwk, pod, snapshot, preFilter)
+		preFilter := s.runPreFilter(ctx, state, fwk, pod)
+		result, _, err := s.schedulePod(ctx, state, fwk, pod, snapshot, preFilter)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -134,7 +134,7 @@ func benchmarkSandboxDecisions(b *testing.B, percentage *int32, equivalence bool
 	b.ReportMetric(float64(fullPaths)*100/operations, "full-path-pct")
 }
 
-func BenchmarkSandboxPhaseCost(b *testing.B) {
+func BenchmarkEquivalencePhaseCost(b *testing.B) {
 	fivePercent := int32(5)
 	kubernetesAdaptive := int32(0)
 	allNodes := int32(100)
@@ -143,31 +143,31 @@ func BenchmarkSandboxPhaseCost(b *testing.B) {
 		name       string
 		percentage *int32
 	}{
-		{name: "sandbox-5", percentage: &fivePercent},
-		{name: "kubernetes-adaptive-34", percentage: &kubernetesAdaptive},
-		{name: "all-100", percentage: &allNodes},
+		{name: "5-percent", percentage: &fivePercent},
+		{name: "kubernetes-adaptive", percentage: &kubernetesAdaptive},
+		{name: "100-percent", percentage: &allNodes},
 	}
 
 	for _, tt := range testCases {
 		b.Run(tt.name, func(b *testing.B) {
 			b.Run("prefilter-filter", func(b *testing.B) {
-				benchmarkSandboxFilterPhase(b, tt.percentage)
+				benchmarkFilterPhase(b, tt.percentage)
 			})
 			b.Run("prescore-score-sort", func(b *testing.B) {
-				benchmarkSandboxScorePhase(b, tt.percentage)
+				benchmarkScorePhase(b, tt.percentage)
 			})
 		})
 	}
 }
 
-func benchmarkSandboxFilterPhase(b *testing.B, percentage *int32) {
+func benchmarkFilterPhase(b *testing.B, percentage *int32) {
 	b.Helper()
 	b.StopTimer()
 
 	ctx := context.Background()
-	s := newSandboxBenchmarkScheduling(b, ctx, percentage, sandboxBenchmarkNodeCount)
+	s := newBenchmarkScheduling(b, ctx, percentage, benchmarkNodeCount)
 	fwk := s.sched.Profiles["koord-scheduler"]
-	pod := makeSandboxPod("benchmark", "benchmark-hash")
+	pod := makeClassPod("benchmark", "benchmark-hash")
 	pod.Spec.Containers = []corev1.Container{{
 		Name: "main",
 		Resources: corev1.ResourceRequirements{
@@ -200,20 +200,20 @@ func benchmarkSandboxFilterPhase(b *testing.B, percentage *int32) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if len(feasibleNodes) != int(s.numFeasibleNodesToFind(percentage, sandboxBenchmarkNodeCount)) {
+		if len(feasibleNodes) != int(s.numFeasibleNodesToFind(percentage, benchmarkNodeCount)) {
 			b.Fatalf("unexpected feasible node count %d", len(feasibleNodes))
 		}
 	}
 }
 
-func benchmarkSandboxScorePhase(b *testing.B, percentage *int32) {
+func benchmarkScorePhase(b *testing.B, percentage *int32) {
 	b.Helper()
 	b.StopTimer()
 
 	ctx := context.Background()
-	s := newSandboxBenchmarkScheduling(b, ctx, percentage, sandboxBenchmarkNodeCount)
+	s := newBenchmarkScheduling(b, ctx, percentage, benchmarkNodeCount)
 	fwk := s.sched.Profiles["koord-scheduler"]
-	pod := makeSandboxPod("benchmark", "benchmark-hash")
+	pod := makeClassPod("benchmark", "benchmark-hash")
 	pod.Spec.Containers = []corev1.Container{{
 		Name: "main",
 		Resources: corev1.ResourceRequirements{
@@ -231,7 +231,7 @@ func benchmarkSandboxScorePhase(b *testing.B, percentage *int32) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	nodes = nodes[:s.numFeasibleNodesToFind(percentage, sandboxBenchmarkNodeCount)]
+	nodes = nodes[:s.numFeasibleNodesToFind(percentage, benchmarkNodeCount)]
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -249,7 +249,7 @@ func benchmarkSandboxScorePhase(b *testing.B, percentage *int32) {
 	}
 }
 
-func newSandboxBenchmarkScheduling(b *testing.B, ctx context.Context, percentage *int32, nodeCount int) *equivalenceScheduling {
+func newBenchmarkScheduling(b *testing.B, ctx context.Context, percentage *int32, nodeCount int) *EquivalenceScheduling {
 	b.Helper()
 	logger, _ := ktesting.NewTestContext(b)
 	metrics.Register()
@@ -281,12 +281,12 @@ func newSandboxBenchmarkScheduling(b *testing.B, ctx context.Context, percentage
 		b.Fatal(err)
 	}
 
-	s := newEquivalenceScheduling(&scheduler.Scheduler{
+	s := NewEquivalenceScheduling(&scheduler.Scheduler{
 		Cache: schedulerCache,
 		Profiles: profile.Map{
 			"koord-scheduler": fwk,
 		},
-	}, nil, defaultEquivalenceClassCacheSize)
-	s.equivalence = newEquivalenceClassCache(time.Hour, defaultEquivalenceClassCacheSize)
+	}, nil, DefaultEquivalenceClassCacheSize, fakeClass)
+	s.equivalence = newEquivalenceClassCache(time.Hour, DefaultEquivalenceClassCacheSize)
 	return s
 }

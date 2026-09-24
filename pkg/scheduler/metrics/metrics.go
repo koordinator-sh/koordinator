@@ -70,47 +70,47 @@ var (
 			Help:      "The number of of nodes out of the evaluated ones that fit the pod when find the suggested node",
 			Buckets:   metrics.ExponentialBuckets(1, 2, 24),
 		})
-	SandboxEquivalenceClassHits = metrics.NewCounterVec(
+	EquivalenceClassHits = metrics.NewCounterVec(
 		&metrics.CounterOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
-			Name:           "sandbox_equivalence_class_hits",
-			Help:           "Number of Sandbox scheduling decisions served by the equivalence-class fast path.",
+			Name:           "equivalence_class_hits",
+			Help:           "Number of Pods scheduling decisions served by the equivalence-class fast path.",
 			StabilityLevel: metrics.ALPHA,
 		}, []string{"profile"})
-	SandboxEquivalenceClassMisses = metrics.NewCounterVec(
+	EquivalenceClassMisses = metrics.NewCounterVec(
 		&metrics.CounterOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
-			Name:           "sandbox_equivalence_class_misses",
-			Help:           "Number of Sandbox equivalence-class lookups that fell back to full scheduling, labeled by reason.",
+			Name:           "equivalence_class_misses",
+			Help:           "Number of equivalence-class lookups that fell back to full scheduling, labeled by reason.",
 			StabilityLevel: metrics.ALPHA,
 		}, []string{"profile", "reason"})
-	SandboxEquivalenceClassFlushes = metrics.NewCounterVec(
+	EquivalenceClassFlushes = metrics.NewCounterVec(
 		&metrics.CounterOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
-			Name:           "sandbox_equivalence_class_flushes",
-			Help:           "Number of Sandbox equivalence-class cache flushes, labeled by reason.",
+			Name:           "equivalence_class_flushes",
+			Help:           "Number of equivalence-class cache flushes, labeled by reason.",
 			StabilityLevel: metrics.ALPHA,
 		}, []string{"reason"})
-	SandboxEquivalenceClassCacheEntries = metrics.NewGauge(
+	EquivalenceClassCacheEntries = metrics.NewGauge(
 		&metrics.GaugeOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
-			Name:           "sandbox_equivalence_class_cache_entries",
-			Help:           "Current number of Sandbox equivalence-class cache entries.",
+			Name:           "equivalence_class_cache_entries",
+			Help:           "Current number of equivalence-class cache entries.",
 			StabilityLevel: metrics.ALPHA,
 		})
-	SandboxSchedulingDuration = metrics.NewHistogramVec(
+	EquivalenceClassSchedulingDuration = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
-			Name:           "sandbox_scheduling_duration_seconds",
-			Help:           "Duration of Sandbox scheduling decisions, labeled by fast/full path and result.",
+			Name:           "scheduling_duration_seconds",
+			Help:           "Duration of equivalence-class scheduling decisions, labeled by fast/full path and result.",
 			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
 			StabilityLevel: metrics.ALPHA,
 		}, []string{"profile", "path", "result"})
-	SandboxBindingSlotWaitDuration = metrics.NewHistogramVec(
+	BindingSlotWaitDuration = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
-			Name:           "sandbox_binding_slot_wait_duration_seconds",
-			Help:           "Time spent waiting for a Sandbox binding slot.",
+			Name:           "binding_slot_wait_duration_seconds",
+			Help:           "Time spent waiting for a  binding slot.",
 			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
 			StabilityLevel: metrics.ALPHA,
 		}, []string{"profile"})
@@ -237,12 +237,12 @@ var (
 		ReservationResource,
 		PodSchedulingEvaluatedNodes,
 		PodSchedulingFeasibleNodes,
-		SandboxEquivalenceClassHits,
-		SandboxEquivalenceClassMisses,
-		SandboxEquivalenceClassFlushes,
-		SandboxEquivalenceClassCacheEntries,
-		SandboxSchedulingDuration,
-		SandboxBindingSlotWaitDuration,
+		EquivalenceClassHits,
+		EquivalenceClassMisses,
+		EquivalenceClassFlushes,
+		EquivalenceClassCacheEntries,
+		EquivalenceClassSchedulingDuration,
+		BindingSlotWaitDuration,
 		ElasticQuotaProcessLatency,
 		SecondaryDeviceNotWellPlannedNodes,
 		WaitingGangGroupNumber,
@@ -348,28 +348,28 @@ func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, v
 	ReservationResource.With(labels).Set(value)
 }
 
-func RecordSandboxBindingSlotWaitDuration(profile string, latency time.Duration) {
-	SandboxBindingSlotWaitDuration.WithLabelValues(profile).Observe(latency.Seconds())
+func RecordBindingSlotWaitDuration(profile string, latency time.Duration) {
+	BindingSlotWaitDuration.WithLabelValues(profile).Observe(latency.Seconds())
 }
 
-func RecordSandboxEquivalenceClassCacheEntries(delta int) {
-	SandboxEquivalenceClassCacheEntries.Add(float64(delta))
+func RecordEquivalenceClassCacheEntries(delta int) {
+	EquivalenceClassCacheEntries.Add(float64(delta))
 }
 
-func RecordSandboxEquivalenceClassFlush(reason string) {
-	SandboxEquivalenceClassFlushes.WithLabelValues(reason).Inc()
+func RecordEquivalenceClassFlush(reason string) {
+	EquivalenceClassFlushes.WithLabelValues(reason).Inc()
 }
 
-func RecordSandboxEquivalenceClassHit(profile string) {
-	SandboxEquivalenceClassHits.WithLabelValues(profile).Inc()
+func RecordEquivalenceClassHit(profile string) {
+	EquivalenceClassHits.WithLabelValues(profile).Inc()
 }
 
-func RecordSandboxEquivalenceClassMiss(profile, reason string) {
-	SandboxEquivalenceClassMisses.WithLabelValues(profile, reason).Inc()
+func RecordEquivalenceClassMiss(profile, reason string) {
+	EquivalenceClassMisses.WithLabelValues(profile, reason).Inc()
 }
 
-func RecordSandboxSchedulingDuration(profile, path, result string, latency time.Duration) {
-	SandboxSchedulingDuration.WithLabelValues(profile, path, result).Observe(latency.Seconds())
+func RecordEquivalenceClassSchedulingDuration(profile, path, result string, latency time.Duration) {
+	EquivalenceClassSchedulingDuration.WithLabelValues(profile, path, result).Observe(latency.Seconds())
 }
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
