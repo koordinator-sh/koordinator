@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sandbox
+package equivalence
 
 import (
 	"strconv"
@@ -42,7 +42,7 @@ func quotaNodes(quota int64, names ...string) []equivalenceClassNode {
 }
 
 func TestEquivalenceClassCacheResourceNames(t *testing.T) {
-	c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
+	c := newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 	t.Cleanup(c.flush)
 	pod := makeQuotaPod("0", "0")
 	pod.Spec.Resources = &corev1.ResourceRequirements{
@@ -71,7 +71,7 @@ func TestEquivalenceClassCacheResourceNames(t *testing.T) {
 func TestEquivalenceClassCache(t *testing.T) {
 	newTestCache := func() (*equivalenceClassCache, *time.Time) {
 		now := time.Now()
-		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
+		c := newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 		c.now = func() time.Time { return now }
 		return c, &now
 	}
@@ -204,7 +204,7 @@ func TestEquivalenceClassCache(t *testing.T) {
 		for i := 0; i < 150000; i++ {
 			c.store(strconv.Itoa(i), nodes, int64(i), nil)
 		}
-		assert.Len(t, c.entries, defaultEquivalenceClassCacheSize)
+		assert.Len(t, c.entries, DefaultEquivalenceClassCacheSize)
 		assert.Contains(t, c.entries, "149999")
 		assert.NotContains(t, c.entries, "0")
 	})
@@ -326,7 +326,7 @@ func TestEquivalenceClassCache(t *testing.T) {
 		require.Equal(t, "rejected", node)
 		c.rejectNode("h1", node, 2)
 		assert.Zero(t, c.entries["h1"].consumed)
-		for i := 0; i < defaultDriftFactor*2; i++ {
+		for i := 0; i < DefaultDriftFactor*2; i++ {
 			node, ok, _ = c.next("h1", int64(i+3))
 			require.True(t, ok)
 			assert.Equal(t, "accepted", node)
@@ -366,7 +366,7 @@ func TestEquivalenceClassCache(t *testing.T) {
 }
 
 func TestEquivalenceClassCacheConcurrentAccess(t *testing.T) {
-	c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
+	c := newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 	const workers = 8
 	const iterations = 1000
 
@@ -423,17 +423,17 @@ func TestEquivalenceClassCacheWorkingSetBoundary(t *testing.T) {
 
 func TestEquivalenceClassCacheEntryGauge(t *testing.T) {
 	koordmetrics.Register()
-	before, err := testutil.GetGaugeMetricValue(koordmetrics.SandboxEquivalenceClassCacheEntries)
+	before, err := testutil.GetGaugeMetricValue(koordmetrics.EquivalenceClassCacheEntries)
 	require.NoError(t, err)
 
 	c := newEquivalenceClassCache(time.Second, 2)
 	c.store("h1", quotaNodes(1, "node-a"), 1, nil)
-	afterStore, err := testutil.GetGaugeMetricValue(koordmetrics.SandboxEquivalenceClassCacheEntries)
+	afterStore, err := testutil.GetGaugeMetricValue(koordmetrics.EquivalenceClassCacheEntries)
 	require.NoError(t, err)
 	assert.Equal(t, before+1, afterStore)
 
 	c.store("h2", quotaNodes(1, "node-b"), 2, nil)
-	afterSecondStore, err := testutil.GetGaugeMetricValue(koordmetrics.SandboxEquivalenceClassCacheEntries)
+	afterSecondStore, err := testutil.GetGaugeMetricValue(koordmetrics.EquivalenceClassCacheEntries)
 	require.NoError(t, err)
 	assert.Equal(t, before+2, afterSecondStore)
 
@@ -441,27 +441,27 @@ func TestEquivalenceClassCacheEntryGauge(t *testing.T) {
 	c.next("h2", 3)
 	c.next("h1", 4)
 	c.next("h2", 4)
-	afterExhaustion, err := testutil.GetGaugeMetricValue(koordmetrics.SandboxEquivalenceClassCacheEntries)
+	afterExhaustion, err := testutil.GetGaugeMetricValue(koordmetrics.EquivalenceClassCacheEntries)
 	require.NoError(t, err)
 	assert.Equal(t, before, afterExhaustion)
 
 	c.store("h3", quotaNodes(1, "node-c"), 4, nil)
 	c.flushNodeEvent()
-	afterFlush, err := testutil.GetGaugeMetricValue(koordmetrics.SandboxEquivalenceClassCacheEntries)
+	afterFlush, err := testutil.GetGaugeMetricValue(koordmetrics.EquivalenceClassCacheEntries)
 	require.NoError(t, err)
 	assert.Equal(t, before, afterFlush)
 }
 
 func TestEquivalenceClassCacheMissReasons(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
-		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
+		c := newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 		_, ok, reason := c.next("hash", 1)
 		assert.False(t, ok)
 		assert.Equal(t, equivalenceCacheMissEmpty, reason)
 	})
 
 	t.Run("unknown class", func(t *testing.T) {
-		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
+		c := newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 		c.store("hash-a", quotaNodes(1, "node-a"), 1, nil)
 		_, ok, reason := c.next("hash-b", 2)
 		assert.False(t, ok)
@@ -470,7 +470,7 @@ func TestEquivalenceClassCacheMissReasons(t *testing.T) {
 
 	t.Run("expired", func(t *testing.T) {
 		now := time.Now()
-		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
+		c := newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 		c.now = func() time.Time { return now }
 		c.store("hash", quotaNodes(1, "node-a"), 1, nil)
 		now = now.Add(2 * time.Second)
@@ -480,7 +480,7 @@ func TestEquivalenceClassCacheMissReasons(t *testing.T) {
 	})
 
 	t.Run("drift", func(t *testing.T) {
-		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
+		c := newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 		c.store("hash", quotaNodes(100, "node-a", "node-b"), 1, nil)
 		for i := 0; i < 4; i++ {
 			_, ok, _ := c.next("hash", int64(i+2))
@@ -492,7 +492,7 @@ func TestEquivalenceClassCacheMissReasons(t *testing.T) {
 	})
 
 	t.Run("quota exhausted", func(t *testing.T) {
-		c := newEquivalenceClassCache(time.Second, defaultEquivalenceClassCacheSize)
+		c := newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 		c.store("hash", quotaNodes(1, "node-a"), 1, nil)
 		_, ok, _ := c.next("hash", 2)
 		assert.True(t, ok)

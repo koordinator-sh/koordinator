@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sandbox
+package equivalence
 
 import (
 	"container/list"
@@ -23,6 +23,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 
 	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
@@ -30,17 +31,17 @@ import (
 // defaultEquivalenceClassTTL is a backstop lifetime for a cached scheduling decision. The
 // primary invalidation dimensions are per-node quota exhaustion and the consumption drift
 // threshold below; the TTL only exists so that a stale entry cannot outlive a scheduling burst.
-const defaultEquivalenceClassTTL = 5 * time.Second
+const DefaultEquivalenceClassTTL = 5 * time.Second
 
-// defaultEquivalenceClassCacheSize is the maximum number of sandbox template hashes retained
-// by the equivalence cache when no explicit scheduler flag is provided.
-const defaultEquivalenceClassCacheSize = 16
+// DefaultEquivalenceClassCacheSize is the maximum number of equivalence classes retained by the
+// cache when no explicit size is provided.
+const DefaultEquivalenceClassCacheSize = 16
 
-// defaultDriftFactor bounds how many pods of the class may be placed from one cached decision
+// DefaultDriftFactor bounds how many pods of the class may be placed from one cached decision
 // before the score ordering is recomputed: consumed >= driftFactor*len(nodes) drops the entry.
 // Every consumption is one Assume against the frozen resource view, so this directly bounds the
 // view drift rather than wall-clock time.
-const defaultDriftFactor = 2
+const DefaultDriftFactor = 2
 
 // equivalenceClassNode is one feasible node of the class together with the remaining number of
 // class pods it can still hold. The quota is computed at backfill time as
@@ -93,7 +94,7 @@ func (r equivalenceCacheMissReason) String() string {
 }
 
 // equivalenceClassCache keeps a bounded set of scheduling decisions keyed by a profile-namespaced
-// sandbox template hash. Entries are reused independently, so interleaved profiles and hashes do
+// equivalence class key. Entries are reused independently, so interleaved profiles and keys do
 // not invalidate one another. The LRU bound limits memory while retaining the most recently used
 // equivalence classes.
 type equivalenceClassCache struct {
@@ -108,7 +109,8 @@ type equivalenceClassCache struct {
 
 func newEquivalenceClassCache(ttl time.Duration, capacity int) *equivalenceClassCache {
 	if capacity <= 0 {
-		capacity = defaultEquivalenceClassCacheSize
+		klog.Warningf("capacity must be > 0 for equivalenceClassCache, use default capacity: %d", DefaultEquivalenceClassCacheSize)
+		capacity = DefaultEquivalenceClassCacheSize
 	}
 	return &equivalenceClassCache{
 		entries:              make(map[string]*equivalenceClassEntry, capacity),
@@ -154,7 +156,7 @@ func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, 
 	}
 	entry.lruElement = c.lru.PushFront(entry)
 	c.entries[key] = entry
-	koordmetrics.RecordSandboxEquivalenceClassCacheEntries(1)
+	koordmetrics.RecordEquivalenceClassCacheEntries(1)
 	for len(c.entries) > c.capacity {
 		c.removeLocked(c.lru.Back().Value.(*equivalenceClassEntry))
 	}
@@ -229,7 +231,7 @@ func (c *equivalenceClassCache) next(key string, cycle int64) (string, bool, equ
 		c.removeLocked(entry)
 		return "", false, equivalenceCacheMissExpired
 	}
-	if entry.consumed >= defaultDriftFactor*len(entry.nodes) {
+	if entry.consumed >= DefaultDriftFactor*len(entry.nodes) {
 		c.removeLocked(entry)
 		return "", false, equivalenceCacheMissDrift
 	}
@@ -264,7 +266,7 @@ func (c *equivalenceClassCache) flush() {
 	c.nodeEventInvalidated = make(map[string]struct{})
 	c.entries = make(map[string]*equivalenceClassEntry, c.capacity)
 	c.lru.Init()
-	koordmetrics.RecordSandboxEquivalenceClassCacheEntries(-entryCount)
+	koordmetrics.RecordEquivalenceClassCacheEntries(-entryCount)
 }
 
 // flushNodeEvent drops all cached classes and remembers the affected keys so the next lookup can
@@ -278,7 +280,7 @@ func (c *equivalenceClassCache) flushNodeEvent() {
 	}
 	c.entries = make(map[string]*equivalenceClassEntry, c.capacity)
 	c.lru.Init()
-	koordmetrics.RecordSandboxEquivalenceClassCacheEntries(-entryCount)
+	koordmetrics.RecordEquivalenceClassCacheEntries(-entryCount)
 }
 
 // removeNode removes a node from classes whose quotas depend on changed resources, or all classes when
@@ -346,7 +348,7 @@ func (c *equivalenceClassCache) removeLocked(entry *equivalenceClassEntry) {
 	}
 	if current, ok := c.entries[entry.key]; ok && current == entry {
 		delete(c.entries, entry.key)
-		koordmetrics.RecordSandboxEquivalenceClassCacheEntries(-1)
+		koordmetrics.RecordEquivalenceClassCacheEntries(-1)
 	}
 	if entry.lruElement != nil {
 		c.lru.Remove(entry.lruElement)

@@ -13,7 +13,7 @@
 set -eu
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PRIMITIVES_FILE="${REPO_ROOT}/pkg/scheduler/sandbox/upstream_primitives.go"
+PRIMITIVES_FILE="${REPO_ROOT}/pkg/scheduler/equivalence/upstream_primitives.go"
 GOMOD_FILE="${REPO_ROOT}/go.mod"
 
 find_go() {
@@ -32,9 +32,11 @@ find_go() {
     exit 1
 }
 
+# extract_func prints one function from <file> <name>. It matches both upstream's method form
+# ("func (sched *Scheduler) name(") and the local free-function form ("func name(").
 extract_func() {
     awk -v name="$2" '
-        $0 ~ "^func " name "\\(" { capture=1 }
+        $0 ~ "^func (\\([^)]*\\) )?" name "\\(" { capture=1 }
         capture { print }
         capture && /^}/ { exit }
     ' "$1"
@@ -74,9 +76,14 @@ if [ ! -f "${UPSTREAM_FILE}" ]; then
     exit 1
 fi
 
-for fn in prioritizeNodes findNodesThatPassExtenders; do
-    # Normalize local aliases (fwktype->fwk, corev1->v1) to match upstream naming.
-    extract_func "${PRIMITIVES_FILE}" "${fn}" | sed 's/fwktype\./fwk./g; s/corev1\./v1./g' > "${TMPDIR_BASE}/local.tmp"
+for fn in prioritizeNodes findNodesThatPassExtenders hasScoring hasExtenderFilters; do
+    # Normalize the two expected shape differences back to upstream's, so the comparison is over
+    # the bodies alone: import aliases (fwktype->fwk, corev1->v1) and the receiver-turned-first-
+    # parameter ("func name(sched *scheduler.Scheduler," -> "func (sched *Scheduler) name(").
+    extract_func "${PRIMITIVES_FILE}" "${fn}" |
+        sed 's/fwktype\./fwk./g; s/corev1\./v1./g' |
+        sed 's/^func '"${fn}"'(sched \*scheduler\.Scheduler, /func (sched *Scheduler) '"${fn}"'(/' |
+        sed 's/^func '"${fn}"'(sched \*scheduler\.Scheduler)/func (sched *Scheduler) '"${fn}"'()/' > "${TMPDIR_BASE}/local.tmp"
     extract_func "${UPSTREAM_FILE}" "${fn}" > "${TMPDIR_BASE}/upstream.tmp"
 
     if [ ! -s "${TMPDIR_BASE}/upstream.tmp" ]; then

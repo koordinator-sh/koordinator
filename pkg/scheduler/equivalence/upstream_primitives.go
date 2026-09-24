@@ -16,20 +16,29 @@ limitations under the License.
 */
 
 // This file contains verbatim copies of unexported functions from the upstream Kubernetes
-// scheduler so the sandbox scheduling workflow can call them without importing the scheduler
+// scheduler so the equivalence-class path can call them without importing the scheduler
 // package's internals.
 //
 // Forked from k8s.io/kubernetes@v1.35.6/pkg/scheduler/schedule_one.go
 //
-// The functions below (prioritizeNodes, findNodesThatPassExtenders) are kept byte-identical
-// to upstream except for import alias differences (fwk→fwktype, v1→corev1). Do NOT add local
-// logic here. If a function needs local modifications, it belongs in sandbox_schedule.go
-// with DIFF markers, not in this file.
+// The functions below are kept body-identical to upstream. Two shapes appear here, both accepted
+// by hack/verify-upstream-sync.sh after it normalizes them back to upstream's:
+//
+//   - Free functions upstream declares as free functions (prioritizeNodes,
+//     findNodesThatPassExtenders): only import aliases differ (fwk→fwktype, v1→corev1).
+//   - Methods upstream binds to *Scheduler (hasScoring, hasExtenderFilters): the receiver becomes
+//     an explicit first parameter so the unexported method is reachable from outside the scheduler
+//     package. The body is untouched.
+//
+// Do NOT add local logic here. If a function body needs local modifications, it belongs in
+// equivalence_schedule.go with DIFF markers, not in this file. Note that numFeasibleNodesToFind is
+// deliberately NOT here: upstream reads the unexported sched.percentageOfNodesToScore, which no
+// caller outside the scheduler package can supply unchanged.
 //
 // Maintenance: after every k8s.io/kubernetes version upgrade, run hack/verify-upstream-sync.sh
 // to detect any drift between this file and the upstream source.
 
-package sandbox
+package equivalence
 
 import (
 	"context"
@@ -40,9 +49,38 @@ import (
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
 	fwktype "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 )
+
+// hasScoring is a verbatim copy of the upstream unexported method
+// (k8s.io/kubernetes@v1.35.6/pkg/scheduler/schedule_one.go:602). Upstream binds it to *Scheduler;
+// here the receiver becomes an explicit first parameter so the body can stay byte-identical while
+// remaining reachable from outside the scheduler package.
+func hasScoring(sched *scheduler.Scheduler, fwk framework.Framework) bool {
+	if fwk.HasScorePlugins() {
+		return true
+	}
+	for _, extender := range sched.Extenders {
+		if extender.IsPrioritizer() {
+			return true
+		}
+	}
+	return false
+}
+
+// hasExtenderFilters is a verbatim copy of the upstream unexported method
+// (k8s.io/kubernetes@v1.35.6/pkg/scheduler/schedule_one.go:615), with the same
+// receiver-to-first-parameter adaptation as hasScoring.
+func hasExtenderFilters(sched *scheduler.Scheduler) bool {
+	for _, extender := range sched.Extenders {
+		if extender.IsFilter() {
+			return true
+		}
+	}
+	return false
+}
 
 // prioritizeNodes is a verbatim copy of the upstream unexported function.
 func prioritizeNodes(

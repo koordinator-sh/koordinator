@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sandbox
+package bindinglimiter
 
 import (
 	"context"
@@ -29,12 +29,23 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
+// fakeClass is the EquivalenceClass under test. Real workload classes declare membership their own
+// way; this one groups the pods carrying the fake equivalence class labels.
+var fakeClass = frameworkext.NewFakeEquivalenceClass()
+
+// makeClassPod builds a pod of the fake class. An empty key yields a marked pod the class does not
+// handle.
+func makeClassPod(name, key string) *corev1.Pod {
+	return fakeClass.MakePod(name, key)
+}
+
 func TestBindingLimiterHandles(t *testing.T) {
-	reserveSandboxPod := makeSandboxPod("reserve", "hash-a")
-	reserveSandboxPod.Annotations = map[string]string{reservationutil.AnnotationReservePod: "true"}
+	reserveClassPod := makeClassPod("reserve", "key-a")
+	reserveClassPod.Annotations = map[string]string{reservationutil.AnnotationReservePod: "true"}
 
 	tests := []struct {
 		name string
@@ -47,37 +58,42 @@ func TestBindingLimiterHandles(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "ordinary pod is not handled",
+			name: "pod outside the class is not handled",
 			pod:  &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "ordinary", UID: "ordinary"}},
 			want: false,
 		},
 		{
-			name: "sandbox pod with template hash is handled",
-			pod:  makeSandboxPod("sandbox", "hash-a"),
+			name: "class pod with a key is handled",
+			pod:  makeClassPod("member", "key-a"),
 			want: true,
 		},
 		{
-			name: "sandbox pod without template hash is not handled",
-			pod:  makeSandboxPod("sandbox-no-hash", ""),
+			name: "class pod without a key is not handled",
+			pod:  makeClassPod("member-no-key", ""),
 			want: false,
 		},
 		{
-			name: "reserve sandbox pod is not handled",
-			pod:  reserveSandboxPod,
+			name: "reserve pod is never handled even when it carries class labels",
+			pod:  reserveClassPod,
 			want: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := newBindingLimiter(1)
+			l := NewBindingLimiter(1, fakeClass)
 			assert.Equal(t, tt.want, l.Handles(tt.pod))
 		})
 	}
 }
 
+func TestBindingLimiterDefaultsOnInvalidCapacity(t *testing.T) {
+	l := NewBindingLimiter(0, fakeClass)
+	assert.Equal(t, DefaultMaxConcurrentBindings, cap(l.slots))
+}
+
 func TestBindingLimiterAcquireReleaseHoldsSingleSlot(t *testing.T) {
-	l := newBindingLimiter(2)
-	pod := makeSandboxPod("a", "hash-a")
+	l := NewBindingLimiter(2, fakeClass)
+	pod := makeClassPod("a", "key-a")
 
 	require.NoError(t, l.Acquire(context.Background(), pod))
 	assert.Len(t, l.slots, 1, "one slot must be taken after Acquire")
@@ -89,7 +105,7 @@ func TestBindingLimiterAcquireReleaseHoldsSingleSlot(t *testing.T) {
 }
 
 func TestBindingLimiterNilPodIsNoOp(t *testing.T) {
-	l := newBindingLimiter(1)
+	l := NewBindingLimiter(1, fakeClass)
 	require.NoError(t, l.Acquire(context.Background(), nil))
 	assert.Len(t, l.slots, 0, "Acquire(nil) must not take a slot")
 	// Release(nil) must not touch the semaphore or panic.
@@ -98,8 +114,8 @@ func TestBindingLimiterNilPodIsNoOp(t *testing.T) {
 }
 
 func TestBindingLimiterContextCancellationDoesNotHoldLease(t *testing.T) {
-	l := newBindingLimiter(1)
-	held := makeSandboxPod("held", "hash-a")
+	l := NewBindingLimiter(1, fakeClass)
+	held := makeClassPod("held", "key-a")
 	require.NoError(t, l.Acquire(context.Background(), held))
 	assert.Len(t, l.slots, 1)
 
@@ -107,7 +123,7 @@ func TestBindingLimiterContextCancellationDoesNotHoldLease(t *testing.T) {
 	// taking a slot or recording the pod as holding one.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	blocked := makeSandboxPod("blocked", "hash-a")
+	blocked := makeClassPod("blocked", "key-a")
 	err := l.Acquire(ctx, blocked)
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Len(t, l.slots, 1, "a cancelled Acquire must not take a slot")
@@ -127,11 +143,11 @@ func TestBindingLimiterContextCancellationDoesNotHoldLease(t *testing.T) {
 }
 
 func TestBindingLimiterCancelledContextWithFreeSlot(t *testing.T) {
-	l := newBindingLimiter(1)
+	l := NewBindingLimiter(1, fakeClass)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	for i := 0; i < 100; i++ {
-		pod := makeSandboxPod(fmt.Sprintf("cancelled-%d", i), "hash-a")
+		pod := makeClassPod(fmt.Sprintf("cancelled-%d", i), "key-a")
 		err := l.Acquire(ctx, pod)
 		assert.ErrorIs(t, err, context.Canceled)
 		assert.Empty(t, l.slots)
@@ -140,8 +156,8 @@ func TestBindingLimiterCancelledContextWithFreeSlot(t *testing.T) {
 }
 
 func TestBindingLimiterDuplicateAcquireReleaseSameUID(t *testing.T) {
-	l := newBindingLimiter(1)
-	pod := makeSandboxPod("dup", "hash-a")
+	l := NewBindingLimiter(1, fakeClass)
+	pod := makeClassPod("dup", "key-a")
 
 	// A duplicate Acquire for the same UID must be a no-op and never take a second slot, so it does
 	// not block against the capacity-one semaphore.
@@ -159,9 +175,9 @@ func TestBindingLimiterDuplicateAcquireReleaseSameUID(t *testing.T) {
 }
 
 func TestBindingLimiterCapacityBlocksAndUnblocks(t *testing.T) {
-	l := newBindingLimiter(1)
-	first := makeSandboxPod("first", "hash-a")
-	second := makeSandboxPod("second", "hash-a")
+	l := NewBindingLimiter(1, fakeClass)
+	first := makeClassPod("first", "key-a")
+	second := makeClassPod("second", "key-a")
 
 	require.NoError(t, l.Acquire(context.Background(), first))
 
@@ -199,7 +215,7 @@ func TestBindingLimiterCapacityBlocksAndUnblocks(t *testing.T) {
 func TestBindingLimiterConcurrentDistinctPods(t *testing.T) {
 	const capacity = 4
 	const pods = 64
-	l := newBindingLimiter(capacity)
+	l := NewBindingLimiter(capacity, fakeClass)
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, pods)
@@ -207,7 +223,7 @@ func TestBindingLimiterConcurrentDistinctPods(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			pod := makeSandboxPod(fmt.Sprintf("p-%d", i), "hash-a")
+			pod := makeClassPod(fmt.Sprintf("p-%d", i), "key-a")
 			pod.UID = types.UID(fmt.Sprintf("uid-%d", i))
 			if err := l.Acquire(context.Background(), pod); err != nil {
 				errCh <- err
@@ -232,8 +248,8 @@ func TestBindingLimiterConcurrentDistinctPods(t *testing.T) {
 func TestBindingLimiterConcurrentSameUID(t *testing.T) {
 	const capacity = 8
 	const goroutines = 8
-	l := newBindingLimiter(capacity)
-	pod := makeSandboxPod("same", "hash-a")
+	l := NewBindingLimiter(capacity, fakeClass)
+	pod := makeClassPod("same", "key-a")
 
 	var wg sync.WaitGroup
 	errCh := make(chan error, goroutines)

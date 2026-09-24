@@ -266,6 +266,8 @@ func (ext *frameworkExtenderImpl) GetSchedulingDecisionProviders() []SchedulingD
 	return append([]SchedulingDecisionProvider(nil), ext.schedulingDecisionProviders...)
 }
 
+// SetBindingLimiter registers the limiter bounding concurrent binding cycles. It is registered
+// externally (e.g. by a sandbox scheduling initializer) to avoid import cycles.
 func (ext *frameworkExtenderImpl) SetBindingLimiter(limiter BindingLimiter) {
 	ext.bindingLimiter = limiter
 }

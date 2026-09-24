@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package sandbox
+package bindinglimiter
 
 import (
 	"context"
@@ -26,14 +26,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/component-base/metrics/testutil"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -51,50 +50,48 @@ import (
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
-	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
-	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
-	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
-type bindingLifecyclePlugin struct {
+// testBindingPlugin records the binding lifecycle points a slot must be held and released across.
+type testBindingPlugin struct {
 	preBind    func(context.Context, *corev1.Pod) *fwktype.Status
 	patchError *fwktype.Status
 	unreserved chan string
 	postBound  chan string
 }
 
-func (p *bindingLifecyclePlugin) Name() string { return "BindingLifecycle" }
+func (p *testBindingPlugin) Name() string { return "BindingLifecycle" }
 
-func (p *bindingLifecyclePlugin) Reserve(context.Context, fwktype.CycleState, *corev1.Pod, string) *fwktype.Status {
+func (p *testBindingPlugin) Reserve(context.Context, fwktype.CycleState, *corev1.Pod, string) *fwktype.Status {
 	return nil
 }
 
-func (p *bindingLifecyclePlugin) Unreserve(_ context.Context, _ fwktype.CycleState, pod *corev1.Pod, _ string) {
+func (p *testBindingPlugin) Unreserve(_ context.Context, _ fwktype.CycleState, pod *corev1.Pod, _ string) {
 	p.unreserved <- pod.Name
 }
 
-func (p *bindingLifecyclePlugin) PreBindPreFlight(context.Context, fwktype.CycleState, *corev1.Pod, string) *fwktype.Status {
+func (p *testBindingPlugin) PreBindPreFlight(context.Context, fwktype.CycleState, *corev1.Pod, string) *fwktype.Status {
 	return nil
 }
 
-func (p *bindingLifecyclePlugin) PreBind(ctx context.Context, _ fwktype.CycleState, pod *corev1.Pod, _ string) *fwktype.Status {
+func (p *testBindingPlugin) PreBind(ctx context.Context, _ fwktype.CycleState, pod *corev1.Pod, _ string) *fwktype.Status {
 	return p.preBind(ctx, pod)
 }
 
-func (p *bindingLifecyclePlugin) ApplyPatch(context.Context, fwktype.CycleState, metav1.Object, metav1.Object) *fwktype.Status {
+func (p *testBindingPlugin) ApplyPatch(context.Context, fwktype.CycleState, metav1.Object, metav1.Object) *fwktype.Status {
 	return p.patchError
 }
 
-func (p *bindingLifecyclePlugin) PostBind(_ context.Context, _ fwktype.CycleState, pod *corev1.Pod, _ string) {
+func (p *testBindingPlugin) PostBind(_ context.Context, _ fwktype.CycleState, pod *corev1.Pod, _ string) {
 	p.postBound <- pod.Name
 }
 
-func (p *bindingLifecyclePlugin) register(factory *frameworkext.FrameworkExtenderFactory) []schedulertesting.RegisterPluginFunc {
+func (p *testBindingPlugin) register(factory *frameworkext.FrameworkExtenderFactory) []schedulertesting.RegisterPluginFunc {
 	proxy := frameworkext.PluginFactoryProxy(factory, func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
 		return p, nil
 	})
@@ -103,24 +100,23 @@ func (p *bindingLifecyclePlugin) register(factory *frameworkext.FrameworkExtende
 	}
 }
 
-type sandboxWorkflowTest struct {
-	workflow  *SandboxCustomWorkflow
+// bindingTestSuit drives the real factory, queue and upstream ScheduleOne across two profiles with
+// one shared limiter. The upstream node-selection function is substituted so the tests never depend
+// on real node selection.
+type bindingTestSuit struct {
+	limiter   *BindingLimiter
 	sched     *scheduler.Scheduler
 	client    *kubefake.Clientset
 	informers informers.SharedInformerFactory
-	rawCalls  atomic.Int32
 	failures  chan *fwktype.Status
 }
 
-// The real factory, queue and upstream ScheduleOne drive both profiles. Only the ordinary
-// pod's private upstream node-selection function is substituted to observe dispatch.
-func newSandboxWorkflowTest(t *testing.T, ctx context.Context, register func(*frameworkext.FrameworkExtenderFactory) []schedulertesting.RegisterPluginFunc) *sandboxWorkflowTest {
+func newBindingTestSuit(t *testing.T, ctx context.Context, register func(*frameworkext.FrameworkExtenderFactory) []schedulertesting.RegisterPluginFunc) *bindingTestSuit {
 	t.Helper()
-	t.Cleanup(utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.SandboxCustomWorkflow, true))
 	metrics.Register()
 	koordmetrics.Register()
-	h := &sandboxWorkflowTest{
-		workflow: New(),
+	h := &bindingTestSuit{
+		limiter:  NewBindingLimiter(1, fakeClass),
 		client:   kubefake.NewSimpleClientset(),
 		failures: make(chan *fwktype.Status, 10),
 	}
@@ -142,7 +138,6 @@ func newSandboxWorkflowTest(t *testing.T, ctx context.Context, register func(*fr
 		NextPod:         q.Pop,
 		Profiles:        profile.Map{},
 		SchedulePod: func(context.Context, framework.Framework, fwktype.CycleState, *corev1.Pod) (scheduler.ScheduleResult, error) {
-			h.rawCalls.Add(1)
 			return scheduler.ScheduleResult{SuggestedHost: "node-1", EvaluatedNodes: 1, FeasibleNodes: 1}, nil
 		},
 		FailureHandler: func(_ context.Context, _ framework.Framework, _ *framework.QueuedPodInfo, status *fwktype.Status, _ *fwktype.NominatingInfo, _ time.Time) {
@@ -174,24 +169,36 @@ func newSandboxWorkflowTest(t *testing.T, ctx context.Context, register func(*fr
 		t.Cleanup(func() { require.NoError(t, fwk.Close()) })
 		ext := factory.NewFrameworkExtender(fwk)
 		ext.SetConfiguredPlugins(fwk.ListPlugins())
+		// One limiter instance is shared across profiles so its semaphore bounds the total number of
+		// concurrent binding cycles, not the number per profile.
+		ext.SetBindingLimiter(h.limiter)
 		sched.Profiles[name] = ext
 	}
 	factory.InitScheduler(&frameworkext.SchedulerAdapter{Scheduler: sched})
 	factory.InterceptSchedulerError(sched)
-	h.workflow.maxConcurrentBindings = 1
-	require.NoError(t, h.workflow.Setup(ctx, &app.CustomWorkflowOptions{
-		Sched: sched, SharedInformerFactory: h.informers,
-	}))
-	t.Cleanup(h.workflow.scheduling.equivalence.flush)
-	for _, fwk := range sched.Profiles {
-		providers := fwk.(frameworkext.FrameworkExtender).GetSchedulingDecisionProviders()
-		require.Len(t, providers, 1)
-		require.Same(t, h.workflow.scheduling, providers[0])
-	}
 	return h
 }
 
-func (h *sandboxWorkflowTest) schedule(t *testing.T, ctx context.Context, pod *corev1.Pod) {
+// makeNode builds a schedulable node with the given cpu and memory capacity.
+func makeNode(name string, cpu, memory string) *corev1.Node {
+	return &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Status: corev1.NodeStatus{
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(cpu),
+				corev1.ResourceMemory: resource.MustParse(memory),
+				corev1.ResourcePods:   resource.MustParse("110"),
+			},
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse(cpu),
+				corev1.ResourceMemory: resource.MustParse(memory),
+				corev1.ResourcePods:   resource.MustParse("110"),
+			},
+		},
+	}
+}
+
+func (h *bindingTestSuit) schedule(t *testing.T, ctx context.Context, pod *corev1.Pod) {
 	t.Helper()
 	require.NoError(t, h.informers.Core().V1().Pods().Informer().GetStore().Add(pod))
 	h.sched.SchedulingQueue.Add(klog.FromContext(ctx), pod)
@@ -207,17 +214,17 @@ func (h *sandboxWorkflowTest) schedule(t *testing.T, ctx context.Context, pod *c
 	}
 }
 
-func TestSandboxBindingLifecycle(t *testing.T) {
+func TestBindingLifecycleHoldsSlotExactlyOnce(t *testing.T) {
 	for _, stage := range []string{"success", "prebind", "patch", "bind", "extender-bind"} {
 		t.Run(stage, func(t *testing.T) {
 			_, ctx := ktesting.NewTestContext(t)
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			p := &bindingLifecyclePlugin{unreserved: make(chan string, 1), postBound: make(chan string, 1)}
-			h := newSandboxWorkflowTest(t, ctx, p.register)
+			p := &testBindingPlugin{unreserved: make(chan string, 1), postBound: make(chan string, 1)}
+			h := newBindingTestSuit(t, ctx, p.register)
 			var slotsAtPreBind atomic.Int32
 			p.preBind = func(context.Context, *corev1.Pod) *fwktype.Status {
-				slotsAtPreBind.Store(int32(len(h.workflow.limiter.slots)))
+				slotsAtPreBind.Store(int32(len(h.limiter.slots)))
 				if stage == "prebind" {
 					return fwktype.AsStatus(errors.New("prebind failed"))
 				}
@@ -235,7 +242,7 @@ func TestSandboxBindingLifecycle(t *testing.T) {
 					Binder: func() error { return errors.New("extender-bind failed") },
 				}}
 			}
-			pod := makeSandboxPod("pod", "hash-a")
+			pod := makeClassPod("pod", "key-a")
 			h.schedule(t, ctx, pod)
 			if stage == "success" {
 				select {
@@ -260,20 +267,19 @@ func TestSandboxBindingLifecycle(t *testing.T) {
 				_, err := h.sched.Cache.GetPod(pod)
 				assert.Error(t, err, "failed binding must forget the assumed pod")
 			}
-			assert.Equal(t, int32(1), slotsAtPreBind.Load())
-			assert.Empty(t, h.workflow.limiter.slots)
-			assert.Zero(t, h.rawCalls.Load(), "sandbox pods must use the registered provider")
+			assert.Equal(t, int32(1), slotsAtPreBind.Load(), "PreBind must run holding exactly one slot")
+			assert.Empty(t, h.limiter.slots, "the slot must be returned on every terminal path")
 		})
 	}
 }
 
-func TestSandboxBindingBackpressureAcrossProfiles(t *testing.T) {
+func TestBindingBackpressureAcrossProfiles(t *testing.T) {
 	_, ctx := ktesting.NewTestContext(t)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	entered := make(chan string, 3)
 	releaseFirst := make(chan struct{})
-	p := &bindingLifecyclePlugin{
+	p := &testBindingPlugin{
 		unreserved: make(chan string, 3),
 		postBound:  make(chan string, 3),
 		preBind: func(ctx context.Context, pod *corev1.Pod) *fwktype.Status {
@@ -288,8 +294,8 @@ func TestSandboxBindingBackpressureAcrossProfiles(t *testing.T) {
 			return nil
 		},
 	}
-	h := newSandboxWorkflowTest(t, ctx, p.register)
-	h.schedule(t, ctx, makeSandboxPod("first", "hash-a"))
+	h := newBindingTestSuit(t, ctx, p.register)
+	h.schedule(t, ctx, makeClassPod("first", "key-a"))
 	select {
 	case name := <-entered:
 		require.Equal(t, "first", name)
@@ -298,22 +304,21 @@ func TestSandboxBindingBackpressureAcrossProfiles(t *testing.T) {
 	}
 	waitCtx, cancelWait := context.WithCancel(ctx)
 	defer cancelWait()
-	second := makeSandboxPod("second", "hash-a")
+	second := makeClassPod("second", "key-a")
 	second.Spec.SchedulerName = "other-scheduler"
 	h.schedule(t, waitCtx, second)
-	ordinary := makeSandboxPod("ordinary", "")
+	ordinary := makeClassPod("ordinary", "")
 	ordinary.Labels = nil
 	h.schedule(t, ctx, ordinary)
 	select {
 	case name := <-p.postBound:
-		require.Equal(t, "ordinary", name, "the ordinary pod must bypass the full sandbox limiter")
+		require.Equal(t, "ordinary", name, "the ordinary pod must bypass the full limiter")
 	case <-time.After(5 * time.Second):
-		t.Fatal("ordinary binding blocked behind sandbox pods")
+		t.Fatal("ordinary binding blocked behind class pods")
 	}
 	require.NotEmpty(t, entered)
 	require.Equal(t, "ordinary", <-entered)
 	assert.Empty(t, entered, "both profiles must share one limiter")
-	assert.Equal(t, int32(1), h.rawCalls.Load())
 	cancelWait()
 	select {
 	case status := <-h.failures:
@@ -323,7 +328,7 @@ func TestSandboxBindingBackpressureAcrossProfiles(t *testing.T) {
 	}
 	require.Len(t, p.unreserved, 1)
 	assert.Equal(t, "second", <-p.unreserved)
-	assert.Len(t, h.workflow.limiter.slots, 1, "cancellation must not release another pod's slot")
+	assert.Len(t, h.limiter.slots, 1, "cancellation must not release another pod's slot")
 	close(releaseFirst)
 	select {
 	case name := <-p.postBound:
@@ -331,17 +336,17 @@ func TestSandboxBindingBackpressureAcrossProfiles(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("first pod did not finish binding")
 	}
-	assert.Empty(t, h.workflow.limiter.slots)
+	assert.Empty(t, h.limiter.slots)
 }
 
-func TestSandboxReservePodBypassesBindingAdmission(t *testing.T) {
+func TestReservePodBypassesBindingAdmission(t *testing.T) {
 	_, ctx := ktesting.NewTestContext(t)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	h := newSandboxWorkflowTest(t, ctx, nil)
-	holder := makeSandboxPod("holder", "hash")
-	require.NoError(t, h.workflow.limiter.Acquire(ctx, holder))
-	defer h.workflow.limiter.Release(holder)
+	h := newBindingTestSuit(t, ctx, nil)
+	holder := makeClassPod("holder", "key-a")
+	require.NoError(t, h.limiter.Acquire(ctx, holder))
+	defer h.limiter.Release(holder)
 	ext := h.sched.Profiles["koord-scheduler"].(frameworkext.FrameworkExtender)
 	r := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{Name: "reservation", UID: "reservation-uid"},
@@ -352,63 +357,9 @@ func TestSandboxReservePodBypassesBindingAdmission(t *testing.T) {
 	reservations := ext.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations().Informer()
 	require.NoError(t, reservations.GetStore().Add(r))
 	pod := reservationutil.NewReservePod(r)
-	pod.Labels = makeSandboxPod("reserve", "hash").Labels
+	pod.Labels = makeClassPod("reserve", "key-a").Labels
 	status := ext.RunPreBindPlugins(ctx, framework.NewCycleState(), pod, "node-1")
 	require.True(t, status.IsSuccess(), "%v", status)
 	ext.RunReservePluginsUnreserve(ctx, framework.NewCycleState(), pod, "node-1")
-	assert.Len(t, h.workflow.limiter.slots, 1, "reserve pod must neither wait for nor release a sandbox slot")
-}
-
-type capacityPreFilterPlugin struct {
-	testEquivalenceCapacityPlugin
-}
-
-func (p *capacityPreFilterPlugin) PreFilter(context.Context, fwktype.CycleState, *corev1.Pod, []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
-	return nil, nil
-}
-
-func (p *capacityPreFilterPlugin) PreFilterExtensions() fwktype.PreFilterExtensions { return nil }
-
-func TestSandboxWarmCacheHonorsCurrentPodCapacity(t *testing.T) {
-	for _, tt := range []struct {
-		reason    equivalenceCacheMissReason
-		reusable  bool
-		evaluated int
-	}{
-		{reason: equivalenceCacheMissPluginVeto, evaluated: 3},
-		{reason: equivalenceCacheMissQuotaExhausted, reusable: true, evaluated: 4},
-	} {
-		t.Run(tt.reason.String(), func(t *testing.T) {
-			_, ctx := ktesting.NewTestContext(t)
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-			plugin := &capacityPreFilterPlugin{}
-			h := newSandboxWorkflowTest(t, ctx, func(factory *frameworkext.FrameworkExtenderFactory) []schedulertesting.RegisterPluginFunc {
-				proxy := frameworkext.PluginFactoryProxy(factory, func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
-					return plugin, nil
-				})
-				return []schedulertesting.RegisterPluginFunc{schedulertesting.RegisterPreFilterPlugin(plugin.Name(), proxy)}
-			})
-			s := h.workflow.scheduling
-			fwk := h.sched.Profiles["koord-scheduler"]
-			_, err := h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeSandboxPod("first", "hash-a"))
-			require.NoError(t, err)
-			require.Len(t, s.equivalence.entries, 1)
-
-			// The current pod's identity or plugin state can differ even with a warm class.
-			plugin.handled = true
-			plugin.reusable = tt.reusable
-			counter := koordmetrics.SandboxEquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), tt.reason.String())
-			before, err := testutil.GetCounterMetricValue(counter)
-			require.NoError(t, err)
-			result, err := h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeSandboxPod("second", "hash-a"))
-			require.NoError(t, err)
-			assert.Equal(t, 2, result.FeasibleNodes, "a current-pod capacity rejection must run full node selection")
-			assert.Equal(t, tt.evaluated, result.EvaluatedNodes, "include failed fast attempts and full fallback")
-			after, err := testutil.GetCounterMetricValue(counter)
-			require.NoError(t, err)
-			assert.Equal(t, before+1, after)
-			assert.Empty(t, s.equivalence.entries, "a non-reusable backfill must not leave the old class cached")
-		})
-	}
+	assert.Len(t, h.limiter.slots, 1, "reserve pod must neither wait for nor release a class slot")
 }

@@ -26,14 +26,14 @@ import (
 	"k8s.io/component-base/metrics/testutil"
 )
 
-func TestRecordSandboxBindingSlotWaitDuration(t *testing.T) {
+func TestRecordBindingSlotWaitDuration(t *testing.T) {
 	Register()
-	SandboxBindingSlotWaitDuration.Reset()
-	t.Cleanup(SandboxBindingSlotWaitDuration.Reset)
+	BindingSlotWaitDuration.Reset()
+	t.Cleanup(BindingSlotWaitDuration.Reset)
 
-	RecordSandboxBindingSlotWaitDuration("koord-scheduler", 250*time.Millisecond)
-	RecordSandboxBindingSlotWaitDuration("koord-scheduler", 750*time.Millisecond)
-	RecordSandboxBindingSlotWaitDuration("other-scheduler", 1500*time.Millisecond)
+	RecordBindingSlotWaitDuration("koord-scheduler", 250*time.Millisecond)
+	RecordBindingSlotWaitDuration("koord-scheduler", 750*time.Millisecond)
+	RecordBindingSlotWaitDuration("other-scheduler", 1500*time.Millisecond)
 
 	for _, tt := range []struct {
 		profile string
@@ -45,7 +45,7 @@ func TestRecordSandboxBindingSlotWaitDuration(t *testing.T) {
 	} {
 		t.Run(tt.profile, func(t *testing.T) {
 			vec, err := testutil.GetHistogramVecFromGatherer(legacyregistry.DefaultGatherer,
-				"scheduler_sandbox_binding_slot_wait_duration_seconds",
+				"scheduler_binding_slot_wait_duration_seconds",
 				map[string]string{"profile": tt.profile})
 			require.NoError(t, err)
 			assert.Equal(t, tt.count, vec.GetAggregatedSampleCount())
@@ -54,10 +54,10 @@ func TestRecordSandboxBindingSlotWaitDuration(t *testing.T) {
 	}
 }
 
-func TestRecordSandboxEquivalenceClassCacheEntries(t *testing.T) {
+func TestRecordEquivalenceClassCacheEntries(t *testing.T) {
 	Register()
-	SandboxEquivalenceClassCacheEntries.Set(0)
-	t.Cleanup(func() { SandboxEquivalenceClassCacheEntries.Set(0) })
+	EquivalenceClassCacheEntries.Set(0)
+	t.Cleanup(func() { EquivalenceClassCacheEntries.Set(0) })
 
 	for _, tt := range []struct {
 		delta int
@@ -69,63 +69,63 @@ func TestRecordSandboxEquivalenceClassCacheEntries(t *testing.T) {
 		{delta: -3, want: 0},
 		{delta: 0, want: 0},
 	} {
-		RecordSandboxEquivalenceClassCacheEntries(tt.delta)
-		value, err := testutil.GetGaugeMetricValue(SandboxEquivalenceClassCacheEntries)
+		RecordEquivalenceClassCacheEntries(tt.delta)
+		value, err := testutil.GetGaugeMetricValue(EquivalenceClassCacheEntries)
 		require.NoError(t, err)
 		assert.Equal(t, tt.want, value)
 	}
 }
 
-func TestRecordSandboxEquivalenceClassFlush(t *testing.T) {
+func TestRecordEquivalenceClassFlush(t *testing.T) {
 	Register()
-	SandboxEquivalenceClassFlushes.Reset()
-	t.Cleanup(SandboxEquivalenceClassFlushes.Reset)
+	EquivalenceClassFlushes.Reset()
+	t.Cleanup(EquivalenceClassFlushes.Reset)
 
-	RecordSandboxEquivalenceClassFlush("node_event")
-	RecordSandboxEquivalenceClassFlush("node_event")
-	RecordSandboxEquivalenceClassFlush("bind_failure")
+	RecordEquivalenceClassFlush("node_event")
+	RecordEquivalenceClassFlush("node_event")
+	RecordEquivalenceClassFlush("bind_failure")
 
 	for reason, want := range map[string]float64{"node_event": 2, "bind_failure": 1} {
-		value, err := testutil.GetCounterMetricValue(SandboxEquivalenceClassFlushes.WithLabelValues(reason))
+		value, err := testutil.GetCounterMetricValue(EquivalenceClassFlushes.WithLabelValues(reason))
 		require.NoError(t, err)
 		assert.Equal(t, want, value, reason)
 	}
 }
 
-func TestRecordSandboxEquivalenceClassHitAndMiss(t *testing.T) {
+func TestRecordEquivalenceClassHitAndMiss(t *testing.T) {
 	Register()
-	SandboxEquivalenceClassHits.Reset()
-	SandboxEquivalenceClassMisses.Reset()
-	t.Cleanup(SandboxEquivalenceClassHits.Reset)
-	t.Cleanup(SandboxEquivalenceClassMisses.Reset)
+	EquivalenceClassHits.Reset()
+	EquivalenceClassMisses.Reset()
+	t.Cleanup(EquivalenceClassHits.Reset)
+	t.Cleanup(EquivalenceClassMisses.Reset)
 
 	for i, profile := range []string{"koord-scheduler", "other-scheduler"} {
 		for j := 0; j <= i; j++ {
-			RecordSandboxEquivalenceClassHit(profile)
-			RecordSandboxEquivalenceClassMiss(profile, "empty")
+			RecordEquivalenceClassHit(profile)
+			RecordEquivalenceClassMiss(profile, "empty")
 		}
-		RecordSandboxEquivalenceClassMiss(profile, "nominated")
+		RecordEquivalenceClassMiss(profile, "nominated")
 
-		hits, err := testutil.GetCounterMetricValue(SandboxEquivalenceClassHits.WithLabelValues(profile))
+		hits, err := testutil.GetCounterMetricValue(EquivalenceClassHits.WithLabelValues(profile))
 		require.NoError(t, err)
 		assert.Equal(t, float64(i+1), hits, profile)
 		for reason, want := range map[string]float64{"empty": float64(i + 1), "nominated": 1} {
-			misses, err := testutil.GetCounterMetricValue(SandboxEquivalenceClassMisses.WithLabelValues(profile, reason))
+			misses, err := testutil.GetCounterMetricValue(EquivalenceClassMisses.WithLabelValues(profile, reason))
 			require.NoError(t, err)
 			assert.Equal(t, want, misses, "%s/%s", profile, reason)
 		}
 	}
 }
 
-func TestRecordSandboxSchedulingDuration(t *testing.T) {
+func TestRecordEquivalenceClassSchedulingDuration(t *testing.T) {
 	Register()
-	SandboxSchedulingDuration.Reset()
-	t.Cleanup(SandboxSchedulingDuration.Reset)
+	EquivalenceClassSchedulingDuration.Reset()
+	t.Cleanup(EquivalenceClassSchedulingDuration.Reset)
 
-	RecordSandboxSchedulingDuration("koord-scheduler", "fast", "success", 250*time.Millisecond)
-	RecordSandboxSchedulingDuration("koord-scheduler", "fast", "success", 750*time.Millisecond)
-	RecordSandboxSchedulingDuration("koord-scheduler", "full", "unschedulable", 1500*time.Millisecond)
-	RecordSandboxSchedulingDuration("other-scheduler", "full", "error", 2*time.Second)
+	RecordEquivalenceClassSchedulingDuration("koord-scheduler", "fast", "success", 250*time.Millisecond)
+	RecordEquivalenceClassSchedulingDuration("koord-scheduler", "fast", "success", 750*time.Millisecond)
+	RecordEquivalenceClassSchedulingDuration("koord-scheduler", "full", "unschedulable", 1500*time.Millisecond)
+	RecordEquivalenceClassSchedulingDuration("other-scheduler", "full", "error", 2*time.Second)
 
 	for _, tt := range []struct {
 		profile, path, result string
@@ -138,7 +138,7 @@ func TestRecordSandboxSchedulingDuration(t *testing.T) {
 	} {
 		t.Run(tt.profile+"/"+tt.path+"/"+tt.result, func(t *testing.T) {
 			vec, err := testutil.GetHistogramVecFromGatherer(legacyregistry.DefaultGatherer,
-				"scheduler_sandbox_scheduling_duration_seconds",
+				"scheduler_scheduling_duration_seconds",
 				map[string]string{"profile": tt.profile, "path": tt.path, "result": tt.result})
 			require.NoError(t, err)
 			assert.Equal(t, tt.count, vec.GetAggregatedSampleCount())
