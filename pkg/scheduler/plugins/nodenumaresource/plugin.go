@@ -137,23 +137,43 @@ func NewWithOptions(args runtime.Object, handle fwktype.Handle, opts ...Option) 
 		optFnc(options)
 	}
 
-	if options.topologyOptionsManager == nil {
-		options.topologyOptionsManager = NewTopologyOptionsManager()
+	// Production path: register a single shared cache across all scheduler profiles. The concrete
+	// *resourceManager implements frameworkext.SharedPluginCache and owns the shared
+	// topologyOptionsManager and the NodeResourceTopology informer factory; its Start() (invoked once
+	// by StartSharedCaches) registers the NRT and Reservation handlers, and core pod/node events
+	// arrive via the unified dispatcher. The Option seam (WithResourceManager/WithTopologyOptionsManager)
+	// is used only by tests, which inject their own managers and do not share.
+	var nrtInformerFactory nrtinformers.SharedInformerFactory
+	if options.resourceManager == nil && options.topologyOptionsManager == nil {
+		extendedHandle := handle.(frameworkext.ExtendedHandle)
+		cache := extendedHandle.GetOrRegisterSharedCache("nodenumaresource",
+			func(h frameworkext.ExtendedHandle) frameworkext.SharedPluginCache {
+				rm := NewResourceManager(h, GetDefaultNUMAAllocateStrategy(pluginArgs), NewTopologyOptionsManager()).(*resourceManager)
+				rm.nrtInformerFactory, _ = initNRTInformerFactory(h)
+				return rm
+			})
+		rm := cache.(*resourceManager)
+		options.resourceManager = rm
+		options.topologyOptionsManager = rm.topologyOptionsManager
+		nrtInformerFactory = rm.nrtInformerFactory
+	} else {
+		if options.topologyOptionsManager == nil {
+			options.topologyOptionsManager = NewTopologyOptionsManager()
+		}
+		if options.resourceManager == nil {
+			options.resourceManager = NewResourceManager(handle, GetDefaultNUMAAllocateStrategy(pluginArgs), options.topologyOptionsManager)
+		}
+		var err error
+		if nrtInformerFactory, err = initNRTInformerFactory(handle); err != nil {
+			return nil, err
+		}
 	}
 
-	if options.resourceManager == nil {
-		defaultNUMAAllocateStrategy := GetDefaultNUMAAllocateStrategy(pluginArgs)
-		options.resourceManager = NewResourceManager(handle, defaultNUMAAllocateStrategy, options.topologyOptionsManager)
+	// ForgetPod handlers are per-extender state, so register per profile in New() (not in the shared
+	// Start()); otherwise a forget through another profile's extender never reaches the shared cache.
+	if extendedHandle, ok := handle.(frameworkext.ExtendedHandle); ok {
+		extendedHandle.RegisterForgetPodHandler((&podEventHandler{resourceManager: options.resourceManager}).deletePod)
 	}
-
-	nrtInformerFactory, err := initNRTInformerFactory(handle)
-	if err != nil {
-		return nil, err
-	}
-	if err := registerNodeResourceTopologyEventHandler(nrtInformerFactory, options.topologyOptionsManager); err != nil {
-		return nil, err
-	}
-	registerPodEventHandler(handle, options.resourceManager)
 
 	nrtLister := nrtInformerFactory.Topology().V1alpha1().NodeResourceTopologies().Lister()
 
