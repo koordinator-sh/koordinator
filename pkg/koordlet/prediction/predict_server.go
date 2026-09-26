@@ -250,6 +250,16 @@ func (p *peakPredictServer) GetPrediction(metric MetricDesc) (Result, error) {
 	}
 	model.Lock.Lock()
 	defer model.Lock.Unlock()
+
+	cpuPercentile := p.cfg.PredictorCPUPercentile
+	if cpuPercentile <= 0 || cpuPercentile > 1 {
+		cpuPercentile = 0.95
+	}
+	memPercentile := p.cfg.PredictorMemoryPercentile
+	if memPercentile <= 0 || memPercentile > 1 {
+		memPercentile = 0.98
+	}
+
 	//
 	return Result{
 		Data: map[string]v1.ResourceList{
@@ -272,6 +282,10 @@ func (p *peakPredictServer) GetPrediction(metric MetricDesc) (Result, error) {
 			"max": {
 				v1.ResourceCPU:    *resource.NewMilliQuantity(int64(model.CPU.Percentile(1.0)*1000.0), resource.DecimalSI),
 				v1.ResourceMemory: *resource.NewQuantity(int64(model.Memory.Percentile(1.0)), resource.BinarySI),
+			},
+			"configured": {
+				v1.ResourceCPU:    *resource.NewMilliQuantity(int64(model.CPU.Percentile(cpuPercentile)*1000.0), resource.DecimalSI),
+				v1.ResourceMemory: *resource.NewQuantity(int64(model.Memory.Percentile(memPercentile)), resource.BinarySI),
 			},
 		},
 	}, nil
