@@ -70,6 +70,50 @@ var (
 			Help:      "The number of of nodes out of the evaluated ones that fit the pod when find the suggested node",
 			Buckets:   metrics.ExponentialBuckets(1, 2, 24),
 		})
+	EquivalenceClassHits = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "equivalence_class_hits",
+			Help:           "Number of Pods scheduling decisions served by the equivalence-class fast path.",
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"profile"})
+	EquivalenceClassMisses = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "equivalence_class_misses",
+			Help:           "Number of equivalence-class lookups that fell back to full scheduling, labeled by reason.",
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"profile", "reason"})
+	EquivalenceClassFlushes = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "equivalence_class_flushes",
+			Help:           "Number of equivalence-class cache flushes, labeled by reason.",
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"reason"})
+	EquivalenceClassCacheEntries = metrics.NewGauge(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "equivalence_class_cache_entries",
+			Help:           "Current number of equivalence-class cache entries.",
+			StabilityLevel: metrics.ALPHA,
+		})
+	EquivalenceClassSchedulingDuration = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "scheduling_duration_seconds",
+			Help:           "Duration of equivalence-class scheduling decisions, labeled by fast/full path and result.",
+			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"profile", "path", "result"})
+	BindingSlotWaitDuration = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "binding_slot_wait_duration_seconds",
+			Help:           "Time spent waiting for a  binding slot.",
+			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
+			StabilityLevel: metrics.ALPHA,
+		}, []string{"profile"})
 
 	ElasticQuotaProcessLatency = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
@@ -193,6 +237,12 @@ var (
 		ReservationResource,
 		PodSchedulingEvaluatedNodes,
 		PodSchedulingFeasibleNodes,
+		EquivalenceClassHits,
+		EquivalenceClassMisses,
+		EquivalenceClassFlushes,
+		EquivalenceClassCacheEntries,
+		EquivalenceClassSchedulingDuration,
+		BindingSlotWaitDuration,
 		ElasticQuotaProcessLatency,
 		SecondaryDeviceNotWellPlannedNodes,
 		WaitingGangGroupNumber,
@@ -230,6 +280,17 @@ const (
 	TypeAllocatable = "allocatable"
 	TypeAllocated   = "allocated"
 	TypeUtilization = "utilization"
+)
+
+const (
+	SchedulingPathFast = "fast"
+	SchedulingPathFull = "full"
+)
+
+const (
+	SchedulingResultSuccess       = "success"
+	SchedulingResultError         = "error"
+	SchedulingResultUnschedulable = "unschedulable"
 )
 
 var registerMetrics sync.Once
@@ -285,6 +346,30 @@ func RecordReservationResourceByTypeWithUnit(name, resource, typ, unit string, v
 		reservationResourceUnitKey: unit,
 	}
 	ReservationResource.With(labels).Set(value)
+}
+
+func RecordBindingSlotWaitDuration(profile string, latency time.Duration) {
+	BindingSlotWaitDuration.WithLabelValues(profile).Observe(latency.Seconds())
+}
+
+func RecordEquivalenceClassCacheEntries(delta int) {
+	EquivalenceClassCacheEntries.Add(float64(delta))
+}
+
+func RecordEquivalenceClassFlush(reason string) {
+	EquivalenceClassFlushes.WithLabelValues(reason).Inc()
+}
+
+func RecordEquivalenceClassHit(profile string) {
+	EquivalenceClassHits.WithLabelValues(profile).Inc()
+}
+
+func RecordEquivalenceClassMiss(profile, reason string) {
+	EquivalenceClassMisses.WithLabelValues(profile, reason).Inc()
+}
+
+func RecordEquivalenceClassSchedulingDuration(profile, path, result string, latency time.Duration) {
+	EquivalenceClassSchedulingDuration.WithLabelValues(profile, path, result).Observe(latency.Seconds())
 }
 
 func RecordElasticQuotaProcessLatency(operation string, latency time.Duration) {
