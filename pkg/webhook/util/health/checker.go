@@ -34,9 +34,13 @@ import (
 var (
 	caCertFilePath = path.Join(webhookutil.GetCertDir(), "ca-cert.pem")
 
-	onceWatch sync.Once
-	lock      sync.Mutex
-	client    *http.Client
+	initMu        sync.Mutex
+	initialized   bool
+	caCertWatcher *fsnotify.Watcher
+	watchDone     chan struct{}
+
+	lock   sync.Mutex
+	client *http.Client
 )
 
 func loadHTTPClientWithCACert() error {
@@ -107,20 +111,42 @@ func isRemove(event fsnotify.Event) bool {
 	return event.Op&fsnotify.Remove == fsnotify.Remove
 }
 
+// ensureCACertWatcherStarted lazily loads the CA cert and starts the file watcher that
+// keeps it up to date. Unlike sync.Once, a failed attempt does not permanently give up:
+// the next call will retry, since the underlying error (e.g. a missing file) may be
+// transient and there is no HTTP client to serve requests with until this succeeds.
+func ensureCACertWatcherStarted() error {
+	initMu.Lock()
+	defer initMu.Unlock()
+	if initialized {
+		return nil
+	}
+
+	if err := loadHTTPClientWithCACert(); err != nil {
+		return fmt.Errorf("failed to load ca-cert for the first time: %v", err)
+	}
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("failed to new ca-cert watcher: %v", err)
+	}
+	if err = watcher.Add(caCertFilePath); err != nil {
+		_ = watcher.Close()
+		return fmt.Errorf("failed to add %v into watcher: %v", caCertFilePath, err)
+	}
+	caCertWatcher = watcher
+	watchDone = make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		watchCACert(watcher)
+	}()
+	initialized = true
+	return nil
+}
+
 func Checker(_ *http.Request) error {
-	onceWatch.Do(func() {
-		if err := loadHTTPClientWithCACert(); err != nil {
-			panic(fmt.Errorf("failed to load ca-cert for the first time: %v", err))
-		}
-		watcher, err := fsnotify.NewWatcher()
-		if err != nil {
-			panic(fmt.Errorf("failed to new ca-cert watcher: %v", err))
-		}
-		if err = watcher.Add(caCertFilePath); err != nil {
-			panic(fmt.Errorf("failed to add %v into watcher: %v", caCertFilePath, err))
-		}
-		go watchCACert(watcher)
-	})
+	if err := ensureCACertWatcherStarted(); err != nil {
+		return err
+	}
 
 	url := fmt.Sprintf("https://localhost:%d/healthz", webhookutil.GetPort())
 	req, err := http.NewRequest("GET", url, nil)
