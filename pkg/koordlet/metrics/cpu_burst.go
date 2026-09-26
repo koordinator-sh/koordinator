@@ -16,22 +16,24 @@ limitations under the License.
 
 package metrics
 
-import "github.com/prometheus/client_golang/prometheus"
+import k8smetrics "k8s.io/component-base/metrics"
 
 var (
-	ContainerScaledCFSBurstUS = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "container_scaled_cfs_burst_us",
-		Help:      "The maximum accumulated run-time(in microseconds) in container-level set by koordlet",
+	ContainerScaledCFSBurstUS = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "container_scaled_cfs_burst_us",
+		Help:           "The maximum accumulated run-time(in microseconds) in container-level set by koordlet",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, PodNamespace, PodName, ContainerID, ContainerName})
 
-	ContainerScaledCFSQuotaUS = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "container_scaled_cfs_quota_us",
-		Help:      "Run-time replenished within a period (in microseconds) in container-level set by koordlet",
+	ContainerScaledCFSQuotaUS = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "container_scaled_cfs_quota_us",
+		Help:           "Run-time replenished within a period (in microseconds) in container-level set by koordlet",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, PodNamespace, PodName, ContainerID, ContainerName})
 
-	CPUBurstCollector = []prometheus.Collector{
+	CPUBurstRegisterableCollectors = []k8smetrics.Registerable{
 		ContainerScaledCFSBurstUS,
 		ContainerScaledCFSQuotaUS,
 	}
