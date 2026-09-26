@@ -22,10 +22,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
+	topov1alpha1 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha1"
+	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metriccache"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
@@ -309,6 +313,122 @@ func testQuery(querier metriccache.Querier, resource metriccache.MetricResource,
 	return aggregateResult, nil
 }
 
+// mockStatesInformer implements statesinformer.StatesInformer for testing.
+type mockStatesInformer struct {
+	nodeMetricSpec *slov1alpha1.NodeMetricSpec
+}
+
+func (m *mockStatesInformer) GetNodeMetricSpec() *slov1alpha1.NodeMetricSpec {
+	return m.nodeMetricSpec
+}
+
+// Other methods of StatesInformer interface — not used in this test.
+func (m *mockStatesInformer) GetAllPods() []*statesinformer.PodMeta                      { return nil }
+func (m *mockStatesInformer) GetNode() *corev1.Node                                      { return nil }
+func (m *mockStatesInformer) GetNodeSLO() *slov1alpha1.NodeSLO                           { return nil }
+func (m *mockStatesInformer) GetNodeMetric() *slov1alpha1.NodeMetric                     { return nil }
+func (m *mockStatesInformer) GetAllHostApplications() []*slov1alpha1.HostApplicationSpec { return nil }
+
+func (m *mockStatesInformer) GetNodeTopo() *topov1alpha1.NodeResourceTopology { return nil }
+
+func (m *mockStatesInformer) GetVolumeName(string, string) string { return "" }
+func (m *mockStatesInformer) HasSynced() bool                     { return false }
+func (m *mockStatesInformer) RegisterCallbacks(kind statesinformer.RegisterType, name, description string, callbackFn statesinformer.UpdateCbFn) {
+}
+func (m *mockStatesInformer) Run(stopCh <-chan struct{}) error { return nil }
+
+func Test_systemResourceCollector_queryMemoryWithPolicy(t *testing.T) {
+	testNow := time.Now()
+	timeNow = func() time.Time {
+		return testNow
+	}
+
+	tests := []struct {
+		name       string
+		policy     slov1alpha1.NodeMemoryCollectPolicy
+		mockValue  float64 // value to write to metric cache for the policy-aware metric
+		wantNode   float64 // expected node memory return value
+		wantPods   float64 // expected pods memory return value (passthrough)
+		wantHost   float64 // expected host app memory return value (passthrough)
+		wantErrVal bool    // true if we expect the default fallback (no policy-aware query)
+	}{
+		{
+			name:      "UsageWithPageCache returns policy-aware node memory",
+			policy:    slov1alpha1.UsageWithPageCache,
+			mockValue: 2048,
+			wantNode:  2048,
+			wantPods:  512,
+			wantHost:  128,
+		},
+		{
+			name:      "UsageWithHotPageCache returns policy-aware node memory",
+			policy:    slov1alpha1.UsageWithHotPageCache,
+			mockValue: 3072,
+			wantNode:  3072,
+			wantPods:  512,
+			wantHost:  128,
+		},
+		{
+			name:       "nil statesInformer falls back to default node memory",
+			policy:     slov1alpha1.UsageWithPageCache,
+			mockValue:  2048,
+			wantNode:   1024, // default nodeMemory.Value
+			wantPods:   512,
+			wantHost:   128,
+			wantErrVal: true, // nil statesInformer → no policy query
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+				TSDBPath:              t.TempDir(),
+				TSDBEnablePromMetrics: false,
+			})
+			assert.NoError(t, err)
+			defer metricCache.Close()
+
+			// Write a policy-aware node memory sample to the metric cache.
+			if !tt.wantErrVal {
+				metric := metriccache.NodeMemoryUsageWithPageCacheMetric
+				if tt.policy == slov1alpha1.UsageWithHotPageCache {
+					metric = metriccache.NodeMemoryWithHotPageUsageMetric
+				}
+				sample, err := metric.GenerateSample(nil, testNow.Add(-1*time.Second), tt.mockValue)
+				assert.NoError(t, err)
+				appender := metricCache.Appender()
+				err = appender.Append([]metriccache.MetricSample{sample})
+				assert.NoError(t, err)
+				err = appender.Commit()
+				assert.NoError(t, err)
+			}
+
+			// Build the collector.
+			s := &systemResourceCollector{
+				metricCache:      metricCache,
+				outdatedInterval: 10 * time.Second,
+				sharedState:      framework.NewSharedState(),
+			}
+			if !tt.wantErrVal {
+				s.statesInformer = &mockStatesInformer{
+					nodeMetricSpec: &slov1alpha1.NodeMetricSpec{
+						CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+							NodeMemoryCollectPolicy: &tt.policy,
+						},
+					},
+				}
+			}
+			// s.statesInformer stays nil for the error case
+
+			nodeInput := &metriccache.Point{Timestamp: testNow, Value: 1024}
+			gotNode, gotPods, gotHost := s.queryMemoryWithPolicy(tt.policy, testNow, nodeInput, 512, &metriccache.Point{Timestamp: testNow, Value: 128})
+			assert.Equal(t, tt.wantNode, gotNode, "node memory should match")
+			assert.Equal(t, tt.wantPods, gotPods, "pods memory should pass through")
+			assert.Equal(t, tt.wantHost, gotHost, "host app memory should pass through")
+		})
+	}
+}
+
 func Test_systemResourceCollector_Enabled(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		s := &systemResourceCollector{}
@@ -374,7 +494,7 @@ func Test_systemResourceCollector_Run(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &systemResourceCollector{
 				collectInterval: time.Second,
-				appendableDB:    metricCache,
+				metricCache:     metricCache,
 				sharedState:     framework.NewSharedState(),
 			}
 			s.sharedState.UpdateNodeUsage(metriccache.Point{Timestamp: time.Now(), Value: 1},
@@ -430,7 +550,7 @@ func Test_systemResourceCollector_collectSysNUMAResUsed(t *testing.T) {
 		s := &systemResourceCollector{
 			collectInterval:  time.Second,
 			outdatedInterval: config.CollectSysMetricOutdatedInterval,
-			appendableDB:     metricCache,
+			metricCache:      metricCache,
 			sharedState:      framework.NewSharedState(),
 		}
 		assert.NotPanics(t, func() {
@@ -450,7 +570,7 @@ func Test_systemResourceCollector_collectSysNUMAResUsed(t *testing.T) {
 		s := &systemResourceCollector{
 			collectInterval:  time.Second,
 			outdatedInterval: config.CollectSysMetricOutdatedInterval,
-			appendableDB:     metricCache,
+			metricCache:      metricCache,
 			sharedState:      framework.NewSharedState(),
 		}
 		s.sharedState.UpdateNodeNUMAUsage(
@@ -498,7 +618,7 @@ func Test_systemResourceCollector_collectSysNUMAResUsed(t *testing.T) {
 		s := &systemResourceCollector{
 			collectInterval:  time.Second,
 			outdatedInterval: config.CollectSysMetricOutdatedInterval,
-			appendableDB:     metricCache,
+			metricCache:      metricCache,
 			sharedState:      framework.NewSharedState(),
 		}
 		s.sharedState.UpdateNodeNUMAUsage(
@@ -538,7 +658,7 @@ func Test_systemResourceCollector_collectSysNUMAResUsed_cpuOutdated(t *testing.T
 	s := &systemResourceCollector{
 		collectInterval:  time.Second,
 		outdatedInterval: config.CollectSysMetricOutdatedInterval,
-		appendableDB:     metricCache,
+		metricCache:      metricCache,
 		sharedState:      framework.NewSharedState(),
 	}
 	s.sharedState.UpdateNodeNUMAUsage(
@@ -579,4 +699,174 @@ func Test_systemResourceCollector_collectSysNUMAResUsed_cpuOutdated(t *testing.T
 	gotMem, count := queryNUMASample(metriccache.SystemNUMAMemoryUsageMetric)
 	assert.Equal(t, 1, count)
 	assert.Equal(t, float64(1024-512), gotMem)
+}
+
+// Test_systemResourceCollector_queryMemoryWithPolicy_emptyCache covers the error
+// fallback paths in queryMemoryWithPolicy: when the metric cache has no data for
+// the policy-aware metric, the function should fall back to the input values.
+func Test_systemResourceCollector_queryMemoryWithPolicy_emptyCache(t *testing.T) {
+	testNow := time.Now()
+	originalTimeNow := timeNow
+	timeNow = func() time.Time { return testNow }
+	defer func() { timeNow = originalTimeNow }()
+
+	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+		TSDBPath:              t.TempDir(),
+		TSDBEnablePromMetrics: false,
+	})
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, metricCache.Close()) }()
+
+	// statesInformer is set with a policy, but no page-cache data is written to
+	// the cache. queryMemoryWithPolicy should fall back to the input nodeMemory.Value.
+	s := &systemResourceCollector{
+		metricCache:      metricCache,
+		outdatedInterval: 10 * time.Second,
+		sharedState:      framework.NewSharedState(),
+		statesInformer: &mockStatesInformer{
+			nodeMetricSpec: &slov1alpha1.NodeMetricSpec{
+				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+					NodeMemoryCollectPolicy: ptr.To(slov1alpha1.UsageWithPageCache),
+				},
+			},
+		},
+	}
+
+	nodeInput := &metriccache.Point{Timestamp: testNow, Value: 1024}
+	gotNode, gotPods, gotHost := s.queryMemoryWithPolicy(
+		slov1alpha1.UsageWithPageCache, testNow, nodeInput, 512,
+		&metriccache.Point{Timestamp: testNow, Value: 128},
+	)
+	assert.Equal(t, 1024.0, gotNode, "should fall back to input nodeMemory.Value on empty cache")
+	assert.Equal(t, 512.0, gotPods)
+	assert.Equal(t, 128.0, gotHost)
+}
+
+// Test_systemResourceCollector_collectSysResUsed_withPolicy covers the policy-aware
+// block in collectSysResUsed (lines 137-148): when statesInformer is set with a
+// NodeMemoryCollectPolicy and pageCacheCollectorEnabled is true, the system memory
+// usage should be calculated using the policy-aware node memory value.
+func Test_systemResourceCollector_collectSysResUsed_withPolicy(t *testing.T) {
+	testNow := time.Now()
+	originalTimeNow := timeNow
+	timeNow = func() time.Time { return testNow }
+	defer func() { timeNow = originalTimeNow }()
+	config := framework.NewDefaultConfig()
+
+	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+		TSDBPath:              t.TempDir(),
+		TSDBEnablePromMetrics: false,
+	})
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, metricCache.Close()) }()
+
+	// Write a page-cache-aware node memory sample to the metric cache.
+	pageCacheMetric, err := metriccache.NodeMemoryUsageWithPageCacheMetric.GenerateSample(nil, testNow.Add(-1*time.Second), 2048)
+	assert.NoError(t, err)
+	appender := metricCache.Appender()
+	err = appender.Append([]metriccache.MetricSample{pageCacheMetric})
+	assert.NoError(t, err)
+	err = appender.Commit()
+	assert.NoError(t, err)
+
+	s := &systemResourceCollector{
+		collectInterval:           config.CollectResUsedInterval,
+		outdatedInterval:          config.CollectSysMetricOutdatedInterval,
+		started:                   atomic.NewBool(false),
+		metricCache:               metricCache,
+		sharedState:               framework.NewSharedState(),
+		pageCacheCollectorEnabled: true,
+		statesInformer: &mockStatesInformer{
+			nodeMetricSpec: &slov1alpha1.NodeMetricSpec{
+				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+					NodeMemoryCollectPolicy: ptr.To(slov1alpha1.UsageWithPageCache),
+				},
+			},
+		},
+	}
+	s.sharedState.UpdateNodeUsage(
+		metriccache.Point{Timestamp: testNow, Value: 1},
+		metriccache.Point{Timestamp: testNow, Value: 1024}, // default usage without page cache
+	)
+	s.sharedState.UpdatePodUsage("test-collector",
+		metriccache.Point{Timestamp: testNow, Value: 0.5},
+		metriccache.Point{Timestamp: testNow, Value: 512},
+	)
+	s.sharedState.UpdateHostAppUsage(
+		metriccache.Point{Timestamp: testNow, Value: 0},
+		metriccache.Point{Timestamp: testNow, Value: 0},
+	)
+
+	s.collectSysResUsed()
+
+	// systemMemory = policyAwareNodeMemory(2048) - podsMemory(512) - hostAppMemory(0) = 1536
+	// Without policy it would be 1024 - 512 - 0 = 512
+	querier, err := metricCache.Querier(testNow.Add(-s.outdatedInterval), testNow)
+	assert.NoError(t, err)
+	defer querier.Close()
+	memResult, err := testQuery(querier, metriccache.SystemMemoryUsageMetric, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, memResult.Count(), "system memory metric should be collected")
+	memValue, err := memResult.Value(metriccache.AggregationTypeLast)
+	assert.NoError(t, err)
+	assert.Equal(t, 1536.0, memValue, "system memory should use policy-aware node memory (2048) minus pods (512)")
+}
+
+// Test_systemResourceCollector_collectSysResUsed_policyButPageCacheDisabled covers the warning
+// path when NodeMemoryCollectPolicy is set but pageCacheCollectorEnabled is false (lines 142-144).
+func Test_systemResourceCollector_collectSysResUsed_policyButPageCacheDisabled(t *testing.T) {
+	testNow := time.Now()
+	originalTimeNow := timeNow
+	timeNow = func() time.Time { return testNow }
+	defer func() { timeNow = originalTimeNow }()
+	config := framework.NewDefaultConfig()
+
+	metricCache, err := metriccache.NewMetricCache(&metriccache.Config{
+		TSDBPath:              t.TempDir(),
+		TSDBEnablePromMetrics: false,
+	})
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, metricCache.Close()) }()
+
+	s := &systemResourceCollector{
+		collectInterval:           config.CollectResUsedInterval,
+		outdatedInterval:          config.CollectSysMetricOutdatedInterval,
+		started:                   atomic.NewBool(false),
+		metricCache:               metricCache,
+		sharedState:               framework.NewSharedState(),
+		pageCacheCollectorEnabled: false, // policy set but collector disabled → warning path
+		statesInformer: &mockStatesInformer{
+			nodeMetricSpec: &slov1alpha1.NodeMetricSpec{
+				CollectPolicy: &slov1alpha1.NodeMetricCollectPolicy{
+					NodeMemoryCollectPolicy: ptr.To(slov1alpha1.UsageWithPageCache),
+				},
+			},
+		},
+	}
+	s.sharedState.UpdateNodeUsage(
+		metriccache.Point{Timestamp: testNow, Value: 1},
+		metriccache.Point{Timestamp: testNow, Value: 1024},
+	)
+	s.sharedState.UpdatePodUsage("test-collector",
+		metriccache.Point{Timestamp: testNow, Value: 0.5},
+		metriccache.Point{Timestamp: testNow, Value: 512},
+	)
+	s.sharedState.UpdateHostAppUsage(
+		metriccache.Point{Timestamp: testNow, Value: 0},
+		metriccache.Point{Timestamp: testNow, Value: 0},
+	)
+
+	s.collectSysResUsed()
+
+	// With no page-cache data in cache, queryMemoryWithPolicy falls back to raw nodeMemory (1024).
+	// systemMemory = 1024 - 512 - 0 = 512
+	querier, err := metricCache.Querier(testNow.Add(-s.outdatedInterval), testNow)
+	assert.NoError(t, err)
+	defer querier.Close()
+	memResult, err := testQuery(querier, metriccache.SystemMemoryUsageMetric, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, memResult.Count(), "system memory metric should be collected")
+	memValue, err := memResult.Value(metriccache.AggregationTypeLast)
+	assert.NoError(t, err)
+	assert.Equal(t, 512.0, memValue, "system memory should fall back to raw node memory when page-cache collector is disabled")
 }
