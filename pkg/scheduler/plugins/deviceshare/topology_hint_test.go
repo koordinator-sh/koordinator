@@ -380,6 +380,7 @@ func newReservedGPUHintFixture(t *testing.T) *reservedGPUHintFixture {
 	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 
+	suit.start(context.TODO())
 	suit.koordinatorSharedInformerFactory.Start(nil)
 	suit.SharedInformerFactory().Start(nil)
 	suit.koordinatorSharedInformerFactory.WaitForCacheSync(nil)
@@ -518,6 +519,7 @@ func newCrossNUMAReservationHintFixture(t *testing.T) *reservedGPUHintFixture {
 	p, err := suit.proxyNew(context.TODO(), getDefaultArgs(), suit.Framework)
 	assert.NoError(t, err)
 
+	suit.start(context.TODO())
 	suit.koordinatorSharedInformerFactory.Start(nil)
 	suit.SharedInformerFactory().Start(nil)
 	suit.koordinatorSharedInformerFactory.WaitForCacheSync(nil)
