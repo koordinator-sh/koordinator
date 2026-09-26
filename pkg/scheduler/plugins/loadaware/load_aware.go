@@ -18,14 +18,18 @@ package loadaware
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	resourceapi "k8s.io/component-helpers/resource"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 
@@ -62,6 +66,7 @@ const (
 
 var (
 	_ fwktype.EnqueueExtensions = &Plugin{}
+	_ fwktype.SignPlugin        = &Plugin{}
 
 	_ fwktype.PreFilterPlugin = &Plugin{}
 	_ fwktype.FilterPlugin    = &Plugin{}
@@ -134,6 +139,66 @@ func (p *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 		{Event: fwktype.ClusterEvent{Resource: fwktype.Pod, ActionType: fwktype.Delete}},
 		{Event: fwktype.ClusterEvent{Resource: fwktype.EventResource(gvk), ActionType: fwktype.Add | fwktype.Update | fwktype.Delete}},
 	}, nil
+}
+
+// Signer names for this plugin's signature fragments.
+const (
+	priorityClassSignerName        = "koord.LoadAware.priorityClass"
+	daemonSetOwnedSignerName       = "koord.LoadAware.daemonSetOwned"
+	limitsSignerName               = "koord.LoadAware.limits"
+	customScalingFactorsSignerName = "koord.LoadAware.customScalingFactors"
+)
+
+// SignPod signs the pod inputs this plugin's Filter and Score read. Requests are
+// omitted because upstream noderesources/fit signs them and EstimatePod reads
+// the same aggregate; limits are not signed upstream, so they get a fragment.
+// Priority class selects the Prod thresholds and DaemonSet ownership
+// short-circuits Filter, so both split the signature.
+func (p *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	fragments := []fwktype.SignFragment{
+		{
+			Key:   priorityClassSignerName,
+			Value: string(extension.GetPodPriorityClassWithDefault(pod)),
+		},
+		{
+			Key:   daemonSetOwnedSignerName,
+			Value: isDaemonSetPod(pod.OwnerReferences),
+		},
+	}
+	limits := resourceapi.PodLimits(pod, resourceapi.PodResourcesOptions{})
+	if len(limits) > 0 {
+		fragments = append(fragments, fwktype.SignFragment{
+			Key:   limitsSignerName,
+			Value: canonicalResourceList(limits),
+		})
+	}
+	// Parse and re-marshal the custom scaling factors so two pods with
+	// semantically equal factors (e.g. different whitespace) share a
+	// signature. Mirror GetCustomEstimatedScalingFactors' leniency: a
+	// malformed annotation silently falls back to plugin defaults inside
+	// EstimatePod, so it must fall back to "no fragment" here too to
+	// match a no-annotation pod's signature.
+	if factors := extension.GetCustomEstimatedScalingFactors(pod); len(factors) > 0 {
+		if b, err := json.Marshal(factors); err == nil {
+			fragments = append(fragments, fwktype.SignFragment{
+				Key:   customScalingFactorsSignerName,
+				Value: string(b),
+			})
+		}
+	}
+	return fragments, nil
+}
+
+// canonicalResourceList serializes a ResourceList into a sorted slice so
+// two pods with equal maps produce identical fragment values regardless
+// of iteration order.
+func canonicalResourceList(rl corev1.ResourceList) []string {
+	out := make([]string, 0, len(rl))
+	for _, n := range slices.Sorted(maps.Keys(rl)) {
+		q := rl[n]
+		out = append(out, string(n)+"="+q.String())
+	}
+	return out
 }
 
 func (p *Plugin) PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
