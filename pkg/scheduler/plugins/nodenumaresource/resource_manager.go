@@ -17,29 +17,35 @@ limitations under the License.
 package nodenumaresource
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
 	"sort"
 	"sync"
 
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
 	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/topologymanager"
 	"github.com/koordinator-sh/koordinator/pkg/util"
 	"github.com/koordinator-sh/koordinator/pkg/util/bitmask"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
+
+var _ frameworkext.SharedPluginCache = &resourceManager{}
 
 type ResourceManager interface {
 	GetTopologyHints(node *corev1.Node, pod *corev1.Pod, options *ResourceOptions, policy apiext.NUMATopologyPolicy, restoreState *nodeReservationRestoreStateData) (map[string][]topologymanager.NUMATopologyHint, error)
@@ -76,6 +82,8 @@ type ResourceOptions struct {
 }
 
 type resourceManager struct {
+	handle                 fwktype.Handle
+	nrtInformerFactory     nrtinformers.SharedInformerFactory
 	numaAllocateStrategy   schedulingconfig.NUMAAllocateStrategy
 	topologyOptionsManager TopologyOptionsManager
 	lock                   sync.Mutex
@@ -87,30 +95,56 @@ func NewResourceManager(
 	defaultNUMAAllocateStrategy schedulingconfig.NUMAAllocateStrategy,
 	topologyOptionsManager TopologyOptionsManager,
 ) ResourceManager {
-	manager := &resourceManager{
+	return &resourceManager{
+		handle:                 handle,
 		numaAllocateStrategy:   defaultNUMAAllocateStrategy,
 		topologyOptionsManager: topologyOptionsManager,
 		nodeAllocations:        map[string]*NodeAllocation{},
 	}
-	handle.SharedInformerFactory().Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{DeleteFunc: manager.onNodeDelete})
-	return manager
 }
 
-func (c *resourceManager) onNodeDelete(obj interface{}) {
-	var node *corev1.Node
-	switch t := obj.(type) {
-	case *corev1.Node:
-		node = t
-	case cache.DeletedFinalStateUnknown:
-		var ok bool
-		node, ok = t.Obj.(*corev1.Node)
-		if !ok {
-			return
-		}
-	default:
-		break
+// Start implements frameworkext.SharedPluginCache. Called once per scheduler instance after all
+// profiles are built and before the shared informer factories start. Registers the plugin-specific
+// CRD handlers that cannot be centrally dispatched: the NodeResourceTopology handler (feeding the
+// shared topologyOptionsManager) and the Reservation-to-pod synthetic handler (routed through the
+// same updatePod/deletePod path as core pod events). Core pod and node events arrive via the
+// unified dispatcher (OnPod*/OnNode*), so they are not registered here.
+func (c *resourceManager) Start(ctx context.Context) {
+	extendedHandle, ok := c.handle.(frameworkext.ExtendedHandle)
+	if !ok {
+		return
 	}
+	if c.nrtInformerFactory != nil {
+		if err := registerNodeResourceTopologyEventHandler(c.nrtInformerFactory, c.topologyOptionsManager); err != nil {
+			klog.ErrorS(err, "failed to register NodeResourceTopology event handler for shared nodenumaresource cache")
+		}
+	}
+	eventHandler := &podEventHandler{resourceManager: c}
+	reservationInformer := extendedHandle.KoordinatorSharedInformerFactory().Scheduling().V1alpha1().Reservations()
+	reservationEventHandler := reservationutil.NewReservationToPodEventHandler(eventHandler, reservationutil.IsObjValidActiveReservation)
+	frameworkexthelper.ForceSyncFromInformer(ctx.Done(), extendedHandle.KoordinatorSharedInformerFactory(), reservationInformer.Informer(), reservationEventHandler)
+}
 
+// OnPodAdd/OnPodUpdate/OnPodDelete implement frameworkext.SharedPluginCache. Called by the unified
+// dispatcher for core pod events; they reuse the existing updatePod/deletePod reconciliation.
+func (c *resourceManager) OnPodAdd(pod *corev1.Pod) {
+	(&podEventHandler{resourceManager: c}).updatePod(nil, pod)
+}
+
+func (c *resourceManager) OnPodUpdate(oldPod, newPod *corev1.Pod) {
+	(&podEventHandler{resourceManager: c}).updatePod(oldPod, newPod)
+}
+
+func (c *resourceManager) OnPodDelete(pod *corev1.Pod) {
+	(&podEventHandler{resourceManager: c}).deletePod(pod)
+}
+
+// Node add/update are no-ops: nodeAllocations is keyed by node name and populated lazily. OnNodeDelete
+// drops the deleted node's allocation, replacing the per-profile node-delete informer handler.
+func (c *resourceManager) OnNodeAdd(*corev1.Node)         {}
+func (c *resourceManager) OnNodeUpdate(_, _ *corev1.Node) {}
+
+func (c *resourceManager) OnNodeDelete(node *corev1.Node) {
 	if node == nil {
 		return
 	}
