@@ -135,6 +135,11 @@ func TestInternalRegistryGathersAllInternalMetrics(t *testing.T) {
 		{"koordlet_host_application_resource_usage", func() {
 			HostApplicationResourceUsage.WithLabelValues("node", "app", "cpu", "priorityClass", "qos").Set(1)
 		}},
+
+		// cgroup_reconcile.go
+		{"koordlet_memory_reclaim_rounds_total", func() {
+			MemoryReclaimRounds.WithLabelValues("node", MemoryReclaimResultSuccess).Inc()
+		}},
 	}
 
 	// The table above is maintained by hand, so on its own it only catches a metric that is removed from a
@@ -158,6 +163,7 @@ func TestInternalRegistryGathersAllInternalMetrics(t *testing.T) {
 		KubeletStubCollector,
 		RuntimeHookCollectors,
 		HostApplicationCollectors,
+		CgroupReconcileCollector,
 	}
 	internalRegisterableSlices := [][]k8smetrics.Registerable{
 		CommonRegisterableCollectors,
