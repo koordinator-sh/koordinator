@@ -17,6 +17,8 @@ limitations under the License.
 package frameworkext
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -549,4 +551,72 @@ func TestCrossSchedulerPodNominator_FilteringResourceEventHandler(t *testing.T) 
 		assert.Empty(t, freshNominator.NominatedPodsForNode("node-3"))
 		assert.Empty(t, freshNominator.NominatedPodsForNode("node-4"))
 	})
+}
+
+// TestCrossSchedulerPodNominator_ConcurrentAccess verifies that the internal
+// RWMutex discipline of CrossSchedulerPodNominator is correct: multiple writers
+// (OnAdd/OnUpdate/OnDelete) and readers (NominatedPodsForNode/ShouldHandle/
+// AddLocalProfileName) run concurrently without triggering the race detector
+// or panicking. This is a regression guard for the lazy profile registration
+// pattern described in TF-002, where localProfileNames is mutated from the
+// scheduler setup goroutine while informers concurrently read it via
+// ShouldHandle.
+func TestCrossSchedulerPodNominator_ConcurrentAccess(t *testing.T) {
+	nom := NewCrossSchedulerPodNominator()
+	const goroutines = 8
+	const ops = 200
+
+	// Build a shared pool of pods so readers/writers share real objects.
+	makeNominatedPod := func(i int) *corev1.Pod {
+		return makePod(
+			fmt.Sprintf("pod-%d", i),
+			fmt.Sprintf("uid-%d", i),
+			"other-scheduler",
+			fmt.Sprintf("node-%d", i%4),
+			"",
+		)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	// Writers: simulate informer event stream.
+	for g := 0; g < goroutines/2; g++ {
+		g := g
+		go func() {
+			defer wg.Done()
+			for i := 0; i < ops; i++ {
+				p := makeNominatedPod(g*ops + i)
+				nom.OnAdd(p)
+				// Simulate an update (node change)
+				updated := p.DeepCopy()
+				updated.Status.NominatedNodeName = fmt.Sprintf("node-%d", (i+1)%4)
+				nom.OnUpdate(p, updated)
+			}
+		}()
+	}
+
+	// Readers: simulate scheduler filter phase + profile registration.
+	for g := 0; g < goroutines/2; g++ {
+		g := g
+		go func() {
+			defer wg.Done()
+			for i := 0; i < ops; i++ {
+				p := makeNominatedPod(g*ops + i)
+				_ = nom.ShouldHandle(p)
+				_ = nom.NominatedPodsForNode(fmt.Sprintf("node-%d", i%4))
+				if g%2 == 0 && i%50 == 0 {
+					nom.AddLocalProfileName(fmt.Sprintf("profile-%d", g*ops+i))
+				}
+				// Occasionally delete
+				if i%17 == 0 {
+					nom.OnDelete(p)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	// Reaching here under -race without any race report or panic means the
+	// RWMutex lock discipline holds.
 }
