@@ -52,6 +52,11 @@ const (
 	// TODO use BECPUManager to replace BECPUSuppress for advanced cpu management for be pods
 	BECPUManager featuregate.Feature = "BECPUManager"
 
+	// BECPUIdleSuppress sets cpu.idle=1 on the BE cgroup root to provide additional
+	// CPU latency isolation. Operators on exotic kernels without CONFIG_SCHED_IDLE
+	// can disable this feature gate even when the cgroup file exists.
+	BECPUIdleSuppress featuregate.Feature = "BECPUIdleSuppress"
+
 	// owner: @zwzhang0107 @saintube
 	// alpha: v0.4
 	//
@@ -229,6 +234,7 @@ var (
 		AuditEventsHTTPHandler: {Default: false, PreRelease: featuregate.Alpha},
 		BECPUSuppress:          {Default: true, PreRelease: featuregate.Beta},
 		BECPUManager:           {Default: false, PreRelease: featuregate.Alpha},
+		BECPUIdleSuppress:      {Default: true, PreRelease: featuregate.Alpha},
 		BECPUEvict:             {Default: false, PreRelease: featuregate.Alpha},
 		CPUEvict:               {Default: false, PreRelease: featuregate.Alpha},
 		CPUAllocatableEvict:    {Default: false, PreRelease: featuregate.Alpha},
