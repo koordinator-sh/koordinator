@@ -375,6 +375,18 @@ func (pl *Plugin) NominateReservation(ctx context.Context, cycleState fwktype.Cy
 		return nil, fwktype.AsStatus(fmt.Errorf("not implemented frameworkext.FrameworkExtender"))
 	}
 
+	// When global optimality is not mandatory, return the first feasible reservation instead of filtering and
+	// scoring every matched reservation to pick the best one.
+	if pl.enableReservationFirstFit {
+		for i := range reservationInfos {
+			status := extender.RunNominateReservationFilterPlugins(ctx, cycleState, pod, reservationInfos[i], nodeName)
+			if status.IsSuccess() {
+				return reservationInfos[i], nil
+			}
+		}
+		return nil, nil
+	}
+
 	reservations := make([]*frameworkext.ReservationInfo, 0, len(reservationInfos))
 	for i := range reservationInfos {
 		status := extender.RunNominateReservationFilterPlugins(ctx, cycleState, pod, reservationInfos[i], nodeName)
