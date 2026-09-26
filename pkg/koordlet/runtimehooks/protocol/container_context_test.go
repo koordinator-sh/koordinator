@@ -184,6 +184,39 @@ func TestContainerContext_NriDone(t *testing.T) {
 				IgnoreFailure: false,
 			},
 		},
+		{
+			name: "NriDone success with cpuset.mems",
+			fields: fields{
+				Response: ContainerResponse{
+					Resources: Resources{
+						CPUSet:     ptr.To[string]("0-3"),
+						CPUSetMems: ptr.To[string]("0,1"),
+					},
+				},
+				executor: resourceexecutor.NewTestResourceExecutor(),
+			},
+			want: &api.ContainerAdjustment{
+				Linux: &api.LinuxContainerAdjustment{
+					Resources: &api.LinuxResources{
+						Cpu: &api.LinuxCPU{
+							Cpus: "0-3",
+							Mems: "0,1",
+						},
+					},
+				},
+			},
+			want1: &api.ContainerUpdate{
+				Linux: &api.LinuxContainerUpdate{
+					Resources: &api.LinuxResources{
+						Cpu: &api.LinuxCPU{
+							Cpus: "0-3",
+							Mems: "0,1",
+						},
+					},
+				},
+				IgnoreFailure: false,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
