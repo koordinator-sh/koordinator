@@ -84,10 +84,15 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 	type args struct {
 		podMeta *statesinformer.PodMeta
 	}
+	type want struct {
+		podThrottledRatio       float64
+		containerThrottledRatio float64
+	}
 	tests := []struct {
 		name   string
 		fields fields
 		args   args
+		want   want
 	}{
 		{
 			name: "cgroup v1 format",
@@ -119,6 +124,10 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 				},
 			},
 			args: args{},
+			want: want{
+				podThrottledRatio:       0.5,
+				containerThrottledRatio: 0.5,
+			},
 		},
 		{
 			name: "cgroup v1, filter terminated pods",
@@ -153,6 +162,10 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 				},
 			},
 			args: args{},
+			want: want{
+				podThrottledRatio:       0.5,
+				containerThrottledRatio: 0.5,
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -194,6 +207,45 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 			assert.NotPanics(t, func() {
 				c.collectPodThrottledInfo()
 			})
+
+			querier, err := metricCache.Querier(time.Now().Add(-time.Minute), time.Now())
+			if !assert.NoError(t, err) {
+				return
+			}
+			defer querier.Close()
+
+			podResult, err := queryMetric(querier, metriccache.PodCPUThrottledMetric,
+				metriccache.MetricPropertiesFunc.Pod(string(testPod.UID)))
+			if !assert.NoError(t, err) {
+				return
+			}
+			assert.Equal(t, 1, podResult.Count())
+			podThrottledRatio, err := podResult.Value(metriccache.AggregationTypeLast)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want.podThrottledRatio, podThrottledRatio)
+
+			containerResult, err := queryMetric(querier, metriccache.ContainerCPUThrottledMetric,
+				metriccache.MetricPropertiesFunc.Container(testContainerID))
+			if !assert.NoError(t, err) {
+				return
+			}
+			assert.Equal(t, 1, containerResult.Count())
+			containerThrottledRatio, err := containerResult.Value(metriccache.AggregationTypeLast)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want.containerThrottledRatio, containerThrottledRatio)
 		})
 	}
+}
+
+func queryMetric(querier metriccache.Querier, resource metriccache.MetricResource,
+	properties map[metriccache.MetricProperty]string) (metriccache.AggregateResult, error) {
+	queryMeta, err := resource.BuildQueryMeta(properties)
+	if err != nil {
+		return nil, err
+	}
+	result := metriccache.DefaultAggregateResultFactory.New(queryMeta)
+	if err := querier.Query(queryMeta, nil, result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
