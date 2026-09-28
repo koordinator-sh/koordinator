@@ -241,7 +241,7 @@ var (
 	MemoryWmarkMinAdj      = DefaultFactory.New(MemoryWmarkMinAdjName, CgroupMemDir).WithValidator(MemoryWmarkMinAdjValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryMin              = DefaultFactory.New(MemoryMinName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryLow              = DefaultFactory.New(MemoryLowName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
-	MemoryHigh             = DefaultFactory.New(MemoryHighName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
+	MemoryHigh             = DefaultFactory.New(MemoryHighName, CgroupMemDir).WithValidator(NaturalInt64Validator).WithCheckSupported(SupportedIfWritableInKubepods)
 	MemoryPriority         = DefaultFactory.New(MemoryPriorityName, CgroupMemDir).WithValidator(MemoryPriorityValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryUsePriorityOom   = DefaultFactory.New(MemoryUsePriorityOomName, CgroupMemDir).WithValidator(MemoryUsePriorityOomValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)
 	MemoryOomGroup         = DefaultFactory.New(MemoryOomGroupName, CgroupMemDir).WithValidator(MemoryOomGroupValidator).WithCheckSupported(SupportedIfFileExistsInKubepods).WithCheckOnce(true)

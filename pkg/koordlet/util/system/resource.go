@@ -18,6 +18,7 @@ package system
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -88,6 +89,31 @@ func SupportedIfFileExistsInKubepods(r Resource, _ string) (bool, string) {
 	}
 	if !exists {
 		return false, "file not exist in kubepods cgroup"
+	}
+	return true, ""
+}
+
+// SupportedIfWritableInKubepods checks whether the resource file exists under the kubepods cgroup
+// directory and its write path actually works, by probing with a read-then-write-back of the
+// current content. Some kernels (e.g. TencentOS 3.3 backporting cgroup-v2 memory.high into
+// cgroup-v1 memcg, see koordinator issue #3217) register the file but reject ALL writes with
+// EINVAL unless a sysctl toggle is enabled, so file existence alone is not enough. The probe
+// writes back the exact content just read, which is idempotent and harmless. Do NOT combine
+// this with WithCheckOnce(true): re-probing on every write keeps the supported status in sync
+// when the kernel toggle changes at runtime.
+func SupportedIfWritableInKubepods(r Resource, _ string) (bool, string) {
+	if supported, msg := SupportedIfFileExistsInKubepods(r, ""); !supported {
+		return supported, msg
+	}
+	// probe the same kubepods-level file whose existence was just checked, so that a transient
+	// per-pod cgroup dir is never misclassified as an unsupported resource.
+	filePath := r.Path(CgroupPathFormatter.ParentDir)
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return false, fmt.Sprintf("read probe failed: %v", err)
+	}
+	if err := os.WriteFile(filePath, content, 0644); err != nil {
+		return false, fmt.Sprintf("write probe failed: %v", err)
 	}
 	return true, ""
 }

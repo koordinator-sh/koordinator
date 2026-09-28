@@ -99,11 +99,17 @@ func cgroupFileWrite(cgroupTaskDir string, r sysutil.Resource, value string) err
 // simulate kernel write errors (e.g. EINVAL).
 var cgroupWriteFile = os.WriteFile
 
-// wrapCgroupWriteErr classifies a cgroup write error. Some kernels (e.g. TencentOS 3.3 with cgroup-v1)
-// expose cgroup interfaces whose write handler returns EINVAL, although the file exists and is readable.
-// Such EINVAL means the resource is effectively unsupported on the node, so it is wrapped as a
-// resource-unsupported error and the executor stops retrying it. The original error chain is preserved
-// for errors.Is checks. Other errors are returned as-is.
+// wrapCgroupWriteErr classifies a cgroup write error as a runtime fallback. The primary detection
+// mechanism for a kernel that rejects writes is the resource's SupportFn write probe (e.g.
+// SupportedIfWritableInKubepods for memory.high), which reports the resource as unsupported before
+// the real write is ever attempted. This classification is only a runtime fallback against retry
+// storms: EINVAL on cgroup writes historically has more causes than the TencentOS 3.3 backport of
+// cgroup-v2 memory.high (e.g. memory.limit_in_bytes in issue #1467, other cgroup-v1 interfaces in
+// issue #2383), and the kernel sysctl toggle can be flipped while koordlet is running. The
+// classification only affects the retry policy (stop retrying; the SupportFn re-probes on
+// subsequent write attempts), and a failed write never took effect, so no functional semantics
+// are masked. The original error chain is preserved for errors.Is checks. Other errors are
+// returned as-is.
 func wrapCgroupWriteErr(r sysutil.Resource, err error) error {
 	if errors.Is(err, syscall.EINVAL) {
 		return sysutil.WrapResourceUnsupportedErr(fmt.Errorf("write cgroup %s failed, err: %w", r.ResourceType(), err))
