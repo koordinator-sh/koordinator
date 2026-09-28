@@ -18,6 +18,7 @@ package elasticquota
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -357,50 +358,51 @@ func (g *Plugin) getPodAssociateQuotaNameAndTreeIDFromSnapshot(pod *corev1.Pod) 
 	}
 	return extension.DefaultQuotaName, ""
 }
-func toElasticQuota(obj interface{}) *apiv1alpha1.ElasticQuota {
-	if obj == nil {
-		return nil
-	}
 
+func toElasticQuota(obj interface{}) (*apiv1alpha1.ElasticQuota, error) {
 	var unstructuredObj *unstructured.Unstructured
 	switch t := obj.(type) {
+	case nil:
+		return nil, nil
 	case *apiv1alpha1.ElasticQuota:
-		return t
+		return t, nil
 	case *unstructured.Unstructured:
 		unstructuredObj = t
 	case cache.DeletedFinalStateUnknown:
 		switch inner := t.Obj.(type) {
 		case *apiv1alpha1.ElasticQuota:
-			return inner
+			return inner, nil
 		case *unstructured.Unstructured:
 			unstructuredObj = inner
 		default:
-			klog.Errorf("Unable to handle quota object wrapped in DeletedFinalStateUnknown, type %T", t.Obj)
-			return nil
+			return nil, fmt.Errorf("expected an ElasticQuota in the tombstone, got %T", t.Obj)
 		}
 	default:
-		klog.Errorf("Unable to handle quota object in %T", obj)
-		return nil
+		return nil, fmt.Errorf("expected an ElasticQuota or an unstructured object, got %T", obj)
 	}
 
 	if unstructuredObj == nil || unstructuredObj.Object == nil {
-		klog.Errorf("Failed to convert quota object, unstructured object or its content is nil")
-		return nil
+		return nil, errors.New("the elastic quota event carries no object content")
 	}
 
 	quota := &apiv1alpha1.ElasticQuota{}
 	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObj.Object, quota); err != nil {
-		klog.Errorf("Failed to convert unstructured object %v to ElasticQuota: %v", obj, err)
-		return nil
+		return nil, fmt.Errorf("decode the elastic quota event: %w", err)
 	}
-	return quota
+	return quota, nil
 }
 
 // isSchedulableAfterQuotaChanged determines if a pod becomes schedulable after quota is updated.
 // QueueAfterBackoff is default queueingHintFn behavior.
 func (g *Plugin) isSchedulableAfterQuotaChanged(logger klog.Logger, pod *corev1.Pod, oldObj, newObj interface{}) (fwktype.QueueingHint, error) {
-	originalQuota := toElasticQuota(oldObj)
-	modifiedQuota := toElasticQuota(newObj)
+	originalQuota, err := toElasticQuota(oldObj)
+	if err != nil {
+		return fwktype.Queue, err
+	}
+	modifiedQuota, err := toElasticQuota(newObj)
+	if err != nil {
+		return fwktype.Queue, err
+	}
 
 	if originalQuota == nil || modifiedQuota == nil {
 		logger.V(5).Info("ElasticQuota QueueHint: Queue, originalQuota or modifiedQuota is nil",
