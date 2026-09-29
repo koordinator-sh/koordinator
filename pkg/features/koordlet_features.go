@@ -55,6 +55,7 @@ const (
 	// BECPUIdleSuppress sets cpu.idle=1 on the BE cgroup root to provide additional
 	// CPU latency isolation. Operators on exotic kernels without CONFIG_SCHED_IDLE
 	// can disable this feature gate even when the cgroup file exists.
+	// cpu.idle writes defer to the CoreSched runtime hook when it governs the file.
 	BECPUIdleSuppress featuregate.Feature = "BECPUIdleSuppress"
 
 	// owner: @zwzhang0107 @saintube

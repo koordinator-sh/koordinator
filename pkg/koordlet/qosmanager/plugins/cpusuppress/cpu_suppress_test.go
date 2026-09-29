@@ -678,6 +678,10 @@ func Test_cpuSuppress_suppressBECPU(t *testing.T) {
 		},
 	}
 	defaultSandboxContainerIDPrefix := "containerd://sandbox-"
+	// pin the kernel core sched detection to unsupported so that the cpu.idle ownership
+	// stays with cpusuppress in this test, regardless of the CI runner's kernel
+	defer func(orig func() bool) { coreSchedSupportedFn = orig }(coreSchedSupportedFn)
+	coreSchedSupportedFn = func() bool { return false }
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
@@ -2553,6 +2557,10 @@ func Test_cpuSuppress_suppressBECPU_gateDisabled(t *testing.T) {
 		},
 	}
 	defaultSandboxContainerIDPrefix := "containerd://sandbox-"
+	// pin the kernel core sched detection to unsupported so that the cpu.idle ownership
+	// stays with cpusuppress in this test, regardless of the CI runner's kernel
+	defer func(orig func() bool) { coreSchedSupportedFn = orig }(coreSchedSupportedFn)
+	coreSchedSupportedFn = func() bool { return false }
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctl := gomock.NewController(t)
@@ -2707,7 +2715,7 @@ func Test_cpuSuppress_suppressBECPUIdle_updateError(t *testing.T) {
 	})
 
 	assert.NotPanics(t, func() {
-		cpuSuppress.suppressBECPUIdle()
+		cpuSuppress.suppressBECPUIdle(nil)
 	})
 	// State should NOT be set to policyUsing since the update failed
 	_, exist := cpuSuppress.suppressPolicyStatuses[system.CPUIdleName]
@@ -2732,12 +2740,237 @@ func Test_cpuSuppress_recoverBECpuIdleIfNeed_updateError(t *testing.T) {
 	cpuSuppress.suppressPolicyStatuses[system.CPUIdleName] = policyUsing
 
 	assert.NotPanics(t, func() {
-		cpuSuppress.recoverBECpuIdleIfNeed()
+		cpuSuppress.recoverBECpuIdleIfNeed(nil)
 	})
 	// State should remain policyUsing since the update failed
 	got, exist := cpuSuppress.suppressPolicyStatuses[system.CPUIdleName]
 	assert.True(t, exist, "suppressPolicyStatuses should still contain CPUIdleName")
 	assert.Equal(t, policyUsing, got, "CPUIdleName policy should remain policyUsing after failed update")
+}
+
+// Test_cpuSuppress_cpuIdleOwnership tests the cpu.idle ownership guard between the
+// cpusuppress and the CoreSched runtime hook: when the kernel supports core sched
+// and the hook governs the kubepods-besteffort cpu.idle file, the cpusuppress must
+// defer the cpu.idle writes to the hook, while the quota/cpuset writes are unaffected.
+func Test_cpuSuppress_cpuIdleOwnership(t *testing.T) {
+	nodeCPUInfo := &metriccache.NodeCPUInfo{
+		ProcessorInfos: []koordletutil.ProcessorInfo{
+			{CPUID: 0, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 1, CoreID: 0, SocketID: 0, NodeID: 0},
+			{CPUID: 2, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 3, CoreID: 1, SocketID: 0, NodeID: 0},
+			{CPUID: 4, CoreID: 2, SocketID: 1, NodeID: 0},
+			{CPUID: 5, CoreID: 2, SocketID: 1, NodeID: 0},
+			{CPUID: 6, CoreID: 3, SocketID: 1, NodeID: 0},
+			{CPUID: 7, CoreID: 3, SocketID: 1, NodeID: 0},
+			{CPUID: 8, CoreID: 4, SocketID: 2, NodeID: 1},
+			{CPUID: 9, CoreID: 4, SocketID: 2, NodeID: 1},
+			{CPUID: 10, CoreID: 5, SocketID: 2, NodeID: 1},
+			{CPUID: 11, CoreID: 5, SocketID: 2, NodeID: 1},
+			{CPUID: 12, CoreID: 6, SocketID: 3, NodeID: 1},
+			{CPUID: 13, CoreID: 6, SocketID: 3, NodeID: 1},
+			{CPUID: 14, CoreID: 7, SocketID: 3, NodeID: 1},
+			{CPUID: 15, CoreID: 7, SocketID: 3, NodeID: 1},
+		},
+	}
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node0"},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("16"),
+				corev1.ResourceMemory: resource.MustParse("40G"),
+			},
+			Capacity: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("16"),
+				corev1.ResourceMemory: resource.MustParse("40G"),
+			},
+		},
+	}
+	podMetas := []*statesinformer.PodMeta{
+		{
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "ls-pod", UID: "ls-pod",
+					Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSLS)},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+							Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10"), corev1.ResourceMemory: resource.MustParse("20G")},
+						},
+					}},
+				},
+				Status: corev1.PodStatus{
+					Phase:             corev1.PodRunning,
+					ContainerStatuses: []corev1.ContainerStatus{{ContainerID: "containerd://ls-pod-container"}},
+				},
+			},
+		},
+		{
+			Pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "be-pod", UID: "be-pod",
+					Labels: map[string]string{apiext.LabelPodQoS: string(apiext.QoSBE)},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+							Limits:   corev1.ResourceList{apiext.BatchCPU: resource.MustParse("4"), apiext.BatchMemory: resource.MustParse("6G")},
+						},
+					}},
+				},
+				Status: corev1.PodStatus{
+					Phase:             corev1.PodRunning,
+					ContainerStatuses: []corev1.ContainerStatus{{ContainerID: "containerd://be-pod-container"}},
+				},
+			},
+		},
+	}
+	thresholdOnlyNodeSLO := testutil.GetNodeSLOByThreshold(&slov1alpha1.ResourceThresholdStrategy{
+		Enable:                      ptr.To[bool](true),
+		CPUSuppressPolicy:           slov1alpha1.CPUCfsQuotaPolicy,
+		CPUSuppressThresholdPercent: ptr.To[int64](70),
+	})
+	newCoreSchedNodeSLO := func(schedIdle int64) *slov1alpha1.NodeSLO {
+		nodeSLO := thresholdOnlyNodeSLO.DeepCopy()
+		nodeSLO.Spec.ResourceQOSStrategy = &slov1alpha1.ResourceQOSStrategy{
+			Policies: &slov1alpha1.ResourceQOSPolicies{
+				CPUPolicy: ptr.To(slov1alpha1.CPUQOSPolicyCoreSched),
+			},
+			BEClass: &slov1alpha1.ResourceQOS{
+				CPUQOS: &slov1alpha1.CPUQOSCfg{
+					Enable: ptr.To[bool](true),
+					CPUQOS: slov1alpha1.CPUQOS{SchedIdle: ptr.To[int64](schedIdle)},
+				},
+			},
+		}
+		return nodeSLO
+	}
+
+	tests := []struct {
+		name                     string
+		coreSchedSupported       bool
+		nodeSLO                  *slov1alpha1.NodeSLO
+		preCPUIdle               string
+		wantCPUIdleAfterSuppress string
+		wantCPUIdleAfterRecover  string
+	}{
+		{
+			name:                     "no core sched support, original behavior: suppress writes 1, recover writes 0",
+			coreSchedSupported:       false,
+			nodeSLO:                  thresholdOnlyNodeSLO,
+			preCPUIdle:               "0",
+			wantCPUIdleAfterSuppress: "1",
+			wantCPUIdleAfterRecover:  "0",
+		},
+		{
+			name:                     "hook governs and expects idle=1: suppress writes 1, recover keeps 1",
+			coreSchedSupported:       true,
+			nodeSLO:                  newCoreSchedNodeSLO(1),
+			preCPUIdle:               "0",
+			wantCPUIdleAfterSuppress: "1",
+			wantCPUIdleAfterRecover:  "1",
+		},
+		{
+			name:                     "hook governs and expects idle=0: suppress and recover both skip cpu.idle",
+			coreSchedSupported:       true,
+			nodeSLO:                  newCoreSchedNodeSLO(0),
+			preCPUIdle:               "0",
+			wantCPUIdleAfterSuppress: "0",
+			wantCPUIdleAfterRecover:  "0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctl := gomock.NewController(t)
+			defer ctl.Finish()
+			defer func(orig func() bool) { coreSchedSupportedFn = orig }(coreSchedSupportedFn)
+			coreSchedSupportedFn = func() bool { return tt.coreSchedSupported }
+
+			si := mockstatesinformer.NewMockStatesInformer(ctl)
+			si.EXPECT().GetAllPods().Return(podMetas).AnyTimes()
+			si.EXPECT().GetNode().Return(node).AnyTimes()
+			si.EXPECT().GetNodeSLO().Return(tt.nodeSLO).AnyTimes()
+			si.EXPECT().GetNodeTopo().Return(&topov1alpha1.NodeResourceTopology{}).AnyTimes()
+
+			mockMetricCache := mockmetriccache.NewMockMetricCache(ctl)
+			mockMetricCache.EXPECT().Get(metriccache.NodeCPUInfoKey).Return(nodeCPUInfo, true).AnyTimes()
+			mockResultFactory := mockmetriccache.NewMockAggregateResultFactory(ctl)
+			metriccache.DefaultAggregateResultFactory = mockResultFactory
+			mockQuerier := mockmetriccache.NewMockQuerier(ctl)
+			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+			nodeResult := mockmetriccache.NewMockAggregateResult(ctl)
+			nodeResult.EXPECT().Count().Return(1).AnyTimes()
+			nodeResult.EXPECT().Value(gomock.Any()).Return(float64(12), nil).AnyTimes()
+			nodeCPUQueryMeta, err := metriccache.NodeCPUUsageMetric.BuildQueryMeta(nil)
+			assert.NoError(t, err)
+			mockResultFactory.EXPECT().New(nodeCPUQueryMeta).Return(nodeResult).AnyTimes()
+			mockQuerier.EXPECT().QueryAndClose(nodeCPUQueryMeta, gomock.Any(), gomock.Any()).SetArg(2, *nodeResult).Return(nil).AnyTimes()
+			for _, podMetric := range []struct {
+				UID  string
+				Used float64
+			}{{"ls-pod", 8}, {"be-pod", 2}} {
+				podQueryMeta, err := metriccache.PodCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(podMetric.UID))
+				assert.NoError(t, err)
+				testutil.BuildMockQueryResult(ctl, mockQuerier, mockResultFactory, podQueryMeta, podMetric.Used)
+			}
+
+			helper := system.NewFileTestUtil(t)
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSGuaranteed), system.CPUSet, "0-15")
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet, "0-9")
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota, strconv.FormatInt(15*system.DefaultCPUCFSPeriod, 10))
+			helper.WriteCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSPeriod, strconv.FormatInt(system.DefaultCPUCFSPeriod, 10))
+			// Create cpu.idle at kubepods.slice level for SupportedIfFileExistsInKubepods check
+			kubepodsCpuDir := filepath.Join(system.Conf.CgroupRootDir, "cpu", system.KubeRootNameSystemd)
+			os.MkdirAll(kubepodsCpuDir, 0755)
+			os.WriteFile(filepath.Join(kubepodsCpuDir, "cpu.idle"), []byte("0"), 0644)
+			beCpuIdlePath := filepath.Join(system.Conf.CgroupRootDir, "cpu", koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), "cpu.idle")
+			os.MkdirAll(filepath.Dir(beCpuIdlePath), 0755)
+			os.WriteFile(beCpuIdlePath, []byte(tt.preCPUIdle), 0644)
+			for _, podMeta := range podMetas {
+				podMeta.CgroupDir = koordletutil.GetPodCgroupParentDir(podMeta.Pod)
+				helper.WriteCgroupFileContents(podMeta.CgroupDir, system.CPUSet, "0-9")
+			}
+
+			assert.NoError(t, features.DefaultMutableKoordletFeatureGate.SetFromMap(map[string]bool{
+				string(features.BECPUManager):      false,
+				string(features.BECPUSuppress):     true,
+				string(features.BECPUIdleSuppress): true}))
+
+			opt := &framework.Options{
+				StatesInformer:      si,
+				MetricCache:         mockMetricCache,
+				Config:              framework.NewDefaultConfig(),
+				MetricAdvisorConfig: maframework.NewDefaultConfig(),
+			}
+			cpuSuppress := newTestCPUSuppress(opt)
+			stop := make(chan struct{})
+			defer close(stop)
+			assert.NotPanics(t, func() {
+				cpuSuppress.init(stop)
+			})
+
+			// suppress path
+			cpuSuppress.suppressBECPU()
+			gotCPUIdle := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUIdle)
+			assert.Equal(t, tt.wantCPUIdleAfterSuppress, gotCPUIdle, "checkBECPUIdle after suppress")
+			// the quota/cpuset writes are not affected by the ownership guard
+			gotBECFSQuota := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUCFSQuota)
+			assert.Equal(t, strconv.FormatInt(int64(1.2*float64(system.DefaultCPUCFSPeriod)), 10), gotBECFSQuota, "checkBECFSQuota")
+			gotCPUSet := helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUSet)
+			assert.Equal(t, "0-15", gotCPUSet, "checkBECPUSet")
+
+			// recover path
+			cpuSuppress.recoverBECpuIdleIfNeed(tt.nodeSLO)
+			gotCPUIdle = helper.ReadCgroupFileContents(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort), system.CPUIdle)
+			assert.Equal(t, tt.wantCPUIdleAfterRecover, gotCPUIdle, "checkBECPUIdle after recover")
+		})
+	}
 }
 
 func TestCPUSuppress_applyBESuppressCPUSet(t *testing.T) {
