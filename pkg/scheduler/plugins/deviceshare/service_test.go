@@ -246,3 +246,26 @@ func TestEndpointsQueryNodeDeviceSummary(t *testing.T) {
 	}
 	assert.True(t, apiequality.Semantic.DeepEqual(nodeDeviceSummary["node1"].AllocateSet, nodeDeviceSummaryExpect["node1"].AllocateSet))
 }
+
+func TestEndpointsQueryAssumedAllocations(t *testing.T) {
+	cache := newNodeDeviceCache(nil)
+	pod := assumeTestPod("uid-1", "node-1")
+	reserveInto(cache, "node-1", pod, gpuAllocations(0, 100))
+	assert.NoError(t, cache.AssumePod(pod, "node-1"))
+
+	ds := &Plugin{nodeDeviceCache: cache}
+	engine := gin.Default()
+	ds.RegisterEndpoints(engine.Group("/"))
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/assumedAllocations", nil)
+	engine.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+
+	got := map[string]*AssumedAllocationSummary{}
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	if assert.Contains(t, got, string(pod.UID)) {
+		assert.Equal(t, "node-1", got[string(pod.UID)].NodeName)
+		assert.NotEmpty(t, got[string(pod.UID)].Allocations)
+	}
+}

@@ -70,6 +70,7 @@ type Manager interface {
 	NextPod() *corev1.Pod
 	FindOneNode(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (*frameworkext.BatchScheduleResult, *fwktype.Status)
 	SucceedGangScheduling()
+	ActivateGang(*corev1.Pod)
 	PreEnqueue(context.Context, *corev1.Pod) (err error)
 	BeforePreFilter(context.Context, fwktype.CycleState, *corev1.Pod) (err error)
 	PreFilter(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status)
@@ -205,6 +206,80 @@ func (pgMgr *PodGroupManager) NextPod() *corev1.Pod {
 
 func (pgMgr *PodGroupManager) SucceedGangScheduling() {
 	pgMgr.holder.clearGangSchedulingContext(ReasonGangIsSucceed)
+}
+
+// ActivateGang re-activates the gang the given pod belongs to so a new gang scheduling cycle can
+// start immediately instead of waiting for the queue backoff timer, e.g. after the gang's preempted
+// victims are all released. The activation target is a pending representative re-resolved from the
+// gang cache (the given pod may be stale and is only used to locate the gang); for a non-gang pod it
+// falls back to activating the pod directly. The gang is skipped when it is not initialized yet,
+// when its gang group already has a scheduling cycle in flight, or when it has no pending member.
+func (pgMgr *PodGroupManager) ActivateGang(pod *corev1.Pod) {
+	if pod == nil {
+		return
+	}
+	gang := pgMgr.GetGangByPod(pod)
+	if gang == nil {
+		// Not a gang member, or its gang is not cached yet: fall back to activating the pod itself.
+		klog.V(5).Infof("ActivateGang: pod has no gang in cache, fall back to single-pod activate, pod: %v", klog.KObj(pod))
+		pgMgr.activatePod(pod)
+		return
+	}
+
+	// The gang is not initialized yet: its members cannot pass PreEnqueue/BeforePreFilter, so
+	// activating now only burns a scheduling cycle. Wait until the gang is initialized.
+	if !gang.isGangInitialized() {
+		klog.V(5).Infof("ActivateGang: gang is not initialized, skip activation, gang: %v", gang.Name)
+		return
+	}
+
+	// A once-satisfied gang bypasses the representative gating, so activate any pending child
+	// directly without touching the representative.
+	if gang.getGangMatchPolicy() == extension.GangMatchPolicyOnceSatisfied && gang.isGangOnceResourceSatisfied() {
+		if child := gang.pickSomeChildren(); child != nil {
+			pgMgr.activatePod(child)
+		}
+		return
+	}
+
+	// This gang group already has a cycle in flight; activating now cannot start a new one, so let
+	// the running cycle / backoff retry the gang.
+	if gangSchedulingContext := pgMgr.holder.getCurrentGangSchedulingContext(); gangSchedulingContext != nil && gangSchedulingContext.gangGroup.Has(gang.Name) {
+		klog.V(5).Infof("ActivateGang: gangGroup is in-flight, skip activation, gang: %v", gang.Name)
+		return
+	}
+
+	// Activate a pending representative: it passes PreEnqueue, gets popped and opens a new cycle
+	// whose NextPod pulls every pending child from the cache. The representative is resolved under
+	// the gang lock, so a pod that concurrently leaves PendingChildren is never installed.
+	target := gang.resolveActivationRepresentative()
+	if target == nil {
+		klog.V(5).Infof("ActivateGang: no pending children, skip activation, gang: %v", gang.Name)
+		return
+	}
+	pgMgr.activatePod(target)
+}
+
+// activatePod hands a single pod to the scheduling queue in one Activate call.
+func (pgMgr *PodGroupManager) activatePod(pod *corev1.Pod) {
+	if pod == nil {
+		return
+	}
+	extHandle, ok := pgMgr.handle.(frameworkext.ExtendedHandle)
+	if !ok {
+		klog.V(6).Infof("ActivateGang: the framework handle does not implement ExtendedHandle, skip activating pod %v", klog.KObj(pod))
+		return
+	}
+	if extHandle.Scheduler() == nil {
+		klog.V(6).Infof("ActivateGang: the scheduler adapter is unavailable, skip activating pod %v", klog.KObj(pod))
+		return
+	}
+	schedulingQueue := extHandle.Scheduler().GetSchedulingQueue()
+	if schedulingQueue == nil {
+		klog.V(6).Infof("ActivateGang: the scheduling queue is unavailable, skip activating pod %v", klog.KObj(pod))
+		return
+	}
+	schedulingQueue.Activate(klog.Background(), map[string]*corev1.Pod{util.GetId(pod.Namespace, pod.Name): pod})
 }
 
 // PreEnqueue
