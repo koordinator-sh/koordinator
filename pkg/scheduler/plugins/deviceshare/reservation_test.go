@@ -426,7 +426,7 @@ func Test_tryAllocateFromReservation(t *testing.T) {
 			Resources: resources,
 		})
 	}
-	deviceCache := newNodeDeviceCache()
+	deviceCache := newNodeDeviceCache(nil)
 	deviceCache.updateNodeDevice("test-node", device)
 
 	podRequestsHalfGPU := map[schedulingv1alpha1.DeviceType]corev1.ResourceList{
@@ -1196,7 +1196,7 @@ func Test_tryAllocateFromPreAllocatablePod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			deviceCache := newNodeDeviceCache()
+			deviceCache := newNodeDeviceCache(nil)
 			deviceCache.updateNodeDevice("test-node", newDevice())
 			nodeDevice := deviceCache.getNodeDevice("test-node", false)
 			preAllocatedGPUs := newDeviceResources(tt.preAllocatableGPUCore, tt.preAllocatableMinors...)
