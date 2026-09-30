@@ -45,6 +45,8 @@ func internalKubeMustRegister(metrics ...k8smetrics.Registerable) {
 }
 
 func init() {
+	internalKubeMustRegister(CommonRegisterableCollectors...)
+
 	internalMustRegister(CommonCollectors...)
 	internalMustRegister(CPUSuppressCollector...)
 	internalMustRegister(CPUBurstCollector...)
