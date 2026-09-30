@@ -141,8 +141,10 @@ func TestInternalRegistryGathersAllInternalMetrics(t *testing.T) {
 	// slice, not one that is added. Every internal collector is a single Vec, i.e. exactly one metric family,
 	// so the collector count across the registered slices must equal the number of names covered here.
 	//
-	// This list must be kept in step with init(): a slice registered there but missing here is invisible to
-	// both the count and the table, so a whole new metrics file would pass unnoticed.
+	// Both lists must be kept in step with init(): a slice registered there but missing here is invisible to
+	// both the count and the table, so a whole new metrics file would pass unnoticed. As #2971 progresses,
+	// slices move from the raw list to the Registerable one; the total across both must stay equal to the
+	// table above, since no metric is added or removed by a migration.
 	internalCollectorSlices := [][]prometheus.Collector{
 		CommonCollectors,
 		CPUSuppressCollector,
@@ -157,9 +159,22 @@ func TestInternalRegistryGathersAllInternalMetrics(t *testing.T) {
 		RuntimeHookCollectors,
 		HostApplicationCollectors,
 	}
+	internalRegisterableSlices := [][]k8smetrics.Registerable{
+		CommonRegisterableCollectors,
+	}
+
 	registered := 0
 	for _, slice := range internalCollectorSlices {
 		registered += len(slice)
+	}
+	for _, slice := range internalRegisterableSlices {
+		registered += len(slice)
+		// Registerable embeds prometheus.Collector, so the migrated metrics reset through the same helper.
+		collectors := make([]prometheus.Collector, 0, len(slice))
+		for _, metric := range slice {
+			collectors = append(collectors, metric)
+		}
+		internalCollectorSlices = append(internalCollectorSlices, collectors)
 	}
 	assert.Len(t, internalMetrics, registered, "a collector was added to an internal slice but not to this test")
 
@@ -221,9 +236,8 @@ func TestInternalKubeMustRegisterPublishesToInternalRegistry(t *testing.T) {
 // inherit the samples written here. Reset() empties the whole vec, not just this test's series, which is safe
 // only because no test in the package asserts a metric value.
 //
-// An unhandled type fails the test rather than being skipped: once #2971 starts moving slices to
-// component-base, their collectors stop matching these cases, and a silent default would turn the reset into a
-// no-op with nothing going red.
+// An unhandled type fails the test rather than being skipped: as #2971 moves slices to component-base, a
+// silent default would turn the reset into a no-op with nothing going red.
 func resetCollectors(t *testing.T, slices [][]prometheus.Collector) {
 	t.Helper()
 	for _, slice := range slices {
@@ -234,6 +248,12 @@ func resetCollectors(t *testing.T, slices [][]prometheus.Collector) {
 			case *prometheus.CounterVec:
 				vec.Reset()
 			case *prometheus.HistogramVec:
+				vec.Reset()
+			case *k8smetrics.GaugeVec:
+				vec.Reset()
+			case *k8smetrics.CounterVec:
+				vec.Reset()
+			case *k8smetrics.HistogramVec:
 				vec.Reset()
 			default:
 				t.Errorf("resetCollectors cannot reset %T, so its series would leak into later tests", collector)

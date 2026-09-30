@@ -2410,3 +2410,103 @@ func Test_frameworkExtenderImpl_RunPostFilterPlugins(t *testing.T) {
 		})
 	}
 }
+
+// TestGangActivatorPlugin is a mock plugin for testing GangActivator registration.
+type TestGangActivatorPlugin struct {
+	name         string
+	activatedPod *corev1.Pod
+}
+
+func (p *TestGangActivatorPlugin) Name() string {
+	return p.name
+}
+
+func (p *TestGangActivatorPlugin) ActivateGang(pod *corev1.Pod) {
+	p.activatedPod = pod
+}
+
+func Test_frameworkExtenderImpl_GangActivator_Registration(t *testing.T) {
+	tests := []struct {
+		name           string
+		plugins        []fwktype.Plugin
+		wantRegistered bool
+		wantPluginName string
+	}{
+		{
+			name:           "no GangActivator registered",
+			plugins:        nil,
+			wantRegistered: false,
+		},
+		{
+			name: "register single GangActivator",
+			plugins: []fwktype.Plugin{
+				&TestGangActivatorPlugin{name: "test-gang-activator-1"},
+			},
+			wantRegistered: true,
+			wantPluginName: "test-gang-activator-1",
+		},
+		{
+			name: "register multiple GangActivator - only first one is used",
+			plugins: []fwktype.Plugin{
+				&TestGangActivatorPlugin{name: "test-gang-activator-1"},
+				&TestGangActivatorPlugin{name: "test-gang-activator-2"},
+			},
+			wantRegistered: true,
+			wantPluginName: "test-gang-activator-1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, err := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				[]schedulertesting.RegisterPluginFunc{
+					schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+					schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				},
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			extender := extenderFactory.NewFrameworkExtender(fh)
+			impl := extender.(*frameworkExtenderImpl)
+
+			for _, pl := range tt.plugins {
+				impl.updatePlugins(pl)
+			}
+
+			// The consumers resolve the activator from the handle, so assert on the getter contract.
+			activator := extender.GetGangActivator()
+			if !tt.wantRegistered {
+				assert.Nil(t, activator)
+				return
+			}
+			assert.NotNil(t, activator)
+			assert.Equal(t, tt.wantPluginName, activator.Name())
+
+			// The activator returned by the getter must dispatch to the registered instance only.
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "test-pod"}}
+			activator.ActivateGang(pod)
+			for _, pl := range tt.plugins {
+				mock := pl.(*TestGangActivatorPlugin)
+				if mock.name == tt.wantPluginName {
+					assert.Equal(t, pod, mock.activatedPod)
+				} else {
+					assert.Nil(t, mock.activatedPod)
+				}
+			}
+		})
+	}
+}

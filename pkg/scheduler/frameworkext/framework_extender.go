@@ -85,6 +85,9 @@ type frameworkExtenderImpl struct {
 
 	findOneNodePlugin FindOneNodePlugin
 	preferNodesPlugin PreferNodesPlugin
+	// gangActivator exposes the gang-aware pod activation of the gang scheduling plugin to the other
+	// plugins. It is registered in updatePlugins and is nil when the gang scheduling is not enabled.
+	gangActivator GangActivator
 	// batchScheduler batch-schedules a whole job when a FindOneNodePlugin returns a placement plan.
 	// It is registered externally (see SetBatchScheduler) to avoid import cycles. Nil disables the inline path.
 	batchScheduler BatchScheduler
@@ -106,6 +109,8 @@ type frameworkExtenderImpl struct {
 	metricsRecorder *metrics.MetricAsyncRecorder
 
 	crossSchedulerNominator *CrossSchedulerPodNominator
+
+	factory *FrameworkExtenderFactory
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -116,6 +121,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 	frameworkExtender := &frameworkExtenderImpl{
 		Framework:                           fw,
 		errorHandlerDispatcher:              f.errorHandlerDispatcher,
+		factory:                             f,
 		schedulerFn:                         schedulerFn,
 		monitor:                             f.monitor,
 		koordinatorClientSet:                f.KoordinatorClientSet(),
@@ -225,6 +231,14 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 			klog.Warningf("framework extender got multiple PreferNodesPlugin registered, using the first one with name: %s", ext.preferNodesPlugin.Name())
 		}
 	}
+	if p, ok := pl.(GangActivator); ok {
+		if ext.gangActivator == nil {
+			ext.gangActivator = p
+			klog.V(4).InfoS("framework extender got GangActivator registered", "profile", ext.ProfileName(), "plugin", pl.Name())
+		} else {
+			klog.Warningf("framework extender got multiple GangActivator registered, using the first one with name: %s", ext.gangActivator.Name())
+		}
+	}
 }
 
 func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plugins) {
@@ -288,6 +302,10 @@ func (ext *frameworkExtenderImpl) GetReservationNominator() ReservationNominator
 	return ext.reservationNominator
 }
 
+func (ext *frameworkExtenderImpl) GetGangActivator() GangActivator {
+	return ext.gangActivator
+}
+
 func (ext *frameworkExtenderImpl) GetNetworkTopologyTreeManager() networktopology.TreeManager {
 	return ext.networkTopologyTreeManager
 }
@@ -298,6 +316,10 @@ func (ext *frameworkExtenderImpl) GetCrossSchedulerPodNominator() *CrossSchedule
 
 func (ext *frameworkExtenderImpl) GetWorkloadAuditor() workloadauditor.WorkloadAuditor {
 	return ext.workloadAuditor
+}
+
+func (ext *frameworkExtenderImpl) GetOrRegisterSharedCache(key string, create func(handle ExtendedHandle) SharedPluginCache) SharedPluginCache {
+	return ext.factory.getOrRegisterSharedCache(key, ext, create)
 }
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.

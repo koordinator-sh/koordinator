@@ -156,6 +156,30 @@ func (gg *GangGroupInfo) RecordIfNoRepresentatives(pod *corev1.Pod) string {
 	return gg.RepresentativePodKey
 }
 
+// ResolveRepresentative returns the representative key, keeping the recorded one if it is still in
+// pendingChildren and otherwise picking a new one from pendingChildren. It returns "" when
+// pendingChildren is empty. pendingChildren is only read here.
+func (gg *GangGroupInfo) ResolveRepresentative(pendingChildren map[string]*corev1.Pod) string {
+	gg.lock.Lock()
+	defer gg.lock.Unlock()
+
+	if len(pendingChildren) == 0 {
+		return ""
+	}
+	if gg.RepresentativePodKey != "" {
+		if _, ok := pendingChildren[gg.RepresentativePodKey]; ok {
+			return gg.RepresentativePodKey
+		}
+		klog.V(4).Infof("gangGroupInfo: ResolveRepresentative found stale representative %s, reselecting for gangGroup %s", gg.RepresentativePodKey, gg.GangGroupId)
+	}
+	for podKey := range pendingChildren {
+		gg.RepresentativePodKey = podKey
+		klog.V(4).Infof("gangGroupInfo: ResolveRepresentative record new representative %s for gangGroup %s", podKey, gg.GangGroupId)
+		return podKey
+	}
+	return ""
+}
+
 func (gg *GangGroupInfo) DeleteIfRepresentative(pod *corev1.Pod, reason string) {
 	gg.lock.Lock()
 	defer gg.lock.Unlock()
