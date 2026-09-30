@@ -38,15 +38,20 @@ func (h *PodValidatingHandler) clusterColocationProfileValidatingPod(ctx context
 	var allErrs field.ErrorList
 	switch req.Operation {
 	case admissionv1.Create:
+		allErrs = append(allErrs, validateRequiredQoSClass(newPod)...)
 	case admissionv1.Update:
-		allErrs = append(allErrs, validateImmutableQoSClass(oldPod, newPod)...)
+		if !utilfeature.DefaultFeatureGate.Enabled(features.ColocationProfileSkipValidatingQoSClass) {
+			allErrs = append(allErrs, validateImmutableQoSClass(oldPod, newPod)...)
+		}
 		allErrs = append(allErrs, validateImmutablePriorityClass(oldPod, newPod)...)
 		if !utilfeature.DefaultFeatureGate.Enabled(features.ColocationProfileSkipValidatingPriority) {
 			allErrs = append(allErrs, validateImmutablePriority(oldPod, newPod)...)
 		}
+		if !utilfeature.DefaultFeatureGate.Enabled(features.ColocationProfileSkipValidatingQoSClass) {
+			allErrs = append(allErrs, validateRequiredQoSClass(newPod)...)
+		}
 	}
 
-	allErrs = append(allErrs, validateRequiredQoSClass(newPod)...)
 	allErrs = append(allErrs, forbidSpecialQoSClassAndPriorityClass(newPod, extension.QoSBE, extension.PriorityNone, extension.PriorityProd)...)
 	allErrs = append(allErrs, forbidSpecialQoSClassAndPriorityClass(newPod, extension.QoSLSR, extension.PriorityNone, extension.PriorityMid, extension.PriorityBatch, extension.PriorityFree)...)
 	allErrs = append(allErrs, validateResources(newPod)...)

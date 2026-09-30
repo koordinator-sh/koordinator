@@ -54,6 +54,9 @@ const (
 	// ColocationProfileSkipValidatingPriority config whether to validate label priority
 	ColocationProfileSkipValidatingPriority featuregate.Feature = "ColocationProfileSkipValidatingPriority"
 
+	// ColocationProfileSkipValidatingQoSClass config whether to validate label qosClass
+	ColocationProfileSkipValidatingQoSClass featuregate.Feature = "ColocationProfileSkipValidatingQoSClass"
+
 	// WebhookFramework enables webhook framework, global feature-gate for webhook
 	WebhookFramework featuregate.Feature = "WebhookFramework"
 
@@ -129,6 +132,7 @@ var defaultFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	WebhookFramework:                        {Default: true, PreRelease: featuregate.Beta},
 	ColocationProfileSkipMutatingResources:  {Default: false, PreRelease: featuregate.Alpha},
 	ColocationProfileSkipValidatingPriority: {Default: false, PreRelease: featuregate.Alpha},
+	ColocationProfileSkipValidatingQoSClass: {Default: false, PreRelease: featuregate.Alpha},
 	MultiQuotaTree:                          {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaIgnorePodOverhead:           {Default: false, PreRelease: featuregate.Alpha},
 	ElasticQuotaGuaranteeUsage:              {Default: false, PreRelease: featuregate.Alpha},
