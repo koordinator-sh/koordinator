@@ -59,11 +59,22 @@ type ExtendedHandle interface {
 	// GetReservationNominator returns the ReservationNominator object to support nominating reservation.
 	// It returns nil when the framework does not support the resource reservation.
 	GetReservationNominator() ReservationNominator
+	// GetGangActivator returns the GangActivator registered by the gang scheduling plugin of this profile.
+	// It returns nil when the gang scheduling is not enabled.
+	// NOTE: The GangActivator is registered when the gang scheduling plugin is constructed, so plugins
+	// must not resolve it during the plugin initialization, nor are they allowed to hold the object
+	// within the plugin object.
+	GetGangActivator() GangActivator
 	GetNetworkTopologyTreeManager() networktopology.TreeManager
 	// GetCrossSchedulerPodNominator returns the CrossSchedulerPodNominator for cross-scheduler nominated pod tracking.
 	// It returns nil when the feature is not enabled or not configured.
 	GetCrossSchedulerPodNominator() *CrossSchedulerPodNominator
 	GetWorkloadAuditor() workloadauditor.WorkloadAuditor
+	// GetOrRegisterSharedCache registers a plugin's SharedPluginCache under key, or returns
+	// the previously-registered instance if key is already taken. Guarantees exactly-once
+	// creation across scheduling profiles. Plugins call this from their New() to opt into
+	// the shared cache mechanism instead of building a per-profile cache.
+	GetOrRegisterSharedCache(key string, create func(handle ExtendedHandle) SharedPluginCache) SharedPluginCache
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.
@@ -314,6 +325,18 @@ type NextPodPlugin interface {
 	fwktype.Plugin
 	// NextPod returns nil directly if NextPodPlugin has no suggestion for which Pod to dequeue next.
 	NextPod() *corev1.Pod
+}
+
+// GangActivator re-activates the gang of the given pod so that a new gang scheduling cycle can
+// start immediately instead of waiting for the queue backoff timer.
+type GangActivator interface {
+	fwktype.Plugin
+	// ActivateGang activates the gang the given pod belongs to. The activation target is a pending
+	// representative re-resolved from the gang cache, which is not necessarily the given pod; for a
+	// non-gang pod it falls back to activating the pod itself. The gang is skipped when it is not
+	// initialized yet, when it already has a scheduling cycle in flight, or when it has no pending
+	// member to activate.
+	ActivateGang(pod *corev1.Pod)
 }
 
 type ForgetPodHandler func(pod *corev1.Pod)
