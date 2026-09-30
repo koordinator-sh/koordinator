@@ -40,4 +40,9 @@ func (p *Plugin) RegisterEndpoints(group *gin.RouterGroup) {
 		}
 		c.JSON(http.StatusOK, nodeDeviceSummary)
 	})
+	// Live view of the shared cache's assumed-allocation ledger (assumedPods), keyed by pod
+	// UID, for debugging assume/forget leaks alongside the shared_cache_assumed_pods metric.
+	group.GET("/assumedAllocations", func(c *gin.Context) {
+		c.JSON(http.StatusOK, p.nodeDeviceCache.getAssumedAllocationsSummary())
+	})
 }
