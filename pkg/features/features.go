@@ -54,7 +54,12 @@ const (
 	// ColocationProfileSkipValidatingPriority config whether to validate label priority
 	ColocationProfileSkipValidatingPriority featuregate.Feature = "ColocationProfileSkipValidatingPriority"
 
-	// ColocationProfileSkipValidatingQoSClass config whether to validate label qosClass
+	// ColocationProfileSkipValidatingQoSClass skips the qosClass label immutability check and
+	// the batch-resources-require-BE-QoS check for Pod updates only; Create-time validation is
+	// unchanged. It is independent of and stackable with ColocationProfileSkipValidatingPriority.
+	// The gate is cluster-level global with no namespace granularity. Pods relabeled while the
+	// gate is enabled are locked again on their next update once the gate is disabled; rollback
+	// requires keeping the gate enabled or restoring the original labels beforehand.
 	ColocationProfileSkipValidatingQoSClass featuregate.Feature = "ColocationProfileSkipValidatingQoSClass"
 
 	// WebhookFramework enables webhook framework, global feature-gate for webhook
