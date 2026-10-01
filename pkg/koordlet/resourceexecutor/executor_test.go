@@ -246,3 +246,56 @@ func TestResourceUpdateExecutor_UpdateBatch(t *testing.T) {
 		})
 	}
 }
+
+func TestDedupeUpdaters(t *testing.T) {
+	newUpdater := func(t *testing.T, value string) ResourceUpdater {
+		t.Helper()
+		updater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, "test", value, &audit.EventHelper{})
+		assert.NoError(t, err)
+		return updater
+	}
+
+	t.Run("duplicate key keeps last updater", func(t *testing.T) {
+		first := newUpdater(t, "-1")
+		second := newUpdater(t, "100000")
+		result := dedupeUpdaters([]ResourceUpdater{first, second})
+		assert.Len(t, result, 1)
+		assert.Equal(t, second.Value(), result[0].Value())
+	})
+
+	t.Run("duplicate key keeps survivor at original position", func(t *testing.T) {
+		newUpdaterAt := func(t *testing.T, parentDir, value string) ResourceUpdater {
+			t.Helper()
+			updater, err := DefaultCgroupUpdaterFactory.New(sysutil.CPUCFSQuotaName, parentDir, value, &audit.EventHelper{})
+			assert.NoError(t, err)
+			return updater
+		}
+		first := newUpdaterAt(t, "test", "100000")
+		other := newUpdaterAt(t, "test2", "-1")
+		last := newUpdaterAt(t, "test", "100000")
+		result := dedupeUpdaters([]ResourceUpdater{first, other, last})
+		assert.Len(t, result, 2)
+		assert.Equal(t, first.Key(), result[0].Key())
+		assert.Equal(t, last.Value(), result[0].Value())
+		assert.Equal(t, other.Key(), result[1].Key())
+	})
+
+	t.Run("duplicate key same value", func(t *testing.T) {
+		first := newUpdater(t, "100000")
+		second := newUpdater(t, "100000")
+		result := dedupeUpdaters([]ResourceUpdater{first, second})
+		assert.Len(t, result, 1)
+		assert.Equal(t, first.Value(), result[0].Value())
+	})
+
+	t.Run("single updater passthrough", func(t *testing.T) {
+		updater := newUpdater(t, "100000")
+		result := dedupeUpdaters([]ResourceUpdater{updater})
+		assert.Len(t, result, 1)
+		assert.Equal(t, updater, result[0])
+	})
+
+	t.Run("empty input passthrough", func(t *testing.T) {
+		assert.Empty(t, dedupeUpdaters(nil))
+	})
+}
