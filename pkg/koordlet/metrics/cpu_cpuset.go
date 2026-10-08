@@ -19,35 +19,39 @@ package metrics
 import (
 	"strconv"
 
-	"github.com/prometheus/client_golang/prometheus"
+	k8smetrics "k8s.io/component-base/metrics"
 )
 
 var (
-	CPUSetSharePoolCPUS = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "cpuset_share_pool_cpu_cores",
-		Help:      "Number of share pool cores",
+	CPUSetSharePoolCPUS = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "cpuset_share_pool_cpu_cores",
+		Help:           "Number of share pool cores",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey})
 
-	CPUSetBESharePoolCPUS = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "cpuset_be_share_pool_cpu_cores",
-		Help:      "Number of be share pool cores",
+	CPUSetBESharePoolCPUS = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "cpuset_be_share_pool_cpu_cores",
+		Help:           "Number of be share pool cores",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey})
 
-	CPUSetSharePoolInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "cpuset_share_pool_info",
-		Help:      "Indicates whether the CPU ID is currently part of the share pool (1 = in pool)",
+	CPUSetSharePoolInfo = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "cpuset_share_pool_info",
+		Help:           "Indicates whether the CPU ID is currently part of the share pool (1 = in pool)",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, CPUIDKey})
 
-	CPUSetBESharePoolInfo = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "cpuset_be_share_pool_info",
-		Help:      "Indicates whether the CPU ID is currently part of the BE share pool (1 = in pool)",
+	CPUSetBESharePoolInfo = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "cpuset_be_share_pool_info",
+		Help:           "Indicates whether the CPU ID is currently part of the BE share pool (1 = in pool)",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, CPUIDKey})
 
-	CPUSetCollector = []prometheus.Collector{
+	CPUSetRegisterableCollectors = []k8smetrics.Registerable{
 		CPUSetSharePoolCPUS,
 		CPUSetBESharePoolCPUS,
 		CPUSetSharePoolInfo,
