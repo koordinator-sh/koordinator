@@ -36,14 +36,14 @@ import (
 
 var testZeroResult = Result{
 	Data: map[string]v1.ResourceList{
-		"p95": util.NewZeroResourceList(),
-		"p98": util.NewZeroResourceList(),
+		"configured": util.NewZeroResourceList(),
+		"p98":        util.NewZeroResourceList(),
 	},
 }
 
 var testPredictionResult = Result{
 	Data: map[string]v1.ResourceList{
-		"p95": {
+		"configured": {
 			v1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
 			v1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
 		},
@@ -107,7 +107,7 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 	priority := extension.PriorityProdValueMin
 	sysPrediction := Result{
 		Data: map[string]v1.ResourceList{
-			"p95": {
+			"configured": {
 				v1.ResourceCPU:    *resource.NewMilliQuantity(300, resource.DecimalSI),
 				v1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
 			},
@@ -119,7 +119,7 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 	}
 	prodPrediction := Result{
 		Data: map[string]v1.ResourceList{
-			"p95": {
+			"configured": {
 				v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
 				v1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
 			},
@@ -131,7 +131,7 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 	}
 	podPrediction := Result{
 		Data: map[string]v1.ResourceList{
-			"p95": {
+			"configured": {
 				v1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
 				v1.ResourceMemory: *resource.NewQuantity(768*1024*1024, resource.BinarySI),
 			},
@@ -274,10 +274,10 @@ func TestProdReclaimablePredictor_AddPod(t *testing.T) {
 			assert.NoError(t, err)
 			gotPodResult, err := predictor.(*minPredictor).predictors[0].GetResult()
 			assert.NoError(t, err)
-			assert.Equal(t, true, quotav1.Equals(tc.expectedPodPredictResult, gotPodResult))
+			assert.Equal(t, tc.expectedPodPredictResult, gotPodResult)
 			gotPriorityResult, err := predictor.(*minPredictor).predictors[1].GetResult()
 			assert.NoError(t, err)
-			assert.Equal(t, true, quotav1.Equals(tc.expectedPriorityPredictResult, gotPriorityResult))
+			assert.Equal(t, tc.expectedPriorityPredictResult, gotPriorityResult)
 			expected := util.MinResourceList(tc.expectedPodPredictResult, tc.expectedPriorityPredictResult)
 			assert.Equal(t, expected, result)
 			assert.Equal(t, true, quotav1.Equals(expected, result))
@@ -451,7 +451,7 @@ func TestPodReclaimablePredictor(t *testing.T) {
 			}
 			result, err := predictor.GetResult()
 			assert.NoError(t, err)
-			assert.Equal(t, true, quotav1.Equals(tc.expectedReclaimable, result))
+			assert.Equal(t, tc.expectedReclaimable, result)
 		})
 	}
 }
@@ -555,7 +555,7 @@ func TestPodReclaimablePredictor_GetPeak(t *testing.T) {
 func Test_priorityReclaimablePredictor(t *testing.T) {
 	sysPrediction := Result{
 		Data: map[string]v1.ResourceList{
-			"p95": {
+			"configured": {
 				v1.ResourceCPU:    *resource.NewMilliQuantity(300, resource.DecimalSI),
 				v1.ResourceMemory: *resource.NewQuantity(512*1024*1024, resource.BinarySI),
 			},
@@ -567,7 +567,7 @@ func Test_priorityReclaimablePredictor(t *testing.T) {
 	}
 	prodPrediction := Result{
 		Data: map[string]v1.ResourceList{
-			"p95": {
+			"configured": {
 				v1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
 				v1.ResourceMemory: *resource.NewQuantity(768*1024*1024, resource.BinarySI),
 			},
@@ -579,7 +579,7 @@ func Test_priorityReclaimablePredictor(t *testing.T) {
 	}
 	batchPrediction := Result{
 		Data: map[string]v1.ResourceList{
-			"p95": {
+			"configured": {
 				v1.ResourceCPU:    *resource.NewMilliQuantity(1000, resource.DecimalSI),
 				v1.ResourceMemory: *resource.NewQuantity(1024*1024*1024, resource.BinarySI),
 			},
@@ -702,7 +702,7 @@ func Test_priorityReclaimablePredictor(t *testing.T) {
 			}
 			got, err := predictor.GetResult()
 			assert.NoError(t, err)
-			assert.Equal(t, true, quotav1.Equals(tc.expectedReclaimable, got))
+			assert.Equal(t, tc.expectedReclaimable, got)
 		})
 	}
 }

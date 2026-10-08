@@ -429,7 +429,7 @@ func TestDoCheckpoint_CheckpointInterval(t *testing.T) {
 
 func TestDoCheckpoint_RestoreModels(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("/tmp", "checkpoints")
+	tempDir, err := os.MkdirTemp("", "checkpoints")
 	if err != nil {
 		t.Fatalf("Failed to create temporary directory: %v", err)
 	}
