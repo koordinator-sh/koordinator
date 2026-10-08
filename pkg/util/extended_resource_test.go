@@ -184,6 +184,46 @@ func TestGetBatchXXXFromResourceList(t *testing.T) {
 			want: -1,
 		},
 		{
+			name: "test GetBatchMilliCPUFromResourceList fractional milli-cores",
+			fn:   GetBatchMilliCPUFromResourceList,
+			arg: corev1.ResourceList{
+				extension.BatchCPU: resource.MustParse("500m"),
+			},
+			want: 500,
+		},
+		{
+			name: "test GetBatchMilliCPUFromResourceList fractional milli-cores above one core",
+			fn:   GetBatchMilliCPUFromResourceList,
+			arg: corev1.ResourceList{
+				extension.BatchCPU: resource.MustParse("1500m"),
+			},
+			want: 1500,
+		},
+		{
+			name: "test GetBatchMilliCPUFromResourceList fractional cores",
+			fn:   GetBatchMilliCPUFromResourceList,
+			arg: corev1.ResourceList{
+				extension.BatchCPU: resource.MustParse("0.4"),
+			},
+			want: 400,
+		},
+		{
+			name: "test GetBatchMilliCPUFromResourceList integer milli-cores",
+			fn:   GetBatchMilliCPUFromResourceList,
+			arg: corev1.ResourceList{
+				extension.BatchCPU: resource.MustParse("500"),
+			},
+			want: 500,
+		},
+		{
+			name: "test GetBatchMilliCPUFromResourceList zero",
+			fn:   GetBatchMilliCPUFromResourceList,
+			arg: corev1.ResourceList{
+				extension.BatchCPU: resource.MustParse("0"),
+			},
+			want: 0,
+		},
+		{
 			name: "test GetBatchMemoryFromResourceList",
 			fn:   GetBatchMemoryFromResourceList,
 			arg: corev1.ResourceList{
@@ -201,6 +241,61 @@ func TestGetBatchXXXFromResourceList(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.fn(tt.arg)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestGetMidMilliCPUFromResourceList(t *testing.T) {
+	tests := []struct {
+		name string
+		arg  corev1.ResourceList
+		want int64
+	}{
+		{
+			name: "test fractional milli-cores",
+			arg: corev1.ResourceList{
+				extension.MidCPU: resource.MustParse("500m"),
+			},
+			want: 500,
+		},
+		{
+			name: "test fractional milli-cores above one core",
+			arg: corev1.ResourceList{
+				extension.MidCPU: resource.MustParse("1500m"),
+			},
+			want: 1500,
+		},
+		{
+			name: "test fractional cores",
+			arg: corev1.ResourceList{
+				extension.MidCPU: resource.MustParse("0.4"),
+			},
+			want: 400,
+		},
+		{
+			name: "test integer milli-cores",
+			arg: corev1.ResourceList{
+				extension.MidCPU: resource.MustParse("500"),
+			},
+			want: 500,
+		},
+		{
+			name: "test zero",
+			arg: corev1.ResourceList{
+				extension.MidCPU: resource.MustParse("0"),
+			},
+			want: 0,
+		},
+		{
+			name: "test key missing",
+			arg:  corev1.ResourceList{},
+			want: -1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetMidMilliCPUFromResourceList(tt.arg)
 			assert.Equal(t, tt.want, got)
 		})
 	}
