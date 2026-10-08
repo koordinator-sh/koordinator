@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (
@@ -36,6 +37,10 @@ const (
 	// AnnotationCustomEstimatedSecondsAfterInitialized represents the user-defined
 	// force estimation seconds after initialized.
 	AnnotationCustomEstimatedSecondsAfterInitialized = SchedulingDomainPrefix + "/load-estimated-seconds-after-initialized"
+	// AnnotationIgnoreLoadAwareResources declares resources that bypass load-aware filter checks.
+	// Value is a JSON array of resource names, e.g. ["cpu","memory"].
+	// Only affects Filter (hard rejection); Score still participates for load balancing guidance.
+	AnnotationIgnoreLoadAwareResources = SchedulingDomainPrefix + "/ignore-load-aware-resources"
 )
 
 // CustomUsageThresholds supports user-defined node resource utilization thresholds.
@@ -97,4 +102,21 @@ func GetCustomEstimatedSecondsAfterInitialized(pod *corev1.Pod) int64 {
 		}
 	}
 	return -1
+}
+
+// GetIgnoreLoadAwareResources returns the set of resources that the pod declares
+// to bypass load-aware filter checks. Returns nil if the annotation is absent or malformed.
+func GetIgnoreLoadAwareResources(pod *corev1.Pod) sets.Set[corev1.ResourceName] {
+	s := pod.Annotations[AnnotationIgnoreLoadAwareResources]
+	if s == "" {
+		return nil
+	}
+	var resourceNames []corev1.ResourceName
+	if err := json.Unmarshal([]byte(s), &resourceNames); err != nil {
+		return nil
+	}
+	if len(resourceNames) == 0 {
+		return nil
+	}
+	return sets.New(resourceNames...)
 }
