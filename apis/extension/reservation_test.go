@@ -251,6 +251,22 @@ func TestExactMatchReservation(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "resource absent on both sides must not skip a later mismatch",
+			spec: &ExactMatchReservationSpec{
+				ResourceNames: []corev1.ResourceName{
+					corev1.ResourceMemory,
+					corev1.ResourceCPU,
+				},
+			},
+			podRequests: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("2"),
+			},
+			reservationAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("1"),
+			},
+			want: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
