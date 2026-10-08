@@ -17,11 +17,18 @@ limitations under the License.
 package frameworkext
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	oteltrace "go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -52,7 +59,7 @@ func TestSchedulerMonitor_Timeout(t *testing.T) {
 		},
 	}
 
-	monitor.StartMonitoring(pod)
+	monitor.StartMonitoring(context.TODO(), pod)
 	time.Sleep(2 * timeout)
 	monitor.monitor()
 	if len(capturedLog) == 0 || !strings.Contains(capturedLog, "!!!CRITICAL TIMEOUT!!!") {
@@ -83,12 +90,108 @@ func TestSchedulerMonitor_NoTimeout(t *testing.T) {
 		},
 	}
 
-	monitor.StartMonitoring(pod)
+	monitor.StartMonitoring(context.TODO(), pod)
 	monitor.monitor()
 	if len(capturedLog) > 0 {
 		t.Errorf("Expected no timeout log to be recorded, but got: %s", capturedLog)
 	}
 	monitor.Complete(pod, nil)
+}
+
+// TestSchedulerMonitor_Tracing verifies that StartMonitoring starts a root span for the
+// scheduling attempt, carries it in the returned context, and Complete ends it, marking
+// the span as failed when the attempt is unschedulable.
+func TestSchedulerMonitor_Tracing(t *testing.T) {
+	// Install an in-memory tracer provider to capture emitted spans, and restore the
+	// previous global provider afterwards so other tests are unaffected.
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	defer otel.SetTracerProvider(previous)
+
+	monitor := NewSchedulerMonitor(schedulerMonitorPeriod, 10*time.Millisecond)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			UID:       types.UID("test-uid"),
+		},
+	}
+
+	ctx := monitor.StartMonitoring(context.TODO(), pod)
+	// The returned context must carry the attempt span so downstream extension points
+	// can nest their spans under it.
+	assert.True(t, oteltrace.SpanFromContext(ctx).SpanContext().IsValid(), "expected the attempt span to be carried in the returned context")
+	// Until Complete is called, the span is still open and must not be recorded.
+	assert.Empty(t, recorder.Ended(), "span should not be ended before Complete")
+
+	monitor.Complete(pod, fwktype.NewStatus(fwktype.Unschedulable, "node(s) is unschedulable"))
+
+	var found sdktrace.ReadOnlySpan
+	for _, s := range recorder.Ended() {
+		if s.Name() == "SchedulingCycle" {
+			found = s
+			break
+		}
+	}
+	if assert.NotNil(t, found, "expected a SchedulingCycle span to be recorded after Complete") {
+		attrs := map[string]string{}
+		for _, kv := range found.Attributes() {
+			attrs[string(kv.Key)] = kv.Value.AsString()
+		}
+		assert.Equal(t, "test-ns", attrs["pod.namespace"])
+		assert.Equal(t, "test-pod", attrs["pod.name"])
+		// An unschedulable attempt should mark the span status as error.
+		assert.Equal(t, codes.Error, found.Status().Code)
+	}
+}
+
+// TestSchedulerMonitor_TracingTimeout verifies that monitor() ends the attempt span with an
+// error status when a started attempt exceeds the timeout, and clears the stored span so a
+// later Complete does not end it a second time.
+func TestSchedulerMonitor_TracingTimeout(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(tp)
+	defer otel.SetTracerProvider(previous)
+
+	monitor := NewSchedulerMonitor(schedulerMonitorPeriod, 10*time.Millisecond)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			UID:       types.UID("timeout-uid"),
+		},
+	}
+
+	monitor.StartMonitoring(context.TODO(), pod)
+
+	// Make the attempt look older than the timeout so monitor() treats it as timed out.
+	monitor.lock.Lock()
+	state := monitor.schedulingPods[pod.UID]
+	state.start = time.Now().Add(-time.Second)
+	monitor.schedulingPods[pod.UID] = state
+	monitor.lock.Unlock()
+
+	monitor.monitor()
+
+	var found sdktrace.ReadOnlySpan
+	for _, s := range recorder.Ended() {
+		if s.Name() == "SchedulingCycle" {
+			found = s
+			break
+		}
+	}
+	if assert.NotNil(t, found, "expected the SchedulingCycle span to be ended on the timeout path") {
+		assert.Equal(t, codes.Error, found.Status().Code)
+	}
+
+	// The stored span must be cleared so a subsequent Complete does not end it again.
+	monitor.lock.Lock()
+	assert.Nil(t, monitor.schedulingPods[pod.UID].span, "span should be cleared after the timeout so Complete does not double-end it")
+	monitor.lock.Unlock()
 }
 
 func TestSchedulerMonitor_DropUnhandledTimeout(t *testing.T) {
@@ -157,7 +260,7 @@ func TestSchedulerMonitor_StartAndCompleteMonitoring(t *testing.T) {
 	}
 	monitor.RecordNextPod(queuePodInfo)
 
-	monitor.StartMonitoring(pod)
+	monitor.StartMonitoring(context.TODO(), pod)
 	state, ok := monitor.schedulingPods[pod.UID]
 	if !ok {
 		t.Fatal("Pod not found in schedulingPods after StartMonitoring")
