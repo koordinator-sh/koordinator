@@ -436,7 +436,17 @@ func MergeFuncUpdateCgroup(resource ResourceUpdater, mergeCondition MergeConditi
 	klog.V(6).Infof("merge update cgroup %v with merged value[%v], original new[%v], old[%v]",
 		c.Path(), mergedValue, c.value, oldStr)
 	// suppose current value is different
-	return resource, cgroupFileWrite(c.parentDir, c.file, mergedValue)
+	if err := cgroupFileWrite(c.parentDir, c.file, mergedValue); err != nil {
+		return resource, err
+	}
+	systemdUpdated, err := updateSystemdUnitPropertyForCgroup(c, mergedValue)
+	if err != nil {
+		return resource, err
+	}
+	if systemdUpdated {
+		err = cgroupFileWrite(c.parentDir, c.file, mergedValue)
+	}
+	return resource, err
 }
 
 // MergeConditionIfValueIsLarger returns a merge condition where only do update when the new value is larger.
@@ -526,6 +536,18 @@ func cgroupWriteIfDifferentWithLog(c *CgroupResourceUpdater) error {
 	updated, err := cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
 	if err != nil {
 		return err
+	}
+	systemdUpdated, err := updateSystemdUnitPropertyForCgroup(c, c.value)
+	if err != nil {
+		return err
+	}
+	if systemdUpdated {
+		var restored bool
+		restored, err = cgroupFileWriteIfDifferent(c.parentDir, c.file, c.value)
+		if err != nil {
+			return err
+		}
+		updated = updated || restored
 	}
 	if updated && c.eventHelper != nil {
 		_ = c.eventHelper.Do()
