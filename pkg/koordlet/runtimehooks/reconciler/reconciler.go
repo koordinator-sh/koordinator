@@ -400,6 +400,7 @@ func (c *reconciler) reconcileKubeQOSCgroup(stopCh <-chan struct{}) {
 			timer.Reset(c.reconcileInterval)
 		case <-stopCh:
 			klog.V(1).Infof("stop reconcile kube qos cgroup")
+			return
 		}
 	}
 }
