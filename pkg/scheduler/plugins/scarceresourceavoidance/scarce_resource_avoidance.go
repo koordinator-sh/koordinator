@@ -51,7 +51,7 @@ func New(_ context.Context, args runtime.Object, handle fwk.Handle) (fwk.Plugin,
 	scarceResourceAvoidanceArgs, ok := args.(*config.ScarceResourceAvoidanceArgs)
 
 	if !ok {
-		return nil, fmt.Errorf("want args to be of type ResourceTypesArgs, got %T", scarceResourceAvoidanceArgs)
+		return nil, fmt.Errorf("want args to be of type ScarceResourceAvoidanceArgs, got %T", args)
 	}
 
 	return &Plugin{

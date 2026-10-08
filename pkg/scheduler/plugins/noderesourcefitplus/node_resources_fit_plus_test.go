@@ -459,3 +459,12 @@ func Test_calculatePodResourceRequest_WithSidecar(t *testing.T) {
 		})
 	}
 }
+
+func TestNew_WrongArgsType(t *testing.T) {
+	_, err := New(context.TODO(), &config.LoadAwareSchedulingArgs{}, nil)
+	assert.Error(t, err)
+	// The error must name the type this plugin expects, not some other type.
+	assert.Contains(t, err.Error(), "want args to be of type NodeResourcesFitPlusArgs")
+	// The error must report the type that was actually passed in, not the expected type.
+	assert.Contains(t, err.Error(), "config.LoadAwareSchedulingArgs")
+}
