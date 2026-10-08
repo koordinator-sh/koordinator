@@ -231,6 +231,8 @@ type ReservationArgs struct {
 	// instead of scanning every node that owns reservations.
 	// +optional
 	ReservationSelectorIndex *ReservationSelectorIndexArgs
+	// EnableQueueHint if true, enables QueueHint optimization to filter unnecessary pod re-queuing events.
+	EnableQueueHint bool
 }
 
 // ReservationSelectorIndexArgs configures the reservationSelector white-list
