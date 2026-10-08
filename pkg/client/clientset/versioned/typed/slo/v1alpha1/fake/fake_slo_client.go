@@ -28,6 +28,10 @@ type FakeSloV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeSloV1alpha1) ContainerCgroupOverrides(namespace string) v1alpha1.ContainerCgroupOverrideInterface {
+	return newFakeContainerCgroupOverrides(c, namespace)
+}
+
 func (c *FakeSloV1alpha1) NodeMetrics() v1alpha1.NodeMetricInterface {
 	return newFakeNodeMetrics(c)
 }
