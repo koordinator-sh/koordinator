@@ -109,3 +109,64 @@ func TestGetQoSClassByAttrs(t *testing.T) {
 		})
 	}
 }
+
+func TestSetQoSClassForGuaranteed(t *testing.T) {
+	original := QoSClassForGuaranteed
+	defer func() {
+		QoSClassForGuaranteed = original
+	}()
+
+	assert.NoError(t, SetQoSClassForGuaranteed(QoSLS))
+	assert.Equal(t, QoSLS, QoSClassForGuaranteed)
+
+	assert.Error(t, SetQoSClassForGuaranteed(QoSNone))
+	assert.Equal(t, QoSLS, QoSClassForGuaranteed)
+
+	assert.Error(t, SetQoSClassForGuaranteed(QoSClass("invalid")))
+	assert.Equal(t, QoSLS, QoSClassForGuaranteed)
+}
+
+func TestGetPodQoSClassWithKubeQoS(t *testing.T) {
+	original := QoSClassForGuaranteed
+	defer func() {
+		QoSClassForGuaranteed = original
+	}()
+
+	tests := []struct {
+		name    string
+		kubeQOS corev1.PodQOSClass
+		want    QoSClass
+	}{
+		{
+			name:    "guaranteed uses default",
+			kubeQOS: corev1.PodQOSGuaranteed,
+			want:    QoSLSR,
+		},
+		{
+			name:    "burstable uses LS",
+			kubeQOS: corev1.PodQOSBurstable,
+			want:    QoSLS,
+		},
+		{
+			name:    "besteffort uses BE",
+			kubeQOS: corev1.PodQOSBestEffort,
+			want:    QoSBE,
+		},
+		{
+			name:    "unknown uses none",
+			kubeQOS: corev1.PodQOSClass("unknown"),
+			want:    QoSNone,
+		},
+	}
+
+	QoSClassForGuaranteed = QoSLSR
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GetPodQoSClassWithKubeQoS(tt.kubeQOS)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+
+	assert.NoError(t, SetQoSClassForGuaranteed(QoSLS))
+	assert.Equal(t, QoSLS, GetPodQoSClassWithKubeQoS(corev1.PodQOSGuaranteed))
+}
