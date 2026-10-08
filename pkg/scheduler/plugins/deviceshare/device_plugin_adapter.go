@@ -88,6 +88,42 @@ const (
 	AnnotationMetaXGPUDevicesAllocated = "metax-tech.com/gpu-devices-allocated"
 	// metaxVRamUnit is the minial virtual memory unit of MetaX sGPU currently supported.
 	metaxVRamUnit = 1 * 1024 * 1024
+
+	// AnnotationHygonDCUDevicesAllocated represents the DCU allocation result for the pod which is used by
+	// Hygon DCU device plugins to allocate DCU for pod.
+	// The format is: {device-id},{device-type},{memory},{cores}:{container-index};
+	AnnotationHygonDCUDevicesAllocated = "hami.io/dcu-devices-allocated"
+	// AnnotationHygonDCUDevicesToAllocate represents the DCU devices to be allocated.
+	AnnotationHygonDCUDevicesToAllocate = "hami.io/dcu-devices-to-allocate"
+	// AnnotationHygonBindPhase represents the bind phase of the pod.
+	AnnotationHygonBindPhase = "hami.io/bind-phase"
+	// AnnotationHygonBindTime represents the bind time of the pod.
+	AnnotationHygonBindTime = "hami.io/bind-time"
+	// AnnotationHygonVgpuTime represents the vgpu time of the pod.
+	AnnotationHygonVgpuTime = "hami.io/vgpu-time"
+	// AnnotationHygonContainerIndex represents the container index for DCU allocation.
+	AnnotationHygonContainerIndex = "hygon.com/container-index"
+
+	// hygonContainerResourceAnnotationSuffix is the per-container annotation key suffix
+	// used by HAMi DCU device plugin to read the container's DCU resource summary.
+	// The full annotation key is "<container-name>-hygon.com/<resource>" (see HAMi
+	// pkg/device/hygon/device.go).
+	hygonContainerResourceAnnotationSuffix = "-hygon.com"
+	// hygonContainerResourceCores / Mem / Num are the resource names used in the
+	// per-container resource summary annotations.
+	hygonContainerResourceCores = "dcucores"
+	hygonContainerResourceMem   = "dcumem"
+	hygonContainerResourceNum   = "dcunum"
+
+	// hygonBindPhaseAllocating indicates the device plugin has not yet processed
+	// this pod. The device plugin will flip this annotation to "success" after
+	// Allocate() completes.
+	hygonBindPhaseAllocating = "allocating"
+	hygonBindPhaseSuccess    = "success"
+
+	// HAMi annotation encoding separators (see HAMi pkg/device/devices.go).
+	hygonDeviceSepSymbol    = ":" // OneContainerMultiDeviceSplitSymbol
+	hygonContainerSepSymbol = ";" // OnePodMultiContainerSplitSymbol
 )
 
 const (
@@ -127,6 +163,7 @@ var (
 		apiext.GPUVendorHuawei:    &huaweiGPUDevicePluginAdapter{},
 		apiext.GPUVendorCambricon: &cambriconGPUDevicePluginAdapter{},
 		apiext.GPUVendorMetaX:     &metaxDevicePluginAdapter{},
+		apiext.GPUVendorHygon:     &hygonDCUDevicePluginAdapter{},
 	}
 )
 
@@ -381,6 +418,166 @@ func (a *metaxDevicePluginAdapter) Adapt(_ *DevicePluginAdaptContext, object met
 
 func (a *metaxDevicePluginAdapter) NodeLockKey() string {
 	return AnnotationHAMiLock
+}
+
+// hygonDCUDevicePluginAdapter adapts koord-scheduler's device allocation result to the format that
+// Hygon DCU device plugin recognizes. Hygon DCU uses HAMi scheduler plugin format.
+//
+// HAMi format reference: pkg/device/devices.go in Project-HAMi/HAMi
+//   - EncodeContainerDevices: "UUID,Type,Memory,Cores:" for each device, joined together
+//   - EncodePodSingleDevice:  appends ";" after each container's segment
+//
+// So for a single container with one DCU, the final string looks like:
+//
+//	"DCU-T6V51625061001,DCU,31744,50:;"
+//
+// For multi container case, each container gets its own segment separated by ";",
+// and a container that does not request DCU gets an empty segment so that the
+// index between annotation segments and pod containers stays aligned.
+type hygonDCUDevicePluginAdapter struct{}
+
+// hygonDCUDeviceType is the device type string used in HAMi DCU device plugin's
+// per-container device encoding (e.g. "UUID,DCU,Memory,Cores:"). It must match
+// the constant `HygonDCUDevice` defined in HAMi project (pkg/device/hygon/device.go).
+const hygonDCUDeviceType = "DCU"
+
+// hygonDCUDeviceIDPrefix is the mandatory prefix for Hygon DCU device UUID in
+// HAMi annotations. HAMi DCU device plugin registers each card on the node as
+// "DCU-<serial>" (see HAMi pkg/device/hygon/device.go) and matches the pod
+// allocation against that registered UUID. If the prefix is missing the device
+// plugin will reject the pod with "device request not found".
+const hygonDCUDeviceIDPrefix = "DCU-"
+
+func (a *hygonDCUDevicePluginAdapter) Adapt(ctx *DevicePluginAdaptContext, object metav1.Object, allocation []*apiext.DeviceAllocation) error {
+	if len(allocation) == 0 {
+		return nil
+	}
+
+	pod, ok := object.(*corev1.Pod)
+	if !ok {
+		return fmt.Errorf("object is not a pod")
+	}
+	annotations := object.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	dcuContainerIndex := findHygonDCUContainerIndex(pod)
+
+	allocationStr, err := buildHygonAllocationString(pod, allocation, dcuContainerIndex)
+	if err != nil {
+		return err
+	}
+
+	setHygonAllocationAnnotations(annotations, allocationStr)
+	setHygonContainerResourceAnnotations(annotations, pod, dcuContainerIndex, allocation)
+
+	// Set vGPU node label so that HAMi-aware components can discover the node.
+	object.GetLabels()[apiext.LabelHAMIVGPUNodeName] = ctx.node.Name
+
+	return nil
+}
+
+func (a *hygonDCUDevicePluginAdapter) NodeLockKey() string {
+	return AnnotationHAMiLock
+}
+
+// buildHygonAllocationString builds the full HAMi-format allocation string.
+// Each device is encoded as "UUID,Type,Memory,Cores:ContainerIndex;" where
+// ContainerIndex is the index of the container that requests DCU resources.
+// For example: "DCU-xxxx,DCU,31744,50:0;DCU-yyyy,DCU,31744,50:0;".
+func buildHygonAllocationString(pod *corev1.Pod, allocation []*apiext.DeviceAllocation, containerIndex int) (string, error) {
+	var b strings.Builder
+	for _, alloc := range allocation {
+		core, ok := alloc.Resources[apiext.ResourceGPUCore]
+		if !ok {
+			return "", fmt.Errorf("gpu core resource is required for DCU allocation")
+		}
+		memory := alloc.Resources[apiext.ResourceGPUMemory]
+		if memory.IsZero() {
+			return "", fmt.Errorf("gpu memory resource must be greater than zero for DCU allocation")
+		}
+		memoryMB := memory.Value() / (1024 * 1024)
+
+		deviceID := normalizeHygonDeviceID(alloc.ID, alloc.Minor)
+
+		// Format: UUID,Type,Memory,Cores:ContainerIndex;
+		fmt.Fprintf(&b, "%s,%s,%d,%d%s%d%s", deviceID, hygonDCUDeviceType, memoryMB, core.Value(),
+			hygonDeviceSepSymbol, containerIndex, hygonContainerSepSymbol)
+	}
+	return b.String(), nil
+}
+
+// normalizeHygonDeviceID returns the device UUID that HAMi DCU device plugin
+// expects in the allocation annotation. It falls back to the device minor when
+// the upstream allocation did not provide an ID, and always ensures the "DCU-"
+// prefix is present.
+func normalizeHygonDeviceID(rawID string, minor int32) string {
+	id := rawID
+	if id == "" {
+		id = strconv.Itoa(int(minor))
+	}
+	if !strings.HasPrefix(id, hygonDCUDeviceIDPrefix) {
+		id = hygonDCUDeviceIDPrefix + id
+	}
+	return id
+}
+
+// findHygonDCUContainerIndex returns the index of the container that requests
+// hygon DCU resources. It returns 0 as a fallback so that single-container pods
+// that only declare koordinator.sh/gpu-* resources still work.
+func findHygonDCUContainerIndex(pod *corev1.Pod) int {
+	for i, container := range pod.Spec.Containers {
+		if _, ok := container.Resources.Limits[apiext.ResourceHygonDCUNum]; ok {
+			return i
+		}
+		if _, ok := container.Resources.Requests[apiext.ResourceHygonDCUNum]; ok {
+			return i
+		}
+	}
+	return 0
+}
+
+// setHygonAllocationAnnotations writes the allocation result and the bind-phase
+// metadata expected by HAMi DCU device plugin.
+//
+// The "allocated" annotation records the final allocation; "to-allocate" is
+// cleared (set to ";") since the scheduler has already completed the allocation.
+// The bind-phase is set to "success" to indicate the allocation is done.
+func setHygonAllocationAnnotations(annotations map[string]string, allocationStr string) {
+	now := strconv.FormatInt(dpAdapterClock.Now().Unix(), 10)
+	annotations[AnnotationHygonDCUDevicesAllocated] = allocationStr
+	annotations[AnnotationHygonDCUDevicesToAllocate] = hygonContainerSepSymbol
+	annotations[AnnotationHygonBindPhase] = hygonBindPhaseSuccess
+	annotations[AnnotationHygonBindTime] = now
+	annotations[AnnotationHygonVgpuTime] = now
+}
+
+// setHygonContainerResourceAnnotations writes the per-container DCU resource
+// summary annotations (dcucores / dcumem / dcunum) expected by HAMi DCU device
+// plugin. Only the container that actually requests DCU gets the summary so
+// that other containers do not mislead the device plugin.
+func setHygonContainerResourceAnnotations(
+	annotations map[string]string,
+	pod *corev1.Pod,
+	dcuContainerIndex int,
+	allocation []*apiext.DeviceAllocation,
+) {
+	var totalCores, totalMemoryMB int64
+	for _, alloc := range allocation {
+		if core, ok := alloc.Resources[apiext.ResourceGPUCore]; ok {
+			totalCores += core.Value()
+		}
+		if memory, ok := alloc.Resources[apiext.ResourceGPUMemory]; ok {
+			totalMemoryMB += memory.Value() / (1024 * 1024)
+		}
+	}
+	containerName := pod.Spec.Containers[dcuContainerIndex].Name
+	keyPrefix := containerName + hygonContainerResourceAnnotationSuffix + "/"
+	annotations[keyPrefix+hygonContainerResourceCores] = strconv.FormatInt(totalCores, 10)
+	annotations[keyPrefix+hygonContainerResourceMem] = strconv.FormatInt(totalMemoryMB, 10)
+	annotations[keyPrefix+hygonContainerResourceNum] = strconv.FormatInt(int64(len(allocation)), 10)
+	annotations[AnnotationHygonContainerIndex] = fmt.Sprintf("%d,", dcuContainerIndex)
 }
 
 func buildGPUMinorsStr(allocation []*apiext.DeviceAllocation, prefix string) string {

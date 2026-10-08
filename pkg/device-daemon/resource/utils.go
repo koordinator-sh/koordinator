@@ -17,6 +17,7 @@ limitations under the License.
 package resource
 
 import (
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -58,6 +59,14 @@ func IsMLUDevice(device *pci.Device) bool {
 func IsMXDevice(device *pci.Device) bool {
 	klog.V(3).Info("[IsMXDevice] device.Vendor.ID: ", device.Vendor.ID)
 	return device.Vendor.ID == MXVendorID || device.Vendor.ID == MXRealVendorID
+}
+
+func IsHYDevice(device *pci.Device) bool {
+	klog.V(3).Infof("[IsHYDevice] device.Vendor.ID: %s, device.Class.ID: %s, device.Class.Name: %s", device.Vendor.ID, device.Class.ID, device.Class.Name)
+	// Hygon HY device type contains "Co-processor" or "Processor" and vendor id is 1d94
+	classNameLower := strings.ToLower(device.Class.Name)
+	return (device.Vendor.ID == HYGONVendorID || device.Vendor.ID == HYGONRealVendorID) &&
+		(strings.Contains(classNameLower, "co-processor") || strings.Contains(classNameLower, "processor"))
 }
 
 // GetXPUName exec cmd in chroot to get xpu name
@@ -147,6 +156,36 @@ func GetXPUName(deviceType string) (string, error) {
 		}
 		results := strings.TrimSpace(string(output))
 		return results, nil
+	case HY:
+		klog.Info("GetHYName, start to get HY name")
+		// hy-smi --showproductname --json
+		// Output: {"card0": {"Card Series": "BW200, UBB BW1000", "Card Vendor": "C-3000 IC Design Co., Ltd."}, ...}
+		cmd := exec.Command(ChangeRootCmd, HostRootDir, HYSmiCmd, "--showproductname", "--json")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf("get hy name err: %w, output %v", err, string(output))
+		}
+
+		// Parse JSON output
+		var cards map[string]map[string]string
+		if err := json.Unmarshal(output, &cards); err != nil {
+			return "", fmt.Errorf("get hy name err, failed to parse json: %w", err)
+		}
+
+		// Get the first card's Card Series
+		for _, cardInfo := range cards {
+			if cardSeries, ok := cardInfo["Card Series"]; ok {
+				// Convert to valid label format: replace invalid characters with '-'
+				// e.g., "BW200, UBB BW1000" -> "BW200-UBB-BW1000"
+				productName := strings.ReplaceAll(cardSeries, ",", "")
+				productName = strings.ReplaceAll(productName, " ", "-")
+				productName = strings.ReplaceAll(productName, "--", "-")
+				productName = strings.Trim(productName, "-")
+				klog.Infof("GetHYName, end to get HY name: %s (original: %s)", productName, cardSeries)
+				return productName, nil
+			}
+		}
+		return "", fmt.Errorf("get hy name err, no Card Series found in output")
 	default:
 		return "", fmt.Errorf("get xpu name err, unsupported device type: %s", deviceType)
 	}
@@ -271,6 +310,25 @@ func GetXPUCount(deviceType string) (int, error) {
 
 		klog.Infof("GetMXCount, end to get MX count: %d", count)
 		return count, nil
+	case HY:
+		klog.Info("GetHYCount, start to get HY count")
+		// hy-smi -i --showid --json
+		// Output: {"card0": {"Device ID": "0x6320"}, "card1": {"Device ID": "0x6320"}, ...}
+		cmd := exec.Command(ChangeRootCmd, HostRootDir, HYSmiCmd, "-i", "--showid", "--json")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return 0, fmt.Errorf("get hy count err: %w, output %v", err, string(output))
+		}
+
+		// Parse JSON output and count cards
+		var cards map[string]interface{}
+		if err := json.Unmarshal(output, &cards); err != nil {
+			return 0, fmt.Errorf("get hy count err, failed to parse json: %w", err)
+		}
+
+		count := len(cards)
+		klog.Infof("GetHYCount, end to get HY count: %d", count)
+		return count, nil
 	default:
 		return 0, fmt.Errorf("get xpu count err, unsupported device type: %s", deviceType)
 	}
@@ -394,6 +452,31 @@ func GetXPUMemory(deviceType string) (string, error) {
 		results := strings.TrimSpace(string(output))
 		results = strings.ReplaceAll(results, "GB", "Gi")
 		return results, nil
+	case HY:
+		klog.Info("GetHYMemory, start to get HY memory")
+		// hy-smi --showmeminfo ALL --json
+		// Output: {"card0": {"vram Total Memory (MiB)": "65520", ...}, ...}
+		cmd := exec.Command(ChangeRootCmd, HostRootDir, HYSmiCmd, "--showmeminfo", "ALL", "--json")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return "0Mi", fmt.Errorf("get hy memory err: %w, output %v", err, string(output))
+		}
+
+		// Parse JSON output to get vram total memory
+		var cards map[string]map[string]string
+		if err := json.Unmarshal(output, &cards); err != nil {
+			return "0Mi", fmt.Errorf("get hy memory err, failed to parse json: %w", err)
+		}
+
+		// Get the first card's vram total memory
+		for _, cardInfo := range cards {
+			if vramTotal, ok := cardInfo["vram Total Memory (MiB)"]; ok {
+				memory := fmt.Sprintf("%sMi", vramTotal)
+				klog.Infof("GetHYMemory, end to get HY memory: %s", memory)
+				return memory, nil
+			}
+		}
+		return "0Mi", fmt.Errorf("get hy memory err, no vram Total Memory found in output")
 	default:
 		return "0Mi", fmt.Errorf("get xpu memory err, unsupported device type: %s", deviceType)
 	}
@@ -764,6 +847,52 @@ func GetDeviceInfo(deviceType, index string) (koordletuti.DeviceTopology, koordl
 			deviceStatus.Healthy = false
 			deviceStatus.ErrMessage = fmt.Sprintf("MX index %s has %d SRAM/DRAM Uncorrectable or Double Bit  ECC errors", index, errCount)
 			deviceStatus.ErrCode = "ECC error"
+		}
+		return topo, deviceStatus, uuid, nil
+	case HY:
+		klog.Info("GetDeviceInfo, start to get HY device info")
+		var uuid string
+		uuid = fmt.Sprintf("HY-%s", index)
+		// hy-smi -a | grep -A 10 "HY $index" for device info
+		cmd := exec.Command("sh", "-c", fmt.Sprintf("%s %s %s -a | grep -i \"Device %s\" -A 10", ChangeRootCmd, HostRootDir, HYSmiCmd, index))
+		klog.V(4).Infof("GetDeviceInfo, start to exec cmd: %s", cmd.String())
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			klog.Errorf("GetDeviceInfo, get HY device info error, %v", err)
+			return koordletuti.DeviceTopology{}, koordletuti.DeviceStatus{}, " ", fmt.Errorf("get hy device info err: %w, output %v", err, string(output))
+		}
+		klog.V(4).Infof("GetDeviceInfo, end to get HY info: %s", string(output))
+
+		// Parse HY info to get UUID and busID
+		lines := strings.Split(string(output), "\n")
+		busID := ""
+		for _, line := range lines {
+			if strings.Contains(line, "UUID") {
+				fields := strings.Fields(line)
+				if len(fields) >= 3 {
+					uuid = fields[len(fields)-1]
+				}
+			}
+			if strings.Contains(line, "Bus") || strings.Contains(line, "PCI") {
+				fields := strings.Fields(line)
+				if len(fields) >= 3 {
+					busID = fields[len(fields)-1]
+				}
+			}
+		}
+
+		nodeID, pcie, busID, err := helper.ParsePCIInfo(busID)
+		if err != nil {
+			klog.Errorf("GetDeviceInfo, parse HY device info error, %v", err)
+		}
+		topo := koordletuti.DeviceTopology{
+			SocketID: "-1",
+			BusID:    busID,
+			PCIEID:   pcie,
+			NodeID:   fmt.Sprintf("%d", nodeID),
+		}
+		deviceStatus := koordletuti.DeviceStatus{
+			Healthy: true,
 		}
 		return topo, deviceStatus, uuid, nil
 	default:
