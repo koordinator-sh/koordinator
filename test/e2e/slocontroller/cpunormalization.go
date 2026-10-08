@@ -27,7 +27,6 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
@@ -36,7 +35,6 @@ import (
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	koordinatorclientset "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned"
 	"github.com/koordinator-sh/koordinator/test/e2e/framework"
-	"github.com/koordinator-sh/koordinator/test/e2e/framework/manifest"
 	e2enode "github.com/koordinator-sh/koordinator/test/e2e/framework/node"
 )
 
@@ -155,67 +153,12 @@ var _ = SIGDescribe("CPUNormalization", func() {
 			framework.ExpectNoError(err)
 			cpuNormalizationData := string(cpuNormalizationConfigBytes)
 
-			ginkgo.By("Loading slo-controller-config in the cluster")
-			isConfigCreated := false
-			configMap, err := c.CoreV1().ConfigMaps(koordNamespace).Get(context.TODO(), sloConfigName, metav1.GetOptions{})
-			if err == nil {
-				isConfigCreated = true
-				framework.Logf("successfully get slo-controller-config %s/%s", koordNamespace, sloConfigName)
-			} else if errors.IsNotFound(err) {
-				framework.Logf("cannot get slo-controller-config %s/%s, try to create a new one",
-					koordNamespace, sloConfigName)
-			} else {
-				framework.Failf("failed to get slo-controller-config %s/%s, got unexpected error: %v",
-					koordNamespace, sloConfigName, err)
-			}
-
-			// If configmap is created, try to patch it with colocation enabled.
-			// If not exist, create the slo-controller-config.
 			// NOTE: slo-controller-config should not be modified by the others during the e2e test.
 			ginkgo.By("Prepare slo-controller-config to enable cpu normalization")
-			if isConfigCreated {
-				needUpdate := false
-				rollbackData := map[string]string{}
-				if configMap.Data == nil {
-					needUpdate = true
-				} else if configMap.Data[configuration.ColocationConfigKey] != colocationEnabledConfigData ||
-					configMap.Data[configuration.CPUNormalizationConfigKey] != cpuNormalizationData {
-					rollbackData[configuration.ColocationConfigKey] = configMap.Data[configuration.ColocationConfigKey]
-					rollbackData[configuration.CPUNormalizationConfigKey] = configMap.Data[configuration.CPUNormalizationConfigKey]
-					needUpdate = true
-				}
-
-				if needUpdate {
-					framework.Logf("cpu normalization is not enabled in slo-controller-config, need update")
-					defer rollbackSLOConfigData(f, koordNamespace, sloConfigName, rollbackData)
-
-					newConfigMap := configMap.DeepCopy()
-					newConfigMap.Data[configuration.ColocationConfigKey] = colocationEnabledConfigData
-					newConfigMap.Data[configuration.CPUNormalizationConfigKey] = cpuNormalizationData
-					newConfigMapUpdated, err := c.CoreV1().ConfigMaps(koordNamespace).Update(context.TODO(), newConfigMap, metav1.UpdateOptions{})
-					framework.ExpectNoError(err)
-					framework.Logf("update slo-controller-config successfully, data: %+v", newConfigMapUpdated.Data)
-					configMap = newConfigMapUpdated
-				} else {
-					framework.Logf("cpu normalization is already enabled in slo-controller-config, keep the same")
-				}
-			} else {
-				framework.Logf("slo-controller-config does not exist, need create")
-				newConfigMap, err := manifest.ConfigMapFromManifest("slocontroller/slo-controller-config.yaml")
-				framework.ExpectNoError(err)
-
-				newConfigMap.SetNamespace(koordNamespace)
-				newConfigMap.SetName(sloConfigName)
-				newConfigMap.Data[configuration.ColocationConfigKey] = colocationEnabledConfigData
-				newConfigMap.Data[configuration.CPUNormalizationConfigKey] = cpuNormalizationData
-
-				newConfigMapCreated, err := c.CoreV1().ConfigMaps(koordNamespace).Create(context.TODO(), newConfigMap, metav1.CreateOptions{})
-				framework.ExpectNoError(err)
-				framework.Logf("create slo-controller-config successfully, data: %+v", newConfigMapCreated.Data)
-				configMap = newConfigMapCreated
-
-				defer rollbackSLOConfigObject(f, koordNamespace, sloConfigName)
-			}
+			defer ensureSLOConfigData(f, koordNamespace, sloConfigName, map[string]string{
+				configuration.ColocationConfigKey:       colocationEnabledConfigData,
+				configuration.CPUNormalizationConfigKey: cpuNormalizationData,
+			})()
 
 			ginkgo.By("Check node cpu normalization ratios")
 			totalCount, validNodeCount, skippedCount = len(nodeList.Items), 0, 0
