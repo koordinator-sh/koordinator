@@ -464,7 +464,7 @@ func tryAllocateFromReusable(
 				resourceOptions.requiredResources = nil
 			}
 
-			if resourceOptions.requestCPUBind && resourceOptions.numCPUsNeeded > reservedCPUs.Size() {
+			if !isPreAllocation && resourceOptions.requestCPUBind && resourceOptions.numCPUsNeeded > reservedCPUs.Size() {
 				reservationReasons = append(reservationReasons, fwktype.NewStatus(fwktype.Unschedulable, ErrNotEnoughCPUs))
 				klog.V(5).InfoS("failed to allocated from reservation, not enough cpus available to satisfy request",
 					"reservation", rInfo.Reservation.Name, "pod", pod.Name, "node", node.Name,

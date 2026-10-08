@@ -319,7 +319,7 @@ func TestPlugin_AllocateReservationPreAllocationFromPreAllocatablePods(t *testin
 		},
 	})
 
-	// Create a pre-allocation reservation that wants 8 cores
+	// Create a restricted pre-allocation reservation that wants 8 cores.
 	reservation := &schedulingv1alpha1.Reservation{
 		ObjectMeta: metav1.ObjectMeta{
 			UID:  uuid.NewUUID(),
@@ -327,7 +327,7 @@ func TestPlugin_AllocateReservationPreAllocationFromPreAllocatablePods(t *testin
 		},
 		Spec: schedulingv1alpha1.ReservationSpec{
 			PreAllocation:  true,
-			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyAligned,
+			AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
 			Template: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -757,9 +757,21 @@ func TestPlugin_FilterNominateReservationPreAllocation(t *testing.T) {
 	// Since preAllocationRInfo is set, it should use the pre-allocation logic
 	status = pl.FilterNominateReservation(context.TODO(), cycleState, preAllocatablePod, rInfo, "test-node")
 
-	// For pre-allocation, the pre-allocatable pod should be matched
+	// For pre-allocation, the pre-allocatable pod should be matched.
 	assert.True(t, status == nil || status.IsSuccess(),
 		"FilterNominateReservation should succeed or return nil for matched pre-allocatable pod")
+
+	// A candidate that cannot produce an allocation must be rejected during nomination,
+	// even when pre-allocation is optional and tryAllocateFromReusable allows fallback.
+	state, stateStatus := getPreFilterState(cycleState)
+	assert.True(t, stateStatus.IsSuccess())
+	state.numCPUsNeeded = 20
+	state.requests[corev1.ResourceCPU] = resource.MustParse("20")
+	status = pl.FilterNominateReservation(context.TODO(), cycleState, preAllocatablePod, rInfo, "test-node")
+	if assert.NotNil(t, status) {
+		assert.False(t, status.IsSuccess())
+		assert.Equal(t, "pre-allocatable pod cannot satisfy the reservation's NUMA resource requirements", status.Message())
+	}
 }
 
 // TestPlugin_GetNominatedReusableAlloc tests the getNominatedReusableAlloc function
