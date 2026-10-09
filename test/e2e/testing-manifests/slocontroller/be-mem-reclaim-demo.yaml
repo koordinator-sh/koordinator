@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: e2e-test
+    koordinator.sh/qosClass: BE
+    name: be-mem-reclaim-demo
+  name: be-mem-reclaim-demo
+  annotations:
+    # Opt this pod out of koordlet-managed memcg knobs (memory.high etc.) so the tmpfs fill below
+    # is never throttled: the pod must reach >95% of its memory limit to cross the reclaim watermark.
+    koordinator.sh/memoryQOS: '{"policy":"none"}'
+spec:
+  schedulerName: koord-scheduler
+  priorityClassName: koord-batch
+  containers:
+  - image: {{.BusyBoxImage}}
+    imagePullPolicy: IfNotPresent
+    name: pause
+    # Fill a tmpfs-backed emptyDir up to ~98% of the standard memory limit (1Gi) and hold it, so
+    # the pod cgroup memory.current crosses the 95% reclaim watermark. The standard memory limit
+    # makes kubelet set a finite pod-level memory.max, which the reclaim watermark check requires.
+    command:
+    - sh
+    - -c
+    - dd if=/dev/zero of=/cache/fill bs=1M count=1000 2>/dev/null; echo filled; sleep 2000000000000
+    resources:
+      limits:
+        kubernetes.io/batch-cpu: "1"
+        kubernetes.io/batch-memory: 128Mi
+        memory: 1Gi
+      requests:
+        kubernetes.io/batch-cpu: "1"
+        kubernetes.io/batch-memory: 128Mi
+        memory: 128Mi
+    volumeMounts:
+    - name: memcache
+      mountPath: /cache
+  volumes:
+  - name: memcache
+    emptyDir:
+      medium: Memory
+      sizeLimit: 1500Mi
+  restartPolicy: Never
