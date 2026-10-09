@@ -360,6 +360,10 @@ func preparePod(pod *corev1.Pod, gpuSharedResourceTemplatesCache *gpuSharedResou
 		preemptibleInRRs:   map[string]map[types.UID]map[schedulingv1alpha1.DeviceType]deviceResources{},
 	}
 
+	if len(pod.Spec.ResourceClaims) > 0 {
+		return
+	}
+
 	requests, err := GetPodDeviceRequests(pod)
 	if err != nil {
 		return nil, fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
