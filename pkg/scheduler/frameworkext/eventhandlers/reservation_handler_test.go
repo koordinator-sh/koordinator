@@ -26,6 +26,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
@@ -1914,4 +1915,153 @@ func Test_generatePodEventOnReservationLevel(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMakeReservationErrorHandler_NominatesWithTheCycleShape pins down which
+// reserve pod the failure handler hands to the nominator.
+//
+// The handler replaces podInfo.PodInfo with a reserve pod rebuilt from the
+// current reservation before requeuing it, but the node it nominates was chosen
+// by the cycle that just failed. The nominator can only tell a stale node
+// decision from a current one by comparing the shape that decision was made
+// for, so it has to receive the cycle's reserve pod. Handing it the rebuilt one
+// makes that comparison current-against-current, which always agrees.
+func TestMakeReservationErrorHandler_NominatesWithTheCycleShape(t *testing.T) {
+	reservationWithCPU := func(cpu string) *schedulingv1alpha1.Reservation {
+		return &schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: "reserve-pod-shape", UID: "uid-shape"},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				Template: &corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						SchedulerName: "default-scheduler",
+						Containers: []corev1.Container{{
+							Name: "c",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu)},
+							},
+						}},
+					},
+				},
+				Owners: []schedulingv1alpha1.ReservationOwner{
+					{Object: &corev1.ObjectReference{Name: "test-pod-1"}},
+				},
+				TTL: &metav1.Duration{Duration: 30 * time.Minute},
+			},
+			Status: schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationPending},
+		}
+	}
+	// The cycle ran against a reservation asking for 8 CPUs; by the time it
+	// fails, the current object only asks for 2.
+	cycleReservation := reservationWithCPU("8")
+	currentReservation := reservationWithCPU("2")
+
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+	clientSet := kubefake.NewSimpleClientset()
+	fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "default-scheduler",
+		frameworkruntime.WithEventRecorder(record.NewEventRecorderAdapter(record.NewFakeRecorder(1024))),
+		frameworkruntime.WithClientSet(clientSet),
+		frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(clientSet, 0)),
+	)
+	assert.Nil(t, err)
+
+	koordClientSet := koordfake.NewSimpleClientset(currentReservation)
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	rNominator := frameworkext.NewFakeReservationNominator()
+	frameworkExtenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+		frameworkext.WithReservationNominator(rNominator),
+	)
+	extendedHandle := frameworkext.NewFrameworkExtender(frameworkExtenderFactory, fh)
+	sched := &scheduler.Scheduler{Profiles: profile.Map{"default-scheduler": extendedHandle}}
+	handler := MakeReservationErrorHandler(sched, frameworkext.NewFakeScheduler(), koordClientSet, koordSharedInformerFactory)
+
+	koordSharedInformerFactory.Start(nil)
+	koordSharedInformerFactory.WaitForCacheSync(nil)
+
+	cyclePodInfo, err := framework.NewPodInfo(reservationutil.NewReservePod(cycleReservation))
+	assert.NoError(t, err)
+	handler(context.TODO(), extendedHandle, &framework.QueuedPodInfo{PodInfo: cyclePodInfo},
+		fwktype.NewStatus(fwktype.Unschedulable, "test error"),
+		&fwktype.NominatingInfo{NominatingMode: fwktype.ModeOverride, NominatedNodeName: "node-1"}, time.Now())
+
+	nominated := rNominator.NominatedReservePodForNode("node-1")
+	assert.Equal(t, 1, len(nominated))
+	gotCPU := nominated[0].Pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU]
+	assert.Equal(t, "8", gotCPU.String(),
+		"the nominator must receive the reserve pod the failed cycle ran with, not one rebuilt from the current reservation")
+}
+
+// TestMakeReservationErrorHandler_RequeuesUnparsableCurrentReservation covers
+// the reserve pod rebuilt from a current reservation whose affinity does not
+// parse. The pod is requeued regardless: dropping it would leave the
+// reservation with nothing in the scheduling queue until an unrelated event
+// arrives, which is worse than one more attempt on a partially parsed pod. The
+// nominator refuses such a pod separately.
+func TestMakeReservationErrorHandler_RequeuesUnparsableCurrentReservation(t *testing.T) {
+	unparsable := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "reserve-pod-unparsable", UID: "uid-unparsable"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					SchedulerName: "default-scheduler",
+					Affinity: &corev1.Affinity{
+						PodAffinity: &corev1.PodAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+								LabelSelector: &metav1.LabelSelector{
+									MatchExpressions: []metav1.LabelSelectorRequirement{
+										{Key: "app", Operator: "NotAnOperator"},
+									},
+								},
+								TopologyKey: "kubernetes.io/hostname",
+							}},
+						},
+					},
+				},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{
+				{Object: &corev1.ObjectReference{Name: "test-pod-1"}},
+			},
+			TTL: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationPending},
+	}
+
+	registeredPlugins := []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+	}
+	clientSet := kubefake.NewSimpleClientset()
+	fh, err := schedulertesting.NewFramework(context.TODO(), registeredPlugins, "default-scheduler",
+		frameworkruntime.WithEventRecorder(record.NewEventRecorderAdapter(record.NewFakeRecorder(1024))),
+		frameworkruntime.WithClientSet(clientSet),
+		frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(clientSet, 0)),
+	)
+	assert.Nil(t, err)
+
+	koordClientSet := koordfake.NewSimpleClientset(unparsable)
+	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+	frameworkExtenderFactory, _ := frameworkext.NewFrameworkExtenderFactory(
+		frameworkext.WithKoordinatorClientSet(koordClientSet),
+		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+		frameworkext.WithReservationNominator(frameworkext.NewFakeReservationNominator()),
+	)
+	extendedHandle := frameworkext.NewFrameworkExtender(frameworkExtenderFactory, fh)
+	sched := &scheduler.Scheduler{Profiles: profile.Map{"default-scheduler": extendedHandle}}
+	internalHandler := frameworkext.NewFakeScheduler()
+	handler := MakeReservationErrorHandler(sched, internalHandler, koordClientSet, koordSharedInformerFactory)
+
+	koordSharedInformerFactory.Start(nil)
+	koordSharedInformerFactory.WaitForCacheSync(nil)
+
+	cyclePodInfo, _ := framework.NewPodInfo(reservationutil.NewReservePod(unparsable))
+	handler(context.TODO(), extendedHandle, &framework.QueuedPodInfo{PodInfo: cyclePodInfo},
+		fwktype.NewStatus(fwktype.Unschedulable, "test error"),
+		&fwktype.NominatingInfo{NominatingMode: fwktype.ModeNoop}, time.Now())
+
+	assert.NotNil(t, internalHandler.Queue.UnschedulablePods[string(unparsable.UID)],
+		"the reserve pod must still reach the scheduling queue")
 }
