@@ -19,6 +19,7 @@ package reservation
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -822,4 +823,170 @@ func TestReservationsNominator(t *testing.T) {
 		nominatorImpl.DeleteNominatedReservePod(gangPod0)
 		nominatorImpl.DeleteNominatedReservePod(gangPod1)
 	})
+}
+
+// buildReservePodInfo builds a reserve PodInfo with a distinct UID for the nominator counter tests.
+func buildReservePodInfo(t *testing.T, name, nodeName string) *framework.PodInfo {
+	labels := map[string]string{"foo": "bar"}
+	resourceList := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("4"),
+		corev1.ResourceMemory: resource.MustParse("8Gi"),
+	}
+	r := newTestReservation(t, name, labels, labels, nodeName, resourceList)
+	pi, err := framework.NewPodInfo(reservationutil.NewReservePod(r))
+	assert.NoError(t, err)
+	return pi
+}
+
+// totalNominatedReservePodEntries sums the entries actually stored across all nodes.
+// Callers must hold at least a read lock on nm.lock.
+func totalNominatedReservePodEntries(nm *nominator) int {
+	total := 0
+	for _, podInfos := range nm.nominatedReservePod {
+		total += len(podInfos)
+	}
+	return total
+}
+
+// assertNominatedReservePodCountConsistent asserts the lock-free counter never drifts from the
+// number of entries actually stored, guarding every add/remove path.
+func assertNominatedReservePodCountConsistent(t *testing.T, nm *nominator) {
+	nm.lock.RLock()
+	defer nm.lock.RUnlock()
+	assert.Equal(t, int64(totalNominatedReservePodEntries(nm)), nm.nominatedReservePodCount.Load(),
+		"nominatedReservePodCount drifted from the actual stored entries")
+}
+
+func TestNominatorReservePodCountConsistency(t *testing.T) {
+	nm := newNominator(nil, nil)
+
+	// Empty nominator: the counter is 0 and the lock-free fast path returns a non-nil empty slice.
+	assert.Equal(t, int64(0), nm.nominatedReservePodCount.Load())
+	got := nm.NominatedReservePodForNode("node-1")
+	assert.NotNil(t, got, "fast path must return a non-nil empty slice")
+	assert.Equal(t, []*framework.PodInfo{}, got)
+	assertNominatedReservePodCountConsistent(t, nm)
+
+	pi1 := buildReservePodInfo(t, "count-r-1", "node-1")
+	pi2 := buildReservePodInfo(t, "count-r-2", "node-1")
+	pi3 := buildReservePodInfo(t, "count-r-3", "node-2")
+
+	// Adds across multiple nodes: the counter tracks the total entries.
+	nm.AddNominatedReservePod(pi1, "node-1")
+	assert.Equal(t, int64(1), nm.nominatedReservePodCount.Load())
+	nm.AddNominatedReservePod(pi2, "node-1")
+	assert.Equal(t, int64(2), nm.nominatedReservePodCount.Load())
+	nm.AddNominatedReservePod(pi3, "node-2")
+	assert.Equal(t, int64(3), nm.nominatedReservePodCount.Load())
+	assertNominatedReservePodCountConsistent(t, nm)
+
+	// count>0 slow path returns the correct per-node entries, and a non-nil empty slice for a node
+	// without any nominated pod.
+	assert.Equal(t, 2, len(nm.NominatedReservePodForNode("node-1")))
+	assert.Equal(t, 1, len(nm.NominatedReservePodForNode("node-2")))
+	assert.Equal(t, []*framework.PodInfo{}, nm.NominatedReservePodForNode("node-none"))
+
+	// Re-nominating the same pod to the same node keeps the total stable (delete-then-add path).
+	nm.AddNominatedReservePod(pi1, "node-1")
+	assert.Equal(t, int64(3), nm.nominatedReservePodCount.Load())
+	assertNominatedReservePodCountConsistent(t, nm)
+
+	// Moving a pod to another node keeps the total stable and relocates the entry.
+	nm.AddNominatedReservePod(pi1, "node-2")
+	assert.Equal(t, int64(3), nm.nominatedReservePodCount.Load())
+	assert.Equal(t, 1, len(nm.NominatedReservePodForNode("node-1")))
+	assert.Equal(t, 2, len(nm.NominatedReservePodForNode("node-2")))
+	assertNominatedReservePodCountConsistent(t, nm)
+
+	// Deleting all entries returns the counter to 0 and re-engages the fast path.
+	nm.DeleteReservePod(pi1.Pod)
+	nm.DeleteReservePod(pi2.Pod)
+	nm.DeleteReservePod(pi3.Pod)
+	assert.Equal(t, int64(0), nm.nominatedReservePodCount.Load())
+	assert.Equal(t, []*framework.PodInfo{}, nm.NominatedReservePodForNode("node-1"))
+	assertNominatedReservePodCountConsistent(t, nm)
+
+	// Deleting an unknown pod is a no-op and must not drive the counter negative.
+	nm.DeleteReservePod(pi1.Pod)
+	assert.Equal(t, int64(0), nm.nominatedReservePodCount.Load(), "counter must never go negative")
+	assertNominatedReservePodCountConsistent(t, nm)
+}
+
+func TestNominatorReservePodCountConcurrentChurn(t *testing.T) {
+	nm := newNominator(nil, nil)
+	const (
+		rounds    = 50
+		numR      = 64
+		numNode   = 8
+		numReader = 4
+	)
+	pis := make([]*framework.PodInfo, numR)
+	for i := range pis {
+		pis[i] = buildReservePodInfo(t, fmt.Sprintf("churn-r-%d", i), fmt.Sprintf("node-%d", i%numNode))
+	}
+	nodeNameOf := func(i int) string { return fmt.Sprintf("node-%d", i%numNode) }
+
+	var readers sync.WaitGroup
+	stop := make(chan struct{})
+	for r := 0; r < numReader; r++ {
+		readers.Add(1)
+		go func(r int) {
+			defer readers.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					// Hammer the per-node hot path concurrently with the writer.
+					_ = nm.NominatedReservePodForNode(nodeNameOf(r))
+				}
+			}
+		}(r)
+	}
+
+	writerDone := make(chan struct{})
+	go func() {
+		defer close(writerDone)
+		for round := 0; round < rounds; round++ {
+			for i := 0; i < numR; i++ {
+				nm.AddNominatedReservePod(pis[i], nodeNameOf(i))
+			}
+			assert.Equal(t, int64(numR), nm.nominatedReservePodCount.Load())
+			assertNominatedReservePodCountConsistent(t, nm)
+			for i := 0; i < numR; i++ {
+				nm.DeleteReservePod(pis[i].Pod)
+			}
+			assert.Equal(t, int64(0), nm.nominatedReservePodCount.Load())
+			assertNominatedReservePodCountConsistent(t, nm)
+		}
+	}()
+
+	<-writerDone
+	close(stop)
+	readers.Wait()
+
+	// At quiescence the counter must be zero and consistent, and the fast path engaged again.
+	assert.Equal(t, int64(0), nm.nominatedReservePodCount.Load())
+	assertNominatedReservePodCountConsistent(t, nm)
+	assert.Equal(t, []*framework.PodInfo{}, nm.NominatedReservePodForNode("node-0"))
+}
+
+func TestBeforeFilterWithNilNode(t *testing.T) {
+	// The nil-node guard now runs before dereferencing nodeInfo.Node().Name, so a nil node returns
+	// early without touching the nominator and without transforming the pod/nodeInfo.
+	pl := &Plugin{nominator: newNominator(nil, nil)}
+	nodeInfo := framework.NewNodeInfo()
+	assert.Nil(t, nodeInfo.Node())
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "default",
+			UID:       types.UID("test-pod-uid"),
+		},
+	}
+	outPod, _, updated, status := pl.BeforeFilter(context.TODO(), framework.NewCycleState(), pod, nodeInfo)
+	assert.True(t, status.IsSuccess())
+	assert.False(t, updated)
+	assert.Equal(t, pod, outPod)
 }

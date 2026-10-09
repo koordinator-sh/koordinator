@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -46,7 +47,14 @@ type nominator struct {
 	// nominatedReservePod is map keyed by nodeName to the nominated reservation's PodInfo for preemption.
 	nominatedReservePod       map[string][]*framework.PodInfo
 	nominatedReservePodToNode map[types.UID]string
-	lock                      sync.RWMutex
+	// nominatedReservePodCount is a lock-free mirror of the total number of entries stored in
+	// nominatedReservePod across all nodes. It is maintained under lock on every add/remove and is
+	// read without the lock in NominatedReservePodForNode to short-circuit the per-node BeforeFilter
+	// hot path when the whole cluster has no nominated reserve pod. Writers preserve the invariant
+	// count >= actual entries for lock-free readers (increment before append, decrement after
+	// removal), so observing count==0 guarantees there is nothing to return.
+	nominatedReservePodCount atomic.Int64
+	lock                     sync.RWMutex
 }
 
 func newNominator(podLister corelisters.PodLister, rLister listerschedulingv1alpha1.ReservationLister) *nominator {
@@ -146,6 +154,9 @@ func (nm *nominator) AddNominatedReservePod(pi *framework.PodInfo, nodeName stri
 			return
 		}
 	}
+	// Increment the counter before appending so that a lock-free reader in
+	// NominatedReservePodForNode never observes count==0 while an entry exists.
+	nm.nominatedReservePodCount.Add(1)
 	nm.nominatedReservePod[nodeName] = append(nm.nominatedReservePod[nodeName], pi)
 }
 
@@ -199,6 +210,14 @@ func (nm *nominator) AddNominatedPreAllocation(rInfo *frameworkext.ReservationIn
 }
 
 func (nm *nominator) NominatedReservePodForNode(nodeName string) []*framework.PodInfo {
+	// Fast path: when the cluster has no nominated reserve pod at all, skip the global RWMutex.
+	// This runs once per candidate node inside the parallel Filter phase, so avoiding the contended
+	// read lock keeps the no-reservation case near-zero cost. The writer-side invariant
+	// (count >= actual entries) guarantees count==0 means there is truly nothing to return.
+	// Return a non-nil empty slice to preserve the historical return semantics.
+	if nm.nominatedReservePodCount.Load() == 0 {
+		return []*framework.PodInfo{}
+	}
 	nm.lock.RLock()
 	defer nm.lock.RUnlock()
 	// Make a copy of the nominated Pods so the caller can mutate safely.
@@ -230,6 +249,8 @@ func (nm *nominator) deleteReservePod(pod *corev1.Pod) {
 			if len(nm.nominatedReservePod[nnn]) == 0 {
 				delete(nm.nominatedReservePod, nnn)
 			}
+			// Decrement after removing the entry to keep count >= actual entries for lock-free readers.
+			nm.nominatedReservePodCount.Add(-1)
 			break
 		}
 	}
