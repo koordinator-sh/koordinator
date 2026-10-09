@@ -155,16 +155,18 @@ func (a *arbitratorImpl) sort(jobs []*v1alpha1.PodMigrationJob, podOfJob map[*v1
 
 // filtering calls nonRetryablePodFilter and retryablePodFilter to filter one PodMigrationJob.
 func (a *arbitratorImpl) filtering(pod *corev1.Pod) (isFailed, isPassed bool) {
-	if pod != nil {
-		markPodArbitrating(pod)
-		if a.filter.nonRetryablePodFilter != nil && !a.filter.nonRetryablePodFilter(pod) {
-			isFailed = true
-			return
-		}
-		if a.filter.retryablePodFilter != nil && !a.filter.retryablePodFilter(pod) {
-			isPassed = false
-			return
-		}
+	if pod == nil {
+		isFailed = true
+		return
+	}
+	markPodArbitrating(pod)
+	if a.filter.nonRetryablePodFilter != nil && !a.filter.nonRetryablePodFilter(pod) {
+		isFailed = true
+		return
+	}
+	if a.filter.retryablePodFilter != nil && !a.filter.retryablePodFilter(pod) {
+		isPassed = false
+		return
 	}
 	isPassed = true
 	return
@@ -230,11 +232,20 @@ func (a *arbitratorImpl) copyJobs() []*v1alpha1.PodMigrationJob {
 func (a *arbitratorImpl) updateFailedJob(job *v1alpha1.PodMigrationJob, pod *corev1.Pod) {
 	// change phase to Failed
 	job.Status.Phase = v1alpha1.PodMigrationJobFailed
-	job.Status.Reason = v1alpha1.PodMigrationJobReasonForbiddenMigratePod
-	job.Status.Message = fmt.Sprintf("Pod %q is forbidden to migrate because it does not meet the requirements", klog.KObj(pod))
+	if pod == nil {
+		podRefKey := "<nil>"
+		if job.Spec.PodRef != nil {
+			podRefKey = fmt.Sprintf("%s/%s", job.Spec.PodRef.Namespace, job.Spec.PodRef.Name)
+		}
+		job.Status.Reason = v1alpha1.PodMigrationJobReasonMissingPod
+		job.Status.Message = fmt.Sprintf("Pod %q is missing for PodMigrationJob", podRefKey)
+	} else {
+		job.Status.Reason = v1alpha1.PodMigrationJobReasonForbiddenMigratePod
+		job.Status.Message = fmt.Sprintf("Pod %q is forbidden to migrate because it does not meet the requirements", klog.KObj(pod))
+	}
 	err := a.client.Status().Update(context.TODO(), job)
 	if err == nil {
-		a.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, v1alpha1.PodMigrationJobReasonForbiddenMigratePod, "Migrating", job.Status.Message)
+		a.eventRecorder.Eventf(job, nil, corev1.EventTypeWarning, job.Status.Reason, "Migrating", job.Status.Message)
 	}
 
 	// delete from waitingCollection
