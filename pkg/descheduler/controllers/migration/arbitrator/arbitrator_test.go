@@ -234,6 +234,28 @@ func TestAdd(t *testing.T) {
 	assert.ElementsMatchf(t, expectedJobs, actualJobs, "failed")
 }
 
+func TestDeletePodMigrationJobRemovesFromWaitingCollection(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = v1alpha1.AddToScheme(scheme)
+	_ = clientgoscheme.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	job := makePodMigrationJob("test-job", time.Now(), nil)
+	arbitrator := &arbitratorImpl{
+		waitingCollection: map[types.UID]*v1alpha1.PodMigrationJob{job.UID: job},
+		client:            fakeClient,
+		filter: &filter{
+			arbitratedPodMigrationJobs: map[types.UID]bool{job.UID: true},
+		},
+		mu: sync.Mutex{},
+	}
+
+	arbitrator.DeletePodMigrationJob(job)
+
+	assert.False(t, arbitrator.filter.checkJobPassedArbitration(job.UID))
+	assert.Len(t, arbitrator.waitingCollection, 0)
+}
+
 func TestRequeueJobIfRetryablePodFilterFailed(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = v1alpha1.AddToScheme(scheme)
