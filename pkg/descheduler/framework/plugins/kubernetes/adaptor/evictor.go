@@ -41,10 +41,7 @@ func (a *evictorAdaptor) Filter(pod *corev1.Pod) bool {
 
 // PreEvictionFilter checks if pod can be evicted right before eviction
 func (a *evictorAdaptor) PreEvictionFilter(pod *corev1.Pod) bool {
-	if evictorPlugin, ok := a.evictor.(k8sdeschedulerframework.EvictorPlugin); ok {
-		return evictorPlugin.PreEvictionFilter(pod)
-	}
-	return a.evictor.Filter(pod)
+	return a.evictor.PreEvictionFilter(pod)
 }
 
 // Evict evicts a pod (no pre-check performed)
