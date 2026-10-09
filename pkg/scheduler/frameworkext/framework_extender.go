@@ -99,6 +99,7 @@ type frameworkExtenderImpl struct {
 	reservationPreBindPlugins              map[string]ReservationPreBindPlugin
 	reservationRestorePlugins              []ReservationRestorePlugin
 	reservationPreAllocationRestorePlugins []ReservationPreAllocationRestorePlugin
+	equivalenceCapacityPlugins             []EquivalenceCapacityPlugin
 
 	resizePodPlugins         []ResizePodPlugin
 	preBindExtensionsPlugins map[string]PreBindExtensions
@@ -111,6 +112,13 @@ type frameworkExtenderImpl struct {
 	crossSchedulerNominator *CrossSchedulerPodNominator
 
 	factory *FrameworkExtenderFactory
+
+	schedulingDecisionProviders []SchedulingDecisionProvider
+
+	// bindingLimiter optionally bounds the number of concurrent binding cycles for the pods it
+	// handles (e.g. the sandbox equivalence-class path). It is registered externally to avoid
+	// import cycles.
+	bindingLimiter BindingLimiter
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -207,6 +215,9 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 	if r, ok := pl.(ReservationPreAllocationRestorePlugin); ok {
 		ext.reservationPreAllocationRestorePlugins = append(ext.reservationPreAllocationRestorePlugins, r)
 	}
+	if p, ok := pl.(EquivalenceCapacityPlugin); ok {
+		ext.equivalenceCapacityPlugins = append(ext.equivalenceCapacityPlugins, p)
+	}
 	if r, ok := pl.(ResizePodPlugin); ok {
 		ext.resizePodPlugins = append(ext.resizePodPlugins, r)
 	}
@@ -239,6 +250,26 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 			klog.Warningf("framework extender got multiple GangActivator registered, using the first one with name: %s", ext.gangActivator.Name())
 		}
 	}
+}
+
+func (ext *frameworkExtenderImpl) EquivalenceCapacityPlugins() []EquivalenceCapacityPlugin {
+	return append([]EquivalenceCapacityPlugin(nil), ext.equivalenceCapacityPlugins...)
+}
+
+func (ext *frameworkExtenderImpl) RegisterSchedulingDecisionProvider(provider SchedulingDecisionProvider) {
+	if provider != nil {
+		ext.schedulingDecisionProviders = append(ext.schedulingDecisionProviders, provider)
+	}
+}
+
+func (ext *frameworkExtenderImpl) GetSchedulingDecisionProviders() []SchedulingDecisionProvider {
+	return append([]SchedulingDecisionProvider(nil), ext.schedulingDecisionProviders...)
+}
+
+// SetBindingLimiter registers the limiter bounding concurrent binding cycles. It is registered
+// externally (e.g. by a sandbox scheduling initializer) to avoid import cycles.
+func (ext *frameworkExtenderImpl) SetBindingLimiter(limiter BindingLimiter) {
+	ext.bindingLimiter = limiter
 }
 
 func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plugins) {
@@ -594,7 +625,20 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 }
 
 // RunPreBindPlugins supports PreBindReservation for Reservation
-func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
+func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeName string) (status *fwktype.Status) {
+	if limiter := ext.bindingLimiter; limiter != nil && limiter.Handles(pod) {
+		// Waiting here bounds PreBind/Bind concurrency without blocking the scheduling loop.
+		// PostBind or Unreserve releases the slot; a PreBind failure releases it immediately.
+		if err := limiter.Acquire(ctx, pod); err != nil {
+			return fwktype.AsStatus(err)
+		}
+		defer func() {
+			if !status.IsSuccess() {
+				limiter.Release(pod)
+			}
+		}()
+	}
+
 	if !reservationutil.IsReservePod(pod) {
 		if k8sfeature.DefaultFeatureGate.Enabled(features.DynamicSchedulerCheck) {
 			curPod, err := ext.podLister.Pods(pod.Namespace).Get(pod.Name)
@@ -615,9 +659,9 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state f
 
 		original := pod
 		pod = pod.DeepCopy()
-		status := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
-		if !status.IsSuccess() {
-			return status
+		preBindStatus := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
+		if !preBindStatus.IsSuccess() {
+			return preBindStatus
 		}
 		return ext.runPreBindExtensionPlugins(ctx, state, original, pod)
 	}
@@ -685,6 +729,11 @@ func (ext *frameworkExtenderImpl) runPreBindExtensionPlugins(ctx context.Context
 }
 
 func (ext *frameworkExtenderImpl) RunPostBindPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeName string) {
+	// A successful bind ends the binding cycle: release the slot acquired in RunPreBindPlugins.
+	// Release is keyed by Pod UID and a no-op for pods that hold none.
+	if limiter := ext.bindingLimiter; limiter != nil {
+		limiter.Release(pod)
+	}
 	if ext.monitor != nil {
 		defer ext.monitor.Complete(pod, nil)
 	}
@@ -948,6 +997,14 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 		reservationNominator.DeleteNominatedReservePodOrReservation(pod)
 	}
 	return status
+}
+
+// RunReservePluginsUnreserve releases any binding slot before unwinding the reservation.
+func (ext *frameworkExtenderImpl) RunReservePluginsUnreserve(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) {
+	if limiter := ext.bindingLimiter; limiter != nil {
+		limiter.Release(pod)
+	}
+	ext.Framework.RunReservePluginsUnreserve(ctx, cycleState, pod, nodeName)
 }
 
 func (ext *frameworkExtenderImpl) RunResizePod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {

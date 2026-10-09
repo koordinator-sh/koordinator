@@ -75,6 +75,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/services"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/sandbox"
 	"github.com/koordinator-sh/koordinator/pkg/util/asynclog"
 	utilroutes "github.com/koordinator-sh/koordinator/pkg/util/routes"
 	"github.com/koordinator-sh/koordinator/pkg/util/transformer"
@@ -123,6 +124,7 @@ for cost reduction and efficiency enhancement.
 	globalflag.AddGlobalFlags(nfs.FlagSet("global"), cmd.Name(), logs.SkipLoggingConfigurationFlags())
 	workloadauditor.AddFlags(nfs.FlagSet("extend"))
 	frameworkext.AddFlags(nfs.FlagSet("extend"))
+	sandbox.AddFlags(nfs.FlagSet("sandbox"))
 	fs := cmd.Flags()
 	for _, f := range nfs.FlagSets {
 		fs.AddFlagSet(f)
@@ -593,6 +595,12 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 			}
 			return &cc, sched, frameworkExtenderFactory, wf, nil
 		}
+	}
+
+	// Sandbox equivalence scheduling is an enhancement of the default scheduling loop, so it is
+	// only assembled when no custom workflow takes that loop over.
+	if err := sandbox.Setup(sched, cc.InformerFactory, cc.ComponentConfig.PercentageOfNodesToScore); err != nil {
+		return nil, nil, nil, nil, err
 	}
 
 	return &cc, sched, frameworkExtenderFactory, nil, nil

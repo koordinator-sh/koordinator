@@ -89,12 +89,13 @@ var (
 	_ fwktype.PreBindPlugin    = &Plugin{}
 	_ fwktype.BindPlugin       = &Plugin{}
 
-	_ frameworkext.ControllerProvider      = &Plugin{}
-	_ frameworkext.PreFilterTransformer    = &Plugin{}
-	_ frameworkext.ReservationCache        = &Plugin{}
-	_ frameworkext.ReservationNominator    = &Plugin{}
-	_ frameworkext.ReservationFilterPlugin = &Plugin{}
-	_ frameworkext.ReservationScorePlugin  = &Plugin{}
+	_ frameworkext.ControllerProvider        = &Plugin{}
+	_ frameworkext.PreFilterTransformer      = &Plugin{}
+	_ frameworkext.ReservationCache          = &Plugin{}
+	_ frameworkext.ReservationNominator      = &Plugin{}
+	_ frameworkext.ReservationFilterPlugin   = &Plugin{}
+	_ frameworkext.ReservationScorePlugin    = &Plugin{}
+	_ frameworkext.EquivalenceCapacityPlugin = &Plugin{}
 )
 
 type Plugin struct {
@@ -166,6 +167,16 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 }
 
 func (pl *Plugin) Name() string { return Name }
+
+func (pl *Plugin) EquivalenceCapacity(_ context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, _ fwktype.NodeInfo) (int64, bool, bool) {
+	state := getStateData(cycleState)
+	// Ownership and restored resources are pod-specific. A reservation on any node can
+	// change the preferred placement, so checking only the cached node is insufficient.
+	if reservationutil.IsReservePod(pod) || state.hasAffinity || len(state.nodeReservationStates) > 0 {
+		return 0, false, true
+	}
+	return 0, false, false
+}
 
 func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {
 	reservationController := controller.New(

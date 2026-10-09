@@ -312,6 +312,165 @@ func TestCollectSchedulePodResult(t *testing.T) {
 	}
 }
 
+type testSchedulingDecisionProvider struct {
+	handles bool
+	podName string
+	called  int
+	result  scheduler.ScheduleResult
+	err     error
+}
+
+func (p *testSchedulingDecisionProvider) Handles(pod *corev1.Pod) bool {
+	return p.handles && (p.podName == "" || p.podName == pod.Name)
+}
+
+func (p *testSchedulingDecisionProvider) SchedulePod(context.Context, fwktype.CycleState, framework.Framework, *corev1.Pod) (scheduler.ScheduleResult, error) {
+	p.called++
+	return p.result, p.err
+}
+
+func TestFrameworkExtenderFactoryDispatchSchedulePod(t *testing.T) {
+	tests := []struct {
+		name             string
+		provider         *testSchedulingDecisionProvider
+		wantProviderCall int
+		wantRawCall      int
+	}{
+		{
+			name: "handled pod uses provider",
+			provider: &testSchedulingDecisionProvider{
+				handles: true,
+				result:  scheduler.ScheduleResult{SuggestedHost: "provider-node"},
+			},
+			wantProviderCall: 1,
+		},
+		{
+			name: "unhandled pod uses raw scheduler",
+			provider: &testSchedulingDecisionProvider{
+				handles: false,
+			},
+			wantRawCall: 1,
+		},
+		{
+			name:        "nil provider uses raw scheduler",
+			wantRawCall: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rawResult := scheduler.ScheduleResult{SuggestedHost: "raw-node"}
+			rawCalls := 0
+			factory := &FrameworkExtenderFactory{
+				schedulePod: func(context.Context, framework.Framework, fwktype.CycleState, *corev1.Pod) (scheduler.ScheduleResult, error) {
+					rawCalls++
+					return rawResult, nil
+				},
+			}
+			extender := &frameworkExtenderImpl{}
+			if tt.provider != nil {
+				extender.RegisterSchedulingDecisionProvider(tt.provider)
+			}
+			result, err := factory.dispatchSchedulePod(
+				context.Background(),
+				extender,
+				framework.NewCycleState(),
+				&corev1.Pod{},
+			)
+
+			assert.NoError(t, err)
+			if tt.wantProviderCall > 0 {
+				assert.Equal(t, tt.provider.result, result)
+			} else {
+				assert.Equal(t, rawResult, result)
+			}
+			if tt.provider != nil {
+				assert.Equal(t, tt.wantProviderCall, tt.provider.called)
+			}
+			assert.Equal(t, tt.wantRawCall, rawCalls)
+		})
+	}
+}
+
+func TestFrameworkExtenderFactoryDecisionProvidersCoexist(t *testing.T) {
+	first := &testSchedulingDecisionProvider{
+		handles: true, podName: "sandbox",
+		result: scheduler.ScheduleResult{SuggestedHost: "sandbox-node"},
+	}
+	second := &testSchedulingDecisionProvider{
+		handles: true, podName: "other",
+		result: scheduler.ScheduleResult{SuggestedHost: "other-node"},
+	}
+	extender := &frameworkExtenderImpl{}
+	extender.RegisterSchedulingDecisionProvider(first)
+	extender.RegisterSchedulingDecisionProvider(nil)
+	extender.RegisterSchedulingDecisionProvider(second)
+	assert.Equal(t, []SchedulingDecisionProvider{first, second}, extender.GetSchedulingDecisionProviders())
+	rawCalls := 0
+	factory := &FrameworkExtenderFactory{
+		schedulePod: func(context.Context, framework.Framework, fwktype.CycleState, *corev1.Pod) (scheduler.ScheduleResult, error) {
+			rawCalls++
+			return scheduler.ScheduleResult{SuggestedHost: "raw-node"}, nil
+		},
+	}
+	for _, tt := range []struct{ pod, node string }{
+		{pod: "sandbox", node: "sandbox-node"},
+		{pod: "other", node: "other-node"},
+		{pod: "ordinary", node: "raw-node"},
+	} {
+		result, err := factory.dispatchSchedulePod(context.Background(), extender, framework.NewCycleState(),
+			&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: tt.pod}})
+		assert.NoError(t, err)
+		assert.Equal(t, tt.node, result.SuggestedHost, tt.pod)
+	}
+	assert.Equal(t, 1, first.called)
+	assert.Equal(t, 1, second.called)
+	assert.Equal(t, 1, rawCalls)
+}
+
+func TestFrameworkExtenderFactoryDecisionProviderPrecedence(t *testing.T) {
+	providerError := fmt.Errorf("provider failed")
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{name: "first match wins"},
+		{name: "provider error does not fall through", err: providerError},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			first := &testSchedulingDecisionProvider{
+				handles: true, result: scheduler.ScheduleResult{SuggestedHost: "first-node"}, err: tt.err,
+			}
+			second := &testSchedulingDecisionProvider{
+				handles: true, result: scheduler.ScheduleResult{SuggestedHost: "second-node"},
+			}
+			extender := &frameworkExtenderImpl{}
+			extender.RegisterSchedulingDecisionProvider(first)
+			extender.RegisterSchedulingDecisionProvider(second)
+			factory := &FrameworkExtenderFactory{
+				schedulePod: func(context.Context, framework.Framework, fwktype.CycleState, *corev1.Pod) (scheduler.ScheduleResult, error) {
+					t.Fatal("a handled pod must not fall back to the upstream decision")
+					return scheduler.ScheduleResult{}, nil
+				},
+			}
+			result, err := factory.dispatchSchedulePod(context.Background(), extender, framework.NewCycleState(), &corev1.Pod{})
+			assert.ErrorIs(t, err, tt.err)
+			assert.Equal(t, first.result, result)
+			assert.Equal(t, 1, first.called)
+			assert.Zero(t, second.called)
+		})
+	}
+}
+
+func TestSchedulingDecisionProvidersAreProfileScoped(t *testing.T) {
+	firstProfile, secondProfile := &frameworkExtenderImpl{}, &frameworkExtenderImpl{}
+	first, second := &testSchedulingDecisionProvider{}, &testSchedulingDecisionProvider{}
+	firstProfile.RegisterSchedulingDecisionProvider(first)
+	secondProfile.RegisterSchedulingDecisionProvider(second)
+	assert.Equal(t, []SchedulingDecisionProvider{first}, firstProfile.GetSchedulingDecisionProviders())
+	assert.Equal(t, []SchedulingDecisionProvider{second}, secondProfile.GetSchedulingDecisionProviders())
+}
+
 func Test_recordScheduleDiagnosis(t *testing.T) {
 	tests := []struct {
 		name          string
