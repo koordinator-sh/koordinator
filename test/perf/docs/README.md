@@ -9,7 +9,7 @@ nodes.
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.25.0
 - Docker
 - `make`
 - `kubectl`
@@ -79,7 +79,7 @@ fields below live under `pkg/types.ScenarioConfig`.
 | `name`                         | string                             | yes        | —                                            | Scenario name; must match a registered scenario (`basic`, `gang`, `elasticquota`, `reservation`, or `loadaware`)                                                                              |
 | `description`                  | string                             | no         | —                                            | Free-text note, not used by the engine                                                                                                                                                        |
 | `schedulerName`                | string                             | no         | `koord-scheduler`                            | Scheduler that processes the benchmark pods                                                                                                                                                   |
-| `namespace`                    | string                             | no         | `benchmark`                                  | Namespace for pods; `elasticquota` requires this to be set explicitly (no implicit default)                                                                                                   |
+| `namespace`                    | string                             | no         | `benchmark`                                  | Namespace for pods; `elasticquota`, `reservation`, and `loadaware` require this to be set explicitly (no implicit default)                                                                    |
 | `nodeCount`                    | int                                | yes (>0)   | —                                            | Number of simulated kwok nodes to create                                                                                                                                                      |
 | `podCount`                     | int                                | yes (>0)   | —                                            | Number of pods fired in the burst                                                                                                                                                             |
 | `concurrency`                  | int                                | yes (>0)   | —                                            | Max in-flight pod-create requests at once                                                                                                                                                     |
@@ -132,7 +132,7 @@ plus a human-readable summary to stdout.
 | `name`                                              | Scenario name                                                                                                                                                                                                                                                                                                                                                                        |
 | `runID`                                             | UUID identifying this run; also the label value used to tag every pod/node it creates                                                                                                                                                                                                                                                                                                |
 | `timestamp`                                         | UTC timestamp the run completed (or aborted)                                                                                                                                                                                                                                                                                                                                         |
-| `koordinatorVersion`                                | Short Git commit SHA used to build the benchmark binary                                                                                                                                                                                                                                                                                                                              |
+| `koordinatorVersion`                                | Short Git commit SHA when run through the Makefile benchmark target; direct `go run ./cmd/benchmark/main.go` reports `dev` because it does not apply the Makefile's version `-ldflags`                                                                                                                                                                                               |
 | `nodeCount` / `podCount`                            | Echoed from the config                                                                                                                                                                                                                                                                                                                                                               |
 | `throughputPodsPerSec`                              | Pods scheduled per second, measured over the actual scheduling window of the recorded pods (earliest `creationTimestamp` → latest `PodScheduled` transition among the admitted set). For `basic`/`gang` this window coincides with `totalDurationSec`. Note: this is bounded by `clientQPS`/`clientBurst`, not the scheduler's own ceiling — see `apiCreationDurationSec` to verify. |
 | `apiCreationDurationSec`                            | Time to POST all `podCount` pods to the API server. When `throughputPodsPerSec ≈ clientQPS`, the client rate-limit rather than the scheduler is the bottleneck.                                                                                                                                                                                                                      |
@@ -147,7 +147,7 @@ plus a human-readable summary to stdout.
 | `reservationBindCount`                              | Number of pods that successfully consumed a Reservation; `null` when the scenario does not configure Reservations                                                                                                                                                                                                                                                                    |
 | `loadAwareRoutedPodCount`                           | Number of pods scheduled onto low-utilization nodes in the `loadaware` scenario; `null` when the scenario does not seed NodeMetrics                                                                                                                                                                                                                                                  |
 | `createFailureCount`                                | Pods whose Create failed after retries and were excluded from the run rather than aborting it; usually 0                                                                                                                                                                                                                                                                             |
-| `pprofCPUArtifact` / `pprofHeapArtifact`            | Reserved for future pprof capture; always empty for now                                                                                                                                                                                                                                                                                                                              |
+| `pprofCPUArtifact` / `pprofHeapArtifact`            | Reserved for future pprof capture; omitted from JSON while empty because these fields use `omitempty`                                                                                                                                                                                                                                                                                |
 
 ---
 
@@ -172,7 +172,13 @@ Benchmark objects are labeled `benchmark.koordinator.sh/run-id=<runID>`.
 Clean up manually with:
 
 ```bash
-kubectl delete nodes,pods -A -l benchmark.koordinator.sh/run-id --all-namespaces
+# Namespaced resources
+kubectl delete pods,podgroups,elasticquotas --all-namespaces \
+   -l benchmark.koordinator.sh/run-id
+
+# Cluster-scoped resources
+kubectl delete nodes,reservations,nodemetrics \
+   -l benchmark.koordinator.sh/run-id
 ```
 
 Normally `Teardown`/`DeleteNodes` handle this automatically, even if the run
