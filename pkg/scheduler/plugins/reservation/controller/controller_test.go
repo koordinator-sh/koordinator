@@ -1269,3 +1269,74 @@ func TestProcessNextWorkItem(t *testing.T) {
 	// The same condition, seen from the loop's perspective.
 	assert.False(t, controller.processNextWorkItem())
 }
+
+func Test_syncStaleReservationKey(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultFeatureGate, features.CleanExpiredReservationAllocated, true)()
+
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordSharedInformerFactory := koordinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	// uid-1 is gone. uid-2 is a same-named replacement already past its TTL,
+	// so reconciling it would expire it.
+	stale := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-reservation", UID: "uid-1"},
+	}
+	replacement := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-reservation",
+			UID:               "uid-2",
+			CreationTimestamp: metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
+		},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			TTL: &metav1.Duration{Duration: time.Minute},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{
+			Phase:    schedulingv1alpha1.ReservationAvailable,
+			NodeName: "test-node",
+		},
+	}
+	ownerPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID: uuid.NewUUID(), Name: "owner-pod", Namespace: "test-ns",
+			Annotations: map[string]string{
+				apiext.AnnotationReservationAllocated: `{"name": "test-reservation", "uid": "uid-1"}`,
+			},
+		},
+		Spec: corev1.PodSpec{NodeName: "test-node"},
+	}
+
+	_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), replacement, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	_, err = fakeClientSet.CoreV1().Nodes().Create(context.TODO(), &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "test-node"}}, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	_, err = fakeClientSet.CoreV1().Pods(ownerPod.Namespace).Create(context.TODO(), ownerPod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	controller := New(sharedInformerFactory, koordSharedInformerFactory, fakeClientSet, fakeKoordClientSet, &config.ReservationArgs{})
+	sharedInformerFactory.Start(nil)
+	koordSharedInformerFactory.Start(nil)
+	sharedInformerFactory.WaitForCacheSync(nil)
+	koordSharedInformerFactory.WaitForCacheSync(nil)
+	controller.onPodAdd(ownerPod)
+
+	// The stale key must not reconcile the replacement...
+	_, err = controller.sync(getReservationKey(stale))
+	assert.NoError(t, err)
+	got, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), replacement.Name, metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.False(t, reservationutil.IsReservationExpired(got))
+
+	// ...but must still clean up uid-1's owner pods.
+	gotPod, err := fakeClientSet.CoreV1().Pods(ownerPod.Namespace).Get(context.TODO(), ownerPod.Name, metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Equal(t, "", gotPod.Annotations[apiext.AnnotationReservationAllocated])
+
+	// The replacement is still reconciled normally under its own key.
+	_, err = controller.sync(getReservationKey(replacement))
+	assert.NoError(t, err)
+	got, err = fakeKoordClientSet.SchedulingV1alpha1().Reservations().Get(context.TODO(), replacement.Name, metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.True(t, reservationutil.IsReservationExpired(got))
+}
