@@ -837,6 +837,7 @@ func Test_cpusetPlugin_ruleUpdateCbForPods(t *testing.T) {
 								},
 							},
 							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
 								ContainerStatuses: []corev1.ContainerStatus{
 									{
 										Name:        "container-with-cpuset-alloc-name",
@@ -868,6 +869,7 @@ func Test_cpusetPlugin_ruleUpdateCbForPods(t *testing.T) {
 								},
 							},
 							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
 								InitContainerStatuses: []corev1.ContainerStatus{
 									{
 										Name:        "init-container-with-cpu-share-name",
@@ -900,6 +902,7 @@ func Test_cpusetPlugin_ruleUpdateCbForPods(t *testing.T) {
 								},
 							},
 							Status: corev1.PodStatus{
+								Phase: corev1.PodRunning,
 								ContainerStatuses: []corev1.ContainerStatus{
 									{
 										Name:        "container-with-bad-cpuset-alloc-name",
