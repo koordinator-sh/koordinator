@@ -207,6 +207,7 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 							},
 						},
 						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
 							InitContainerStatuses: []corev1.ContainerStatus{
 								{
 									Name:        "test1-init-container-name",
@@ -242,6 +243,7 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 							},
 						},
 						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
 							InitContainerStatuses: []corev1.ContainerStatus{
 								{
 									Name:        "test2-init-container-name",
@@ -277,6 +279,7 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 							},
 						},
 						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
 							InitContainerStatuses: []corev1.ContainerStatus{
 								{
 									Name:        "test3-init-container-name",

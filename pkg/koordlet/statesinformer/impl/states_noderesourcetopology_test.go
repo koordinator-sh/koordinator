@@ -743,6 +743,9 @@ func Test_reportNodeTopology(t *testing.T) {
 						extension.AnnotationResourceStatus: `{"cpuset": "4" }`,
 					},
 				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
 			},
 		},
 		"pod2": {
@@ -755,6 +758,9 @@ func Test_reportNodeTopology(t *testing.T) {
 						extension.LabelPodQoS:              string(extension.QoSLSR),
 						extension.AnnotationResourceStatus: `{"cpuset": "3" }`,
 					},
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
 				},
 			},
 		},
@@ -769,6 +775,9 @@ func Test_reportNodeTopology(t *testing.T) {
 						extension.AnnotationResourceStatus: `{"cpuset": "5" }`,
 					},
 				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
+				},
 			},
 		},
 		"pod4-static": {
@@ -777,6 +786,9 @@ func Test_reportNodeTopology(t *testing.T) {
 					Name:      "pod4",
 					Namespace: "ns4",
 					UID:       "xxx-y4",
+				},
+				Status: corev1.PodStatus{
+					Phase: corev1.PodRunning,
 				},
 			},
 		},
