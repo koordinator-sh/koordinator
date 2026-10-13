@@ -980,14 +980,14 @@ func getDiagnosisTaintKey(taint *corev1.Taint) string {
 }
 
 func (pl *Plugin) BeforeFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (*corev1.Pod, fwktype.NodeInfo, bool, *fwktype.Status) {
-	// Both the reserve pod or the normal pod should consider the nominated reserve pods.
-	nominatedReservationInfos := pl.nominator.NominatedReservePodForNode(nodeInfo.Node().Name)
-	if len(nominatedReservationInfos) == 0 {
+	if nodeInfo.Node() == nil {
+		// This may happen only in tests.
 		return pod, nodeInfo, false, nil
 	}
 
-	if nodeInfo.Node() == nil {
-		// This may happen only in tests.
+	// Both the reserve pod or the normal pod should consider the nominated reserve pods.
+	nominatedReservationInfos := pl.nominator.NominatedReservePodForNode(nodeInfo.Node().Name)
+	if len(nominatedReservationInfos) == 0 {
 		return pod, nodeInfo, false, nil
 	}
 
