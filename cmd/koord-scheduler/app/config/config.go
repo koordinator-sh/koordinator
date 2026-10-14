@@ -34,6 +34,9 @@ type Config struct {
 	KoordinatorClient                   koordinatorclientset.Interface
 	KoordinatorSharedInformerFactory    koordinatorinformers.SharedInformerFactory
 	NodeResourceTopologyInformerFactory nrtinformers.SharedInformerFactory
+	// TracingConfigFile is the path to an OpenTelemetry tracing configuration file.
+	// When empty, distributed tracing stays disabled.
+	TracingConfigFile string
 }
 
 type completedConfig struct {
