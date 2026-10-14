@@ -18,6 +18,14 @@ limitations under the License.
 
 package v1alpha1
 
+// ContainerCgroupOverrideListerExpansion allows custom methods to be added to
+// ContainerCgroupOverrideLister.
+type ContainerCgroupOverrideListerExpansion interface{}
+
+// ContainerCgroupOverrideNamespaceListerExpansion allows custom methods to be added to
+// ContainerCgroupOverrideNamespaceLister.
+type ContainerCgroupOverrideNamespaceListerExpansion interface{}
+
 // NodeMetricListerExpansion allows custom methods to be added to
 // NodeMetricLister.
 type NodeMetricListerExpansion interface{}
