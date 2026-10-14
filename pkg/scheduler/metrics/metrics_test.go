@@ -21,9 +21,131 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"k8s.io/component-base/metrics/legacyregistry"
 	"k8s.io/component-base/metrics/testutil"
 )
+
+func TestRecordBindingSlotWaitDuration(t *testing.T) {
+	Register()
+	BindingSlotWaitDuration.Reset()
+	t.Cleanup(BindingSlotWaitDuration.Reset)
+
+	RecordBindingSlotWaitDuration("koord-scheduler", 250*time.Millisecond)
+	RecordBindingSlotWaitDuration("koord-scheduler", 750*time.Millisecond)
+	RecordBindingSlotWaitDuration("other-scheduler", 1500*time.Millisecond)
+
+	for _, tt := range []struct {
+		profile string
+		count   uint64
+		sum     float64
+	}{
+		{profile: "koord-scheduler", count: 2, sum: 1},
+		{profile: "other-scheduler", count: 1, sum: 1.5},
+	} {
+		t.Run(tt.profile, func(t *testing.T) {
+			vec, err := testutil.GetHistogramVecFromGatherer(legacyregistry.DefaultGatherer,
+				"scheduler_binding_slot_wait_duration_seconds",
+				map[string]string{"profile": tt.profile})
+			require.NoError(t, err)
+			assert.Equal(t, tt.count, vec.GetAggregatedSampleCount())
+			assert.InDelta(t, tt.sum, vec.GetAggregatedSampleSum(), 1e-9)
+		})
+	}
+}
+
+func TestRecordEquivalenceClassCacheEntries(t *testing.T) {
+	Register()
+	EquivalenceClassCacheEntries.Set(0)
+	t.Cleanup(func() { EquivalenceClassCacheEntries.Set(0) })
+
+	for _, tt := range []struct {
+		delta int
+		want  float64
+	}{
+		{delta: 1, want: 1},
+		{delta: 3, want: 4},
+		{delta: -1, want: 3},
+		{delta: -3, want: 0},
+		{delta: 0, want: 0},
+	} {
+		RecordEquivalenceClassCacheEntries(tt.delta)
+		value, err := testutil.GetGaugeMetricValue(EquivalenceClassCacheEntries)
+		require.NoError(t, err)
+		assert.Equal(t, tt.want, value)
+	}
+}
+
+func TestRecordEquivalenceClassFlush(t *testing.T) {
+	Register()
+	EquivalenceClassFlushes.Reset()
+	t.Cleanup(EquivalenceClassFlushes.Reset)
+
+	RecordEquivalenceClassFlush("node_event")
+	RecordEquivalenceClassFlush("node_event")
+	RecordEquivalenceClassFlush("bind_failure")
+
+	for reason, want := range map[string]float64{"node_event": 2, "bind_failure": 1} {
+		value, err := testutil.GetCounterMetricValue(EquivalenceClassFlushes.WithLabelValues(reason))
+		require.NoError(t, err)
+		assert.Equal(t, want, value, reason)
+	}
+}
+
+func TestRecordEquivalenceClassHitAndMiss(t *testing.T) {
+	Register()
+	EquivalenceClassHits.Reset()
+	EquivalenceClassMisses.Reset()
+	t.Cleanup(EquivalenceClassHits.Reset)
+	t.Cleanup(EquivalenceClassMisses.Reset)
+
+	for i, profile := range []string{"koord-scheduler", "other-scheduler"} {
+		for j := 0; j <= i; j++ {
+			RecordEquivalenceClassHit(profile)
+			RecordEquivalenceClassMiss(profile, "empty")
+		}
+		RecordEquivalenceClassMiss(profile, "nominated")
+
+		hits, err := testutil.GetCounterMetricValue(EquivalenceClassHits.WithLabelValues(profile))
+		require.NoError(t, err)
+		assert.Equal(t, float64(i+1), hits, profile)
+		for reason, want := range map[string]float64{"empty": float64(i + 1), "nominated": 1} {
+			misses, err := testutil.GetCounterMetricValue(EquivalenceClassMisses.WithLabelValues(profile, reason))
+			require.NoError(t, err)
+			assert.Equal(t, want, misses, "%s/%s", profile, reason)
+		}
+	}
+}
+
+func TestRecordEquivalenceClassSchedulingDuration(t *testing.T) {
+	Register()
+	EquivalenceClassSchedulingDuration.Reset()
+	t.Cleanup(EquivalenceClassSchedulingDuration.Reset)
+
+	RecordEquivalenceClassSchedulingDuration("koord-scheduler", "fast", "success", 250*time.Millisecond)
+	RecordEquivalenceClassSchedulingDuration("koord-scheduler", "fast", "success", 750*time.Millisecond)
+	RecordEquivalenceClassSchedulingDuration("koord-scheduler", "full", "unschedulable", 1500*time.Millisecond)
+	RecordEquivalenceClassSchedulingDuration("other-scheduler", "full", "error", 2*time.Second)
+
+	for _, tt := range []struct {
+		profile, path, result string
+		count                 uint64
+		sum                   float64
+	}{
+		{profile: "koord-scheduler", path: "fast", result: "success", count: 2, sum: 1},
+		{profile: "koord-scheduler", path: "full", result: "unschedulable", count: 1, sum: 1.5},
+		{profile: "other-scheduler", path: "full", result: "error", count: 1, sum: 2},
+	} {
+		t.Run(tt.profile+"/"+tt.path+"/"+tt.result, func(t *testing.T) {
+			vec, err := testutil.GetHistogramVecFromGatherer(legacyregistry.DefaultGatherer,
+				"scheduler_scheduling_duration_seconds",
+				map[string]string{"profile": tt.profile, "path": tt.path, "result": tt.result})
+			require.NoError(t, err)
+			assert.Equal(t, tt.count, vec.GetAggregatedSampleCount())
+			assert.InDelta(t, tt.sum, vec.GetAggregatedSampleSum(), 1e-9)
+		})
+	}
+}
 
 func TestGangJobSizeBucket(t *testing.T) {
 	tests := []struct {
