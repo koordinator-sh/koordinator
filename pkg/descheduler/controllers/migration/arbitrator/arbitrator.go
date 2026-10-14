@@ -111,6 +111,10 @@ func (a *arbitratorImpl) AddPodMigrationJob(job *v1alpha1.PodMigrationJob) {
 // It is safe to be called concurrently by multiple goroutines.
 func (a *arbitratorImpl) DeletePodMigrationJob(job *v1alpha1.PodMigrationJob) {
 	a.filter.removeJobPassedArbitration(job.UID)
+	// remove from waitingCollection if it's still there
+	a.mu.Lock()
+	delete(a.waitingCollection, job.UID)
+	a.mu.Unlock()
 }
 
 // Start starts the goroutine to arbitrate jobs periodically.
