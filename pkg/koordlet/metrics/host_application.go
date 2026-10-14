@@ -17,7 +17,7 @@ limitations under the License.
 package metrics
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
+	k8smetrics "k8s.io/component-base/metrics"
 
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 )
@@ -29,13 +29,14 @@ const (
 )
 
 var (
-	HostApplicationResourceUsage = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "host_application_resource_usage",
-		Help:      "Host application resource usage collected by koordlet",
+	HostApplicationResourceUsage = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "host_application_resource_usage",
+		Help:           "Host application resource usage collected by koordlet",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, hostApplicationName, ResourceKey, priorityClass, qos})
 
-	HostApplicationCollectors = []prometheus.Collector{
+	HostApplicationRegisterableCollectors = []k8smetrics.Registerable{
 		HostApplicationResourceUsage,
 	}
 )
