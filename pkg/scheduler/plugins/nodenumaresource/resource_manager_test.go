@@ -571,7 +571,7 @@ func TestResourceManagerAllocate(t *testing.T) {
 				},
 			}
 			apiext.SetNodeResourceAmplificationRatios(node, tt.amplificationRatios)
-			resourceManager := NewResourceManager(suit.Handle, schedulingconfig.NUMALeastAllocated, tom)
+			resourceManager := NewResourceManager(suit.Handle, tom)
 			if tt.allocated != nil {
 				resourceManager.Update(node.Name, tt.allocated)
 			}
@@ -1285,7 +1285,7 @@ func TestAllocateDistributeEvenly(t *testing.T) {
 				},
 			}
 			apiext.SetNodeResourceAmplificationRatios(node, tt.amplificationRatios)
-			resourceManager := NewResourceManager(suit.Handle, schedulingconfig.NUMALeastAllocated, tom)
+			resourceManager := NewResourceManager(suit.Handle, tom)
 			if tt.allocated != nil {
 				resourceManager.Update(node.Name, tt.allocated)
 			}
@@ -1809,7 +1809,7 @@ func TestResourceManagerGetTopologyHint(t *testing.T) {
 			}
 			apiext.SetNodeResourceAmplificationRatios(node, tt.amplificationRatios)
 
-			resourceManager := NewResourceManager(suit.Handle, schedulingconfig.NUMALeastAllocated, tom)
+			resourceManager := NewResourceManager(suit.Handle, tom)
 			if tt.allocated != nil {
 				resourceManager.Update(node.Name, tt.allocated)
 			}
@@ -1859,7 +1859,7 @@ func TestDistributeEvenlyRestrictedAdmission(t *testing.T) {
 			},
 		},
 	}
-	resourceManager := NewResourceManager(suit.Handle, schedulingconfig.NUMALeastAllocated, tom)
+	resourceManager := NewResourceManager(suit.Handle, tom)
 	// Consume node 0's memory so the widest feasible mask differs across resources (cpu spans {0,1}, memory
 	// only fits {1}) — the exact shape that made Restricted reject the pod before the exemption.
 	resourceManager.Update("test-node", &PodAllocation{

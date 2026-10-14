@@ -23,10 +23,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingconfig "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/util/cpuset"
 )
 
@@ -145,4 +149,82 @@ func Test_SharedResourceManager_DispatcherPopulatesFromPodInformer(t *testing.T)
 	cpus, ok := pl.resourceManager.GetAllocatedCPUSet("test-node-1", pod.UID)
 	assert.True(t, ok)
 	assert.Equal(t, cpuset.MustParse("0-3"), cpus)
+}
+
+// Test_SharedResourceManager_PerProfileNUMAAllocateStrategy pins @ZiMengSheng's review: although the
+// resourceManager is shared across profiles, each profile must still allocate CPUs with ITS OWN
+// NUMAScoringStrategy. The strategy is per-profile config and must not be captured by the shared
+// cache (it rides through ResourceOptions, resolved per profile in getResourceOptions). Two profiles
+// with opposite strategies, sharing one cache, must diverge on the same node+pre-allocation: given
+// NUMA node 0 already fuller, MostAllocated packs into it while LeastAllocated spreads to node 1.
+func Test_SharedResourceManager_PerProfileNUMAAllocateStrategy(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node-1", Labels: map[string]string{}},
+		Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("16"),
+			corev1.ResourceMemory: resource.MustParse("512Gi"),
+		}},
+	}
+	suit := newPluginTestSuit(t, nil, []*corev1.Node{node})
+
+	mkArgs := func(st schedulingconfig.ScoringStrategyType) *schedulingconfig.NodeNUMAResourceArgs {
+		a := suit.nodeNUMAResourceArgs.DeepCopy()
+		a.NUMAScoringStrategy = &schedulingconfig.ScoringStrategy{Type: st}
+		return a
+	}
+	pMost, err := suit.proxyNew(context.TODO(), mkArgs(schedulingconfig.MostAllocated), suit.Handle)
+	assert.NoError(t, err)
+	pLeast, err := suit.proxyNew(context.TODO(), mkArgs(schedulingconfig.LeastAllocated), suit.Handle)
+	assert.NoError(t, err)
+	plMost, plLeast := pMost.(*Plugin), pLeast.(*Plugin)
+
+	// Both profiles share the one resourceManager instance (the point of the migration)...
+	assert.True(t, plMost.resourceManager == plLeast.resourceManager, "profiles must share a single resourceManager")
+
+	rm := plMost.resourceManager.(*resourceManager)
+	cpuTopology := buildCPUTopologyForTest(2, 1, 4, 2) // NUMA node 0 = CPUs 0-7, node 1 = CPUs 8-15
+	plMost.topologyOptionsManager.UpdateTopologyOptions("test-node-1", func(o *TopologyOptions) {
+		o.CPUTopology = cpuTopology
+		for i := 0; i < cpuTopology.NumNodes; i++ {
+			o.NUMANodeResources = append(o.NUMANodeResources, NUMANodeResource{
+				Node:      i,
+				Resources: corev1.ResourceList{corev1.ResourceCPU: *resource.NewQuantity(int64(cpuTopology.CPUsPerNode()), resource.DecimalSI)},
+			})
+		}
+	})
+	suit.start(t)
+
+	// Pre-allocate CPUs 0-3 (NUMA node 0's cores 0-1) so node 0 is fuller than node 1.
+	resetCache := func() {
+		na := NewNodeAllocation("test-node-1")
+		na.addCPUs(cpuTopology, uuid.NewUUID(), cpuset.NewCPUSet(0, 1, 2, 3), schedulingconfig.CPUExclusivePolicyNone)
+		rm.lock.Lock()
+		rm.nodeAllocations["test-node-1"] = na
+		rm.lock.Unlock()
+	}
+
+	reserve := func(pl *Plugin, uid string) cpuset.CPUSet {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: types.UID(uid), Namespace: "default", Name: uid}}
+		state := &preFilterState{requestCPUBind: true, numCPUsNeeded: 4, preferredCPUBindPolicy: schedulingconfig.CPUBindPolicyFullPCPUs}
+		cs := framework.NewCycleState()
+		cs.Write(stateKey, state)
+		assert.True(t, pl.Reserve(context.TODO(), cs, pod, "test-node-1").IsSuccess())
+		assert.NotNil(t, state.allocation)
+		return state.allocation.CPUSet
+	}
+
+	// ...yet each profile must allocate per its own strategy. Reserve mutates the shared cache, so
+	// reset it to the same starting state before each profile's allocation.
+	resetCache()
+	gotMost := reserve(plMost, "pod-most")
+	resetCache()
+	gotLeast := reserve(plLeast, "pod-least")
+
+	node0 := cpuset.NewCPUSet(0, 1, 2, 3, 4, 5, 6, 7)
+	assert.NotEqual(t, gotMost, gotLeast,
+		"each profile must allocate per its own NUMAScoringStrategy despite sharing the cache (most=%v least=%v)", gotMost, gotLeast)
+	assert.True(t, cpuset.NewCPUSet(4, 5, 6, 7).Equals(gotMost),
+		"MostAllocated must pack into the already-fuller NUMA node 0, got %v", gotMost)
+	assert.Equal(t, 0, gotLeast.Intersection(node0).Size(),
+		"LeastAllocated must spread to the emptier NUMA node 1, got %v", gotLeast)
 }

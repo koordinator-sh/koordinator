@@ -68,7 +68,8 @@ type ResourceOptions struct {
 	requiredCPUBindPolicy    bool
 	cpuBindPolicy            schedulingconfig.CPUBindPolicy
 	cpuExclusivePolicy       schedulingconfig.CPUExclusivePolicy
-	preferWidestNUMAAffinity bool // prefer the widest feasible NUMA affinity (spread across the most NUMA nodes) when generating hints; set for DistributeEvenly pods whose memory is interleaved at runtime
+	numaAllocateStrategy     schedulingconfig.NUMAAllocateStrategy // per-profile effective CPU-selection strategy, set by getResourceOptions so the shared resourceManager does not capture one profile's default; the zero value is treated as LeastAllocated by the accumulator, matching GetDefaultNUMAAllocateStrategy's default
+	preferWidestNUMAAffinity bool                                  // prefer the widest feasible NUMA affinity (spread across the most NUMA nodes) when generating hints; set for DistributeEvenly pods whose memory is interleaved at runtime
 	preferredCPUs            cpuset.CPUSet
 	preemptibleCPUs          cpuset.CPUSet // cpus could be allocated by preemption
 	reusableResources        map[int]corev1.ResourceList
@@ -81,10 +82,12 @@ type ResourceOptions struct {
 	nodePreemptionState      *preemptibleNodeState
 }
 
+// resourceManager holds only cluster-wide allocation/topology state, so it can be shared as a single
+// instance across scheduler profiles. Per-profile config (e.g. the default NUMAAllocateStrategy) must
+// NOT live here — it is resolved per profile in the Plugin and passed through ResourceOptions.
 type resourceManager struct {
 	handle                 fwktype.Handle
 	nrtInformerFactory     nrtinformers.SharedInformerFactory
-	numaAllocateStrategy   schedulingconfig.NUMAAllocateStrategy
 	topologyOptionsManager TopologyOptionsManager
 	lock                   sync.Mutex
 	nodeAllocations        map[string]*NodeAllocation
@@ -92,12 +95,10 @@ type resourceManager struct {
 
 func NewResourceManager(
 	handle fwktype.Handle,
-	defaultNUMAAllocateStrategy schedulingconfig.NUMAAllocateStrategy,
 	topologyOptionsManager TopologyOptionsManager,
 ) ResourceManager {
 	return &resourceManager{
 		handle:                 handle,
-		numaAllocateStrategy:   defaultNUMAAllocateStrategy,
 		topologyOptionsManager: topologyOptionsManager,
 		nodeAllocations:        map[string]*NodeAllocation{},
 	}
@@ -421,7 +422,7 @@ func (c *resourceManager) allocateCPUSet(node *corev1.Node, pod *corev1.Pod, all
 	}
 
 	result := cpuset.CPUSet{}
-	numaAllocateStrategy := GetNUMAAllocateStrategy(node, c.numaAllocateStrategy)
+	numaAllocateStrategy := options.numaAllocateStrategy
 	// NOTE: the cpu accumulator only distinguishes MostAllocated from other strategies, so a resolved
 	// NUMADistributeEvenly falls back to the LeastAllocated ordering here. The even spread across NUMA
 	// nodes for DistributeEvenly is realized at the NUMA hint/allocation layer (see generateResourceHints),
