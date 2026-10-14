@@ -62,6 +62,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 		wantReason                    string
 		wantErr                       bool
 		defaultSkipValidatingPriority bool
+		defaultSkipValidatingQoSClass bool
 	}{
 		{
 			name:        "non-colocation empty pod",
@@ -238,6 +239,406 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 			wantAllowed:                   true,
 			wantReason:                    "",
 			wantErr:                       false,
+		},
+		{
+			name:      "validate immutable QoS with defaultSkipValidatingQoSClass=false",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSBE),
+					},
+				},
+			},
+			defaultSkipValidatingQoSClass: false,
+			wantAllowed:                   false,
+			wantReason:                    `labels.koordinator.sh/qosClass: Invalid value: "LS": field is immutable`,
+			wantErr:                       true,
+		},
+		{
+			name:      "validate immutable QoS with defaultSkipValidatingQoSClass=true",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSBE),
+					},
+				},
+			},
+			defaultSkipValidatingQoSClass: true,
+			wantAllowed:                   true,
+			wantReason:                    "",
+			wantErr:                       false,
+		},
+		{
+			name:      "validate batch-resource pod QoS with defaultSkipValidatingQoSClass=false",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSBE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			defaultSkipValidatingQoSClass: false,
+			wantAllowed:                   false,
+			wantReason:                    `[labels.koordinator.sh/qosClass: Invalid value: "LS": field is immutable, labels.koordinator.sh/qosClass: Required value: must specify koordinator QoS BE with koordinator colocation resources]`,
+			wantErr:                       true,
+		},
+		{
+			name:      "validate batch-resource pod QoS with defaultSkipValidatingQoSClass=true",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSLS),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSBE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			defaultSkipValidatingQoSClass: true,
+			wantAllowed:                   true,
+			wantReason:                    "",
+			wantErr:                       false,
+		},
+		{
+			name:      "forbidden not defined QoS with defaultSkipValidatingQoSClass=true",
+			operation: admissionv1.Create,
+			newPod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+					Priority: ptr.To[int32](6666),
+				},
+			},
+			defaultSkipValidatingQoSClass: true,
+			wantAllowed:                   false,
+			wantReason:                    `labels.koordinator.sh/qosClass: Required value: must specify koordinator QoS BE with koordinator colocation resources`,
+			wantErr:                       true,
+		},
+		{
+			name:      "forbidden QoS and priorityClass combination: LSR And Batch with defaultSkipValidatingQoSClass=true",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS:           string(extension.QoSLSR),
+						extension.LabelPodPriorityClass: string(extension.PriorityBatch),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS:           string(extension.QoSBE),
+						extension.LabelPodPriorityClass: string(extension.PriorityBatch),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			defaultSkipValidatingQoSClass: true,
+			wantAllowed:                   false,
+			wantReason:                    `[Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-batch cannot be used in combination, pod.spec.containers[*].resources.requests: Required value: LSR Pod must declare the requested CPUs]`,
+			wantErr:                       true,
+		},
+		{
+			name:      "validate remove QoS with defaultSkipValidatingQoSClass=true",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS: string(extension.QoSBE),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			defaultSkipValidatingQoSClass: true,
+			wantAllowed:                   true,
+			wantReason:                    "",
+			wantErr:                       false,
+		},
+		{
+			name:      "forbidden QoS and priorityClass combination: LSR And Batch with defaultSkipValidatingQoSClass=false",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS:           string(extension.QoSLSR),
+						extension.LabelPodPriorityClass: string(extension.PriorityBatch),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS:           string(extension.QoSBE),
+						extension.LabelPodPriorityClass: string(extension.PriorityBatch),
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "test-container-a",
+							Resources: corev1.ResourceRequirements{
+								Limits: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+								Requests: map[corev1.ResourceName]resource.Quantity{
+									extension.BatchCPU:    resource.MustParse("1"),
+									extension.BatchMemory: resource.MustParse("4Gi"),
+								},
+							},
+						},
+					},
+				},
+			},
+			defaultSkipValidatingQoSClass: false,
+			wantAllowed:                   false,
+			wantReason:                    `[labels.koordinator.sh/qosClass: Invalid value: "LSR": field is immutable, labels.koordinator.sh/qosClass: Required value: must specify koordinator QoS BE with koordinator colocation resources, Pod: Forbidden: koordinator.sh/qosClass=LSR and priorityClass=koord-batch cannot be used in combination, pod.spec.containers[*].resources.requests: Required value: LSR Pod must declare the requested CPUs]`,
+			wantErr:                       true,
+		},
+		{
+			name:      "validate QoS and priority relabel with both skip gates enabled",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS:      string(extension.QoSLS),
+						extension.LabelPodPriority: "8888",
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS:      string(extension.QoSBE),
+						extension.LabelPodPriority: "9999",
+					},
+				},
+			},
+			defaultSkipValidatingPriority: true,
+			defaultSkipValidatingQoSClass: true,
+			wantAllowed:                   true,
+			wantReason:                    "",
+			wantErr:                       false,
+		},
+		{
+			name:      "forbidden QoS and priorityClass combination: BE And Prod with defaultSkipValidatingQoSClass=true",
+			operation: admissionv1.Update,
+			newPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS:           string(extension.QoSBE),
+						extension.LabelPodPriorityClass: string(extension.PriorityProd),
+					},
+				},
+			},
+			oldPod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						extension.LabelPodQoS:           string(extension.QoSLS),
+						extension.LabelPodPriorityClass: string(extension.PriorityProd),
+					},
+				},
+			},
+			defaultSkipValidatingQoSClass: true,
+			wantAllowed:                   false,
+			wantReason:                    `Pod: Forbidden: koordinator.sh/qosClass=BE and priorityClass=koord-prod cannot be used in combination`,
+			wantErr:                       true,
 		},
 		{
 			name:      "validate remove koordinator priority",
@@ -486,6 +887,7 @@ func TestClusterColocationProfileValidatingPod(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			defer feature.SetFeatureGateDuringTest(t, feature.DefaultMutableFeatureGate, features.ColocationProfileSkipValidatingPriority, tt.defaultSkipValidatingPriority)()
+			defer feature.SetFeatureGateDuringTest(t, feature.DefaultMutableFeatureGate, features.ColocationProfileSkipValidatingQoSClass, tt.defaultSkipValidatingQoSClass)()
 			client := fake.NewClientBuilder().Build()
 			decoder := admission.NewDecoder(scheme.Scheme)
 			h := &PodValidatingHandler{
