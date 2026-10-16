@@ -76,9 +76,10 @@ type preemptionEvaluatorImpl struct {
 	gangCache             *GangCache
 	gangContextHolder     *GangSchedulingContextHolder
 	networkTopologySolver NetworkTopologySolver
+	enableAsyncPreemption bool
 }
 
-func NewPreemptionEvaluator(handle fwktype.Handle, gangCache *GangCache, gangContextHolder *GangSchedulingContextHolder, networkTopologySolver NetworkTopologySolver) PreemptionEvaluator {
+func NewPreemptionEvaluator(handle fwktype.Handle, gangCache *GangCache, gangContextHolder *GangSchedulingContextHolder, networkTopologySolver NetworkTopologySolver, enableAsyncPreemption bool) PreemptionEvaluator {
 	if handle == nil {
 		return nil
 	}
@@ -90,6 +91,7 @@ func NewPreemptionEvaluator(handle fwktype.Handle, gangCache *GangCache, gangCon
 		gangCache:             gangCache,
 		gangContextHolder:     gangContextHolder,
 		networkTopologySolver: networkTopologySolver,
+		enableAsyncPreemption: enableAsyncPreemption,
 	}
 }
 
@@ -393,6 +395,7 @@ func (ev *preemptionEvaluatorImpl) podEligibleToPreemptOthers(ctx context.Contex
 					terminatingPodKey := framework.GetNamespacedName(p.GetPod().Namespace, p.GetPod().Name)
 					jobPreemptionState.TerminatingPodOnNominatedNode[terminatingPodKey] = nomNodeName
 					// There is a terminating pod on the nominated node.
+					klog.V(4).InfoS("There is a terminating pod on the nominated node", "pod", klog.KObj(pod), "terminatingPod", klog.KObj(p.GetPod()), "node", nomNodeName)
 					return false, ReasonTerminatingVictimOnNominatedNode
 				}
 			}
