@@ -125,6 +125,5 @@ func (manager *mluManager) GetDevices() ([]Device, error) {
 }
 
 func (manager *mluManager) GetDriverVersion() (string, error) {
-	//TODO implement me
-	panic("implement me")
+	return "", nil
 }
