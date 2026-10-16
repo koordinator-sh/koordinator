@@ -32,9 +32,11 @@ import (
 	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
 	koordinatorinformers "github.com/koordinator-sh/koordinator/pkg/client/informers/externalversions"
 	frameworkexthelper "github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/helper"
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 type eventHandlerMutableGates interface {
@@ -186,4 +188,183 @@ func TestAddEventHandler_DisabledAuditor(t *testing.T) {
 
 	regs := frameworkexthelper.GetRegistrations()
 	assert.Empty(t, regs, "expected no registrations when auditor is disabled")
+}
+
+// TestAddEventHandler_FilterExcludesReservePod verifies that synthetic reserve pods
+// (carrying AnnotationReservePod) are filtered out by the pod FilterFunc, so they do
+// not create WorkloadRecords in the workload auditor. Without this filter, the reserve
+// pod would pass the NodeName=="" + scheduler-name check and pollute the auditor with
+// reservation lifecycle data, leaking WorkloadRecord entries.
+func TestAddEventHandler_FilterExcludesReservePod(t *testing.T) {
+	withWatchListClient(t, false)
+	frameworkexthelper.ResetRegistrations()
+	defer frameworkexthelper.ResetRegistrations()
+
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordInformerFactory := koordinatorinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	sched := &scheduler.Scheduler{
+		Profiles: profile.Map{
+			corev1.DefaultSchedulerName: (framework.Framework)(nil),
+		},
+	}
+	auditor := newMockAuditor(true)
+
+	// A reserve pod carries AnnotationReservePod="true" but otherwise looks like a
+	// regular unscheduled pod (NodeName empty, default scheduler name).
+	reservePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "reserve-pod",
+			Namespace: "default",
+			UID:       "uid-reserve",
+			Annotations: map[string]string{
+				reservationutil.AnnotationReservePod: "true",
+			},
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: corev1.DefaultSchedulerName,
+		},
+	}
+	// A real pending pod that should pass the filter.
+	realPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "real-pod",
+			Namespace: "default",
+			UID:       "uid-real",
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: corev1.DefaultSchedulerName,
+		},
+	}
+	_, err := fakeClientSet.CoreV1().Pods(reservePod.Namespace).Create(context.TODO(), reservePod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+	_, err = fakeClientSet.CoreV1().Pods(realPod.Namespace).Create(context.TODO(), realPod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	AddEventHandler(sched, auditor, sharedInformerFactory, koordInformerFactory)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	sharedInformerFactory.Start(stopCh)
+	koordInformerFactory.Start(stopCh)
+	sharedInformerFactory.WaitForCacheSync(stopCh)
+	koordInformerFactory.WaitForCacheSync(stopCh)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	assert.NoError(t, frameworkexthelper.WaitForHandlersSync(ctx))
+
+	// Reserve pod must NOT be added to the auditor; only the real pod should.
+	assert.Len(t, auditor.added, 1, "expected only the real pod to be added")
+	if len(auditor.added) == 1 {
+		assert.Equal(t, realPod.Name, auditor.added[0].Name)
+	}
+}
+
+// TestAddEventHandler_FilterExcludesScheduledPod verifies that pods already bound to
+// a node (NodeName != "") are filtered out, since they are no longer in the scheduling
+// pipeline and tracking them would leak WorkloadRecord entries.
+func TestAddEventHandler_FilterExcludesScheduledPod(t *testing.T) {
+	withWatchListClient(t, false)
+	frameworkexthelper.ResetRegistrations()
+	defer frameworkexthelper.ResetRegistrations()
+
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordInformerFactory := koordinatorinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	sched := &scheduler.Scheduler{
+		Profiles: profile.Map{
+			corev1.DefaultSchedulerName: (framework.Framework)(nil),
+		},
+	}
+	auditor := newMockAuditor(true)
+
+	boundPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "bound-pod",
+			Namespace: "default",
+			UID:       "uid-bound",
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: corev1.DefaultSchedulerName,
+			NodeName:      "node-1",
+		},
+	}
+	_, err := fakeClientSet.CoreV1().Pods(boundPod.Namespace).Create(context.TODO(), boundPod, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	AddEventHandler(sched, auditor, sharedInformerFactory, koordInformerFactory)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	sharedInformerFactory.Start(stopCh)
+	koordInformerFactory.Start(stopCh)
+	sharedInformerFactory.WaitForCacheSync(stopCh)
+	koordInformerFactory.WaitForCacheSync(stopCh)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	assert.NoError(t, frameworkexthelper.WaitForHandlersSync(ctx))
+
+	assert.Empty(t, auditor.added, "already-scheduled pods must not enter the auditor")
+}
+
+// TestAddEventHandler_FilterExcludesInactiveReservation verifies that the reservation
+// event handler installed by AddEventHandler applies IsObjValidActiveReservation as a
+// filter, so inactive/expired reservations do not get translated into reserve pod
+// events. Combined with the pod-side reserve-pod filter, this guarantees no reservation
+// lifecycle data ever reaches the workload auditor.
+func TestAddEventHandler_FilterExcludesInactiveReservation(t *testing.T) {
+	withWatchListClient(t, false)
+	frameworkexthelper.ResetRegistrations()
+	defer frameworkexthelper.ResetRegistrations()
+
+	fakeClientSet := kubefake.NewSimpleClientset()
+	fakeKoordClientSet := koordfake.NewSimpleClientset()
+	sharedInformerFactory := informers.NewSharedInformerFactory(fakeClientSet, 0)
+	koordInformerFactory := koordinatorinformers.NewSharedInformerFactory(fakeKoordClientSet, 0)
+
+	sched := &scheduler.Scheduler{
+		Profiles: profile.Map{
+			corev1.DefaultSchedulerName: (framework.Framework)(nil),
+		},
+	}
+	auditor := newMockAuditor(true)
+
+	// Failed reservation: not active, must be filtered by IsObjValidActiveReservation.
+	inactive := &schedulingv1alpha1.Reservation{
+		ObjectMeta: metav1.ObjectMeta{Name: "r-inactive", UID: "r-inactive-uid"},
+		Spec: schedulingv1alpha1.ReservationSpec{
+			Template: &corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "c"}}},
+			},
+			Owners: []schedulingv1alpha1.ReservationOwner{{Object: &corev1.ObjectReference{Name: "x"}}},
+			TTL:    &metav1.Duration{Duration: time.Hour},
+		},
+		Status: schedulingv1alpha1.ReservationStatus{Phase: schedulingv1alpha1.ReservationFailed},
+	}
+	_, err := fakeKoordClientSet.SchedulingV1alpha1().Reservations().Create(context.TODO(), inactive, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	AddEventHandler(sched, auditor, sharedInformerFactory, koordInformerFactory)
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	sharedInformerFactory.Start(stopCh)
+	koordInformerFactory.Start(stopCh)
+	sharedInformerFactory.WaitForCacheSync(stopCh)
+	koordInformerFactory.WaitForCacheSync(stopCh)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	assert.NoError(t, frameworkexthelper.WaitForHandlersSync(ctx))
+
+	// Even if the inactive reservation reached the reserve-pod adapter, the
+	// pod-side filter (IsReservePod) would also drop it. Either way the
+	// auditor must not record this reservation as a workload.
+	assert.Empty(t, auditor.added, "inactive reservation must not be tracked by workload auditor")
 }
