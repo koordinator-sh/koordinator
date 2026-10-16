@@ -27,6 +27,8 @@ type Config struct {
 	SafetyMarginPercent          int
 	MemoryHistogramDecayHalfLife time.Duration
 	CPUHistogramDecayHalfLife    time.Duration
+	PredictorCPUPercentile       float64
+	PredictorMemoryPercentile    float64
 	TrainingInterval             time.Duration
 	ModelExpirationDuration      time.Duration
 	ModelCheckpointInterval      time.Duration
@@ -40,6 +42,8 @@ func NewDefaultConfig() *Config {
 		SafetyMarginPercent:          10,
 		MemoryHistogramDecayHalfLife: 24 * time.Hour,
 		CPUHistogramDecayHalfLife:    12 * time.Hour,
+		PredictorCPUPercentile:       0.95,
+		PredictorMemoryPercentile:    0.98,
 		TrainingInterval:             time.Minute,
 		ModelExpirationDuration:      30 * time.Minute,
 		ModelCheckpointInterval:      10 * time.Minute,
@@ -53,6 +57,8 @@ func (c *Config) InitFlags(fs *flag.FlagSet) {
 	fs.IntVar(&c.SafetyMarginPercent, "prediction-safety-margin-percent", c.SafetyMarginPercent, "The redundancy preserved above peak prediction")
 	fs.DurationVar(&c.MemoryHistogramDecayHalfLife, "prediction-memory-histogram-decay-halflife", c.MemoryHistogramDecayHalfLife, "Half-life, the older the data, the lower the weight")
 	fs.DurationVar(&c.CPUHistogramDecayHalfLife, "prediction-cpu-histogram-decay-halflife", c.CPUHistogramDecayHalfLife, "Half-life, the older the data, the lower the weight")
+	fs.Float64Var(&c.PredictorCPUPercentile, "prediction-predictor-cpu-percentile", c.PredictorCPUPercentile, "The percentile of CPU peak prediction")
+	fs.Float64Var(&c.PredictorMemoryPercentile, "prediction-predictor-memory-percentile", c.PredictorMemoryPercentile, "The percentile of Memory peak prediction")
 	fs.DurationVar(&c.TrainingInterval, "prediction-training-interval", c.TrainingInterval, "Period of prediction model update")
 	fs.DurationVar(&c.ModelExpirationDuration, "prediction-model-expiration-duration", c.ModelExpirationDuration, "Expiration of prediction model without updated")
 	fs.DurationVar(&c.ModelCheckpointInterval, "prediction-model-checkpoint-interval", c.ModelCheckpointInterval, "Interval of prediction model take checkpoint")
