@@ -156,7 +156,8 @@ func (p *peakPredictServer) training() {
 		}
 
 		// update the pod model
-		p.updateModel(uid, lastCPUUsage, lastMemoryUsage)
+		weight := p.computePodSampleWeight(pod)
+		p.updateModel(uid, lastCPUUsage, lastMemoryUsage, weight)
 
 		// update the node priority metric
 		priorityItemID := string(extension.GetPodPriorityClassWithDefault(pod))
@@ -173,7 +174,7 @@ func (p *peakPredictServer) training() {
 	if errCPU != nil || errMem != nil {
 		klog.Warningf("failed to query node cpu and memory metric, CPU err: %s, Memory err: %s", errCPU, errMem)
 	} else {
-		p.updateModel(nodeUID, lastNodeCPUUsage, lastNodeMemoryUsage)
+		p.updateModel(nodeUID, lastNodeCPUUsage, lastNodeMemoryUsage, 1.0)
 	}
 
 	// 3. update node priority models
@@ -182,10 +183,10 @@ func (p *peakPredictServer) training() {
 		priorityUID := p.uidGenerator.NodeItem(itemID)
 		metric, ok := nodeItemsMetric.GetMetric(itemID)
 		if ok {
-			p.updateModel(priorityUID, metric.LastCPUUsage, metric.LastMemoryUsage)
+			p.updateModel(priorityUID, metric.LastCPUUsage, metric.LastMemoryUsage, 1.0)
 		} else {
 			// reset the priority usage
-			p.updateModel(priorityUID, 0, 0)
+			p.updateModel(priorityUID, 0, 0, 1.0)
 		}
 	}
 
@@ -198,7 +199,7 @@ func (p *peakPredictServer) training() {
 		sysMemoryUsage = math.Max(sysMemoryUsage-allPodsMetric.LastMemoryUsage, 0)
 	}
 	systemUID := p.uidGenerator.NodeItem(SystemItemID)
-	p.updateModel(systemUID, sysCPUUsage, sysMemoryUsage)
+	p.updateModel(systemUID, sysCPUUsage, sysMemoryUsage, 1.0)
 
 	p.hasSynced.Store(true)
 }
@@ -221,7 +222,44 @@ func (p *peakPredictServer) defaultMemoryHistogram() histogram.Histogram {
 	return histogram.NewDecayingHistogram(options, p.cfg.MemoryHistogramDecayHalfLife)
 }
 
-func (p *peakPredictServer) updateModel(uid UIDType, cpu, memory float64) {
+func (p *peakPredictServer) computePodSampleWeight(pod *v1.Pod) float64 {
+	weight := 1.0
+
+	// 1. Pod QoS / Priority Class: higher priority gets higher weight baseline
+	priorityClass := extension.GetPodPriorityClassWithDefault(pod)
+	if priorityClass == extension.PriorityProd {
+		weight = 1.0
+	} else if priorityClass == extension.PriorityBatch {
+		weight = 0.8
+	} else if priorityClass == extension.PriorityFree {
+		weight = 0.5
+	} else {
+		weight = 0.9 // Default or intermediate priorities
+	}
+
+	// 2. Pod age / cold start: dampen early samples
+	now := p.clock.Now()
+	if !pod.CreationTimestamp.IsZero() {
+		age := now.Sub(pod.CreationTimestamp.Time)
+		coldStartDuration := 5 * time.Minute
+		if age < coldStartDuration && age > 0 {
+			ageWeight := float64(age) / float64(coldStartDuration)
+			if ageWeight < weight {
+				weight = ageWeight
+			}
+		}
+	}
+
+	if weight < MinSampleWeight {
+		return MinSampleWeight
+	}
+	if weight > 1.0 {
+		return 1.0
+	}
+	return weight
+}
+
+func (p *peakPredictServer) updateModel(uid UIDType, cpu, memory float64, weight float64) {
 	p.modelsLock.Lock()
 	defer p.modelsLock.Unlock()
 	model, ok := p.models[uid]
@@ -236,9 +274,8 @@ func (p *peakPredictServer) updateModel(uid UIDType, cpu, memory float64) {
 	model.Lock.Lock()
 	defer model.Lock.Unlock()
 	model.LastUpdated = now
-	// TODO Add adjusted weights
-	model.CPU.AddSample(cpu, 1, now)
-	model.Memory.AddSample(memory, 1, now)
+	model.CPU.AddSample(cpu, weight, now)
+	model.Memory.AddSample(memory, weight, now)
 }
 
 func (p *peakPredictServer) GetPrediction(metric MetricDesc) (Result, error) {
