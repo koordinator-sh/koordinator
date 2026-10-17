@@ -40,6 +40,7 @@ const (
 	NvidiaGPU = 1 << iota
 	AMDGPU
 	HygonDCU
+	HygonDCUNum
 	KoordGPU
 	GPUShared
 	GPUCore
@@ -57,6 +58,7 @@ var DeviceResourceNames = map[schedulingv1alpha1.DeviceType][]corev1.ResourceNam
 		apiext.ResourceNvidiaGPU,
 		apiext.ResourceAMDGPU,
 		apiext.ResourceHygonDCU,
+		apiext.ResourceHygonDCUNum,
 		apiext.ResourceGPU,
 		apiext.ResourceGPUShared,
 		apiext.ResourceGPUCore,
@@ -74,6 +76,7 @@ var DeviceResourceFlags = map[corev1.ResourceName]uint{
 	apiext.ResourceNvidiaGPU:      NvidiaGPU,
 	apiext.ResourceAMDGPU:         AMDGPU,
 	apiext.ResourceHygonDCU:       HygonDCU,
+	apiext.ResourceHygonDCUNum:    HygonDCUNum,
 	apiext.ResourceGPU:            KoordGPU,
 	apiext.ResourceGPUCore:        GPUCore,
 	apiext.ResourceGPUMemory:      GPUMemory,
@@ -90,6 +93,7 @@ var ValidDeviceResourceCombinations = map[uint]func(resources corev1.ResourceLis
 	NvidiaGPU:                            ValidDeviceResourceCombinationsDefaultTrue,
 	AMDGPU:                               ValidDeviceResourceCombinationsDefaultTrue,
 	HygonDCU:                             ValidDeviceResourceCombinationsDefaultTrue,
+	HygonDCUNum:                          ValidDeviceResourceCombinationsDefaultTrue,
 	KoordGPU:                             ValidDeviceResourceCombinationsDefaultTrue,
 	GPUMemory:                            ValidDeviceResourceCombinationsGPUPercentage,
 	GPUMemoryRatio:                       ValidDeviceResourceCombinationsGPUPercentage,
@@ -102,6 +106,13 @@ var ValidDeviceResourceCombinations = map[uint]func(resources corev1.ResourceLis
 	GPUShared | GPUCore | GPUMemoryRatio: ValidDeviceResourceCombinationsGPUShared,
 	GPUShared | HuaweiNPUCore | HuaweiNPUCPU | GPUMemory:                 ValidDeviceResourceCombinationsHuaweiNPUShared,
 	GPUShared | HuaweiNPUCore | HuaweiNPUCPU | HuaweiNPUDVPP | GPUMemory: ValidDeviceResourceCombinationsHuaweiNPUShared,
+	// HygonDCU HAMi format: only the device-num resource is consumed by koord-scheduler
+	// from the pod's limits/requests; per-card cores/memory are conveyed via the
+	// koordinator.sh/gpu-core and koordinator.sh/gpu-memory resources, while the HAMi
+	// DCU device plugin reads the per-container summary from pod annotations written
+	// by the hygonDCUDevicePluginAdapter.
+	HygonDCUNum | GPUCore | GPUMemory:             ValidDeviceResourceCombinationsDefaultTrue,
+	GPUShared | HygonDCUNum | GPUCore | GPUMemory: ValidDeviceResourceCombinationsDefaultTrue,
 	FPGA: ValidDeviceResourceCombinationsDefaultTrue,
 	RDMA: ValidDeviceResourceCombinationsDefaultTrue,
 }
@@ -209,6 +220,32 @@ var ResourceCombinationsMapper = map[uint]func(podRequest corev1.ResourceList) c
 		return corev1.ResourceList{
 			apiext.ResourceGPUCore:        *resource.NewQuantity(hygonDCU.Value()*100, resource.DecimalSI),
 			apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(hygonDCU.Value()*100, resource.DecimalSI),
+		}
+	},
+	// HygonDCU HAMi format: koord-scheduler only consumes hygon.com/dcunum from
+	// pod limits/requests; cores and memory are expressed via the canonical
+	// koordinator.sh/gpu-core and koordinator.sh/gpu-memory resources. The HAMi
+	// DCU device plugin reads the per-container cores/mem summary from pod
+	// annotations written by hygonDCUDevicePluginAdapter, so dcucores/dcumem
+	// must NOT appear in pod limits/requests.
+	HygonDCUNum: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		return corev1.ResourceList{
+			apiext.ResourceHygonDCUNum: podRequest[apiext.ResourceHygonDCUNum],
+		}
+	},
+	HygonDCUNum | GPUCore | GPUMemory: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		return corev1.ResourceList{
+			apiext.ResourceHygonDCUNum: podRequest[apiext.ResourceHygonDCUNum],
+			apiext.ResourceGPUCore:     podRequest[apiext.ResourceGPUCore],
+			apiext.ResourceGPUMemory:   podRequest[apiext.ResourceGPUMemory],
+		}
+	},
+	GPUShared | HygonDCUNum | GPUCore | GPUMemory: func(podRequest corev1.ResourceList) corev1.ResourceList {
+		return corev1.ResourceList{
+			apiext.ResourceGPUShared:   podRequest[apiext.ResourceGPUShared],
+			apiext.ResourceHygonDCUNum: podRequest[apiext.ResourceHygonDCUNum],
+			apiext.ResourceGPUCore:     podRequest[apiext.ResourceGPUCore],
+			apiext.ResourceGPUMemory:   podRequest[apiext.ResourceGPUMemory],
 		}
 	},
 	FPGA: func(podRequest corev1.ResourceList) corev1.ResourceList {

@@ -96,6 +96,51 @@ func TestValidateDeviceRequest(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid hygon dcu num request",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+			},
+			want:    HygonDCUNum,
+			wantErr: false,
+		},
+		{
+			name: "valid hygon dcu num with gpu-core and gpu-memory",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+				apiext.ResourceGPUCore:     resource.MustParse("100"),
+				apiext.ResourceGPUMemory:   resource.MustParse("16Gi"),
+			},
+			want:    HygonDCUNum | GPUCore | GPUMemory,
+			wantErr: false,
+		},
+		{
+			name: "valid gpushared with hygon dcu num gpu-core and gpu-memory",
+			podRequest: corev1.ResourceList{
+				apiext.ResourceGPUShared:   resource.MustParse("1"),
+				apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+				apiext.ResourceGPUCore:     resource.MustParse("100"),
+				apiext.ResourceGPUMemory:   resource.MustParse("16Gi"),
+			},
+			want:    GPUShared | HygonDCUNum | GPUCore | GPUMemory,
+			wantErr: false,
+		},
+		{
+			name: "invalid hygon dcucores no longer recognized",
+			podRequest: corev1.ResourceList{
+				"hygon.com/dcucores": resource.MustParse("8"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
+			name: "invalid hygon dcumem no longer recognized",
+			podRequest: corev1.ResourceList{
+				"hygon.com/dcumem": resource.MustParse("32Gi"),
+			},
+			want:    0,
+			wantErr: true,
+		},
+		{
 			name: "valid gpu request 2",
 			podRequest: corev1.ResourceList{
 				apiext.ResourceGPU: resource.MustParse("200"),
@@ -372,6 +417,52 @@ func TestConvertDeviceRequest(t *testing.T) {
 			want: corev1.ResourceList{
 				apiext.ResourceGPUCore:        *resource.NewQuantity(200, resource.DecimalSI),
 				apiext.ResourceGPUMemoryRatio: *resource.NewQuantity(200, resource.DecimalSI),
+			},
+		},
+		{
+			name: "hygonDCUNum",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+				},
+				combination: HygonDCUNum,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+			},
+		},
+		{
+			name: "hygonDCUNum | gpuCore | gpuMemory",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+					apiext.ResourceGPUCore:     resource.MustParse("100"),
+					apiext.ResourceGPUMemory:   resource.MustParse("16Gi"),
+				},
+				combination: HygonDCUNum | GPUCore | GPUMemory,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+				apiext.ResourceGPUCore:     resource.MustParse("100"),
+				apiext.ResourceGPUMemory:   resource.MustParse("16Gi"),
+			},
+		},
+		{
+			name: "gpushared | hygonDCUNum | gpuCore | gpuMemory",
+			args: args{
+				podRequest: corev1.ResourceList{
+					apiext.ResourceGPUShared:   resource.MustParse("1"),
+					apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+					apiext.ResourceGPUCore:     resource.MustParse("100"),
+					apiext.ResourceGPUMemory:   resource.MustParse("16Gi"),
+				},
+				combination: GPUShared | HygonDCUNum | GPUCore | GPUMemory,
+			},
+			want: corev1.ResourceList{
+				apiext.ResourceGPUShared:   resource.MustParse("1"),
+				apiext.ResourceHygonDCUNum: resource.MustParse("1"),
+				apiext.ResourceGPUCore:     resource.MustParse("100"),
+				apiext.ResourceGPUMemory:   resource.MustParse("16Gi"),
 			},
 		},
 		{
