@@ -111,6 +111,7 @@ type Plugin struct {
 
 var (
 	_ fwktype.EnqueueExtensions            = &Plugin{}
+	_ fwktype.SignPlugin                   = &Plugin{}
 	_ fwktype.PreFilterPlugin              = &Plugin{}
 	_ fwktype.PostFilterPlugin             = &Plugin{}
 	_ fwktype.ReservePlugin                = &Plugin{}
@@ -252,6 +253,28 @@ func (g *Plugin) EventsToRegister(_ context.Context) ([]fwktype.ClusterEventWith
 	}
 
 	return events, nil
+}
+
+// Signer names for this plugin's signature fragments.
+const (
+	quotaSignerName = "koord.ElasticQuota.quota"
+)
+
+// SignPod signs the quota identity, resolved through the same
+// getPodAssociateQuotaNameAndTreeID PreFilter uses so the default-quota
+// fallback stays consistent between signing and scheduling. Requests and the
+// non-preemptible label stay unsigned: this plugin runs only at PreFilter,
+// which precedes GetNodeHint for every pod, so no hint can reuse a quota
+// verdict, and signing them would only over-partition the batch.
+func (g *Plugin) SignPod(_ context.Context, pod *corev1.Pod) ([]fwktype.SignFragment, *fwktype.Status) {
+	quotaName, treeID := g.getPodAssociateQuotaNameAndTreeID(pod)
+	if quotaName == "" {
+		return nil, nil
+	}
+	return []fwktype.SignFragment{{
+		Key:   quotaSignerName,
+		Value: quotaName + "|" + treeID,
+	}}, nil
 }
 
 func (g *Plugin) PreFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodes []fwktype.NodeInfo) (*fwktype.PreFilterResult, *fwktype.Status) {
