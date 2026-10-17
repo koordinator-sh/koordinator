@@ -24,7 +24,7 @@ import (
 
 var (
 	// ResourceNames are the known resources reconciled by the plugin from devices to nodes.
-	// TODO: support custom resources.
+	// Applications can use RegisterGPUDeviceResource to add custom resources.
 	ResourceNames = []corev1.ResourceName{
 		extension.ResourceGPU,
 		extension.ResourceGPUCore,
@@ -42,3 +42,23 @@ var (
 		extension.LabelGPUDriverVersion,
 	}
 )
+
+// RegisterGPUDeviceResource registers a custom GPU/NPU resource to be reconciled.
+func RegisterGPUDeviceResource(resourceName corev1.ResourceName) {
+	for _, name := range ResourceNames {
+		if name == resourceName {
+			return
+		}
+	}
+	ResourceNames = append(ResourceNames, resourceName)
+}
+
+// RegisterGPUDeviceLabel registers a custom GPU/NPU label to be reconciled.
+func RegisterGPUDeviceLabel(label string) {
+	for _, l := range Labels {
+		if l == label {
+			return
+		}
+	}
+	Labels = append(Labels, label)
+}
