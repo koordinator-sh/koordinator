@@ -197,3 +197,55 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 		})
 	}
 }
+
+func Test_podThrottledCollector_collectContainerThrottledInfo_initContainers(t *testing.T) {
+	podDir := "kubepods.slice/kubepods-podtest-pod-uid.slice"
+	containerIDs := map[string]string{
+		"main":         "containerd://mainUID",
+		"init-running": "containerd://initRunningUID",
+		"init-done":    "containerd://initDoneUID",
+	}
+	running := corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}
+	terminated := corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "test", UID: "test-pod-uid"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			InitContainerStatuses: []corev1.ContainerStatus{
+				{Name: "init-done", ContainerID: containerIDs["init-done"], State: terminated},
+				{Name: "init-running", ContainerID: containerIDs["init-running"], State: running},
+			},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{Name: "main", ContainerID: containerIDs["main"], State: running},
+			},
+		},
+	}
+
+	helper := system.NewFileTestUtil(t)
+	defer helper.Cleanup()
+	// the completed init container keeps a readable cgroup so the test proves it is skipped by state
+	for _, uid := range []string{"mainUID", "initRunningUID", "initDoneUID"} {
+		helper.WriteCgroupFileContents("/"+podDir+"/cri-containerd-"+uid+".scope", system.CPUStat,
+			"nr_periods 100\nnr_throttled 50\nthrottled_time 100000\n")
+	}
+
+	c := New(&framework.Options{
+		Config:       &framework.Config{CollectResUsedInterval: time.Second},
+		CgroupReader: resourceexecutor.NewCgroupReader(),
+	}).(*podThrottledCollector)
+	for _, id := range containerIDs {
+		c.lastContainerCPUThrottled.Set(id, &system.CPUStatRaw{}, gocache.DefaultExpiration)
+	}
+
+	samples := c.collectContainerThrottledInfo(&statesinformer.PodMeta{Pod: pod, CgroupDir: podDir})
+
+	got := map[string]struct{}{}
+	for _, s := range samples {
+		assert.Equal(t, string(metriccache.ContainerMetricCPUThrottled), s.GetKind())
+		got[s.GetProperties()[string(metriccache.MetricPropertyContainerID)]] = struct{}{}
+	}
+	assert.Equal(t, map[string]struct{}{
+		containerIDs["main"]:         {},
+		containerIDs["init-running"]: {},
+	}, got)
+}

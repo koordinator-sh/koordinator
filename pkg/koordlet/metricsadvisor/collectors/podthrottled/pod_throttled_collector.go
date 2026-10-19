@@ -160,10 +160,21 @@ func (c *podThrottledCollector) collectPodThrottledInfo() {
 
 func (c *podThrottledCollector) collectContainerThrottledInfo(podMeta *statesinformer.PodMeta) []metriccache.MetricSample {
 	pod := podMeta.Pod
-	containersMetric := make([]metriccache.MetricSample, 0, len(pod.Status.ContainerStatuses))
+	statuses := make([]*corev1.ContainerStatus, 0, len(pod.Status.InitContainerStatuses)+len(pod.Status.ContainerStatuses))
+	// running init containers (including restartable sidecars) have their own cgroup and are
+	// consumed by CPUBurst; completed ones are skipped since their cgroup is usually gone.
+	for i := range pod.Status.InitContainerStatuses {
+		if pod.Status.InitContainerStatuses[i].State.Running != nil {
+			statuses = append(statuses, &pod.Status.InitContainerStatuses[i])
+		}
+	}
 	for i := range pod.Status.ContainerStatuses {
+		statuses = append(statuses, &pod.Status.ContainerStatuses[i])
+	}
+
+	containersMetric := make([]metriccache.MetricSample, 0, len(statuses))
+	for _, containerStat := range statuses {
 		collectTime := time.Now()
-		containerStat := &pod.Status.ContainerStatuses[i]
 		if len(containerStat.ContainerID) == 0 {
 			klog.V(5).Infof("container %s/%s/%s id is empty, maybe not ready, skip this round",
 				pod.Namespace, pod.Name, containerStat.Name)
