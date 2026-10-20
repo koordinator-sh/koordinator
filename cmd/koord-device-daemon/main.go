@@ -191,7 +191,7 @@ func (rfd *resourceFeatureDiscovery) run(sigs chan os.Signal) (bool, error) {
 rerun:
 	loopPrinters, err := printmanager.NewPrinters(rfd.manager)
 	if err != nil {
-		return false, nil
+		return false, fmt.Errorf("error creating printers: %w", err)
 	}
 	prints, err := loopPrinters.Prints()
 	if err != nil {
