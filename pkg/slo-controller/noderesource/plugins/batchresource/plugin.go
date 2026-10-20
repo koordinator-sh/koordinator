@@ -267,6 +267,7 @@ func (p *Plugin) calculateOnNode(strategy *configuration.ColocationStrategy, nod
 		podsHPRequest = quotav1.Add(podsHPRequest, podRequest)
 		if !hasMetric {
 			podsHPUsed = quotav1.Add(podsHPUsed, podRequest)
+			podsHPMaxUsedReq = quotav1.Add(podsHPMaxUsedReq, podRequest)
 		} else if qos := extension.GetPodQoSClassWithDefault(pod); qos == extension.QoSLSE {
 			// NOTE: Currently qos=LSE pods does not reclaim CPU resource.
 			podUsed := resutil.GetPodMetricUsage(podMetric)
