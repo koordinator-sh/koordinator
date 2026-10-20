@@ -398,6 +398,13 @@ spec:
               nodeName:
                 description: Name of node the reservation is scheduled on.
                 type: string
+              nominatedNodeName:
+                description: |-
+                  NominatedNodeName is set when the Reservation preempts other pods on the node but cannot be
+                  scheduled right away (e.g. waiting for preempted pods to terminate). The scheduler uses this
+                  field to persist the preemption nomination across restarts and to avoid repeated preemption
+                  loops, maintaining compatibility with upstream KEP-5278 scheduler semantics.
+                type: string
               phase:
                 default: Pending
                 description: |-

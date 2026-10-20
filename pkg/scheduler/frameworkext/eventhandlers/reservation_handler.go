@@ -305,16 +305,30 @@ func handleReservationSchedulingFailure(sched *scheduler.Scheduler,
 		//   from the informer cache.
 		addNominatedReservation(fwk, podInfo, nominatingInfo)
 
+		// Extract the nominated node name to persist to Reservation.status.
+		// Default to the currently-persisted value so that non-preemption failures
+		// (nominatingInfo == nil) do not accidentally clear an existing nomination.
+		// ModeOverride: PostFilter explicitly set a new nominated node.
+		// ModeNoop:     the pod already carries the existing nominatedNodeName in its status.
+		nominatedNodeName := cachedR.Status.NominatedNodeName
+		if nominatingInfo != nil {
+			if nominatingInfo.Mode() == fwktype.ModeOverride {
+				nominatedNodeName = nominatingInfo.NominatedNodeName
+			} else if nominatingInfo.Mode() == fwktype.ModeNoop {
+				nominatedNodeName = pod.Status.NominatedNodeName
+			}
+		}
+
 		errMsg := status.Message()
 		msg := truncateMessage(errMsg)
 		fwk.EventRecorder().Eventf(cachedR, nil, corev1.EventTypeWarning, "FailedScheduling", "Scheduling", msg)
 
 		// TODO: use apiDispatcher
-		updateReservationStatus(koordClientSet, reservationLister, rName, err)
+		updateReservationStatus(koordClientSet, reservationLister, rName, err, nominatedNodeName)
 	}
 }
 
-func updateReservationStatus(client koordclientset.Interface, reservationLister schedulingv1alpha1lister.ReservationLister, rName string, schedulingErr error) {
+func updateReservationStatus(client koordclientset.Interface, reservationLister schedulingv1alpha1lister.ReservationLister, rName string, schedulingErr error, nominatedNodeName string) {
 	err := util.RetryOnConflictOrTooManyRequests(func() error {
 		r, err := reservationLister.Get(rName)
 		if errors.IsNotFound(err) {
@@ -327,6 +341,12 @@ func updateReservationStatus(client koordclientset.Interface, reservationLister 
 
 		curR := r.DeepCopy()
 		reservationutil.SetReservationUnschedulable(curR, schedulingErr.Error())
+		// Always persist the nominated node name to survive scheduler restarts (KEP-5278).
+		curR.Status.NominatedNodeName = nominatedNodeName
+		if nominatedNodeName != "" {
+			klog.V(4).InfoS("Persisting NominatedNodeName for Reservation",
+				"reservation", rName, "nominatedNodeName", nominatedNodeName)
+		}
 		_, err = client.SchedulingV1alpha1().Reservations().UpdateStatus(context.TODO(), curR, metav1.UpdateOptions{})
 		if err != nil {
 			klog.V(4).ErrorS(err, "failed to UpdateStatus for unschedulable", "reservation", klog.KObj(curR))
