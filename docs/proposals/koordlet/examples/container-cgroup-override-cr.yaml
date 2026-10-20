@@ -1,0 +1,20 @@
+apiVersion: slo.koordinator.sh/v1alpha1
+kind: ContainerCgroupOverride
+metadata:
+  name: oom-cap-demo
+  namespace: default
+spec:
+  target:
+    podName: demo-pod
+    containerName: main
+    # podUID: "<uid>"   # recommended in prod
+  resources:
+    memory:
+      max: "512Mi"
+    # cpu:
+    #   quota: "200m"
+    #   cpuset: "0-3"
+  writebackOnDelete: true
+---
+# Optional mutual exclusion with Burst / NRC:
+# kubectl annotate pod demo-pod koordinator.sh/cgroup-override-skip=true

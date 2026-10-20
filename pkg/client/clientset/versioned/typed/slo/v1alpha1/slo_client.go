@@ -28,6 +28,7 @@ import (
 
 type SloV1alpha1Interface interface {
 	RESTClient() rest.Interface
+	ContainerCgroupOverridesGetter
 	NodeMetricsGetter
 	NodeSLOsGetter
 }
@@ -35,6 +36,10 @@ type SloV1alpha1Interface interface {
 // SloV1alpha1Client is used to interact with features provided by the slo group.
 type SloV1alpha1Client struct {
 	restClient rest.Interface
+}
+
+func (c *SloV1alpha1Client) ContainerCgroupOverrides(namespace string) ContainerCgroupOverrideInterface {
+	return newContainerCgroupOverrides(c, namespace)
 }
 
 func (c *SloV1alpha1Client) NodeMetrics() NodeMetricInterface {

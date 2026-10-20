@@ -134,6 +134,7 @@ rules:
 - apiGroups:
   - slo.koordinator.sh
   resources:
+  - containercgroupoverrides
   - nodemetrics
   - nodeslos
   verbs:
@@ -147,6 +148,7 @@ rules:
 - apiGroups:
   - slo.koordinator.sh
   resources:
+  - containercgroupoverrides/status
   - nodemetrics/status
   - nodeslos/status
   verbs:

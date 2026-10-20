@@ -24,6 +24,7 @@ import (
 	topologyclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	clientset "k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -94,6 +95,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 	crdRestConf.AcceptContentTypes = apiruntime.ContentTypeJSON
 
 	crdClient := clientsetbeta1.NewForConfigOrDie(crdRestConf)
+	dynClient := dynamic.NewForConfigOrDie(crdRestConf)
 	topologyClient := topologyclientset.NewForConfigOrDie(crdRestConf)
 	schedulingClient := v1alpha1.NewForConfigOrDie(crdRestConf)
 
@@ -116,7 +118,7 @@ func NewDaemon(config *config.Configuration) (Daemon, error) {
 		return nil, err
 	}
 
-	qosManager := qosmanager.NewQOSManager(config.QOSManagerConf, scheme, kubeClient, crdClient, nodeName, statesInformer, metricCache, config.CollectorConf, evictVersion)
+	qosManager := qosmanager.NewQOSManagerWithDynamic(config.QOSManagerConf, scheme, kubeClient, crdClient, dynClient, nodeName, statesInformer, metricCache, config.CollectorConf, evictVersion)
 
 	runtimeHook, err := runtimehooks.NewRuntimeHook(statesInformer, config.RuntimeHookConf, scheme, kubeClient, nodeName)
 	if err != nil {
