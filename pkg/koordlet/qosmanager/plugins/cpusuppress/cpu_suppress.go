@@ -262,12 +262,18 @@ func (r *CPUSuppress) suppressBECPU() {
 		features.DefaultKoordletFeatureGate.Enabled(features.BECPUManager) {
 		r.recoverCFSQuotaIfNeed()
 		r.recoverCPUSetForBECPUManager()
+		if features.DefaultKoordletFeatureGate.Enabled(features.BECPUIdleSuppress) {
+			r.recoverBECpuIdleIfNeed(nodeSLO)
+		}
 		klog.V(5).Infof("suppressBECPU cannot work with BECPUManager together, suppress will be skipped, " +
 			"recover cpuset on all level if be pod does not specified numa node, and let be cpu set hook handle the others")
 		return
 	} else if disabled {
 		r.recoverCFSQuotaIfNeed()
 		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
+		if features.DefaultKoordletFeatureGate.Enabled(features.BECPUIdleSuppress) {
+			r.recoverBECpuIdleIfNeed(nodeSLO)
+		}
 		klog.V(5).Infof("suppressBECPU skipped, nodeSLO disable the featuregate")
 		return
 	}
@@ -321,11 +327,115 @@ func (r *CPUSuppress) suppressBECPU() {
 		r.adjustByCfsQuota(suppressCPUQuantity, node)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUCfsQuotaPolicy)] = policyUsing
 		r.recoverCPUSetIfNeed(koordletutil.ContainerCgroupPathRelativeDepth)
+		if features.DefaultKoordletFeatureGate.Enabled(features.BECPUIdleSuppress) {
+			r.suppressBECPUIdle(nodeSLO)
+		}
 	} else {
 		r.adjustByCPUSet(suppressCPUQuantity, nodeCPUInfo)
 		r.suppressPolicyStatuses[string(slov1alpha1.CPUSetPolicy)] = policyUsing
 		r.recoverCFSQuotaIfNeed()
+		if features.DefaultKoordletFeatureGate.Enabled(features.BECPUIdleSuppress) {
+			r.suppressBECPUIdle(nodeSLO)
+		}
 	}
+}
+
+// coreSchedSupportedFn reports whether the kernel supports core sched (CONFIG_SCHED_CORE).
+// It is a package variable so that unit tests can inject the kernel support.
+var coreSchedSupportedFn = func() bool {
+	supported, _ := system.IsCoreSchedSupported()
+	return supported
+}
+
+// coreSchedHookOwnsCPUIdle returns whether the CoreSched runtime hook
+// (pkg/koordlet/runtimehooks/hooks/coresched) governs the kubepods-besteffort
+// cpu.idle file. The hook manages cpu.idle only when the kernel supports core sched.
+// When the hook owns the file, the cpu.suppress must defer the cpu.idle writes to it,
+// otherwise the two components fight on the same file with the last-writer-wins semantics.
+func coreSchedHookOwnsCPUIdle(nodeSLO *slov1alpha1.NodeSLO) bool {
+	return nodeSLO != nil && coreSchedSupportedFn()
+}
+
+// coreSchedHookExpectsCPUIdle returns whether the CoreSched runtime hook expects
+// cpu.idle=1 for the best-effort cgroup. It aligns with the hook's rule
+// (pkg/koordlet/runtimehooks/hooks/coresched/rule.go): the node CPU QoS policy is
+// coreSched and the BE QoS SchedIdle is set to 1. A nil BE CPUQOS or a nil SchedIdle
+// is treated as idle-disabled, same as the hook's default.
+func coreSchedHookExpectsCPUIdle(nodeSLO *slov1alpha1.NodeSLO) bool {
+	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil {
+		return false
+	}
+	qosStrategy := nodeSLO.Spec.ResourceQOSStrategy
+	isPolicyCoreSched := qosStrategy.Policies != nil && qosStrategy.Policies.CPUPolicy != nil &&
+		*qosStrategy.Policies.CPUPolicy == slov1alpha1.CPUQOSPolicyCoreSched
+	if !isPolicyCoreSched || qosStrategy.BEClass == nil || qosStrategy.BEClass.CPUQOS == nil {
+		return false
+	}
+	return qosStrategy.BEClass.CPUQOS.SchedIdle != nil && *qosStrategy.BEClass.CPUQOS.SchedIdle == 1
+}
+
+// suppressBECPUIdle sets cpu.idle=1 for the BE root cgroup, enabling the kernel to
+// schedule BE tasks as low-priority/idle tasks when the cpu.idle cgroup file is available
+// (e.g. on kernels with the Alibaba cpu.idle feature or cgroup v2). This provides an
+// additional layer of CPU latency isolation beyond cpuset/cfs_quota.
+// NOTE: the cpu.idle file is owned by the CoreSched runtime hook when it governs the
+// file; in that case the suppress writes only if the hook expects cpu.idle=1 (idempotent),
+// otherwise it defers to the hook and the suppression degrades to quota/cpuset.
+func (r *CPUSuppress) suppressBECPUIdle(nodeSLO *slov1alpha1.NodeSLO) {
+	if coreSchedHookOwnsCPUIdle(nodeSLO) && !coreSchedHookExpectsCPUIdle(nodeSLO) {
+		klog.V(4).Infof("cpu.idle for BE cgroup is governed by the CoreSched runtime hook " +
+			"which expects cpu.idle=0, skip suppressing cpu.idle for BE cgroup, " +
+			"the BE suppression degrades to quota/cpuset")
+		return
+	}
+	beCgroupPath := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	eventHelper := audit.V(3).Reason("suppressBECPU").Message("set cpu.idle=1 for BE cgroup root")
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUIdleName, beCgroupPath, "1", eventHelper)
+	if err != nil {
+		klog.V(5).Infof("skip cpu.idle for BE cgroup, resource may not be supported, err: %v", err)
+		return
+	}
+	_, err = r.executor.Update(false, updater)
+	if err != nil {
+		klog.V(5).Infof("failed to set cpu.idle for BE cgroup, err: %v", err)
+		return
+	}
+	r.suppressPolicyStatuses[system.CPUIdleName] = policyUsing
+	klog.V(5).Infof("successfully set cpu.idle=1 for BE cgroup")
+}
+
+// recoverBECpuIdleIfNeed restores cpu.idle=0 for the BE root cgroup when BE CPU
+// suppression is no longer in use, undoing the latency-isolation setting applied
+// by suppressBECPUIdle. It is a no-op if the resource is unsupported or already
+// recovered.
+// NOTE: the cpu.idle file is owned by the CoreSched runtime hook when it governs
+// the file; in that case the recover defers to the hook, which keeps cpu.idle=1
+// when it expects idle and writes 0 itself otherwise.
+func (r *CPUSuppress) recoverBECpuIdleIfNeed(nodeSLO *slov1alpha1.NodeSLO) {
+	if coreSchedHookOwnsCPUIdle(nodeSLO) {
+		klog.V(4).Infof("cpu.idle for BE cgroup is governed by the CoreSched runtime hook, " +
+			"skip recovering cpu.idle for BE cgroup")
+		return
+	}
+	idlePolicyStatus, exist := r.suppressPolicyStatuses[system.CPUIdleName]
+	if exist && idlePolicyStatus == policyRecovered {
+		return
+	}
+
+	beCgroupPath := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	eventHelper := audit.V(3).Reason("suppressBECPU").Message("recover bestEffort cpu.idle, isUpdated %v", "0")
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUIdleName, beCgroupPath, "0", eventHelper)
+	if err != nil {
+		klog.V(4).Infof("failed to get be cpu.idle updater, err: %v", err)
+		return
+	}
+	isUpdated, err := r.executor.Update(false, updater)
+	if err != nil {
+		klog.Errorf("recover bestEffort cpu.idle err: %v", err)
+		return
+	}
+	klog.V(5).Infof("successfully recover bestEffort cpu.idle, isUpdated %v", isUpdated)
+	r.suppressPolicyStatuses[system.CPUIdleName] = policyRecovered
 }
 
 func (r *CPUSuppress) adjustByCPUSet(cpusetQuantity *resource.Quantity, nodeCPUInfo *metriccache.NodeCPUInfo) {
