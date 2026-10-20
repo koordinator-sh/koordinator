@@ -32,8 +32,15 @@ var ExtendedResourceNames = []corev1.ResourceName{
 
 func GetBatchMilliCPUFromResourceList(r corev1.ResourceList) int64 {
 	// assert r != nil
-	if milliCPU, ok := r[extension.BatchCPU]; ok {
-		return milliCPU.Value()
+	if quantity, ok := r[extension.BatchCPU]; ok {
+		v := quantity.Value()
+		// The convention is that the value is integer milli-cores ("500" means
+		// 500 milli-cores). Tolerate fractional core quantities (e.g. "500m"
+		// means 0.5 core) instead of silently truncating them.
+		if v*1000 != quantity.MilliValue() {
+			v = quantity.MilliValue()
+		}
+		return v
 	}
 	return -1
 }
@@ -48,8 +55,15 @@ func GetBatchMemoryFromResourceList(r corev1.ResourceList) int64 {
 
 func GetMidMilliCPUFromResourceList(r corev1.ResourceList) int64 {
 	// assert r != nil
-	if milliCPU, ok := r[extension.MidCPU]; ok {
-		return milliCPU.Value()
+	if quantity, ok := r[extension.MidCPU]; ok {
+		v := quantity.Value()
+		// The convention is that the value is integer milli-cores ("500" means
+		// 500 milli-cores). Tolerate fractional core quantities (e.g. "500m"
+		// means 0.5 core) instead of silently truncating them.
+		if v*1000 != quantity.MilliValue() {
+			v = quantity.MilliValue()
+		}
+		return v
 	}
 	return -1
 }
