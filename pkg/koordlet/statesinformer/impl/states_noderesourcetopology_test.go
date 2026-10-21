@@ -3775,3 +3775,84 @@ func Test_nodeTopoInformer_getNodeKubeletReservedResources(t *testing.T) {
 		})
 	}
 }
+
+func Test_calCPUSharePools_skipInactivePods(t *testing.T) {
+	buildSharePoolCPUs := func() map[int32]*extension.CPUInfo {
+		return map[int32]*extension.CPUInfo{
+			0: {ID: 0, Core: 0, Socket: 0, Node: 0},
+			1: {ID: 1, Core: 1, Socket: 0, Node: 0},
+			2: {ID: 2, Core: 2, Socket: 0, Node: 0},
+		}
+	}
+
+	s := &nodeTopoInformer{
+		podsInformer: &podsInformer{
+			podMap: map[string]*statesinformer.PodMeta{
+				"succeeded": {
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "succeeded-pod",
+							Namespace: "default",
+							UID:       types.UID("succeeded"),
+							Labels: map[string]string{
+								extension.LabelPodQoS: string(extension.QoSLSR),
+							},
+							Annotations: map[string]string{
+								extension.AnnotationResourceStatus: `{"cpuset":"1"}`,
+							},
+						},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodSucceeded,
+						},
+					},
+				},
+				"failed": {
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "failed-pod",
+							Namespace: "default",
+							UID:       types.UID("failed"),
+							Labels: map[string]string{
+								extension.LabelPodQoS: string(extension.QoSLSE),
+							},
+							Annotations: map[string]string{
+								extension.AnnotationResourceStatus: `{"cpuset":"2"}`,
+							},
+						},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodFailed,
+						},
+					},
+				},
+				"running": {
+					Pod: &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "running-pod",
+							Namespace: "default",
+							UID:       types.UID("running"),
+							Labels: map[string]string{
+								extension.LabelPodQoS: string(extension.QoSLSR),
+							},
+							Annotations: map[string]string{
+								extension.AnnotationResourceStatus: `{"cpuset":"0"}`,
+							},
+						},
+						Status: corev1.PodStatus{
+							Phase: corev1.PodRunning,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	lsSharePools, beSharePools := s.calCPUSharePools(buildSharePoolCPUs())
+	// Succeeded/Failed pods are skipped; only Running LSR exclusive CPU "0" is removed from LS pool.
+	// LSR does not shrink BE shared pools.
+	assert.Equal(t, []extension.CPUSharedPool{
+		{Socket: 0, Node: 0, CPUSet: "1-2"},
+	}, lsSharePools)
+	assert.Equal(t, []extension.CPUSharedPool{
+		{Socket: 0, Node: 0, CPUSet: "0-2"},
+	}, beSharePools)
+}

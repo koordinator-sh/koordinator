@@ -935,6 +935,89 @@ func Test_cpusetPlugin_ruleUpdateCbForPods(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "skip terminated pods with resource-status cpuset",
+			args: args{
+				rule: &cpusetRule{
+					sharePools: []ext.CPUSharedPool{
+						{
+							Socket: 0,
+							Node:   0,
+							CPUSet: "0-1,5-7",
+						},
+					},
+				},
+				pods: []*testPod{
+					{
+						pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								UID: "pod-succeeded-cpuset-uid",
+							},
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Name: "container-succeeded-cpuset-name",
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodSucceeded,
+								ContainerStatuses: []corev1.ContainerStatus{
+									{
+										Name:        "container-succeeded-cpuset-name",
+										ContainerID: "containerd://container-succeeded-cpuset-uid",
+									},
+								},
+							},
+						},
+						sandboxID: "containerd://pod-succeeded-cpuset-sandbox-id",
+					},
+					{
+						pod: &corev1.Pod{
+							ObjectMeta: metav1.ObjectMeta{
+								UID: "pod-failed-cpuset-uid",
+							},
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{
+									{
+										Name: "container-failed-cpuset-name",
+									},
+								},
+							},
+							Status: corev1.PodStatus{
+								Phase: corev1.PodFailed,
+								ContainerStatuses: []corev1.ContainerStatus{
+									{
+										Name:        "container-failed-cpuset-name",
+										ContainerID: "containerd://container-failed-cpuset-uid",
+									},
+								},
+							},
+						},
+						sandboxID: "containerd://pod-failed-cpuset-sandbox-id",
+					},
+				},
+				podAllocs: map[string]ext.ResourceStatus{
+					"pod-succeeded-cpuset-uid": {
+						CPUSet: "2-4",
+					},
+					"pod-failed-cpuset-uid": {
+						CPUSet: "2-4",
+					},
+				},
+			},
+			wants: wants{
+				containersCPUSet: map[string]string{
+					"container-succeeded-cpuset-name": "",
+					"container-failed-cpuset-name":    "",
+				},
+				sandboxCPUSet: map[string]string{
+					"pod-succeeded-cpuset-uid": "",
+					"pod-failed-cpuset-uid":    "",
+				},
+			},
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -334,6 +334,78 @@ func Test_reconciler_reconcilePodCgroup(t *testing.T) {
 	})
 }
 
+func Test_reconciler_reconcilePodCgroup_skipInactivePods(t *testing.T) {
+	stopCh := make(chan struct{}, 1)
+	tryStopFn := func() {
+		select {
+		case stopCh <- struct{}{}:
+		default:
+		}
+	}
+
+	podLevelOutput := map[string]string{}
+	podReconcilerFn := func(proto protocol.HooksProtocol) error {
+		podCtx := proto.(*protocol.PodContext)
+		podKey := strings.Join([]string{podCtx.Request.PodMeta.Namespace, podCtx.Request.PodMeta.Name}, "/")
+		podLevelOutput[podKey] = podCtx.Request.PodMeta.UID
+		tryStopFn()
+		return nil
+	}
+	RegisterCgroupReconciler(PodLevel, system.MemoryLimit, "skip-inactive-get-pod-uid", podReconcilerFn, NoneFilter())
+
+	c := &reconciler{
+		podsMeta: []*statesinformer.PodMeta{
+			{
+				Pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "test-ns",
+						Name:      "succeeded-pod",
+						UID:       "succeeded-uid",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodSucceeded,
+					},
+				},
+			},
+			{
+				Pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "test-ns",
+						Name:      "failed-pod",
+						UID:       "failed-uid",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodFailed,
+					},
+				},
+			},
+			{
+				Pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "test-ns",
+						Name:      "running-pod",
+						UID:       "running-uid",
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				},
+			},
+		},
+		podUpdated: make(chan struct{}, 1),
+		executor:   resourceexecutor.NewTestResourceExecutor(),
+	}
+	newStopCh := make(chan struct{})
+	defer close(newStopCh)
+	c.executor.Run(newStopCh)
+	c.podUpdated <- struct{}{}
+	c.reconcilePodCgroup(stopCh)
+
+	assert.Equal(t, map[string]string{
+		"test-ns/running-pod": "running-uid",
+	}, podLevelOutput)
+}
+
 func Test_reconciler_podRefreshCallback(t *testing.T) {
 	type args struct {
 		podsMeta []*statesinformer.PodMeta
