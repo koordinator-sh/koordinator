@@ -36,6 +36,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
+	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
@@ -286,7 +287,7 @@ func (h *TestTransformer) ScoreExtensions() fwktype.ScoreExtensions {
 	return nil
 }
 
-func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader, postFilterStatus *fwktype.Status) {
+func (h *TestTransformer) AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader, _ *fwktype.PostFilterResult, postFilterStatus *fwktype.Status) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
@@ -2316,7 +2317,9 @@ func buildCrossSchedulerExtenderAndNodeInfo(t *testing.T, node *corev1.Node, cro
 type fakePostFilterPlugin struct {
 	result      *fwktype.PostFilterResult
 	status      *fwktype.Status
-	afterCalled bool
+	afterCalls  int
+	afterResult *fwktype.PostFilterResult
+	afterStatus *fwktype.Status
 }
 
 func (f *fakePostFilterPlugin) Name() string { return "FakePostFilter" }
@@ -2325,8 +2328,9 @@ func (f *fakePostFilterPlugin) PostFilter(_ context.Context, _ fwktype.CycleStat
 	return f.result, f.status
 }
 
-func (f *fakePostFilterPlugin) AfterPostFilter(_ context.Context, _ fwktype.CycleState, _ *corev1.Pod, _ fwktype.NodeToStatusReader, _ *fwktype.Status) {
-	f.afterCalled = true
+func (f *fakePostFilterPlugin) AfterPostFilter(_ context.Context, _ fwktype.CycleState, _ *corev1.Pod, _ fwktype.NodeToStatusReader, result *fwktype.PostFilterResult, status *fwktype.Status) {
+	f.afterCalls++
+	f.afterResult, f.afterStatus = result, status
 }
 
 func Test_frameworkExtenderImpl_RunPostFilterPlugins(t *testing.T) {
@@ -2334,6 +2338,8 @@ func Test_frameworkExtenderImpl_RunPostFilterPlugins(t *testing.T) {
 		name       string
 		pod        *corev1.Pod
 		suggestion *ScheduleSuggestion
+		result     *fwktype.PostFilterResult
+		status     *fwktype.Status
 	}{
 		{
 			name: "suggestion appended to status",
@@ -2351,10 +2357,49 @@ func Test_frameworkExtenderImpl_RunPostFilterPlugins(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "test-pod2", Namespace: "default"},
 			},
 			suggestion: nil,
+			status:     fwktype.NewStatus(fwktype.Unschedulable, "not schedulable"),
+		},
+		{
+			name:   "success without nomination",
+			status: fwktype.NewStatus(fwktype.Success),
+		},
+		{
+			name:   "success with empty result",
+			result: &fwktype.PostFilterResult{},
+			status: fwktype.NewStatus(fwktype.Success),
+		},
+		{
+			name: "success with nomination",
+			result: &fwktype.PostFilterResult{NominatingInfo: &fwktype.NominatingInfo{
+				NominatedNodeName: "node",
+				NominatingMode:    fwktype.ModeOverride,
+			}},
+			status: fwktype.NewStatus(fwktype.Success),
+		},
+		{
+			name: "unschedulable with nomination cleared",
+			result: &fwktype.PostFilterResult{NominatingInfo: &fwktype.NominatingInfo{
+				NominatingMode: fwktype.ModeOverride,
+			}},
+			status: fwktype.NewStatus(fwktype.Unschedulable, "not schedulable"),
+		},
+		{
+			name:   "unresolvable",
+			status: fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "unresolvable"),
+		},
+		{
+			name:   "error",
+			status: fwktype.NewStatus(fwktype.Error, "failed"),
+		},
+		{
+			name: "nil status",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.pod == nil {
+				tt.pod = &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"}}
+			}
 			koordClientSet := koordfake.NewSimpleClientset()
 			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 			extenderFactory, err := NewFrameworkExtenderFactory(
@@ -2365,13 +2410,20 @@ func Test_frameworkExtenderImpl_RunPostFilterPlugins(t *testing.T) {
 			assert.NoError(t, err)
 
 			fakePlugin := &fakePostFilterPlugin{
-				result: &fwktype.PostFilterResult{},
-				status: fwktype.NewStatus(fwktype.Unschedulable, "not schedulable"),
+				result: tt.result,
+				status: tt.status,
 			}
 
 			registeredPlugins := []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
 				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				func(registry *frameworkruntime.Registry, profile *schedconfig.KubeSchedulerProfile) {
+					// The upstream test helper does not support the PostFilter extension.
+					assert.NoError(t, registry.Register(fakePlugin.Name(), PluginFactoryProxy(extenderFactory, func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
+						return fakePlugin, nil
+					})))
+					profile.Plugins.PostFilter.Enabled = append(profile.Plugins.PostFilter.Enabled, schedconfig.Plugin{Name: fakePlugin.Name()})
+				},
 			}
 
 			fakeClient := kubefake.NewSimpleClientset()
@@ -2387,9 +2439,7 @@ func Test_frameworkExtenderImpl_RunPostFilterPlugins(t *testing.T) {
 			assert.NoError(t, err)
 
 			frameworkExtender := extenderFactory.NewFrameworkExtender(fh)
-			// Directly inject the PostFilterTransformer since the test helper doesn't support PostFilter
-			ext := frameworkExtender.(*frameworkExtenderImpl)
-			ext.postFilterTransformersEnabled = append(ext.postFilterTransformersEnabled, fakePlugin)
+			frameworkExtender.SetConfiguredPlugins(fh.ListPlugins())
 
 			state := framework.NewCycleState()
 			InitDiagnosis(state, tt.pod)
@@ -2398,15 +2448,17 @@ func Test_frameworkExtenderImpl_RunPostFilterPlugins(t *testing.T) {
 				diagnosis.SetSuggestion(tt.suggestion)
 			}
 
-			_, status := frameworkExtender.RunPostFilterPlugins(context.TODO(), state, tt.pod, nil)
-			assert.NotNil(t, status)
+			result, status := frameworkExtender.RunPostFilterPlugins(context.TODO(), state, tt.pod, framework.NewDefaultNodeToStatus())
+			assert.Equal(t, tt.status.Code(), status.Code())
+			assert.True(t, result == tt.result, "the original result must be returned unchanged")
+			assert.True(t, fakePlugin.afterResult == result, "the callback must receive the returned result")
+			assert.True(t, fakePlugin.afterStatus == status, "the callback must receive the returned status")
 
 			if tt.suggestion != nil {
 				assert.Contains(t, status.Message(), "Suggestion:")
 			}
 
-			// Verify AfterPostFilter was called on the transformer
-			assert.True(t, fakePlugin.afterCalled, "AfterPostFilter should have been called")
+			assert.Equal(t, 1, fakePlugin.afterCalls, "the registered callback must run exactly once")
 		})
 	}
 }

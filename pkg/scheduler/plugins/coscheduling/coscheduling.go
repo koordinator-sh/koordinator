@@ -172,7 +172,7 @@ func (cs *Coscheduling) AfterPreFilter(ctx context.Context, cycleState fwktype.C
 	return nil
 }
 
-func (cs *Coscheduling) AfterPostFilter(ctx context.Context, state fwktype.CycleState, pod *v1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader, postFilterStatus *fwktype.Status) {
+func (cs *Coscheduling) AfterPostFilter(ctx context.Context, state fwktype.CycleState, pod *v1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader, _ *fwktype.PostFilterResult, postFilterStatus *fwktype.Status) {
 	cs.pgMgr.AfterPostFilter(ctx, state, pod, cs.frameworkHandler, Name, filteredNodeStatusMap, postFilterStatus)
 }
 

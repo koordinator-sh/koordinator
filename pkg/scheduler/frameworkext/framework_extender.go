@@ -566,7 +566,7 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state fwk
 	return pluginToNodeScores, status
 }
 
-func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) (_ *fwktype.PostFilterResult, status *fwktype.Status) {
+func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) (result *fwktype.PostFilterResult, status *fwktype.Status) {
 	schedulingphase.RecordPhase(state, schedulingphase.PostFilter)
 	defer func() { schedulingphase.RecordPhase(state, "") }()
 	defer func() {
@@ -581,7 +581,7 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 		}
 		for _, transformer := range ext.postFilterTransformersEnabled {
 			startTime := time.Now()
-			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap, status)
+			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap, result, status)
 			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
 		}
 		DumpDiagnosis(diagnosis)
