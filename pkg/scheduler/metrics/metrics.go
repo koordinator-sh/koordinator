@@ -84,13 +84,13 @@ var (
 			Help:           "Number of equivalence-class lookups that fell back to full scheduling, labeled by reason.",
 			StabilityLevel: metrics.ALPHA,
 		}, []string{"profile", "reason"})
-	EquivalenceClassFlushes = metrics.NewCounterVec(
+	EquivalenceClassFlushes = metrics.NewCounter(
 		&metrics.CounterOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
 			Name:           "equivalence_class_flushes",
-			Help:           "Number of equivalence-class cache flushes, labeled by reason.",
+			Help:           "Number of equivalence-class cache flushes.",
 			StabilityLevel: metrics.ALPHA,
-		}, []string{"reason"})
+		})
 	EquivalenceClassCacheEntries = metrics.NewGauge(
 		&metrics.GaugeOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
@@ -101,7 +101,7 @@ var (
 	EquivalenceClassSchedulingDuration = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
-			Name:           "scheduling_duration_seconds",
+			Name:           "equivalence_class_scheduling_duration_seconds",
 			Help:           "Duration of equivalence-class scheduling decisions, labeled by fast/full path and result.",
 			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
 			StabilityLevel: metrics.ALPHA,
@@ -110,10 +110,17 @@ var (
 		&metrics.HistogramOpts{
 			Subsystem:      schedulermetrics.SchedulerSubsystem,
 			Name:           "binding_slot_wait_duration_seconds",
-			Help:           "Time spent waiting for a  binding slot.",
+			Help:           "Time spent waiting for a binding slot.",
 			Buckets:        metrics.ExponentialBuckets(0.00001, 2, 24),
 			StabilityLevel: metrics.ALPHA,
 		}, []string{"profile"})
+	BindingSlotsInUse = metrics.NewGauge(
+		&metrics.GaugeOpts{
+			Subsystem:      schedulermetrics.SchedulerSubsystem,
+			Name:           "binding_slots_in_use",
+			Help:           "Current number of binding slots held by pods in their binding cycle. A value that stays above zero while no pod is binding indicates a leaked slot.",
+			StabilityLevel: metrics.ALPHA,
+		})
 
 	ElasticQuotaProcessLatency = metrics.NewHistogramVec(
 		&metrics.HistogramOpts{
@@ -243,6 +250,7 @@ var (
 		EquivalenceClassCacheEntries,
 		EquivalenceClassSchedulingDuration,
 		BindingSlotWaitDuration,
+		BindingSlotsInUse,
 		ElasticQuotaProcessLatency,
 		SecondaryDeviceNotWellPlannedNodes,
 		WaitingGangGroupNumber,
@@ -352,12 +360,16 @@ func RecordBindingSlotWaitDuration(profile string, latency time.Duration) {
 	BindingSlotWaitDuration.WithLabelValues(profile).Observe(latency.Seconds())
 }
 
+func RecordBindingSlotsInUse(delta int) {
+	BindingSlotsInUse.Add(float64(delta))
+}
+
 func RecordEquivalenceClassCacheEntries(delta int) {
 	EquivalenceClassCacheEntries.Add(float64(delta))
 }
 
-func RecordEquivalenceClassFlush(reason string) {
-	EquivalenceClassFlushes.WithLabelValues(reason).Inc()
+func RecordEquivalenceClassFlush() {
+	EquivalenceClassFlushes.Inc()
 }
 
 func RecordEquivalenceClassHit(profile string) {

@@ -18,7 +18,7 @@ package equivalence
 
 import (
 	"context"
-	"sync"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -30,9 +30,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/informers"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	toolscache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/component-base/metrics/testutil"
+	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
@@ -92,6 +95,30 @@ type namedFramework struct {
 
 func (f *namedFramework) ProfileName() string {
 	return f.name
+}
+
+// updateSnapshot refreshes the profile's snapshot the way decide does, for tests that drive the
+// fast or full path directly.
+func (s *EquivalenceScheduling) updateSnapshot(logger klog.Logger, schedFramework framework.Framework) (*cache.Snapshot, error) {
+	snapshot, ok := schedFramework.SnapshotSharedLister().(*cache.Snapshot)
+	if !ok {
+		return nil, fmt.Errorf("unexpected snapshot shared lister type %T", schedFramework.SnapshotSharedLister())
+	}
+	if err := s.sched.Cache.UpdateSnapshot(logger, snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot, nil
+}
+
+// hitCount returns the number of fast-path hits recorded for the profile. Tests compare it before
+// and after a decision, because a fast-path pod may check several cached candidates and its
+// evaluated and feasible node counts no longer tell it apart from a full scheduling cycle.
+func hitCount(t *testing.T, profile string) float64 {
+	t.Helper()
+	koordmetrics.Register()
+	hits, err := testutil.GetCounterMetricValue(koordmetrics.EquivalenceClassHits.WithLabelValues(profile))
+	require.NoError(t, err)
+	return hits
 }
 
 func makeNode(name string, cpu, memory string) *corev1.Node {
@@ -160,13 +187,13 @@ func newTestSchedulingWithPlugins(t *testing.T, ctx context.Context, extraPlugin
 		Profiles: profile.Map{
 			"koord-scheduler": fwk,
 		},
-	}, nil, DefaultEquivalenceClassCacheSize, fakeClass)
+	}, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
 	s.equivalence = newEquivalenceClassCache(time.Second, DefaultEquivalenceClassCacheSize)
 	return s
 }
 
 func TestEquivalenceSchedulingHandlesClassPods(t *testing.T) {
-	s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
+	s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
 
 	assert.True(t, s.Handles(makeClassPod("member", "key-a")))
 	assert.False(t, s.Handles(makeClassPod("member-no-key", "")))
@@ -185,8 +212,8 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 			name = "uncordon"
 		}
 		t.Run(name, func(t *testing.T) {
-			s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
-			s.equivalence.store("class", quotaNodes(10, "node-a"), 1, nil)
+			s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+			s.equivalence.store("class", quotaNodes(10, "node-a"), 1, nil, PlacementSpread)
 			oldNode := makeNode("node-a", "4", "8Gi")
 			oldNode.Spec.Unschedulable = !unschedulable
 			newNode := oldNode.DeepCopy()
@@ -196,13 +223,13 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 
 			_, ok, reason := s.equivalence.next("class", 2)
 			assert.False(t, ok)
-			assert.Equal(t, equivalenceCacheMissNodeEvent, reason)
+			assert.Equal(t, equivalenceCacheMissEmpty, reason)
 		})
 	}
 
 	t.Run("irrelevant update keeps the cached node", func(t *testing.T) {
-		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
-		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil, PlacementSpread)
 		oldNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
 			Name:            "node-a",
 			ResourceVersion: "1",
@@ -219,9 +246,9 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 	})
 
 	t.Run("allocatable update removes only the affected node", func(t *testing.T) {
-		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
 		s.equivalence.store("class", quotaNodes(1, "node-a", "node-b"), 1,
-			corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")})
+			corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")}, PlacementSpread)
 		oldNode := makeNode("node-a", "4", "8Gi")
 		newNode := oldNode.DeepCopy()
 		newNode.Status.Allocatable[corev1.ResourceCPU] = resource.MustParse("8")
@@ -235,8 +262,8 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 	})
 
 	t.Run("label update removes the affected node", func(t *testing.T) {
-		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
-		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil, PlacementSpread)
 		oldNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
 		newNode := oldNode.DeepCopy()
 		newNode.Labels = map[string]string{"topology.kubernetes.io/zone": "zone-a"}
@@ -245,12 +272,12 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 
 		_, ok, reason := s.equivalence.next("class", 2)
 		require.False(t, ok)
-		assert.Equal(t, equivalenceCacheMissNodeEvent, reason)
+		assert.Equal(t, equivalenceCacheMissEmpty, reason)
 	})
 
 	t.Run("Koordinator annotation update removes the affected node", func(t *testing.T) {
-		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
-		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil, PlacementSpread)
 		oldNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}}
 		newNode := oldNode.DeepCopy()
 		newNode.Annotations = map[string]string{
@@ -261,12 +288,12 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 
 		_, ok, reason := s.equivalence.next("class", 2)
 		require.False(t, ok)
-		assert.Equal(t, equivalenceCacheMissNodeEvent, reason)
+		assert.Equal(t, equivalenceCacheMissEmpty, reason)
 	})
 
 	t.Run("delete tombstone flushes conservatively", func(t *testing.T) {
-		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
-		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil, PlacementSpread)
 
 		s.handleNodeDelete(toolscache.DeletedFinalStateUnknown{Key: "node-a", Obj: &corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
@@ -274,19 +301,79 @@ func TestEquivalenceSchedulingNodeEventInvalidation(t *testing.T) {
 
 		_, ok, reason := s.equivalence.next("class", 2)
 		require.False(t, ok)
-		assert.Equal(t, equivalenceCacheMissNodeEvent, reason)
+		assert.Equal(t, equivalenceCacheMissEmpty, reason)
+	})
+
+	t.Run("add flushes every class", func(t *testing.T) {
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+		s.equivalence.store("class-a", quotaNodes(1, "node-a"), 1, nil, PlacementSpread)
+		s.equivalence.store("class-b", quotaNodes(1, "node-b"), 1, nil, PlacementSpread)
+
+		s.handleNodeAdd(makeNode("node-c", "4", "8Gi"))
+
+		assert.Equal(t, 0, s.equivalence.len())
+		for _, key := range []string{"class-a", "class-b"} {
+			_, ok, reason := s.equivalence.next(key, 2)
+			require.False(t, ok)
+			assert.Equal(t, equivalenceCacheMissEmpty, reason, key)
+		}
+	})
+
+	t.Run("add on empty cache records no invalidation", func(t *testing.T) {
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+
+		s.handleNodeAdd(makeNode("node-a", "4", "8Gi"))
+
+		_, ok, reason := s.equivalence.next("class", 2)
+		require.False(t, ok)
+		assert.Equal(t, equivalenceCacheMissEmpty, reason)
+	})
+
+	t.Run("add of unknown object flushes conservatively", func(t *testing.T) {
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil, PlacementSpread)
+
+		s.handleNodeAdd(&corev1.Pod{})
+
+		_, ok, reason := s.equivalence.next("class", 2)
+		require.False(t, ok)
+		assert.Equal(t, equivalenceCacheMissEmpty, reason)
 	})
 
 	t.Run("unknown update flushes conservatively", func(t *testing.T) {
-		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
-		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil)
+		s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+		s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil, PlacementSpread)
 
 		s.handleNodeUpdate(&corev1.Pod{}, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}})
 
 		_, ok, reason := s.equivalence.next("class", 2)
 		require.False(t, ok)
-		assert.Equal(t, equivalenceCacheMissNodeEvent, reason)
+		assert.Equal(t, equivalenceCacheMissEmpty, reason)
 	})
+}
+
+func TestRegisterNodeEventHandler(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	client := kubefake.NewSimpleClientset()
+	informerFactory := informers.NewSharedInformerFactory(client, 0)
+	nodeInformer := informerFactory.Core().V1().Nodes().Informer()
+
+	s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+	require.NoError(t, s.RegisterNodeEventHandler(nodeInformer))
+	informerFactory.Start(ctx.Done())
+	informerFactory.WaitForCacheSync(ctx.Done())
+
+	s.equivalence.store("class", quotaNodes(1, "node-a"), 1, nil, PlacementSpread)
+	_, err := client.CoreV1().Nodes().Create(ctx, makeNode("node-b", "4", "8Gi"), metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		return s.equivalence.len() == 0
+	}, 5*time.Second, 10*time.Millisecond)
+	_, ok, reason := s.equivalence.next("class", 2)
+	require.False(t, ok)
+	assert.Equal(t, equivalenceCacheMissEmpty, reason)
 }
 
 func TestEquivalenceSchedulingAllocatableInvalidation(t *testing.T) {
@@ -338,12 +425,12 @@ func TestEquivalenceSchedulingAllocatableInvalidation(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			koordmetrics.Register()
-			s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
+			s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
 			t.Cleanup(s.equivalence.flush)
 			for key, requests := range classes {
-				s.equivalence.store(key, quotaNodes(10, "node-a"), 1, requests)
+				s.equivalence.store(key, quotaNodes(10, "node-a"), 1, requests, PlacementSpread)
 			}
-			s.equivalence.store("other-node", quotaNodes(10, "node-b"), 1, classes["mid"])
+			s.equivalence.store("other-node", quotaNodes(10, "node-b"), 1, classes["mid"], PlacementSpread)
 			oldNode := makeNode("node-a", "4", "8Gi")
 			if tt.old != "" {
 				oldNode.Status.Allocatable[tt.resource] = resource.MustParse(tt.old)
@@ -359,8 +446,7 @@ func TestEquivalenceSchedulingAllocatableInvalidation(t *testing.T) {
 			}
 			before, err := testutil.GetGaugeMetricValue(koordmetrics.EquivalenceClassCacheEntries)
 			require.NoError(t, err)
-			flushCounter := koordmetrics.EquivalenceClassFlushes.WithLabelValues(equivalenceCacheMissNodeEvent.String())
-			flushBefore, err := testutil.GetCounterMetricValue(flushCounter)
+			flushBefore, err := testutil.GetCounterMetricValue(koordmetrics.EquivalenceClassFlushes)
 			require.NoError(t, err)
 
 			s.handleNodeUpdate(oldNode, newNode)
@@ -368,7 +454,7 @@ func TestEquivalenceSchedulingAllocatableInvalidation(t *testing.T) {
 			after, err := testutil.GetGaugeMetricValue(koordmetrics.EquivalenceClassCacheEntries)
 			require.NoError(t, err)
 			assert.Equal(t, before-float64(len(tt.invalidated)), after)
-			flushAfter, err := testutil.GetCounterMetricValue(flushCounter)
+			flushAfter, err := testutil.GetCounterMetricValue(koordmetrics.EquivalenceClassFlushes)
 			require.NoError(t, err)
 			assert.Equal(t, flushBefore, flushAfter)
 			invalidated := sets.New(tt.invalidated...)
@@ -376,9 +462,10 @@ func TestEquivalenceSchedulingAllocatableInvalidation(t *testing.T) {
 				node, ok, reason := s.equivalence.next(key, 2)
 				if invalidated.Has(key) {
 					assert.False(t, ok, key)
-					assert.Equal(t, equivalenceCacheMissNodeEvent, reason, key)
+					// other-node stays cached, so the dropped class reads as unknown rather than empty.
+					assert.Equal(t, equivalenceCacheMissUnknownClass, reason, key)
 					_, _, reason = s.equivalence.next(key, 2)
-					assert.NotEqual(t, equivalenceCacheMissNodeEvent, reason, key)
+					assert.Equal(t, equivalenceCacheMissUnknownClass, reason, key)
 				} else {
 					assert.True(t, ok, key)
 					assert.Equal(t, "node-a", node, key)
@@ -389,7 +476,6 @@ func TestEquivalenceSchedulingAllocatableInvalidation(t *testing.T) {
 			assert.True(t, ok)
 			assert.Equal(t, "node-b", node)
 			assert.Empty(t, reason)
-			assert.Empty(t, s.equivalence.nodeEventInvalidated)
 		})
 	}
 }
@@ -411,11 +497,11 @@ func TestEquivalenceSchedulingMixedNodeUpdates(t *testing.T) {
 		"cordon": func(node *corev1.Node) { node.Spec.Unschedulable = true },
 	} {
 		t.Run(name, func(t *testing.T) {
-			s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, fakeClass)
+			s := NewEquivalenceScheduling(nil, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
 			t.Cleanup(s.equivalence.flush)
 			s.equivalence.store("cpu", quotaNodes(10, "node-a"), 1,
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")})
-			s.equivalence.store("best-effort", quotaNodes(10, "node-a"), 1, nil)
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")}, PlacementSpread)
+			s.equivalence.store("best-effort", quotaNodes(10, "node-a"), 1, nil, PlacementSpread)
 			oldNode := makeNode("node-a", "4", "8Gi")
 			newNode := oldNode.DeepCopy()
 			newNode.Status.Allocatable[apiext.MidCPU] = resource.MustParse("1000")
@@ -426,7 +512,7 @@ func TestEquivalenceSchedulingMixedNodeUpdates(t *testing.T) {
 			for _, key := range []string{"cpu", "best-effort"} {
 				_, ok, reason := s.equivalence.next(key, 2)
 				assert.False(t, ok, key)
-				assert.Equal(t, equivalenceCacheMissNodeEvent, reason, key)
+				assert.Equal(t, equivalenceCacheMissEmpty, reason, key)
 			}
 		})
 	}
@@ -478,6 +564,31 @@ func TestDecideFullPathBackfillsClass(t *testing.T) {
 	assert.True(t, ok, "class should be backfilled after the full path")
 }
 
+func TestDecideDoesNotBackfillPreFilterRestriction(t *testing.T) {
+	ctx := context.Background()
+	s := newTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterPreFilterPlugin("Restrict", schedulertesting.NewFakePreFilterPlugin(
+			"Restrict", &fwktype.PreFilterResult{NodeNames: sets.New("node-2")}, nil)),
+	}, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
+	fwk := s.sched.Profiles["koord-scheduler"]
+	key := equivalenceCacheKey(fwk.ProfileName(), "hash-a")
+
+	// The class already holds a decision that names only node-1, which this pod may not use.
+	s.equivalence.store(key, quotaNodes(10, "node-1"), s.sched.CurrentCycle(), nil, PlacementSpread)
+
+	// The pod carries a PreFilter restriction to node-2, so the fast path finds no candidate in
+	// the class decision and the full path runs over the restricted subset. That subset must not
+	// replace the class decision: the restriction belongs to this pod, not to the class.
+	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("restricted", "hash-a"))
+	require.NoError(t, err)
+	assert.Equal(t, "node-2", result.SuggestedHost)
+
+	entry := s.equivalence.entries[key]
+	require.NotNil(t, entry, "the pre-existing class decision must survive")
+	assert.Len(t, entry.nodes, 1)
+	assert.Equal(t, "node-1", entry.nodes[0].name, "the restricted subset must not be backfilled as the class decision")
+}
+
 func TestDecideFastPath(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheduling(t, ctx, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "8", "16Gi"))
@@ -489,11 +600,13 @@ func TestDecideFastPath(t *testing.T) {
 	_, err := s.decide(ctx, framework.NewCycleState(), fwk, pod)
 	assert.NoError(t, err)
 
+	hits := hitCount(t, fwk.ProfileName())
 	pod = makeClassPod("p2", "hash-a")
 	result, err := s.decide(ctx, framework.NewCycleState(), fwk, pod)
 	assert.NoError(t, err)
 	assert.Contains(t, []string{"node-1", "node-2"}, result.SuggestedHost)
-	assert.Equal(t, 1, result.EvaluatedNodes, "fast path should evaluate a single node")
+	assert.Equal(t, hits+1, hitCount(t, fwk.ProfileName()))
+	assert.Equal(t, 1, result.EvaluatedNodes, "the fast path checks one cached candidate")
 	assert.Equal(t, 1, result.FeasibleNodes)
 
 	// The second fast-path pod consumes the next cached node.
@@ -501,6 +614,7 @@ func TestDecideFastPath(t *testing.T) {
 	result, err = s.decide(ctx, framework.NewCycleState(), fwk, pod)
 	assert.NoError(t, err)
 	assert.Contains(t, []string{"node-1", "node-2"}, result.SuggestedHost)
+	assert.Equal(t, hits+2, hitCount(t, fwk.ProfileName()))
 }
 
 func TestDecideCacheIsProfileScoped(t *testing.T) {
@@ -534,7 +648,7 @@ func TestDecideFastPathRunsExtenderFilters(t *testing.T) {
 			}},
 		},
 	}
-	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(1, "node-1", "node-2"), s.sched.CurrentCycle(), nil)
+	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(1, "node-1", "node-2"), s.sched.CurrentCycle(), nil, PlacementSpread)
 
 	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-a"))
 	require.NoError(t, err)
@@ -559,7 +673,7 @@ func TestFastPathChecksRejectedNodeOnce(t *testing.T) {
 		{name: "rejected", quota: 100},
 		{name: "spent-1", quota: 0},
 		{name: "spent-2", quota: 0},
-	}, s.sched.CurrentCycle(), nil)
+	}, s.sched.CurrentCycle(), nil, PlacementSpread)
 	logger, _ := ktesting.NewTestContext(t)
 	snapshot, err := s.updateSnapshot(logger, fwk)
 	require.NoError(t, err)
@@ -583,6 +697,9 @@ func TestFastPathFailureReasons(t *testing.T) {
 		candidate string
 		reason    equivalenceCacheMissReason
 		evaluated int
+		// keepsClass reports whether the failure is specific to the pod, so the class keeps its
+		// decision for other pods.
+		keepsClass bool
 	}{
 		{
 			name: "filter error", candidate: "node-1", reason: equivalenceCacheMissFilterError, evaluated: 1,
@@ -600,7 +717,7 @@ func TestFastPathFailureReasons(t *testing.T) {
 			name: "missing snapshot node", candidate: "deleted-node", reason: equivalenceCacheMissSnapshotError,
 		},
 		{
-			name: "prefilter restriction", candidate: "node-1", reason: equivalenceCacheMissFilterRejected,
+			name: "prefilter restriction", candidate: "node-1", reason: equivalenceCacheMissFilterRejected, keepsClass: true,
 			plugins: []schedulertesting.RegisterPluginFunc{
 				schedulertesting.RegisterPreFilterPlugin("Restrict", schedulertesting.NewFakePreFilterPlugin(
 					"Restrict", &fwktype.PreFilterResult{NodeNames: sets.New("node-2")}, nil)),
@@ -614,7 +731,9 @@ func TestFastPathFailureReasons(t *testing.T) {
 			s.sched.Extenders = tt.extenders
 			fwk := s.sched.Profiles["koord-scheduler"]
 			key := equivalenceCacheKey(fwk.ProfileName(), "hash")
-			s.equivalence.store(key, quotaNodes(100, tt.candidate), s.sched.CurrentCycle(), nil)
+			s.equivalence.store(key, quotaNodes(100, tt.candidate), s.sched.CurrentCycle(), nil, PlacementSpread)
+			otherKey := equivalenceCacheKey(fwk.ProfileName(), "other")
+			s.equivalence.store(otherKey, quotaNodes(100, "node-2"), s.sched.CurrentCycle(), nil, PlacementSpread)
 			logger, _ := ktesting.NewTestContext(t)
 			snapshot, err := s.updateSnapshot(logger, fwk)
 			require.NoError(t, err)
@@ -624,7 +743,13 @@ func TestFastPathFailureReasons(t *testing.T) {
 			assert.Empty(t, result.SuggestedHost)
 			assert.Equal(t, tt.evaluated, result.EvaluatedNodes)
 			assert.Equal(t, tt.reason, reason)
-			assert.Empty(t, s.equivalence.entries)
+			if tt.keepsClass {
+				require.Contains(t, s.equivalence.entries, key)
+				assert.Equal(t, quotaNodes(100, tt.candidate), s.equivalence.entries[key].nodes, "a restriction of one pod must not take the node from its class")
+			} else {
+				assert.NotContains(t, s.equivalence.entries, key)
+			}
+			assert.Contains(t, s.equivalence.entries, otherKey, "a fast-path failure must not touch other classes")
 		})
 	}
 }
@@ -637,7 +762,7 @@ func TestFallbackCountsFastFilterRejection(t *testing.T) {
 	}, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
 	fwk := s.sched.Profiles["koord-scheduler"]
 	key := equivalenceCacheKey(fwk.ProfileName(), "hash")
-	s.equivalence.store(key, quotaNodes(100, "node-1"), s.sched.CurrentCycle(), nil)
+	s.equivalence.store(key, quotaNodes(100, "node-1"), s.sched.CurrentCycle(), nil, PlacementSpread)
 	result, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("pod", "hash"))
 	require.NoError(t, err)
 	assert.Equal(t, "node-2", result.SuggestedHost)
@@ -727,7 +852,7 @@ func TestDecideNominatedNodeSkipsFastPath(t *testing.T) {
 	// Prime the class so the fast path would place any pod of hash-a on node-1. The primed node has
 	// ample quota and the pod has no resource requests, so the fast path would return node-1 unless
 	// it is skipped: this is what makes node-2 a discriminating outcome rather than a coincidence.
-	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(10, "node-1"), s.sched.CurrentCycle(), nil)
+	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(10, "node-1"), s.sched.CurrentCycle(), nil, PlacementSpread)
 
 	missCounter := koordmetrics.EquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), equivalenceCacheMissNominated.String())
 	before, err := testutil.GetCounterMetricValue(missCounter)
@@ -758,7 +883,7 @@ func TestDecideFastPathHitConsumesQuotaWithoutReclaim(t *testing.T) {
 
 	// Prime the class with a single slot on node-1. The first pod takes the fast path and consumes
 	// that slot; nothing binds in this test, mirroring a pod whose binding cycle later fails.
-	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(1, "node-1"), s.sched.CurrentCycle(), nil)
+	s.equivalence.store(equivalenceCacheKey(fwk.ProfileName(), "hash-a"), quotaNodes(1, "node-1"), s.sched.CurrentCycle(), nil, PlacementSpread)
 
 	first, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-a"))
 	require.NoError(t, err)
@@ -862,6 +987,33 @@ func TestDecideRunsPreFilterOnceOnFullPath(t *testing.T) {
 	assert.Equal(t, int32(1), preFilter.calls.Load(), "a full-path miss must not run PreFilter twice")
 }
 
+func TestDecideDeclinesUnsupportedSnapshotLister(t *testing.T) {
+	ctx := context.Background()
+	var preFilter *countingPreFilterPlugin
+	s := newTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterPreFilterPlugin("CountingPreFilter", func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
+			preFilter = &countingPreFilterPlugin{}
+			return preFilter, nil
+		}),
+	}, makeNode("node-1", "4", "8Gi"))
+	fwk := &listerFramework{Framework: s.sched.Profiles["koord-scheduler"], lister: replacedLister{cache.NewEmptySnapshot()}}
+
+	_, err := s.decide(ctx, framework.NewCycleState(), fwk, makeClassPod("p1", "hash-a"))
+
+	assert.ErrorIs(t, err, frameworkext.ErrSchedulingDecisionDeclined)
+	assert.Zero(t, preFilter.calls.Load(), "a declined pod must reach the upstream path before any plugin runs")
+}
+
+// listerFramework overrides the snapshot lister of the wrapped framework.
+type listerFramework struct {
+	framework.Framework
+	lister fwktype.SharedLister
+}
+
+func (f *listerFramework) SnapshotSharedLister() fwktype.SharedLister {
+	return f.lister
+}
+
 func TestDecideNoNodes(t *testing.T) {
 	ctx := context.Background()
 	s := newTestScheduling(t, ctx)
@@ -883,27 +1035,6 @@ func TestNumFeasibleNodesToFind(t *testing.T) {
 	assert.Equal(t, int32(680), s.numFeasibleNodesToFind(&adaptive, 2000))
 	assert.Equal(t, int32(100), s.numFeasibleNodesToFind(&fivePercent, 2000))
 	assert.Equal(t, int32(2000), s.numFeasibleNodesToFind(&allNodes, 2000))
-}
-
-func TestAdvanceNodeIndexConcurrent(t *testing.T) {
-	var index atomic.Int64
-	const workers = 8
-	const iterations = 1000
-	const nodeCount = int64(17)
-
-	var wg sync.WaitGroup
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go func() {
-			defer wg.Done()
-			for j := 0; j < iterations; j++ {
-				advanceNodeIndex(&index, 1, nodeCount)
-			}
-		}()
-	}
-	wg.Wait()
-
-	assert.Equal(t, int64(workers*iterations)%nodeCount, index.Load())
 }
 
 func TestFindNodesThatPassFiltersWithNoCandidates(t *testing.T) {

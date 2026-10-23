@@ -17,7 +17,6 @@ limitations under the License.
 package equivalence
 
 import (
-	"context"
 	"math"
 
 	corev1 "k8s.io/api/core/v1"
@@ -25,8 +24,6 @@ import (
 	"k8s.io/component-helpers/resource"
 	fwktype "k8s.io/kube-scheduler/framework"
 	k8sfeatures "k8s.io/kubernetes/pkg/features"
-
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
 
 // podRequestsForQuota returns the per-pod request aggregate used for equivalence-class quota
@@ -39,26 +36,17 @@ func podRequestsForQuota(pod *corev1.Pod) corev1.ResourceList {
 	})
 }
 
-// buildQuotaNodesWithPlugins computes the per-node capacity quota for the class at backfill time.
+// buildQuotaNodes computes the per-node capacity quota for the class at backfill time.
 // Pods of one class are template-identical, so the per-node fit check collapses into one division
 // per resource dimension: quota = (allocatable - requested) / podRequest. The requested baseline is
 // the snapshot's aggregate of every pod already on the node — running and assumed alike — so
 // existing occupants of any origin (other classes, other schedulers, daemonsets) are fully
 // accounted for. Occupancy changes after the backfill are not; the drift threshold, node-event
-// flush, and TTL bound that window. Pods of this class placed by the full path afterwards are
-// accounted by the quota decrements in next/recordConsumption; pods placed via a nominated node
-// skip both and are bounded by the same TTL.
-//
-// Registered plugins may further refine quotas for stateful constraints that cannot be
-// represented by additive resource dimensions alone.
-func buildQuotaNodesWithPlugins(
-	ctx context.Context,
-	state fwktype.CycleState,
-	pod *corev1.Pod,
-	nodeNames []string,
-	lister fwktype.SharedLister,
-	plugins []frameworkext.EquivalenceCapacityPlugin,
-) []equivalenceClassNode {
+// flush, and TTL bound that window, and the per-pod Filter on the fast path rejects any node the
+// quota overestimates. Pods of this class placed by either path afterwards are accounted by the
+// quota decrements in consume; pods placed via a nominated node skip it and are bounded by the
+// same TTL.
+func buildQuotaNodes(pod *corev1.Pod, nodeNames []string, lister fwktype.SharedLister) []equivalenceClassNode {
 	podReqs := podRequestsForQuota(pod)
 	out := make([]equivalenceClassNode, 0, len(nodeNames))
 	for _, name := range nodeNames {
@@ -69,36 +57,12 @@ func buildQuotaNodesWithPlugins(
 			continue
 		}
 		quota := nodeQuotaForPod(podReqs, nodeInfo)
-		pluginQuota, reusable := equivalencePluginCapacity(ctx, state, pod, nodeInfo, plugins)
-		if !reusable {
-			continue
-		}
-		if pluginQuota < quota {
-			quota = pluginQuota
-		}
 		if quota <= 0 {
 			continue
 		}
 		out = append(out, equivalenceClassNode{name: name, quota: quota})
 	}
 	return out
-}
-
-func equivalencePluginCapacity(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo, plugins []frameworkext.EquivalenceCapacityPlugin) (int64, bool) {
-	quota := int64(math.MaxInt64)
-	for _, plugin := range plugins {
-		pluginQuota, reusable, handled := plugin.EquivalenceCapacity(ctx, state, pod, nodeInfo)
-		if !handled {
-			continue
-		}
-		if !reusable {
-			return 0, false
-		}
-		if pluginQuota < quota {
-			quota = pluginQuota
-		}
-	}
-	return quota, true
 }
 
 // nodeQuotaForPod returns how many more pods of the class fit the node, as the minimum across

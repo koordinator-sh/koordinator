@@ -33,6 +33,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/component-base/metrics/testutil"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -171,7 +172,7 @@ func newBindingTestSuit(t *testing.T, ctx context.Context, register func(*framew
 		ext.SetConfiguredPlugins(fwk.ListPlugins())
 		// One limiter instance is shared across profiles so its semaphore bounds the total number of
 		// concurrent binding cycles, not the number per profile.
-		ext.SetBindingLimiter(h.limiter)
+		ext.(frameworkext.EquivalenceAwareHandle).SetBindingLimiter(h.limiter)
 		sched.Profiles[name] = ext
 	}
 	factory.InitScheduler(&frameworkext.SchedulerAdapter{Scheduler: sched})
@@ -222,9 +223,17 @@ func TestBindingLifecycleHoldsSlotExactlyOnce(t *testing.T) {
 			defer cancel()
 			p := &testBindingPlugin{unreserved: make(chan string, 1), postBound: make(chan string, 1)}
 			h := newBindingTestSuit(t, ctx, p.register)
+			slotsInUse := func() float64 {
+				value, err := testutil.GetGaugeMetricValue(koordmetrics.BindingSlotsInUse)
+				require.NoError(t, err)
+				return value
+			}
+			slotsBefore := slotsInUse()
 			var slotsAtPreBind atomic.Int32
+			var gaugeAtPreBind atomic.Value
 			p.preBind = func(context.Context, *corev1.Pod) *fwktype.Status {
 				slotsAtPreBind.Store(int32(len(h.limiter.slots)))
+				gaugeAtPreBind.Store(slotsInUse())
 				if stage == "prebind" {
 					return fwktype.AsStatus(errors.New("prebind failed"))
 				}
@@ -268,7 +277,9 @@ func TestBindingLifecycleHoldsSlotExactlyOnce(t *testing.T) {
 				assert.Error(t, err, "failed binding must forget the assumed pod")
 			}
 			assert.Equal(t, int32(1), slotsAtPreBind.Load(), "PreBind must run holding exactly one slot")
+			assert.Equal(t, slotsBefore+1, gaugeAtPreBind.Load(), "the in-use gauge counts the held slot")
 			assert.Empty(t, h.limiter.slots, "the slot must be returned on every terminal path")
+			assert.Equal(t, slotsBefore, slotsInUse(), "the in-use gauge returns to its value before the cycle")
 		})
 	}
 }

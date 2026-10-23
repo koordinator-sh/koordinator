@@ -35,8 +35,8 @@ limitations under the License.
 // deliberately NOT here: upstream reads the unexported sched.percentageOfNodesToScore, which no
 // caller outside the scheduler package can supply unchanged.
 //
-// Maintenance: after every k8s.io/kubernetes version upgrade, run hack/verify-upstream-sync.sh
-// to detect any drift between this file and the upstream source.
+// Maintenance: hack/verify-upstream-sync.sh (make verify-upstream-sync), which CI runs, detects any
+// drift between this file and the upstream source of the k8s.io/kubernetes version in go.mod.
 
 package equivalence
 

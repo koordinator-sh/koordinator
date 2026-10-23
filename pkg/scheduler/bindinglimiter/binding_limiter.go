@@ -122,12 +122,13 @@ func (l *BindingLimiter) Acquire(ctx context.Context, pod *corev1.Pod) error {
 	}
 	l.held[uid] = struct{}{}
 	l.mu.Unlock()
+	koordmetrics.RecordBindingSlotsInUse(1)
 	return nil
 }
 
-// Release returns the slot held for the pod. It is a no-op when the pod holds no slot, so the
-// overlapping release points of the binding lifecycle (PreBind failure, Unreserve, PostBind) are
-// harmless.
+// Release returns the slot held for the pod. It is a no-op when the pod holds no slot, so a pod
+// that reaches both release points of the binding lifecycle (Unreserve and PostBind) or none of
+// its slot-holding phases is harmless.
 func (l *BindingLimiter) Release(pod *corev1.Pod) {
 	if pod == nil {
 		return
@@ -141,4 +142,5 @@ func (l *BindingLimiter) Release(pod *corev1.Pod) {
 	delete(l.held, uid)
 	l.mu.Unlock()
 	<-l.slots
+	koordmetrics.RecordBindingSlotsInUse(-1)
 }

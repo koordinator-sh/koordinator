@@ -56,19 +56,21 @@ type equivalenceClassNode struct {
 }
 
 // equivalenceClassEntry holds the score-ordered feasible node list computed by one full
-// scheduling cycle of the class. Pods consume it round-robin: the cursor wraps around instead of
-// exhausting the list, because nodes stay valid for many class pods (multi-pod-per-node). An
-// entry is dropped when every node's quota is spent, when the drift threshold is reached, on TTL
-// expiry, or when a node event removes its last cached node.
+// scheduling cycle of the class. The placement policy selects from this order relative to last,
+// the node the previous class pod was placed on. An entry is dropped when every node's quota
+// is spent, when the drift threshold is reached, on TTL expiry, or when a node event removes its
+// last cached node.
 type equivalenceClassEntry struct {
 	key           string
 	nodes         []equivalenceClassNode
 	resourceNames sets.Set[corev1.ResourceName]
-	cursor        int
-	consumed      int
-	createdAt     time.Time
-	cycle         int64
-	lruElement    *list.Element
+	placement     PlacementPolicy
+	// last is the index of the node the previous class pod was placed on, or -1 before any.
+	last       int
+	consumed   int
+	createdAt  time.Time
+	cycle      int64
+	lruElement *list.Element
 }
 
 type equivalenceCacheMissReason string
@@ -85,8 +87,13 @@ const (
 	equivalenceCacheMissSnapshotError  equivalenceCacheMissReason = "snapshot_error"
 	equivalenceCacheMissPreFilter      equivalenceCacheMissReason = "prefilter_failed"
 	equivalenceCacheMissNominated      equivalenceCacheMissReason = "nominated_node"
-	equivalenceCacheMissNodeEvent      equivalenceCacheMissReason = "node_event"
 	equivalenceCacheMissPluginVeto     equivalenceCacheMissReason = "plugin_not_reusable"
+	// equivalenceCacheMissNotBackfilled counts full cycles whose feasible nodes all had no quota.
+	equivalenceCacheMissNotBackfilled    equivalenceCacheMissReason = "not_backfilled"
+	equivalenceCacheMissEligibilityError equivalenceCacheMissReason = "eligibility_error"
+	// equivalenceCacheMissSnapshotUnsupported counts pods handed to the upstream path because the
+	// profile's snapshot lister cannot be refreshed by the equivalence path.
+	equivalenceCacheMissSnapshotUnsupported equivalenceCacheMissReason = "snapshot_unsupported"
 )
 
 func (r equivalenceCacheMissReason) String() string {
@@ -98,13 +105,12 @@ func (r equivalenceCacheMissReason) String() string {
 // not invalidate one another. The LRU bound limits memory while retaining the most recently used
 // equivalence classes.
 type equivalenceClassCache struct {
-	mu                   sync.Mutex
-	entries              map[string]*equivalenceClassEntry
-	lru                  *list.List
-	capacity             int
-	ttl                  time.Duration
-	now                  func() time.Time
-	nodeEventInvalidated map[string]struct{}
+	mu       sync.Mutex
+	entries  map[string]*equivalenceClassEntry
+	lru      *list.List
+	capacity int
+	ttl      time.Duration
+	now      func() time.Time
 }
 
 func newEquivalenceClassCache(ttl time.Duration, capacity int) *equivalenceClassCache {
@@ -113,18 +119,17 @@ func newEquivalenceClassCache(ttl time.Duration, capacity int) *equivalenceClass
 		capacity = DefaultEquivalenceClassCacheSize
 	}
 	return &equivalenceClassCache{
-		entries:              make(map[string]*equivalenceClassEntry, capacity),
-		lru:                  list.New(),
-		capacity:             capacity,
-		ttl:                  ttl,
-		now:                  time.Now,
-		nodeEventInvalidated: make(map[string]struct{}),
+		entries:  make(map[string]*equivalenceClassEntry, capacity),
+		lru:      list.New(),
+		capacity: capacity,
+		ttl:      ttl,
+		now:      time.Now,
 	}
 }
 
 // store backfills the class with a score-ordered feasible node list carrying per-node quotas.
 // An empty list removes any old entry: without reusable nodes the class must use the full path.
-func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, cycle int64, podRequests corev1.ResourceList) {
+func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, cycle int64, podRequests corev1.ResourceList, placement PlacementPolicy) {
 	if key == "" {
 		return
 	}
@@ -132,7 +137,6 @@ func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, 
 	defer c.mu.Unlock()
 
 	c.removeExpiredLocked(c.now())
-	delete(c.nodeEventInvalidated, key)
 	if oldEntry := c.entries[key]; oldEntry != nil {
 		c.removeLocked(oldEntry)
 	}
@@ -151,6 +155,8 @@ func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, 
 		key:           key,
 		nodes:         nodes,
 		resourceNames: resourceNames,
+		placement:     placement,
+		last:          -1,
 		createdAt:     c.now(),
 		cycle:         cycle,
 	}
@@ -162,9 +168,14 @@ func (c *equivalenceClassCache) store(key string, nodes []equivalenceClassNode, 
 	}
 }
 
-// recordConsumption accounts one pod placed on the given node by the full path, so the pod that
-// paid for the backfill is not double-booked against the frozen view either.
-func (c *equivalenceClassCache) recordConsumption(key, node string, cycle int64) {
+// consume accounts one class pod placed on the given node by either path, so later pods are not
+// double-booked against the frozen view, and makes the node the next pod's placement anchor.
+//
+// Consumption is one-way: a subsequent Reserve/Permit/Bind failure that forgets the pod from the
+// scheduler cache does not reclaim the slot here. Under-counting a class's remaining capacity can
+// only force a conservative fallback to the full path, never an overcommit, so the drift threshold
+// and TTL are the intended correction rather than per-failure quota bookkeeping.
+func (c *equivalenceClassCache) consume(key, node string, cycle int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry := c.entries[key]
@@ -176,17 +187,18 @@ func (c *equivalenceClassCache) recordConsumption(key, node string, cycle int64)
 		if entry.nodes[i].name == node {
 			entry.nodes[i].quota--
 			entry.consumed++
+			entry.last = i
 			return
 		}
 	}
 }
 
-// rejectNode cancels the provisional consumption from next and discards the candidate by
-// zeroing its quota. Zeroing is intentionally permanent for this entry: a fast-path Filter
-// rejection may be transient (e.g. nominated-pod interference), but the full-path rebuild
-// will re-evaluate the node, so the cost of a false reject is one cache miss — never an
-// overcommit. consumed-- is unconditional to undo the next() increment even when the node
-// was already removed from the entry by a concurrent removeNode.
+// rejectNode discards a candidate that failed a pod's Filter or extender check by zeroing its
+// quota. The failure shows that the quota computed at backfill time overestimates the node, so
+// later pods of the class skip it instead of paying for the same check again. Zeroing is
+// intentionally permanent for this entry: a rejection that proves transient (e.g. nominated-pod
+// interference) costs one candidate until the next backfill, never an overcommit. The fast-path
+// loop does not rely on it to terminate: it stops once the pod has tried every candidate.
 func (c *equivalenceClassCache) rejectNode(key, node string, cycle int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -194,7 +206,6 @@ func (c *equivalenceClassCache) rejectNode(key, node string, cycle int64) {
 	if entry == nil || entry.cycle != cycle {
 		return
 	}
-	entry.consumed--
 	for i := range entry.nodes {
 		if entry.nodes[i].name == node {
 			entry.nodes[i].quota = 0
@@ -203,52 +214,54 @@ func (c *equivalenceClassCache) rejectNode(key, node string, cycle int64) {
 	}
 }
 
-// next returns the next candidate node of the class, decrementing its quota and advancing the
-// cursor round-robin. The second return value is false when the class is unknown, expired,
-// drifted beyond the recomputation threshold, or fully out of quota. The third return value
-// identifies the miss reason. On a miss, the affected entry is dropped and the caller falls back
-// to the full path, which backfills a fresh entry.
+// candidate returns one cached node with quota that is not in exclude. Spread walks the cached
+// order after last, wrapping around to last as a fallback; pack tries last before its successors.
+// A fresh entry starts at the head with either policy.
 //
-// Consumption is one-way: a subsequent Reserve/Permit/Bind failure that forgets the pod from the
-// scheduler cache does not reclaim the slot here. Under-counting a class's remaining capacity can
-// only force a conservative fallback to the full path, never an overcommit, so the drift threshold
-// and TTL are the intended correction rather than per-failure quota bookkeeping.
-func (c *equivalenceClassCache) next(key string, cycle int64) (string, bool, equivalenceCacheMissReason) {
+// It returns no node and a miss reason when the class is unknown, expired, drifted beyond the
+// recomputation threshold, or out of quota; the entry is dropped in all of these cases. When
+// only excluded nodes have quota left, it reports quota_exhausted but keeps the entry for other
+// pods of the class. The caller reports the chosen node to consume.
+func (c *equivalenceClassCache) candidate(key string, cycle int64, exclude sets.Set[string]) (string, equivalenceCacheMissReason) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry := c.entries[key]
 	if entry == nil {
-		if _, ok := c.nodeEventInvalidated[key]; ok {
-			delete(c.nodeEventInvalidated, key)
-			return "", false, equivalenceCacheMissNodeEvent
-		}
 		if len(c.entries) == 0 {
-			return "", false, equivalenceCacheMissEmpty
+			return "", equivalenceCacheMissEmpty
 		}
-		return "", false, equivalenceCacheMissUnknownClass
+		return "", equivalenceCacheMissUnknownClass
 	}
 	if c.now().Sub(entry.createdAt) > c.ttl {
 		c.removeLocked(entry)
-		return "", false, equivalenceCacheMissExpired
+		return "", equivalenceCacheMissExpired
 	}
 	if entry.consumed >= DefaultDriftFactor*len(entry.nodes) {
 		c.removeLocked(entry)
-		return "", false, equivalenceCacheMissDrift
+		return "", equivalenceCacheMissDrift
 	}
 	c.lru.MoveToFront(entry.lruElement)
 	entry.cycle = cycle
-	for i := 0; i < len(entry.nodes); i++ {
-		idx := (entry.cursor + i) % len(entry.nodes)
-		if entry.nodes[idx].quota <= 0 {
-			continue
+
+	usable := func(i int) bool {
+		return entry.nodes[i].quota > 0 && !exclude.Has(entry.nodes[i].name)
+	}
+	if entry.placement == PlacementPack && entry.last >= 0 && usable(entry.last) {
+		return entry.nodes[entry.last].name, ""
+	}
+	for i := 1; i <= len(entry.nodes); i++ {
+		idx := (entry.last + i) % len(entry.nodes)
+		if usable(idx) {
+			return entry.nodes[idx].name, ""
 		}
-		entry.nodes[idx].quota--
-		entry.consumed++
-		entry.cursor = (idx + 1) % len(entry.nodes)
-		return entry.nodes[idx].name, true, ""
+	}
+	for i := range entry.nodes {
+		if entry.nodes[i].quota > 0 {
+			return "", equivalenceCacheMissQuotaExhausted
+		}
 	}
 	c.removeLocked(entry)
-	return "", false, equivalenceCacheMissQuotaExhausted
+	return "", equivalenceCacheMissQuotaExhausted
 }
 
 // len returns the number of cached entries. It is safe for concurrent use.
@@ -258,26 +271,24 @@ func (c *equivalenceClassCache) len() int {
 	return len(c.entries)
 }
 
-// flush drops all cached classes. It is used for invalidations that cannot be scoped to one node.
-func (c *equivalenceClassCache) flush() {
+// remove drops the cached decision of one class and reports whether one was cached. Invalidations
+// specific to one pod or class use it so that unrelated classes keep their decisions.
+func (c *equivalenceClassCache) remove(key string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	entryCount := len(c.entries)
-	c.nodeEventInvalidated = make(map[string]struct{})
-	c.entries = make(map[string]*equivalenceClassEntry, c.capacity)
-	c.lru.Init()
-	koordmetrics.RecordEquivalenceClassCacheEntries(-entryCount)
+	entry := c.entries[key]
+	if entry == nil {
+		return false
+	}
+	c.removeLocked(entry)
+	return true
 }
 
-// flushNodeEvent drops all cached classes and remembers the affected keys so the next lookup can
-// attribute the miss to the node event instead of reporting an indistinguishable empty cache.
+// flushNodeEvent drops every cached class.
 func (c *equivalenceClassCache) flushNodeEvent() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entryCount := len(c.entries)
-	for key := range c.entries {
-		c.markNodeEventInvalidatedLocked(key)
-	}
 	c.entries = make(map[string]*equivalenceClassEntry, c.capacity)
 	c.lru.Init()
 	koordmetrics.RecordEquivalenceClassCacheEntries(-entryCount)
@@ -304,31 +315,17 @@ func (c *equivalenceClassCache) removeNode(nodeName string, changedResources set
 				continue
 			}
 			entry.nodes = append(entry.nodes[:i], entry.nodes[i+1:]...)
-			if entry.cursor > i {
-				entry.cursor--
+			// Keep last on the same node, or on its predecessor when the node itself is removed,
+			// so the next pod continues the walk where it stopped.
+			if entry.last >= i {
+				entry.last--
 			}
 			if len(entry.nodes) == 0 {
-				c.markNodeEventInvalidatedLocked(entry.key)
 				c.removeLocked(entry)
-			} else if entry.cursor >= len(entry.nodes) {
-				entry.cursor = 0
 			}
 			break
 		}
 	}
-}
-
-func (c *equivalenceClassCache) markNodeEventInvalidatedLocked(key string) {
-	if _, exists := c.nodeEventInvalidated[key]; exists {
-		return
-	}
-	for len(c.nodeEventInvalidated) >= c.capacity {
-		for staleKey := range c.nodeEventInvalidated {
-			delete(c.nodeEventInvalidated, staleKey)
-			break
-		}
-	}
-	c.nodeEventInvalidated[key] = struct{}{}
 }
 
 func (c *equivalenceClassCache) removeExpiredLocked(now time.Time) {

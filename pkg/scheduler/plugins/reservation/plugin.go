@@ -89,13 +89,13 @@ var (
 	_ fwktype.PreBindPlugin    = &Plugin{}
 	_ fwktype.BindPlugin       = &Plugin{}
 
-	_ frameworkext.ControllerProvider        = &Plugin{}
-	_ frameworkext.PreFilterTransformer      = &Plugin{}
-	_ frameworkext.ReservationCache          = &Plugin{}
-	_ frameworkext.ReservationNominator      = &Plugin{}
-	_ frameworkext.ReservationFilterPlugin   = &Plugin{}
-	_ frameworkext.ReservationScorePlugin    = &Plugin{}
-	_ frameworkext.EquivalenceCapacityPlugin = &Plugin{}
+	_ frameworkext.ControllerProvider           = &Plugin{}
+	_ frameworkext.PreFilterTransformer         = &Plugin{}
+	_ frameworkext.ReservationCache             = &Plugin{}
+	_ frameworkext.ReservationNominator         = &Plugin{}
+	_ frameworkext.ReservationFilterPlugin      = &Plugin{}
+	_ frameworkext.ReservationScorePlugin       = &Plugin{}
+	_ frameworkext.EquivalenceEligibilityPlugin = &Plugin{}
 )
 
 type Plugin struct {
@@ -168,14 +168,31 @@ func New(_ context.Context, args runtime.Object, handle fwktype.Handle) (fwktype
 
 func (pl *Plugin) Name() string { return Name }
 
-func (pl *Plugin) EquivalenceCapacity(_ context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, _ fwktype.NodeInfo) (int64, bool, bool) {
-	state := getStateData(cycleState)
-	// Ownership and restored resources are pod-specific. A reservation on any node can
-	// change the preferred placement, so checking only the cached node is insufficient.
-	if reservationutil.IsReservePod(pod) || state.hasAffinity || len(state.nodeReservationStates) > 0 {
-		return 0, false, true
+// EquivalenceEligible opts a pod out of equivalence-class reuse when its placement depends on
+// reservations. It reads the state written by BeforePreFilter for the current pod.
+func (pl *Plugin) EquivalenceEligible(_ context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status {
+	if reservationutil.IsReservePod(pod) {
+		return fwktype.NewStatus(fwktype.Unschedulable, "reserve pods are not eligible for equivalence reuse")
 	}
-	return 0, false, false
+	state := getStateData(cycleState)
+	if state.hasAffinity {
+		return fwktype.NewStatus(fwktype.Unschedulable, "pods with reservation affinity are not eligible for equivalence reuse")
+	}
+	// A reservation-ignored pod neither prefers nor allocates reservations (PreScore skips it and
+	// ReservationNominate returns early). Its reservations are only restored as node capacity,
+	// identically for every pod of the class, and the per-pod Filter still validates the node.
+	if apiext.IsReservationIgnored(pod) {
+		return nil
+	}
+	// A matched reservation is preferred in Score and nominated per pod, which a cached per-class
+	// decision cannot carry. Unmatched reservations only correct the node's resource accounting
+	// and do not take part in scoring, so they leave the pod eligible.
+	for _, nodeRState := range state.nodeReservationStates {
+		if len(nodeRState.matchedOrIgnored) > 0 {
+			return fwktype.NewStatus(fwktype.Unschedulable, "pods matching reservations are not eligible for equivalence reuse")
+		}
+	}
+	return nil
 }
 
 func (pl *Plugin) NewControllers() ([]frameworkext.Controller, error) {

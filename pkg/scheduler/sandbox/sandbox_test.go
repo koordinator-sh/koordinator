@@ -167,21 +167,26 @@ func TestSandboxClass(t *testing.T) {
 }
 
 func TestAddFlags(t *testing.T) {
-	originalMax, originalCache := MaxConcurrentBindings, EquivalenceCacheSize
+	originalMax, originalCache, originalPlacement := MaxConcurrentBindings, EquivalenceCacheSize, EquivalencePlacement
 	t.Cleanup(func() {
 		MaxConcurrentBindings = originalMax
 		EquivalenceCacheSize = originalCache
+		EquivalencePlacement = originalPlacement
 	})
 	MaxConcurrentBindings = bindinglimiter.DefaultMaxConcurrentBindings
 	EquivalenceCacheSize = equivalence.DefaultEquivalenceClassCacheSize
+	EquivalencePlacement = string(equivalence.PlacementSpread)
 
 	fs := pflag.NewFlagSet("sandbox", pflag.ContinueOnError)
 	AddFlags(fs)
+	assert.Equal(t, string(equivalence.PlacementSpread), fs.Lookup("sandbox-equivalence-placement").DefValue)
 	require.NoError(t, fs.Set("sandbox-max-concurrent-bindings", "256"))
 	require.NoError(t, fs.Set("sandbox-equivalence-cache-size", "32"))
+	require.NoError(t, fs.Set("sandbox-equivalence-placement", "pack"))
 
 	assert.Equal(t, 256, MaxConcurrentBindings)
 	assert.Equal(t, 32, EquivalenceCacheSize)
+	assert.Equal(t, "pack", EquivalencePlacement)
 }
 
 // setupTestSuit drives a real scheduler with two profiles, the minimum Setup needs to wire its
@@ -243,10 +248,9 @@ func newSetupTestSuit(t *testing.T, ctx context.Context) *setupTestSuit {
 func (s *setupTestSuit) requireWired(t *testing.T) {
 	t.Helper()
 	for name, fwk := range s.sched.Profiles {
-		ext, ok := fwk.(frameworkext.FrameworkExtender)
+		handle, ok := fwk.(frameworkext.EquivalenceAwareHandle)
 		require.True(t, ok, name)
-		require.Len(t, ext.GetSchedulingDecisionProviders(), 1, "profile %s must get the equivalence path", name)
-		require.NotNil(t, ext, name)
+		require.Len(t, handle.GetSchedulingDecisionProviders(), 1, "profile %s must get the equivalence path", name)
 	}
 }
 
@@ -269,31 +273,34 @@ func TestSetupWiresEveryProfile(t *testing.T) {
 func TestSetupDoesNothingWhenDisabled(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.EnableSandboxEquivalenceScheduling, false)()
 
-	// Even nonsensical flags must be ignored: nothing is validated or wired when the gate is off.
-	originalMax, originalCache := MaxConcurrentBindings, EquivalenceCacheSize
+	// Even nonsensical settings must be ignored: nothing is validated or wired when the gate is off.
+	originalMax, originalCache, originalPlacement := MaxConcurrentBindings, EquivalenceCacheSize, EquivalencePlacement
 	t.Cleanup(func() {
 		MaxConcurrentBindings = originalMax
 		EquivalenceCacheSize = originalCache
+		EquivalencePlacement = originalPlacement
 	})
 	MaxConcurrentBindings = 0
 	EquivalenceCacheSize = 0
+	EquivalencePlacement = "binpack"
 
 	_, ctx := ktesting.NewTestContext(t)
 	s := newSetupTestSuit(t, ctx)
 	require.NoError(t, Setup(s.sched, s.informers, nil))
 	for name, fwk := range s.sched.Profiles {
-		ext := fwk.(frameworkext.FrameworkExtender)
-		assert.Empty(t, ext.GetSchedulingDecisionProviders(), "profile %s must stay on the upstream path", name)
+		handle := fwk.(frameworkext.EquivalenceAwareHandle)
+		assert.Empty(t, handle.GetSchedulingDecisionProviders(), "profile %s must stay on the upstream path", name)
 	}
 }
 
 func TestSetupRejectsInvalidConfig(t *testing.T) {
 	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, koordfeatures.EnableSandboxEquivalenceScheduling, true)()
 
-	originalMax, originalCache := MaxConcurrentBindings, EquivalenceCacheSize
+	originalMax, originalCache, originalPlacement := MaxConcurrentBindings, EquivalenceCacheSize, EquivalencePlacement
 	t.Cleanup(func() {
 		MaxConcurrentBindings = originalMax
 		EquivalenceCacheSize = originalCache
+		EquivalencePlacement = originalPlacement
 	})
 
 	tests := []struct {
@@ -311,11 +318,17 @@ func TestSetupRejectsInvalidConfig(t *testing.T) {
 			setup:   func() { EquivalenceCacheSize = 0 },
 			wantErr: "sandbox equivalence cache size must be greater than 0",
 		},
+		{
+			name:    "unknown equivalence placement",
+			setup:   func() { EquivalencePlacement = "binpack" },
+			wantErr: `sandbox equivalence placement must be "spread" or "pack", got "binpack"`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			MaxConcurrentBindings = originalMax
 			EquivalenceCacheSize = originalCache
+			EquivalencePlacement = originalPlacement
 			tt.setup()
 
 			_, ctx := ktesting.NewTestContext(t)

@@ -47,6 +47,18 @@ const (
 	// It is written by the sandbox controller/adapter, which MUST guarantee that pods sharing
 	// a hash are equivalent in every scheduling-relevant field. The value must be a valid
 	// label value (at most 63 characters).
+	//
+	// The hash must cover at least: container, init-container and pod-level resource requests
+	// and limits, runtimeClassName/overhead, priority, nodeSelector, node affinity, tolerations,
+	// pod (anti-)affinity, topologySpreadConstraints, and the pod labels that other pods'
+	// affinity or spread selectors may match. The scheduler profile is not part of the hash:
+	// decisions are already cached per profile.
+	//
+	// The contract bounds placement quality, not feasibility. Cache hits do not run PreScore or
+	// Score: pods of a class use the score order of the full cycle that cached the class, as
+	// --sandbox-equivalence-placement selects. Each hit runs per-pod PreFilter, Filter and extender
+	// filters. A pod that breaks the contract therefore costs a cache miss or a less preferred
+	// node, never an infeasible placement.
 	LabelSandboxTemplateHash = extension.SchedulingDomainPrefix + "/sandbox-template-hash"
 )
 
@@ -57,6 +69,9 @@ var (
 	// EquivalenceCacheSize is the number of sandbox equivalence classes whose scheduling decision
 	// is cached.
 	EquivalenceCacheSize = equivalence.DefaultEquivalenceClassCacheSize
+	// EquivalencePlacement selects how sandbox pods of a class use the cached nodes. Spread is the
+	// default because sandbox pods can be CPU-heavy, and packing them turns nodes into hotspots.
+	EquivalencePlacement = string(equivalence.PlacementSpread)
 )
 
 // AddFlags registers the sandbox scheduling command-line flags.
@@ -65,6 +80,9 @@ func AddFlags(fs *pflag.FlagSet) {
 		"Maximum number of sandbox binding cycles allowed to run concurrently across all scheduler profiles.")
 	fs.IntVar(&EquivalenceCacheSize, "sandbox-equivalence-cache-size", EquivalenceCacheSize,
 		"Maximum number of sandbox equivalence classes whose scheduling decision is cached.")
+	fs.StringVar(&EquivalencePlacement, "sandbox-equivalence-placement", EquivalencePlacement,
+		"Placement of sandbox pods served from a cached equivalence-class decision, which skip Score. "+
+			"'spread' rotates through the cached nodes in score order; 'pack' keeps filling the node the previous pod of the class went to.")
 }
 
 // IsSandboxPod returns true if the pod is marked as a sandbox workload.
@@ -107,7 +125,7 @@ func (sandboxClass) Key(pod *corev1.Pod) string {
 var _ frameworkext.EquivalenceClass = sandboxClass{}
 
 // Setup wires equivalence-class node selection and shared binding admission onto every profile's
-// FrameworkExtender, so FrameworkExtenderFactory.scheduleOne routes sandbox pods through the
+// EquivalenceAwareHandle, so FrameworkExtenderFactory.scheduleOne routes sandbox pods through the
 // equivalence path and the upstream binding cycle bounds their concurrency through the limiter.
 // It wires nothing when the feature gate is off, leaving the upstream scheduling path untouched.
 func Setup(sched *scheduler.Scheduler, informerFactory informers.SharedInformerFactory, percentageOfNodesToScore *int32) error {
@@ -127,10 +145,14 @@ func Setup(sched *scheduler.Scheduler, informerFactory informers.SharedInformerF
 	if EquivalenceCacheSize <= 0 {
 		return fmt.Errorf("sandbox equivalence cache size must be greater than 0")
 	}
-
+	placement := equivalence.PlacementPolicy(EquivalencePlacement)
+	if placement != equivalence.PlacementSpread && placement != equivalence.PlacementPack {
+		return fmt.Errorf("sandbox equivalence placement must be %q or %q, got %q",
+			equivalence.PlacementSpread, equivalence.PlacementPack, EquivalencePlacement)
+	}
 	// One class feeds both modules so membership and identity cannot diverge between them.
 	class := sandboxClass{}
-	scheduling := equivalence.NewEquivalenceScheduling(sched, percentageOfNodesToScore, EquivalenceCacheSize, class)
+	scheduling := equivalence.NewEquivalenceScheduling(sched, percentageOfNodesToScore, EquivalenceCacheSize, placement, class)
 	// One limiter instance is shared across all profiles so its semaphore bounds the total number
 	// of concurrent sandbox binding cycles, not the number per profile.
 	limiter := bindinglimiter.NewBindingLimiter(MaxConcurrentBindings, class)
@@ -140,9 +162,9 @@ func Setup(sched *scheduler.Scheduler, informerFactory informers.SharedInformerF
 	}
 
 	for _, fwk := range sched.Profiles {
-		if extender, ok := fwk.(frameworkext.FrameworkExtender); ok {
-			extender.RegisterSchedulingDecisionProvider(scheduling)
-			extender.SetBindingLimiter(limiter)
+		if handle, ok := fwk.(frameworkext.EquivalenceAwareHandle); ok {
+			handle.RegisterSchedulingDecisionProvider(scheduling)
+			handle.SetBindingLimiter(limiter)
 		}
 	}
 	return nil

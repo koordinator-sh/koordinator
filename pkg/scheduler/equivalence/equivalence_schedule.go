@@ -52,6 +52,11 @@ import (
 //	DIFF(upstream->local) [behavioral]  statements were added, dropped, or reordered. Re-review by
 //	                                    hand after an upgrade.
 //
+// The Upstream-SHA256 line under each origin is the hash of the upstream function body the mirror
+// was last reviewed against. hack/verify-upstream-sync.sh, which CI runs, fails as soon as the
+// upstream body differs, prints the upstream change, and the hash is updated once the mirror and
+// its DIFF notes have been re-reviewed.
+//
 // Upstream copies that need no change at all live in upstream_primitives.go instead.
 
 // These constants mirror upstream's package-level constants in schedule_one.go.
@@ -68,6 +73,17 @@ const (
 	minFeasibleNodesPercentageToFind = 5
 )
 
+// PlacementPolicy selects how pods use the cached score-ordered nodes.
+type PlacementPolicy string
+
+const (
+	// PlacementSpread rotates through the cached nodes, using the anchor as a fallback.
+	PlacementSpread PlacementPolicy = "spread"
+	// PlacementPack prefers filling the anchor while the cache is valid. Drift
+	// (consumed >= 2*len(nodes)) and TTL can trigger a full-path recomputation before it fills.
+	PlacementPack PlacementPolicy = "pack"
+)
+
 // EquivalenceScheduling reuses one full node-selection decision across the pods of an
 // EquivalenceClass. It owns no workload semantics: the caller supplies the class, which decides
 // which pods participate and what identifies their group.
@@ -75,14 +91,18 @@ type EquivalenceScheduling struct {
 	sched              *scheduler.Scheduler
 	class              schedulerframeworkext.EquivalenceClass
 	equivalence        *equivalenceClassCache
-	nextStartNodeIndex atomic.Int64
+	nextStartNodeIndex int64
 	// percentageOfNodesToScore mirrors upstream's unexported sched.percentageOfNodesToScore, which
-	// numFeasibleNodesToFind reads as the fallback when the profile leaves its own setting nil.
+	// numFeasibleNodesToFind reads as the fallback when the profile leaves its own setting nil. The
+	// profile-level field is only defaulted by apis/config/v1/defaulting, so a profile built from
+	// the internal or beta API can leave it nil; without this fallback the sampling percentage would
+	// silently become 0 and the adaptive heuristic would diverge from upstream.
 	// Callers MUST pass the same value they gave scheduler.WithPercentageOfNodesToScore (see
 	// cmd/koord-scheduler/app/server.go) — passing anything else silently forks this path's node
 	// sampling semantics from the upstream path it mirrors. The copy only exists because the
 	// upstream field is unexported.
 	percentageOfNodesToScore int32
+	placement                PlacementPolicy
 }
 
 // equivalenceCacheKey namespaces the class key by scheduler profile: the same class scheduled under
@@ -92,13 +112,15 @@ func equivalenceCacheKey(profileName, classKey string) string {
 }
 
 // NewEquivalenceScheduling returns an equivalence-class scheduling engine whose cache holds at most
-// cacheCapacity class decisions. percentageOfNodesToScore falls back to the scheduler's adaptive
-// heuristic when nil. class must return a non-empty Key for every pod it Handles.
-func NewEquivalenceScheduling(sched *scheduler.Scheduler, percentageOfNodesToScore *int32, cacheCapacity int, class schedulerframeworkext.EquivalenceClass) *EquivalenceScheduling {
+// cacheCapacity class decisions and whose fast path selects nodes using placement.
+// percentageOfNodesToScore falls back to the scheduler's adaptive heuristic when nil. class must
+// return a non-empty Key for every pod it Handles.
+func NewEquivalenceScheduling(sched *scheduler.Scheduler, percentageOfNodesToScore *int32, cacheCapacity int, placement PlacementPolicy, class schedulerframeworkext.EquivalenceClass) *EquivalenceScheduling {
 	s := &EquivalenceScheduling{
 		sched:       sched,
 		class:       class,
 		equivalence: newEquivalenceClassCache(DefaultEquivalenceClassTTL, cacheCapacity),
+		placement:   placement,
 	}
 	if percentageOfNodesToScore != nil {
 		s.percentageOfNodesToScore = *percentageOfNodesToScore
@@ -193,7 +215,7 @@ func objAsNode(obj interface{}) (*corev1.Node, bool) {
 
 func (s *EquivalenceScheduling) flushNodeEventCache() {
 	s.equivalence.flushNodeEvent()
-	koordmetrics.RecordEquivalenceClassFlush(equivalenceCacheMissNodeEvent.String())
+	koordmetrics.RecordEquivalenceClassFlush()
 }
 
 func (s *EquivalenceScheduling) removeNodeFromCache(nodeName string) {
@@ -215,11 +237,6 @@ func (s *EquivalenceScheduling) SchedulePod(ctx context.Context, state fwktype.C
 	return s.decide(ctx, state, schedFramework, pod)
 }
 
-func (s *EquivalenceScheduling) flushEquivalenceCache(reason string) {
-	s.equivalence.flush()
-	koordmetrics.RecordEquivalenceClassFlush(reason)
-}
-
 type preFilterResult struct {
 	result             *fwktype.PreFilterResult
 	status             *fwktype.Status
@@ -239,6 +256,16 @@ func (s *EquivalenceScheduling) runPreFilter(ctx context.Context, state fwktype.
 // score-ordered candidates for quota backfill, which scheduler.SchedulePod's
 // ScheduleResult does not expose.
 func (s *EquivalenceScheduling) decide(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod) (result scheduler.ScheduleResult, err error) {
+	// The path refreshes and reads the profile's snapshot itself. A profile whose snapshot lister
+	// has been replaced (e.g. by a per-node batch snapshot) is left to the upstream path, which
+	// keeps its own snapshot, instead of failing the pod.
+	snapshot, ok := schedFramework.SnapshotSharedLister().(*cache.Snapshot)
+	if !ok {
+		koordmetrics.RecordEquivalenceClassMiss(schedFramework.ProfileName(), equivalenceCacheMissSnapshotUnsupported.String())
+		klog.FromContext(ctx).V(4).Info("Equivalence scheduling declined for an unsupported snapshot lister", "pod", klog.KObj(pod), "profile", schedFramework.ProfileName(), "lister", fmt.Sprintf("%T", schedFramework.SnapshotSharedLister()))
+		return scheduler.ScheduleResult{}, schedulerframeworkext.ErrSchedulingDecisionDeclined
+	}
+
 	start := time.Now()
 	path := koordmetrics.SchedulingPathFull
 	resultLabel := koordmetrics.SchedulingResultError
@@ -252,8 +279,7 @@ func (s *EquivalenceScheduling) decide(ctx context.Context, state fwktype.CycleS
 	}()
 
 	cacheKey := equivalenceCacheKey(schedFramework.ProfileName(), s.classKey(pod))
-	snapshot, err := s.updateSnapshot(klog.FromContext(ctx), schedFramework)
-	if err != nil {
+	if err := s.sched.Cache.UpdateSnapshot(klog.FromContext(ctx), snapshot); err != nil {
 		return scheduler.ScheduleResult{}, err
 	}
 	if snapshot.NumNodes() == 0 {
@@ -263,6 +289,13 @@ func (s *EquivalenceScheduling) decide(ctx context.Context, state fwktype.CycleS
 	preFilter := s.runPreFilter(ctx, state, schedFramework, pod)
 	if !preFilter.status.IsSuccess() {
 		koordmetrics.RecordEquivalenceClassMiss(schedFramework.ProfileName(), equivalenceCacheMissPreFilter.String())
+		result, _, err = s.schedulePod(ctx, state, schedFramework, pod, snapshot, preFilter)
+		return result, err
+	}
+
+	// An ineligible pod neither reuses nor backfills the class decision.
+	if eligible, reason := s.checkEligibility(ctx, state, schedFramework, pod, cacheKey); !eligible {
+		koordmetrics.RecordEquivalenceClassMiss(schedFramework.ProfileName(), reason.String())
 		result, _, err = s.schedulePod(ctx, state, schedFramework, pod, snapshot, preFilter)
 		return result, err
 	}
@@ -289,46 +322,70 @@ func (s *EquivalenceScheduling) decide(ctx context.Context, state fwktype.CycleS
 	result, orderedNodes, err := s.schedulePod(ctx, state, schedFramework, pod, snapshot, preFilter)
 	// Count evaluations in both paths, including nodes rechecked during fallback.
 	result.EvaluatedNodes += fastResult.EvaluatedNodes
-	if err == nil && !nominated {
+	// A pod whose PreFilter restricted the node set is scheduled over that subset only, so its
+	// ordered list is not the class decision. Caching it would replace the class's full node list
+	// with the subset, and the restriction belongs to this pod, not to the class.
+	if err == nil && !nominated && preFilter.result.AllNodes() {
 		// The quota baselines reflect every occupant (running and assumed) at decision time.
 		// The pod paying for this full path occupies one slot on the suggested host itself.
 		cycle := s.sched.CurrentCycle()
-		s.equivalence.store(cacheKey, buildQuotaNodesWithPlugins(ctx, state, pod, orderedNodes, schedFramework.SnapshotSharedLister(), s.equivalenceCapacityPlugins(schedFramework)), cycle, podRequestsForQuota(pod))
-		s.equivalence.recordConsumption(cacheKey, result.SuggestedHost, cycle)
+		quotaNodes := buildQuotaNodes(pod, orderedNodes, schedFramework.SnapshotSharedLister())
+		if len(quotaNodes) == 0 {
+			// Distinct from a cold cache: the full path ran but no candidate fit the pod's request.
+			koordmetrics.RecordEquivalenceClassMiss(schedFramework.ProfileName(), equivalenceCacheMissNotBackfilled.String())
+		}
+		s.equivalence.store(cacheKey, quotaNodes, cycle, podRequestsForQuota(pod), s.placement)
+		s.equivalence.consume(cacheKey, result.SuggestedHost, cycle)
 	}
 	return result, err
 }
 
-func (s *EquivalenceScheduling) equivalenceCapacityPlugins(schedFramework framework.Framework) []schedulerframeworkext.EquivalenceCapacityPlugin {
-	if extender, ok := schedFramework.(schedulerframeworkext.FrameworkExtender); ok {
-		return extender.EquivalenceCapacityPlugins()
-	}
-	return nil
-}
-
-func (s *EquivalenceScheduling) updateSnapshot(logger klog.Logger, schedFramework framework.Framework) (*cache.Snapshot, error) {
-	snapshot, ok := schedFramework.SnapshotSharedLister().(*cache.Snapshot)
+// checkEligibility asks the eligibility plugins whether the pod may reuse or backfill its class
+// decision, following the status semantics of frameworkext.EquivalenceEligibilityPlugin: a veto
+// invalidates the cached decision of the pod's class only, while a plugin error keeps just this pod
+// off the cache. It returns the miss reason when the pod is not eligible.
+func (s *EquivalenceScheduling) checkEligibility(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod, cacheKey string) (bool, equivalenceCacheMissReason) {
+	handle, ok := schedFramework.(schedulerframeworkext.EquivalenceAwareHandle)
 	if !ok {
-		return nil, fmt.Errorf("unexpected snapshot shared lister type %T", schedFramework.SnapshotSharedLister())
+		return true, ""
 	}
-	if err := s.sched.Cache.UpdateSnapshot(logger, snapshot); err != nil {
-		return nil, err
+	logger := klog.FromContext(ctx)
+	for _, plugin := range handle.EquivalenceEligibilityPlugins() {
+		status := plugin.EquivalenceEligible(ctx, state, pod)
+		switch {
+		case status.IsSuccess() || status.IsSkip():
+			continue
+		case status.IsRejected():
+			// Log the transition from reusable to vetoed once; per-pod vetoes are visible in the
+			// miss metric and would flood the log at sandbox scheduling rates.
+			if s.equivalence.remove(cacheKey) {
+				logger.Info("Equivalence class decision invalidated by plugin", "pod", klog.KObj(pod), "class", cacheKey, "plugin", plugin.Name(), "reason", status.Message())
+			} else {
+				logger.V(4).Info("Pod is not eligible for equivalence reuse", "pod", klog.KObj(pod), "class", cacheKey, "plugin", plugin.Name(), "reason", status.Message())
+			}
+			return false, equivalenceCacheMissPluginVeto
+		default:
+			logger.Error(status.AsError(), "Failed to check equivalence eligibility", "pod", klog.KObj(pod), "class", cacheKey, "plugin", plugin.Name())
+			return false, equivalenceCacheMissEligibilityError
+		}
 	}
-	return snapshot, nil
+	return true, ""
 }
 
-// scheduleFromEquivalenceClass tries to reuse the cached decision of the pod's equivalence
-// class: it takes the next cached node and validates it with a single-node framework Filter and
-// extender Filter pass. PreFilter still runs per pod because plugins read its state from the cycle
-// state (e.g. NodeResourcesFit's Filter reads the PreFilter-computed pod requests). An empty
-// SuggestedHost and a miss reason tell the caller to fall back to full scheduling.
+// scheduleFromEquivalenceClass tries to reuse the cached decision of the pod's equivalence class.
+// A cache hit runs only per-pod PreFilter, Filter and extender filters, not PreScore or Score.
+// Candidates are selected one at a time using the full path's cached score order and the placement
+// policy. PreFilter runs in decide because Filter plugins read its per-pod cycle state.
+// An empty SuggestedHost and a miss reason tell the caller to fall back to full scheduling.
 func (s *EquivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context, state fwktype.CycleState, schedFramework framework.Framework, pod *corev1.Pod, cacheKey string, snapshot *cache.Snapshot, preFilter preFilterResult) (result scheduler.ScheduleResult, missReason equivalenceCacheMissReason) {
 	var sawFilterRejected, sawSnapshotError bool
 	cycle := s.sched.CurrentCycle()
-	plugins := s.equivalenceCapacityPlugins(schedFramework)
+	// Every round tries nodes this pod has not tried yet, so the loop ends within len(nodes)
+	// rounds whatever happens to the cached quotas.
+	tried := sets.New[string]()
 	for {
-		node, ok, reason := s.equivalence.next(cacheKey, cycle)
-		if !ok {
+		node, reason := s.equivalence.candidate(cacheKey, cycle, tried)
+		if node == "" {
 			if sawFilterRejected && reason == equivalenceCacheMissQuotaExhausted {
 				return result, equivalenceCacheMissFilterRejected
 			}
@@ -337,11 +394,11 @@ func (s *EquivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context
 			}
 			return result, reason
 		}
-		// Respect this pod's PreFilter node restriction: same-class pods should produce the
-		// same PreFilter result, but the restriction is cheap to honor and keeps the reuse safe.
+		tried.Insert(node)
+
+		// The PreFilter restriction belongs to this pod, so the node stays available to the class.
 		if !preFilter.result.AllNodes() && !preFilter.result.NodeNames.Has(node) {
 			sawFilterRejected = true
-			s.equivalence.rejectNode(cacheKey, node, cycle)
 			continue
 		}
 		nodeInfo, err := snapshot.NodeInfos().Get(node)
@@ -354,7 +411,7 @@ func (s *EquivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context
 		result.EvaluatedNodes++
 		filterStatus := schedFramework.RunFilterPluginsWithNominatedPods(ctx, state, pod, nodeInfo)
 		if filterStatus.Code() == fwktype.Error {
-			s.flushEquivalenceCache(equivalenceCacheMissFilterError.String())
+			s.equivalence.remove(cacheKey)
 			return result, equivalenceCacheMissFilterError
 		}
 		if !filterStatus.IsSuccess() {
@@ -362,27 +419,9 @@ func (s *EquivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context
 			s.equivalence.rejectNode(cacheKey, node, cycle)
 			continue
 		}
-		// Plugins may compute pod-specific capacity during Filter, including lazy restoration.
-		quota, reusable := equivalencePluginCapacity(ctx, state, pod, nodeInfo, plugins)
-		if !reusable {
-			// Drop the entry so the next pod of this class does not waste a fast-path attempt
-			// on a decision the plugin has already rejected.
-			s.flushEquivalenceCache(equivalenceCacheMissPluginVeto.String())
-			return result, equivalenceCacheMissPluginVeto
-		}
-		if quota <= 0 {
-			s.equivalence.rejectNode(cacheKey, node, cycle)
-			continue
-		}
-		extenderNodes, err := findNodesThatPassExtenders(
-			ctx,
-			s.sched.Extenders,
-			pod,
-			[]fwktype.NodeInfo{nodeInfo},
-			framework.NewDefaultNodeToStatus(),
-		)
+		extenderNodes, err := findNodesThatPassExtenders(ctx, s.sched.Extenders, pod, []fwktype.NodeInfo{nodeInfo}, framework.NewDefaultNodeToStatus())
 		if err != nil {
-			s.flushEquivalenceCache(equivalenceCacheMissExtenderError.String())
+			s.equivalence.remove(cacheKey)
 			return result, equivalenceCacheMissExtenderError
 		}
 		if len(extenderNodes) == 0 {
@@ -390,28 +429,11 @@ func (s *EquivalenceScheduling) scheduleFromEquivalenceClass(ctx context.Context
 			s.equivalence.rejectNode(cacheKey, node, cycle)
 			continue
 		}
-		// The cached node passed all framework and extender filters.
+
+		s.equivalence.consume(cacheKey, node, cycle)
 		result.SuggestedHost = node
 		result.FeasibleNodes = 1
 		return result, ""
-	}
-}
-
-// advanceNodeIndex moves the node scan cursor forward by delta, wrapping at nodeCount.
-//
-// Upstream: no equivalent — k8s.io/kubernetes@v1.35.6/pkg/scheduler/schedule_one.go assigns
-// sched.nextStartNodeIndex directly. This path makes the cursor atomic and CAS-updates it because
-// several pods can advance it concurrently here.
-func advanceNodeIndex(index *atomic.Int64, delta, nodeCount int64) {
-	if nodeCount <= 0 {
-		return
-	}
-	for {
-		old := index.Load()
-		next := (old + delta) % nodeCount
-		if index.CompareAndSwap(old, next) {
-			return
-		}
 	}
 }
 
@@ -420,6 +442,7 @@ func advanceNodeIndex(index *atomic.Int64, delta, nodeCount int64) {
 // that quota backfill consumes.
 //
 // Upstream: k8s.io/kubernetes@v1.35.6/pkg/scheduler/schedule_one.go:421 (Scheduler.schedulePod)
+// Upstream-SHA256: a1ec4e15a206bb699eafeadf8f75bd7760139396eb56583182ee3202fb9126dd (reviewed at v1.35.6)
 // DIFF(upstream->local) [behavioral]: drops both fwk.StoreScheduleResults calls and their
 // OpportunisticBatching gate — the equivalence-class cache replaces the per-node hint, so the
 // upstream hint is never written.
@@ -478,6 +501,7 @@ func (s *EquivalenceScheduling) schedulePod(ctx context.Context, state fwktype.C
 // findNodesThatFitPod returns the nodes that survive the filter plugins and the extender filters.
 //
 // Upstream: k8s.io/kubernetes@v1.35.6/pkg/scheduler/schedule_one.go:482 (Scheduler.findNodesThatFitPod)
+// Upstream-SHA256: 7bad66064d1154152b8cb44bf12876829eab975e694bc6d6f99cbde0029e0409 (reviewed at v1.35.6)
 // DIFF(upstream->local) [behavioral]: equivalence-class reuse replaces the opportunistic-batching
 // node hint; nominated nodes still take precedence.
 // DIFF(upstream->local) [behavioral]: PreFilter runs once in decide and its result is reused by
@@ -535,7 +559,7 @@ func (s *EquivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFr
 	}
 	feasibleNodes, err := s.findNodesThatPassFilters(ctx, schedFramework, state, pod, &diagnosis, nodes)
 	processedNodes := len(feasibleNodes) + diagnosis.NodeToStatus.Len()
-	advanceNodeIndex(&s.nextStartNodeIndex, int64(processedNodes), int64(len(allNodes)))
+	s.nextStartNodeIndex = (s.nextStartNodeIndex + int64(processedNodes)) % int64(len(allNodes))
 	if err != nil {
 		return nil, diagnosis, err
 	}
@@ -557,6 +581,7 @@ func (s *EquivalenceScheduling) findNodesThatFitPod(ctx context.Context, schedFr
 // evaluateNominatedNode tries the node nominated for this pod before scanning the cluster.
 //
 // Upstream: k8s.io/kubernetes@v1.35.6/pkg/scheduler/schedule_one.go:575 (Scheduler.evaluateNominatedNode)
+// Upstream-SHA256: b416c0578ee2c3c8822c133b0af7e8be66f88e1a0f6de1213c6df2ededa7fea4 (reviewed at v1.35.6)
 // DIFF(upstream->local) [behavioral]: drops the nodeHint fallback along with the parameter —
 // upstream reads `if len(nnn) == 0 { nnn = nodeHint }`, so here only pod.Status.NominatedNodeName
 // is consulted. The hint came from the opportunistic-batching mechanism this path replaces.
@@ -594,10 +619,11 @@ func (s *EquivalenceScheduling) evaluateNominatedNode(
 // findNodesThatPassFilters returns the nodes that pass the filter plugins.
 //
 // Upstream: k8s.io/kubernetes@v1.35.6/pkg/scheduler/schedule_one.go:625 (Scheduler.findNodesThatPassFilters)
+// Upstream-SHA256: 4e2a30ef1edbd6d795094888023682200ba6d7727560c32e851a8d4d78f3343f (reviewed at v1.35.6)
 // DIFF(upstream->local) [behavioral]: adds a numAllNodes == 0 early return. A PreFilter restriction
 // can name only nodes that are absent from the snapshot, and upstream's index arithmetic would
 // then divide by zero.
-// DIFF(upstream->local) [mechanical]: reads the atomic s.nextStartNodeIndex cursor instead of
+// DIFF(upstream->local) [mechanical]: reads s.nextStartNodeIndex instead of
 // sched.nextStartNodeIndex.
 func (s *EquivalenceScheduling) findNodesThatPassFilters(
 	ctx context.Context,
@@ -616,7 +642,7 @@ func (s *EquivalenceScheduling) findNodesThatPassFilters(
 	}
 
 	feasibleNodes := make([]fwktype.NodeInfo, numNodesToFind)
-	startNodeIndex := int(s.nextStartNodeIndex.Load()) % numAllNodes
+	startNodeIndex := int(s.nextStartNodeIndex) % numAllNodes
 
 	if !schedFramework.HasFilterPlugins() {
 		for i := range feasibleNodes {
@@ -683,6 +709,7 @@ func (s *EquivalenceScheduling) findNodesThatPassFilters(
 // searching for more.
 //
 // Upstream: k8s.io/kubernetes@v1.35.6/pkg/scheduler/schedule_one.go:712 (Scheduler.numFeasibleNodesToFind)
+// Upstream-SHA256: a71e04fc7e4faddb1f7a3540d4d1a8dbb9d3d71832c6f6e5b008064ece839b47 (reviewed at v1.35.6)
 // DIFF(upstream->local) [mechanical]: statements are preserved, but the nil-fallback line reads
 // s.percentageOfNodesToScore instead of upstream's sched.percentageOfNodesToScore. That upstream
 // field is unexported, so this function cannot take *scheduler.Scheduler and stay body-identical

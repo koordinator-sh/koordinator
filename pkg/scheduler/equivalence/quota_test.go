@@ -17,7 +17,6 @@ limitations under the License.
 package equivalence
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -29,22 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
 	apiext "github.com/koordinator-sh/koordinator/apis/extension"
-	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
 )
-
-type testEquivalenceCapacityPlugin struct {
-	quota    int64
-	reusable bool
-	handled  bool
-}
-
-func (p *testEquivalenceCapacityPlugin) Name() string {
-	return "TestEquivalenceCapacity"
-}
-
-func (p *testEquivalenceCapacityPlugin) EquivalenceCapacity(context.Context, fwktype.CycleState, *corev1.Pod, fwktype.NodeInfo) (int64, bool, bool) {
-	return p.quota, p.reusable, p.handled
-}
 
 type fakeNodeInfoLister struct {
 	infos map[string]fwktype.NodeInfo
@@ -175,46 +159,10 @@ func TestBuildQuotaNodes(t *testing.T) {
 		"goneOK": makeQuotaNodeInfo("goneOK", "4", "8Gi", 10),
 	}}}
 
-	nodes := buildQuotaNodesWithPlugins(context.Background(), nil, pod, []string{"fits", "full", "zero", "missing"}, lister, nil)
+	nodes := buildQuotaNodes(pod, []string{"fits", "full", "zero", "missing"}, lister)
 
 	assert.Equal(t, []equivalenceClassNode{{name: "fits", quota: 10}}, nodes,
 		"full/zero-quota/missing nodes must not enter the cache")
-}
-
-func TestBuildQuotaNodesWithCapacityPlugin(t *testing.T) {
-	pod := makeQuotaPod("100m", "100Mi")
-	lister := fakeSharedLister{lister: fakeNodeInfoLister{infos: map[string]fwktype.NodeInfo{
-		"n1": makeQuotaNodeInfo("n1", "4", "8Gi", 10),
-	}}}
-
-	plugin := &testEquivalenceCapacityPlugin{quota: 2, reusable: true, handled: true}
-	nodes := buildQuotaNodesWithPlugins(
-		context.Background(),
-		nil,
-		pod,
-		[]string{"n1"},
-		lister,
-		[]frameworkext.EquivalenceCapacityPlugin{plugin},
-	)
-	assert.Equal(t, []equivalenceClassNode{{name: "n1", quota: 2}}, nodes)
-}
-
-func TestBuildQuotaNodesWithCapacityPluginCanDisableReuse(t *testing.T) {
-	pod := makeQuotaPod("100m", "100Mi")
-	lister := fakeSharedLister{lister: fakeNodeInfoLister{infos: map[string]fwktype.NodeInfo{
-		"n1": makeQuotaNodeInfo("n1", "4", "8Gi", 10),
-	}}}
-
-	plugin := &testEquivalenceCapacityPlugin{reusable: false, handled: true}
-	nodes := buildQuotaNodesWithPlugins(
-		context.Background(),
-		nil,
-		pod,
-		[]string{"n1"},
-		lister,
-		[]frameworkext.EquivalenceCapacityPlugin{plugin},
-	)
-	assert.Empty(t, nodes)
 }
 
 func mustPodRequests(t *testing.T, pod *corev1.Pod) corev1.ResourceList {

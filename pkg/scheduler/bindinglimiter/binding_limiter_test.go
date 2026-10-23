@@ -28,8 +28,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/component-base/metrics/testutil"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext"
+	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
@@ -156,6 +158,13 @@ func TestBindingLimiterCancelledContextWithFreeSlot(t *testing.T) {
 }
 
 func TestBindingLimiterDuplicateAcquireReleaseSameUID(t *testing.T) {
+	koordmetrics.Register()
+	slotsInUse := func() float64 {
+		value, err := testutil.GetGaugeMetricValue(koordmetrics.BindingSlotsInUse)
+		require.NoError(t, err)
+		return value
+	}
+	before := slotsInUse()
 	l := NewBindingLimiter(1, fakeClass)
 	pod := makeClassPod("dup", "key-a")
 
@@ -165,6 +174,7 @@ func TestBindingLimiterDuplicateAcquireReleaseSameUID(t *testing.T) {
 	require.NoError(t, l.Acquire(context.Background(), pod))
 	assert.Len(t, l.slots, 1, "duplicate Acquire must not take a second slot")
 	assert.Len(t, l.held, 1)
+	assert.Equal(t, before+1, slotsInUse(), "the gauge counts the pod once")
 
 	// The first Release returns the slot; the duplicate Release is a no-op and must not underflow the
 	// semaphore.
@@ -172,6 +182,7 @@ func TestBindingLimiterDuplicateAcquireReleaseSameUID(t *testing.T) {
 	l.Release(pod)
 	assert.Len(t, l.slots, 0, "duplicate Release must not underflow the semaphore")
 	assert.Len(t, l.held, 0)
+	assert.Equal(t, before, slotsInUse(), "a duplicate Release must not decrement the gauge")
 }
 
 func TestBindingLimiterCapacityBlocksAndUnblocks(t *testing.T) {

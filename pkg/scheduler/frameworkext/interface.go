@@ -18,6 +18,7 @@ package frameworkext
 
 import (
 	"context"
+	"errors"
 	"reflect"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
@@ -82,22 +83,6 @@ type ExtendedHandle interface {
 type FrameworkExtender interface {
 	framework.Framework
 	ExtendedHandle
-	// EquivalenceCapacityPlugins returns plugins that can provide a conservative
-	// per-node reuse capacity for Sandbox equivalence-class scheduling.
-	EquivalenceCapacityPlugins() []EquivalenceCapacityPlugin
-
-	// RegisterSchedulingDecisionProvider appends a provider during setup, before scheduling starts.
-	// The first registered provider whose Handles returns true owns the decision, including errors.
-	// A nil provider is ignored.
-	RegisterSchedulingDecisionProvider(provider SchedulingDecisionProvider)
-	// GetSchedulingDecisionProviders returns providers in registration order. The returned slice is read-only.
-	GetSchedulingDecisionProviders() []SchedulingDecisionProvider
-
-	// SetBindingLimiter registers a BindingLimiter that bounds the number of concurrent binding
-	// cycles for the pods it handles. It must be called during setup, before scheduling starts.
-	// It is registered externally (e.g. by a scheduling assembly package) to avoid import cycles.
-	// A nil limiter disables the bound.
-	SetBindingLimiter(limiter BindingLimiter)
 
 	// RunFindOneNodePlugin invokes the registered FindOneNodePlugin (if any) during the PreFilter phase.
 	// The plugin's FindOneNode method attempts to deterministically compute a placement plan for the whole job
@@ -125,24 +110,55 @@ type FrameworkExtender interface {
 	RunResizePod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status
 }
 
+// EquivalenceAwareHandle is implemented by the FrameworkExtender of every profile, but kept apart
+// from FrameworkExtender so that out-of-tree FrameworkExtender implementations do not have to
+// implement it. Callers discover it with a type assertion, as with the other optional capabilities
+// in this package; a framework without it schedules every pod through the upstream path.
+type EquivalenceAwareHandle interface {
+	// EquivalenceEligibilityPlugins returns plugins that can opt a pod out of
+	// equivalence-class reuse.
+	EquivalenceEligibilityPlugins() []EquivalenceEligibilityPlugin
+
+	// RegisterSchedulingDecisionProvider appends a provider during setup, before scheduling starts.
+	// The first registered provider whose Handles returns true owns the decision, including errors.
+	// A nil provider is ignored.
+	RegisterSchedulingDecisionProvider(provider SchedulingDecisionProvider)
+	// GetSchedulingDecisionProviders returns providers in registration order. The returned slice is read-only.
+	GetSchedulingDecisionProviders() []SchedulingDecisionProvider
+
+	// SetBindingLimiter registers a BindingLimiter that bounds the number of concurrent binding
+	// cycles for the pods it handles. It must be called during setup, before scheduling starts.
+	// It is registered externally (e.g. by a scheduling assembly package) to avoid import cycles.
+	// A nil limiter disables the bound.
+	SetBindingLimiter(limiter BindingLimiter)
+}
+
+// ErrSchedulingDecisionDeclined is returned by SchedulingDecisionProvider.SchedulePod when the
+// provider cannot decide for this pod in this profile after all, e.g. because the profile's
+// snapshot lister is not one it can refresh. The pod is then scheduled by the upstream path.
+var ErrSchedulingDecisionDeclined = errors.New("scheduling decision declined by provider")
+
 // SchedulingDecisionProvider lets a scheduling extension override the node-selection decision for the
 // pods it handles, while keeping the upstream Scheduler.Run/ScheduleOne loop and reusing
 // FrameworkExtenderFactory.scheduleOne's Koordinator lifecycle hooks (diagnosis, monitor, auditor,
 // reservation nomination, ResizePod). FrameworkExtenderFactory.scheduleOne calls SchedulePod instead
 // of the upstream schedulePod when Handles(pod) is true. Implementations live outside frameworkext
-// and are registered on the FrameworkExtender to avoid import cycles.
+// and are registered on the EquivalenceAwareHandle to avoid import cycles.
 type SchedulingDecisionProvider interface {
 	// Handles reports whether the provider wants to make the scheduling decision for the pod.
 	Handles(pod *corev1.Pod) bool
 	// SchedulePod returns the scheduling decision for the pod, mirroring scheduler.SchedulePod's
 	// contract: a ScheduleResult with the suggested host, or a *framework.FitError when the pod does
-	// not fit any node. It must not recurse back into scheduleOne.
+	// not fit any node. It must not recurse back into scheduleOne. Returning
+	// ErrSchedulingDecisionDeclined, before any plugin has run for the pod, hands the pod to the
+	// upstream path.
 	SchedulePod(ctx context.Context, state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod) (scheduler.ScheduleResult, error)
 }
 
 // BindingLimiter bounds concurrent PreBind/Bind execution for the pods it handles.
-// The extender acquires in PreBind and releases on PreBind failure, Unreserve, or PostBind.
-// It does not bound the number of pods waiting for a slot.
+// The extender acquires in PreBind and releases at the two hooks that end every binding cycle:
+// PostBind on success and Unreserve on failure. It does not bound the number of pods waiting for
+// a slot.
 type BindingLimiter interface {
 	// Handles reports whether the limiter bounds the binding concurrency for the pod.
 	Handles(pod *corev1.Pod) bool
@@ -224,14 +240,20 @@ type PreferNodesPlugin interface {
 	PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status)
 }
 
-// EquivalenceCapacityPlugin refines resource-based equivalence-class capacity.
-// It is consulted at cache backfill and before reusing a node for each pod.
-// A plugin with identity-dependent state that cannot be represented by a per-node
-// quota must return handled=true, reusable=false. Otherwise a handled quota caps
-// the resource-based capacity; handled=false means the plugin has no opinion.
-type EquivalenceCapacityPlugin interface {
+// EquivalenceEligibilityPlugin decides whether a pod may take part in equivalence-class reuse in
+// the current scheduling cycle. It runs once per pod after PreFilter, so PreFilter-computed cycle
+// state is available, and before any cached decision is consulted. The status semantics mirror
+// fwktype.SignPlugin.SignPod, except that the cycle state is visible because eligibility may
+// depend on cluster state such as matched reservations:
+//   - Success or Skip: no objection.
+//   - Unschedulable or UnschedulableAndUnresolvable: the pod's placement depends on state a
+//     per-class decision cannot carry. The cached decision of the pod's class is invalidated and
+//     the pod runs full node selection without backfilling it.
+//   - Error: the plugin could not decide. The pod runs full node selection without backfilling,
+//     but the cached decision is kept, since a plugin failure says nothing about its staleness.
+type EquivalenceEligibilityPlugin interface {
 	fwktype.Plugin
-	EquivalenceCapacity(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfo fwktype.NodeInfo) (quota int64, reusable bool, handled bool)
+	EquivalenceEligible(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status
 }
 
 // FilterTransformer is executed before Filter.

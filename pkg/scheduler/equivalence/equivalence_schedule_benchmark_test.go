@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/component-base/metrics/testutil"
 	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
 	"k8s.io/kubernetes/pkg/scheduler"
@@ -42,6 +43,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
 	"k8s.io/kubernetes/pkg/scheduler/profile"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
+
+	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
 const benchmarkNodeCount = 2000
@@ -62,22 +65,25 @@ func BenchmarkEquivalenceScorePercentage(b *testing.B) {
 
 	for _, tt := range testCases {
 		b.Run(tt.name, func(b *testing.B) {
-			b.Run("equivalence", func(b *testing.B) {
-				benchmarkDecisions(b, tt.percentage, true)
-			})
+			for _, placement := range []PlacementPolicy{PlacementSpread, PlacementPack} {
+				b.Run("equivalence-"+string(placement), func(b *testing.B) {
+					benchmarkDecisions(b, tt.percentage, placement, true)
+				})
+			}
 			b.Run("full-path", func(b *testing.B) {
-				benchmarkDecisions(b, tt.percentage, false)
+				benchmarkDecisions(b, tt.percentage, PlacementSpread, false)
 			})
 		})
 	}
 }
 
-func benchmarkDecisions(b *testing.B, percentage *int32, equivalence bool) {
+func benchmarkDecisions(b *testing.B, percentage *int32, placement PlacementPolicy, equivalence bool) {
 	b.Helper()
 	b.StopTimer()
 
 	ctx := context.Background()
 	s := newBenchmarkScheduling(b, ctx, percentage, benchmarkNodeCount)
+	s.placement = placement
 	fwk := s.sched.Profiles["koord-scheduler"]
 	pod := makeClassPod("benchmark", "benchmark-hash")
 	pod.Spec.Containers = []corev1.Container{{
@@ -94,6 +100,12 @@ func benchmarkDecisions(b *testing.B, percentage *int32, equivalence bool) {
 	var scoredNodes int64
 	var fullPaths int64
 	logger := klog.Background()
+	koordmetrics.Register()
+	hits := koordmetrics.EquivalenceClassHits.WithLabelValues(fwk.ProfileName())
+	hitsBefore, err := testutil.GetCounterMetricValue(hits)
+	if err != nil {
+		b.Fatal(err)
+	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -106,10 +118,7 @@ func benchmarkDecisions(b *testing.B, percentage *int32, equivalence bool) {
 				b.Fatal(err)
 			}
 			evaluatedNodes += int64(result.EvaluatedNodes)
-			if result.EvaluatedNodes > 1 {
-				fullPaths++
-				scoredNodes += int64(result.FeasibleNodes)
-			}
+			scoredNodes += int64(result.FeasibleNodes)
 			continue
 		}
 
@@ -127,6 +136,14 @@ func benchmarkDecisions(b *testing.B, percentage *int32, equivalence bool) {
 		fullPaths++
 	}
 	b.StopTimer()
+	if equivalence {
+		hitsAfter, err := testutil.GetCounterMetricValue(hits)
+		if err != nil {
+			b.Fatal(err)
+		}
+		fullPaths = int64(b.N) - int64(hitsAfter-hitsBefore)
+		scoredNodes -= int64(hitsAfter - hitsBefore)
+	}
 
 	operations := float64(b.N)
 	b.ReportMetric(float64(evaluatedNodes)/operations, "evaluated-nodes/op")
@@ -286,7 +303,7 @@ func newBenchmarkScheduling(b *testing.B, ctx context.Context, percentage *int32
 		Profiles: profile.Map{
 			"koord-scheduler": fwk,
 		},
-	}, nil, DefaultEquivalenceClassCacheSize, fakeClass)
+	}, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
 	s.equivalence = newEquivalenceClassCache(time.Hour, DefaultEquivalenceClassCacheSize)
 	return s
 }

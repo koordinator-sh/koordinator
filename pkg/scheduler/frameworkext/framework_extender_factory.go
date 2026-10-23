@@ -394,14 +394,18 @@ func PodScheduleAttemptInfo(pod *corev1.Pod) (attempts int, initialAttemptTimest
 }
 
 // dispatchSchedulePod routes the node-selection decision to a registered SchedulingDecisionProvider
-// (e.g. the sandbox equivalence-class path) when it handles the pod; otherwise it falls back to the
-// upstream schedulePod. f.schedulePod is the raw upstream Scheduler.SchedulePod captured in
-// InitScheduler, so this must not recurse into scheduleOne.
+// (e.g. the sandbox equivalence-class path) when it handles the pod; otherwise, or when the provider
+// declines, it falls back to the upstream schedulePod. f.schedulePod is the raw upstream
+// Scheduler.SchedulePod captured in InitScheduler, so this must not recurse into scheduleOne.
 func (f *FrameworkExtenderFactory) dispatchSchedulePod(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
-	if extender, ok := fwk.(FrameworkExtender); ok {
-		for _, provider := range extender.GetSchedulingDecisionProviders() {
+	if handle, ok := fwk.(EquivalenceAwareHandle); ok {
+		for _, provider := range handle.GetSchedulingDecisionProviders() {
 			if provider.Handles(pod) {
-				return provider.SchedulePod(ctx, cycleState, fwk, pod)
+				result, err := provider.SchedulePod(ctx, cycleState, fwk, pod)
+				if !errors.Is(err, ErrSchedulingDecisionDeclined) {
+					return result, err
+				}
+				break
 			}
 		}
 	}
@@ -426,7 +430,7 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 		return scheduleResult, err
 	}
 
-	extender, ok := fwk.(FrameworkExtender)
+	extender, ok := fwk.(*frameworkExtenderImpl)
 	if ok {
 		// Due to some ResizePod plugins need the reservation nomination before the real Reserve phase,
 		// and the PreScore phase might be skipped, we force to nominate reservation here.

@@ -251,43 +251,54 @@ func TestNew(t *testing.T) {
 	assert.Equal(t, Name, pl.Name())
 }
 
-func TestEquivalenceCapacity(t *testing.T) {
-	capacityPlugin, ok := interface{}(&Plugin{}).(frameworkext.EquivalenceCapacityPlugin)
-	if !ok {
-		t.Fatal("Reservation must be able to veto equivalence reuse")
-	}
+func TestEquivalenceEligible(t *testing.T) {
+	ignoredPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{apiext.LabelReservationIgnored: "true"}}}
 	for _, tt := range []struct {
-		name  string
-		pod   *corev1.Pod
-		state *stateData
-		veto  bool
+		name     string
+		pod      *corev1.Pod
+		state    *stateData
+		eligible bool
 	}{
-		{name: "plain pod", pod: &corev1.Pod{}, state: &stateData{}},
-		{name: "reserve pod", pod: testGetReservePod(&corev1.Pod{}), state: &stateData{}, veto: true},
+		{name: "plain pod", pod: &corev1.Pod{}, state: &stateData{}, eligible: true},
+		{name: "reserve pod", pod: testGetReservePod(&corev1.Pod{}), state: &stateData{}},
 		{name: "reservation affinity", pod: &corev1.Pod{}, state: &stateData{
 			schedulingStateData: schedulingStateData{hasAffinity: true},
-		}, veto: true},
-		{name: "restoration on another node", pod: &corev1.Pod{}, state: &stateData{
+		}},
+		{name: "matched reservation on another node", pod: &corev1.Pod{}, state: &stateData{
 			schedulingStateData: schedulingStateData{nodeReservationStates: map[string]*nodeReservationState{
 				"other-node": {matchedOrIgnored: []*frameworkext.ReservationInfo{{}}},
+				"unmatched":  {unmatched: []*frameworkext.ReservationInfo{{}}},
 			}},
-		}, veto: true},
+		}},
+		{name: "only unmatched reservations", pod: &corev1.Pod{}, state: &stateData{
+			schedulingStateData: schedulingStateData{nodeReservationStates: map[string]*nodeReservationState{
+				"node-a": {unmatched: []*frameworkext.ReservationInfo{{}}},
+				"node-b": {unmatched: []*frameworkext.ReservationInfo{{}}},
+			}},
+		}, eligible: true},
+		{name: "reservation-ignored pod", pod: ignoredPod, state: &stateData{
+			schedulingStateData: schedulingStateData{nodeReservationStates: map[string]*nodeReservationState{
+				"node-a": {matchedOrIgnored: []*frameworkext.ReservationInfo{{}}},
+			}},
+		}, eligible: true},
+		{name: "reservation-ignored pod with reservation affinity", pod: ignoredPod, state: &stateData{
+			schedulingStateData: schedulingStateData{hasAffinity: true},
+		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			state := framework.NewCycleState()
 			state.Write(stateKey, tt.state)
-			node := framework.NewNodeInfo()
-			node.SetNode(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "cached-node"}})
-			_, reusable, handled := capacityPlugin.EquivalenceCapacity(context.Background(), state, tt.pod, node)
-			assert.Equal(t, tt.veto, handled)
-			if handled {
-				assert.False(t, reusable)
+			status := (&Plugin{}).EquivalenceEligible(context.Background(), state, tt.pod)
+			if tt.eligible {
+				assert.True(t, status.IsSuccess(), status.Message())
+			} else {
+				assert.Equal(t, fwktype.Unschedulable, status.Code(), status.Message())
 			}
 		})
 	}
 }
 
-func TestEquivalenceCapacityUsesCurrentReservationOwnership(t *testing.T) {
+func TestEquivalenceEligibleUsesCurrentReservationOwnership(t *testing.T) {
 	node := st.MakeNode().Name("node-1").Capacity(map[corev1.ResourceName]string{
 		corev1.ResourceCPU: "8", corev1.ResourceMemory: "16Gi",
 	}).Obj()
@@ -303,13 +314,26 @@ func TestEquivalenceCapacityUsesCurrentReservationOwnership(t *testing.T) {
 		},
 		Status: schedulingv1alpha1.ReservationStatus{
 			Phase: schedulingv1alpha1.ReservationAvailable, NodeName: node.Name,
-			Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+			Allocatable: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
 		},
 	}
 	other := owner.DeepCopy()
 	other.Name, other.UID = "other", "other-uid"
-	for _, pod := range []*corev1.Pod{other, owner} {
-		t.Run(pod.Name, func(t *testing.T) {
+	allocated := st.MakePod().Namespace("ns").Name("allocated").UID("allocated-uid").Node(node.Name).
+		Req(map[corev1.ResourceName]string{corev1.ResourceCPU: "1"}).Obj()
+
+	for _, tt := range []struct {
+		name          string
+		pod           *corev1.Pod
+		allocatedPods []*corev1.Pod
+		eligible      bool
+	}{
+		{name: "owner matches the reservation", pod: owner},
+		{name: "unrelated reservation without allocated pods", pod: other, eligible: true},
+		// The reservation takes part in this pod's resource restoration, which used to veto reuse.
+		{name: "unrelated reservation with allocated pods", pod: other, allocatedPods: []*corev1.Pod{allocated}, eligible: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			suit := newPluginTestSuitWith(t, []*corev1.Pod{reservationutil.NewReservePod(r)}, []*corev1.Node{node})
 			p, err := suit.pluginFactory()
 			if !assert.NoError(t, err) {
@@ -317,20 +341,21 @@ func TestEquivalenceCapacityUsesCurrentReservationOwnership(t *testing.T) {
 			}
 			pl := p.(*Plugin)
 			pl.reservationCache.updateReservation(r)
+			for _, pod := range tt.allocatedPods {
+				assert.NoError(t, pl.reservationCache.addPod(r.UID, pod))
+			}
 			state := framework.NewCycleState()
-			_, _, status := pl.BeforePreFilter(context.Background(), state, pod)
+			_, _, status := pl.BeforePreFilter(context.Background(), state, tt.pod)
 			if !assert.True(t, status.IsSuccess(), "%v", status) {
 				return
 			}
-			nodeInfo, err := suit.fw.SnapshotSharedLister().NodeInfos().Get(node.Name)
-			assert.NoError(t, err)
-			_, reusable, handled := pl.EquivalenceCapacity(context.Background(), state, pod, nodeInfo)
-			assert.Equal(t, pod.Name == owner.Name, handled)
-			if handled {
-				assert.False(t, reusable)
+			if len(tt.allocatedPods) > 0 {
+				assert.NotEmpty(t, getStateData(state).nodeReservationStates[node.Name].unmatched)
 			}
+			eligibility := pl.EquivalenceEligible(context.Background(), state, tt.pod)
+			assert.Equal(t, tt.eligible, eligibility.IsSuccess(), eligibility.Message())
 			ext := suit.extenderFactory.GetExtender(suit.fw.ProfileName())
-			assert.Contains(t, ext.EquivalenceCapacityPlugins(), pl)
+			assert.Contains(t, ext.(frameworkext.EquivalenceAwareHandle).EquivalenceEligibilityPlugins(), pl)
 		})
 	}
 }

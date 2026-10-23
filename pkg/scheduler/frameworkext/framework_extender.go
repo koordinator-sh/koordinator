@@ -99,7 +99,7 @@ type frameworkExtenderImpl struct {
 	reservationPreBindPlugins              map[string]ReservationPreBindPlugin
 	reservationRestorePlugins              []ReservationRestorePlugin
 	reservationPreAllocationRestorePlugins []ReservationPreAllocationRestorePlugin
-	equivalenceCapacityPlugins             []EquivalenceCapacityPlugin
+	equivalenceEligibilityPlugins          []EquivalenceEligibilityPlugin
 
 	resizePodPlugins         []ResizePodPlugin
 	preBindExtensionsPlugins map[string]PreBindExtensions
@@ -215,8 +215,8 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 	if r, ok := pl.(ReservationPreAllocationRestorePlugin); ok {
 		ext.reservationPreAllocationRestorePlugins = append(ext.reservationPreAllocationRestorePlugins, r)
 	}
-	if p, ok := pl.(EquivalenceCapacityPlugin); ok {
-		ext.equivalenceCapacityPlugins = append(ext.equivalenceCapacityPlugins, p)
+	if p, ok := pl.(EquivalenceEligibilityPlugin); ok {
+		ext.equivalenceEligibilityPlugins = append(ext.equivalenceEligibilityPlugins, p)
 	}
 	if r, ok := pl.(ResizePodPlugin); ok {
 		ext.resizePodPlugins = append(ext.resizePodPlugins, r)
@@ -252,8 +252,10 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 	}
 }
 
-func (ext *frameworkExtenderImpl) EquivalenceCapacityPlugins() []EquivalenceCapacityPlugin {
-	return append([]EquivalenceCapacityPlugin(nil), ext.equivalenceCapacityPlugins...)
+var _ EquivalenceAwareHandle = &frameworkExtenderImpl{}
+
+func (ext *frameworkExtenderImpl) EquivalenceEligibilityPlugins() []EquivalenceEligibilityPlugin {
+	return append([]EquivalenceEligibilityPlugin(nil), ext.equivalenceEligibilityPlugins...)
 }
 
 func (ext *frameworkExtenderImpl) RegisterSchedulingDecisionProvider(provider SchedulingDecisionProvider) {
@@ -625,18 +627,14 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 }
 
 // RunPreBindPlugins supports PreBindReservation for Reservation
-func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeName string) (status *fwktype.Status) {
+func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status {
 	if limiter := ext.bindingLimiter; limiter != nil && limiter.Handles(pod) {
-		// Waiting here bounds PreBind/Bind concurrency without blocking the scheduling loop.
-		// PostBind or Unreserve releases the slot; a PreBind failure releases it immediately.
+		// Waiting here bounds PreBind/Bind concurrency without blocking the scheduling loop. The
+		// binding cycle ends in either PostBind or Unreserve, and both release the slot, so a
+		// failure from here on is released by the Unreserve its caller runs.
 		if err := limiter.Acquire(ctx, pod); err != nil {
 			return fwktype.AsStatus(err)
 		}
-		defer func() {
-			if !status.IsSuccess() {
-				limiter.Release(pod)
-			}
-		}()
 	}
 
 	if !reservationutil.IsReservePod(pod) {
@@ -659,9 +657,9 @@ func (ext *frameworkExtenderImpl) RunPreBindPlugins(ctx context.Context, state f
 
 		original := pod
 		pod = pod.DeepCopy()
-		preBindStatus := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
-		if !preBindStatus.IsSuccess() {
-			return preBindStatus
+		status := ext.Framework.RunPreBindPlugins(ctx, state, pod, nodeName)
+		if !status.IsSuccess() {
+			return status
 		}
 		return ext.runPreBindExtensionPlugins(ctx, state, original, pod)
 	}
@@ -999,7 +997,9 @@ func (ext *frameworkExtenderImpl) RunReservePluginsReserve(ctx context.Context, 
 	return status
 }
 
-// RunReservePluginsUnreserve releases any binding slot before unwinding the reservation.
+// RunReservePluginsUnreserve releases any binding slot before unwinding the reservation. Every
+// binding cycle that fails after RunPreBindPlugins acquired a slot runs Unreserve: the upstream
+// handleBindingCycleError and the inline batch scheduler's handleBindingCycleError both call it.
 func (ext *frameworkExtenderImpl) RunReservePluginsUnreserve(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) {
 	if limiter := ext.bindingLimiter; limiter != nil {
 		limiter.Release(pod)

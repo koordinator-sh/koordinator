@@ -54,6 +54,20 @@ func TestRecordBindingSlotWaitDuration(t *testing.T) {
 	}
 }
 
+func TestRecordBindingSlotsInUse(t *testing.T) {
+	Register()
+	BindingSlotsInUse.Set(0)
+	t.Cleanup(func() { BindingSlotsInUse.Set(0) })
+
+	RecordBindingSlotsInUse(1)
+	RecordBindingSlotsInUse(1)
+	RecordBindingSlotsInUse(-1)
+
+	value, err := testutil.GetGaugeMetricValue(BindingSlotsInUse)
+	require.NoError(t, err)
+	assert.Equal(t, float64(1), value)
+}
+
 func TestRecordEquivalenceClassCacheEntries(t *testing.T) {
 	Register()
 	EquivalenceClassCacheEntries.Set(0)
@@ -81,15 +95,12 @@ func TestRecordEquivalenceClassFlush(t *testing.T) {
 	EquivalenceClassFlushes.Reset()
 	t.Cleanup(EquivalenceClassFlushes.Reset)
 
-	RecordEquivalenceClassFlush("node_event")
-	RecordEquivalenceClassFlush("node_event")
-	RecordEquivalenceClassFlush("bind_failure")
+	RecordEquivalenceClassFlush()
+	RecordEquivalenceClassFlush()
 
-	for reason, want := range map[string]float64{"node_event": 2, "bind_failure": 1} {
-		value, err := testutil.GetCounterMetricValue(EquivalenceClassFlushes.WithLabelValues(reason))
-		require.NoError(t, err)
-		assert.Equal(t, want, value, reason)
-	}
+	value, err := testutil.GetCounterMetricValue(EquivalenceClassFlushes)
+	require.NoError(t, err)
+	assert.Equal(t, float64(2), value)
 }
 
 func TestRecordEquivalenceClassHitAndMiss(t *testing.T) {
@@ -138,7 +149,7 @@ func TestRecordEquivalenceClassSchedulingDuration(t *testing.T) {
 	} {
 		t.Run(tt.profile+"/"+tt.path+"/"+tt.result, func(t *testing.T) {
 			vec, err := testutil.GetHistogramVecFromGatherer(legacyregistry.DefaultGatherer,
-				"scheduler_scheduling_duration_seconds",
+				"scheduler_equivalence_class_scheduling_duration_seconds",
 				map[string]string{"profile": tt.profile, "path": tt.path, "result": tt.result})
 			require.NoError(t, err)
 			assert.Equal(t, tt.count, vec.GetAggregatedSampleCount())

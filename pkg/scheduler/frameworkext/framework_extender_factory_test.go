@@ -329,9 +329,18 @@ func (p *testSchedulingDecisionProvider) SchedulePod(context.Context, fwktype.Cy
 	return p.result, p.err
 }
 
+// outOfTreeExtender stands for a FrameworkExtender implemented outside this package. It does not
+// implement EquivalenceAwareHandle, which must not stop it from satisfying FrameworkExtender.
+type outOfTreeExtender struct {
+	FrameworkExtender
+}
+
+var _ FrameworkExtender = outOfTreeExtender{}
+
 func TestFrameworkExtenderFactoryDispatchSchedulePod(t *testing.T) {
 	tests := []struct {
 		name             string
+		fwk              framework.Framework
 		provider         *testSchedulingDecisionProvider
 		wantProviderCall int
 		wantRawCall      int
@@ -355,6 +364,20 @@ func TestFrameworkExtenderFactoryDispatchSchedulePod(t *testing.T) {
 			name:        "nil provider uses raw scheduler",
 			wantRawCall: 1,
 		},
+		{
+			name: "declined pod uses raw scheduler",
+			provider: &testSchedulingDecisionProvider{
+				handles: true,
+				err:     fmt.Errorf("unsupported snapshot: %w", ErrSchedulingDecisionDeclined),
+			},
+			wantProviderCall: 1,
+			wantRawCall:      1,
+		},
+		{
+			name:        "framework without the equivalence handle uses raw scheduler",
+			fwk:         outOfTreeExtender{},
+			wantRawCall: 1,
+		},
 	}
 
 	for _, tt := range tests {
@@ -371,15 +394,19 @@ func TestFrameworkExtenderFactoryDispatchSchedulePod(t *testing.T) {
 			if tt.provider != nil {
 				extender.RegisterSchedulingDecisionProvider(tt.provider)
 			}
+			fwk := tt.fwk
+			if fwk == nil {
+				fwk = extender
+			}
 			result, err := factory.dispatchSchedulePod(
 				context.Background(),
-				extender,
+				fwk,
 				framework.NewCycleState(),
 				&corev1.Pod{},
 			)
 
 			assert.NoError(t, err)
-			if tt.wantProviderCall > 0 {
+			if tt.wantRawCall == 0 {
 				assert.Equal(t, tt.provider.result, result)
 			} else {
 				assert.Equal(t, rawResult, result)
