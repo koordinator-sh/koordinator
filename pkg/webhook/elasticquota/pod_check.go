@@ -21,9 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -75,6 +73,10 @@ func (qt *quotaTopology) getQuotaNameFromPodNoLock(pod *corev1.Pod) string {
 }
 
 func GetQuotaName(pod *corev1.Pod, kubeClient client.Client) string {
+	if name := pod.Annotations[extension.LabelQuotaName]; name != "" {
+		return name
+	}
+
 	quotaName := extension.GetQuotaName(pod)
 	if utilfeature.DefaultFeatureGate.Enabled(features.DisableDefaultQuota) {
 		return quotaName
@@ -84,22 +86,31 @@ func GetQuotaName(pod *corev1.Pod, kubeClient client.Client) string {
 		return quotaName
 	}
 
-	eq := &v1alpha1.ElasticQuota{}
-	err := kubeClient.Get(context.TODO(), types.NamespacedName{Namespace: pod.Namespace, Name: pod.Namespace}, eq)
-	if err == nil {
-		return eq.Name
-	} else if !errors.IsNotFound(err) {
-		klog.Errorf("Failed to Get ElasticQuota %s, err: %v", pod.Namespace, err)
-	}
-
+	// Find a quota in the pod's own namespace.
 	eqList := &v1alpha1.ElasticQuotaList{}
 	if err := kubeClient.List(context.TODO(), eqList, &client.ListOptions{
-		FieldSelector: fields.OneTermEqualSelector("annotation.namespaces", pod.Namespace),
+		Namespace: pod.Namespace,
 	}, utilclient.DisableDeepCopy); err != nil {
+		klog.Errorf("Failed to list ElasticQuota in namespace %s, err: %v", pod.Namespace, err)
+	} else {
+		for i := range eqList.Items {
+			if eqList.Items[i].Labels[extension.LabelQuotaIsParent] != "true" {
+				return eqList.Items[i].Name
+			}
+		}
+	}
+
+	// Find a quota whose AnnotationQuotaNamespaces covers this pod's namespace.
+	allEqList := &v1alpha1.ElasticQuotaList{}
+	if err := kubeClient.List(context.TODO(), allEqList, utilclient.DisableDeepCopy); err != nil {
 		return extension.DefaultQuotaName
 	}
-	for _, quota := range eqList.Items {
-		return quota.Name
+	for i := range allEqList.Items {
+		for _, ns := range extension.GetAnnotationQuotaNamespaces(&allEqList.Items[i]) {
+			if ns == pod.Namespace {
+				return allEqList.Items[i].Name
+			}
+		}
 	}
 
 	return extension.DefaultQuotaName
