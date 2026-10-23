@@ -1401,10 +1401,10 @@ func Test_cpusetPlugin_parseRule_withPerCPUMetric(t *testing.T) {
 
 		// Verify t1: only cpu 2,3 remain in share pool info
 		// Collect all metric series from CPUSetSharePoolInfo to check
-		collectCPUIDs := func(gaugeVec *prometheus.GaugeVec) map[string]float64 {
+		collectCPUIDs := func(collector prometheus.Collector) map[string]float64 {
 			ch := make(chan prometheus.Metric, 100)
 			go func() {
-				gaugeVec.Collect(ch)
+				collector.Collect(ch)
 				close(ch)
 			}()
 			result := map[string]float64{}

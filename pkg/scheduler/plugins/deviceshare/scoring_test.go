@@ -82,14 +82,14 @@ func TestScore(t *testing.T) {
 		{
 			name:            "empty node info",
 			state:           &preFilterState{skip: false},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			wantScore:       0,
 			wantStatus:      nil,
 		},
 		{
 			name:            "error missing nodecache",
 			state:           &preFilterState{skip: false},
-			nodeDeviceCache: newNodeDeviceCache(),
+			nodeDeviceCache: newNodeDeviceCache(nil),
 			wantScore:       0,
 			wantStatus:      nil,
 		},
@@ -662,7 +662,7 @@ func TestScoreExtension(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &Plugin{nodeDeviceCache: newNodeDeviceCache()}
+			p := &Plugin{nodeDeviceCache: newNodeDeviceCache(nil)}
 			status := p.ScoreExtensions().NormalizeScore(context.TODO(), framework.NewCycleState(), &corev1.Pod{}, tt.nodeScoreList)
 			assert.True(t, status.IsSuccess())
 			assert.Equal(t, tt.want, tt.nodeScoreList)

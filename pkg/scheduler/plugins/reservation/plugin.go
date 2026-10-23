@@ -442,6 +442,9 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 	isFitsNodeSkipped := pl.enableSkipReservationFitsNode && len(matchedReservations) <= 1
 	allInsufficientResourcesByNode := sets.NewString()
 	var allInsufficientResourceReasonsByReservation []string
+	// Whether every candidate reservation is rejected as unresolvable by the reservation filter plugins, which
+	// preemption can not help.
+	hasCandidate, allRejectedUnresolvable := false, true
 	for _, rInfo := range matchedReservations {
 		if !state.hasAffinity {
 			// NOTE: The reservation may not consider the irrelevant pods that have no matched resource names since it makes
@@ -457,6 +460,7 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 			continue
 		}
 		requireDetailReasons := len(state.reservationName) > 0 && state.reservationName == rInfo.GetName()
+		hasCandidate = true
 
 		// Making resource list and framework.Resource is heavy, skip it when there is no preemptible resources.
 		preemptibleWithRR := preemptible
@@ -480,9 +484,13 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 		// the Filter phase give a more accurate result. It is extensible to support more policies.
 		status := extender.RunReservationFilterPlugins(ctx, cycleState, pod, rInfo, nodeInfo)
 		if !status.IsSuccess() {
+			if status.Code() != fwktype.UnschedulableAndUnresolvable {
+				allRejectedUnresolvable = false
+			}
 			allInsufficientResourceReasonsByReservation = append(allInsufficientResourceReasonsByReservation, status.Reasons()...)
 			continue
 		}
+		allRejectedUnresolvable = false
 
 		if len(insufficientResourcesByNode) <= 0 && len(insufficientResourceReasonsByReservation) <= 0 {
 			return nil
@@ -506,6 +514,9 @@ func (pl *Plugin) filterWithReservations(ctx context.Context, cycleState fwktype
 
 		if len(failureReasons) == 0 {
 			failureReasons = append(failureReasons, ErrReasonNoReservationsMeetRequirements)
+		}
+		if hasCandidate && allRejectedUnresolvable {
+			return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, failureReasons...)
 		}
 		return fwktype.NewStatus(fwktype.Unschedulable, failureReasons...)
 

@@ -30,6 +30,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -2537,6 +2538,121 @@ func Test_filterWithReservations(t *testing.T) {
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(node)
 			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo, tt.stateData.nodeReservationStates[node.Name].matchedOrIgnored, tt.stateData.hasAffinity)
+			assert.Equal(t, tt.wantStatus, got)
+		})
+	}
+}
+
+type fakeReservationFilterPlugin struct {
+	statuses map[string]*fwktype.Status
+}
+
+func (f *fakeReservationFilterPlugin) Name() string { return "fakeReservationFilterPlugin" }
+
+func (f *fakeReservationFilterPlugin) FilterReservation(_ context.Context, _ fwktype.CycleState, _ *corev1.Pod, reservationInfo *frameworkext.ReservationInfo, _ fwktype.NodeInfo) *fwktype.Status {
+	return f.statuses[reservationInfo.GetName()]
+}
+
+func (f *fakeReservationFilterPlugin) FilterNominateReservation(_ context.Context, _ fwktype.CycleState, _ *corev1.Pod, _ *frameworkext.ReservationInfo, _ string) *fwktype.Status {
+	return nil
+}
+
+func Test_filterWithReservationsUnresolvable(t *testing.T) {
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-node"},
+		Status: corev1.NodeStatus{
+			Allocatable: corev1.ResourceList{
+				corev1.ResourceCPU:  resource.MustParse("32"),
+				corev1.ResourcePods: resource.MustParse("100"),
+			},
+		},
+	}
+	newReservationInfo := func(name, cpu string) *frameworkext.ReservationInfo {
+		return frameworkext.NewReservationInfo(&schedulingv1alpha1.Reservation{
+			ObjectMeta: metav1.ObjectMeta{Name: name, UID: types.UID(name)},
+			Spec: schedulingv1alpha1.ReservationSpec{
+				AllocatePolicy: schedulingv1alpha1.ReservationAllocatePolicyRestricted,
+				Template: &corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpu)}}},
+						},
+					},
+				},
+			},
+		})
+	}
+	tests := []struct {
+		name         string
+		hasAffinity  bool
+		reservations []*frameworkext.ReservationInfo
+		statuses     map[string]*fwktype.Status
+		wantStatus   *fwktype.Status
+	}{
+		{
+			name:         "required reservation rejected as unresolvable",
+			hasAffinity:  true,
+			reservations: []*frameworkext.ReservationInfo{newReservationInfo("r-1", "4")},
+			statuses:     map[string]*fwktype.Status{"r-1": fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "unresolvable")},
+			wantStatus:   fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "unresolvable"),
+		},
+		{
+			name:         "required reservations rejected as unresolvable and unschedulable",
+			hasAffinity:  true,
+			reservations: []*frameworkext.ReservationInfo{newReservationInfo("r-1", "4"), newReservationInfo("r-2", "4")},
+			statuses: map[string]*fwktype.Status{
+				"r-1": fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "unresolvable"),
+				"r-2": fwktype.NewStatus(fwktype.Unschedulable, "unschedulable"),
+			},
+			wantStatus: fwktype.NewStatus(fwktype.Unschedulable, "unresolvable", "unschedulable"),
+		},
+		{
+			name:         "required reservations rejected as unresolvable and insufficient",
+			hasAffinity:  true,
+			reservations: []*frameworkext.ReservationInfo{newReservationInfo("r-1", "4"), newReservationInfo("r-2", "1")},
+			statuses:     map[string]*fwktype.Status{"r-1": fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "unresolvable")},
+			wantStatus:   fwktype.NewStatus(fwktype.Unschedulable, "unresolvable", "Reservation(s) Insufficient cpu"),
+		},
+		{
+			name:         "optional reservation rejected as unresolvable falls back to the node",
+			reservations: []*frameworkext.ReservationInfo{newReservationInfo("r-1", "4")},
+			statuses:     map[string]*fwktype.Status{"r-1": fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, "unresolvable")},
+			wantStatus:   nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			suit := newPluginTestSuit(t)
+			p, err := suit.pluginFactory()
+			assert.NoError(t, err)
+			pl := p.(*Plugin)
+			filterPluginFactory := frameworkext.PluginFactoryProxy(suit.extenderFactory, func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
+				return &fakeReservationFilterPlugin{statuses: tt.statuses}, nil
+			})
+			_, err = filterPluginFactory(context.TODO(), nil, suit.fw)
+			assert.NoError(t, err)
+			suit.start(t)
+
+			podRequests := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")}
+			cycleState := framework.NewCycleState()
+			cycleState.Write(stateKey, &stateData{
+				schedulingStateData: schedulingStateData{
+					hasAffinity:          tt.hasAffinity,
+					podRequests:          podRequests,
+					podRequestsResources: framework.NewResource(podRequests),
+					podResourceNames:     quotav1.ResourceNames(podRequests),
+					nodeReservationStates: map[string]*nodeReservationState{
+						node.Name: {
+							podRequested:     &framework.Resource{},
+							rAllocated:       &framework.Resource{},
+							matchedOrIgnored: tt.reservations,
+						},
+					},
+				},
+			})
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(node)
+			got := pl.filterWithReservations(context.TODO(), cycleState, &corev1.Pod{}, nodeInfo, tt.reservations, tt.hasAffinity)
 			assert.Equal(t, tt.wantStatus, got)
 		})
 	}

@@ -16,28 +16,31 @@ limitations under the License.
 
 package metrics
 
-import "github.com/prometheus/client_golang/prometheus"
+import k8smetrics "k8s.io/component-base/metrics"
 
 var (
-	BESuppressCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "be_suppress_cpu_cores",
-		Help:      "Number of cores suppress by koordlet",
+	BESuppressCPU = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "be_suppress_cpu_cores",
+		Help:           "Number of cores suppress by koordlet",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, BESuppressTypeKey})
 
-	BESuppressLSUsedCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "be_suppress_ls_used_cpu_cores",
-		Help:      "Number of cpu cores used by LS. We consider non-BE pods and podMeta-missing pods as LS.",
+	BESuppressLSUsedCPU = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "be_suppress_ls_used_cpu_cores",
+		Help:           "Number of cpu cores used by LS. We consider non-BE pods and podMeta-missing pods as LS.",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey})
 
-	BESuppressBEUsedCPU = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "be_suppress_be_used_cpu_cores",
-		Help:      "Number of cpu cores used by BE.",
+	BESuppressBEUsedCPU = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "be_suppress_be_used_cpu_cores",
+		Help:           "Number of cpu cores used by BE.",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey})
 
-	CPUSuppressCollector = []prometheus.Collector{
+	CPUSuppressRegisterableCollectors = []k8smetrics.Registerable{
 		BESuppressCPU,
 		BESuppressLSUsedCPU,
 		BESuppressBEUsedCPU,

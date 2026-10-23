@@ -109,6 +109,8 @@ type frameworkExtenderImpl struct {
 	metricsRecorder *metrics.MetricAsyncRecorder
 
 	crossSchedulerNominator *CrossSchedulerPodNominator
+
+	factory *FrameworkExtenderFactory
 }
 
 func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) FrameworkExtender {
@@ -119,6 +121,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 	frameworkExtender := &frameworkExtenderImpl{
 		Framework:                           fw,
 		errorHandlerDispatcher:              f.errorHandlerDispatcher,
+		factory:                             f,
 		schedulerFn:                         schedulerFn,
 		monitor:                             f.monitor,
 		koordinatorClientSet:                f.KoordinatorClientSet(),
@@ -313,6 +316,10 @@ func (ext *frameworkExtenderImpl) GetCrossSchedulerPodNominator() *CrossSchedule
 
 func (ext *frameworkExtenderImpl) GetWorkloadAuditor() workloadauditor.WorkloadAuditor {
 	return ext.workloadAuditor
+}
+
+func (ext *frameworkExtenderImpl) GetOrRegisterSharedCache(key string, create func(handle ExtendedHandle) SharedPluginCache) SharedPluginCache {
+	return ext.factory.getOrRegisterSharedCache(key, ext, create)
 }
 
 // RunPreFilterPlugins transforms the PreFilter phase of framework with pre-filter transformers.
@@ -559,7 +566,7 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state fwk
 	return pluginToNodeScores, status
 }
 
-func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) (_ *fwktype.PostFilterResult, status *fwktype.Status) {
+func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, state fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader) (result *fwktype.PostFilterResult, status *fwktype.Status) {
 	schedulingphase.RecordPhase(state, schedulingphase.PostFilter)
 	defer func() { schedulingphase.RecordPhase(state, "") }()
 	defer func() {
@@ -574,7 +581,7 @@ func (ext *frameworkExtenderImpl) RunPostFilterPlugins(ctx context.Context, stat
 		}
 		for _, transformer := range ext.postFilterTransformersEnabled {
 			startTime := time.Now()
-			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap, status)
+			transformer.AfterPostFilter(ctx, state, pod, filteredNodeStatusMap, result, status)
 			ext.metricsRecorder.ObservePluginDurationAsync("AfterPostFilter", transformer.Name(), "", metrics.SinceInSeconds(startTime))
 		}
 		DumpDiagnosis(diagnosis)

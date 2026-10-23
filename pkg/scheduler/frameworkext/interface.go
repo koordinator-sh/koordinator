@@ -70,6 +70,11 @@ type ExtendedHandle interface {
 	// It returns nil when the feature is not enabled or not configured.
 	GetCrossSchedulerPodNominator() *CrossSchedulerPodNominator
 	GetWorkloadAuditor() workloadauditor.WorkloadAuditor
+	// GetOrRegisterSharedCache registers a plugin's SharedPluginCache under key, or returns
+	// the previously-registered instance if key is already taken. Guarantees exactly-once
+	// creation across scheduling profiles. Plugins call this from their New() to opt into
+	// the shared cache mechanism instead of building a per-profile cache.
+	GetOrRegisterSharedCache(key string, create func(handle ExtendedHandle) SharedPluginCache) SharedPluginCache
 }
 
 // FrameworkExtender extends the K8s Scheduling Framework interface to provide more extension methods to support Koordinator.
@@ -173,10 +178,12 @@ type ScoreTransformer interface {
 	BeforeScore(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeInfos []fwktype.NodeInfo) (*corev1.Pod, []fwktype.NodeInfo, bool, *fwktype.Status)
 }
 
-// PostFilterTransformer is executed before PostFilter.
+// PostFilterTransformer is executed after the PostFilter plugin chain finishes.
 type PostFilterTransformer interface {
 	SchedulingTransformer
-	AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader, postFilterStatus *fwktype.Status)
+	// postFilterResult is the result returned by the chain and must be treated as read-only.
+	// A successful status does not necessarily imply a non-nil result or a nominated node.
+	AfterPostFilter(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, filteredNodeStatusMap fwktype.NodeToStatusReader, postFilterResult *fwktype.PostFilterResult, postFilterStatus *fwktype.Status)
 }
 
 // PluginToReservationRestoreStates declares a map from plugin name to its ReservationRestoreState.

@@ -574,8 +574,14 @@ func (p *Plugin) FilterNominateReservation(ctx context.Context, cycleState fwkty
 			klog.V(5).Infof("nominated pre-allocatable %v doesn't reserve numa resource or cpuset, reservation %s", klog.KObj(pod), reservationInfo.GetName())
 			return nil
 		}
-		_, status = tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, map[types.UID]reusableAlloc{pod.GetUID(): matchedPreAllocatableAlloc}, reservationInfo.GetReservePod(), node)
-		return status
+		result, status := tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, map[types.UID]reusableAlloc{pod.GetUID(): matchedPreAllocatableAlloc}, reservationInfo.GetReservePod(), node)
+		if !status.IsSuccess() {
+			return status
+		}
+		if result == nil {
+			return fwktype.NewStatus(fwktype.Unschedulable, "pre-allocatable pod cannot satisfy the reservation's NUMA resource requirements")
+		}
+		return nil
 	}
 
 	matchedReservationAlloc, ok := restoreState.matched[reservationInfo.UID()]

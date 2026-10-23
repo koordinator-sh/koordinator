@@ -1,0 +1,16 @@
+name: loadaware
+namespace: loadaware-benchmark
+nodeCount: 100
+podCount: 1000
+concurrency: 50
+clientQPS: 500
+clientBurst: 1000
+schedulerName: koord-scheduler
+highUtilNodeCount: 70
+highUtilCPUPct: 80
+resourceRequests:
+  cpu: "500m"
+  memory: "512Mi"
+thresholds:
+  throughputDropPct: 20
+  p99IncreasePct: 30
