@@ -64,6 +64,34 @@ func TestGeneralDevicePluginAdapter_Adapt(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "nil annotations",
+			args: args{
+				object: &corev1.Pod{},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+					},
+				},
+			},
+		},
+		{
+			name: "reservation with nil annotations",
+			args: args{
+				object: &schedulingv1alpha1.Reservation{},
+			},
+			wantErr: false,
+			wantObject: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationBindTimestamp: strconv.FormatInt(now.UnixNano(), 10),
+					},
+				},
+			},
+		},
 	}
 
 	adapter := &generalDevicePluginAdapter{}
@@ -124,6 +152,50 @@ func TestGeneralGPUDevicePluginAdapter_Adapt(t *testing.T) {
 							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
 						},
 						Annotations: map[string]string{},
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						apiext.LabelHAMIVGPUNodeName:     testNode.Name,
+					},
+					Annotations: map[string]string{
+						AnnotationGPUMinors: "0",
+					},
+				},
+			},
+		},
+		{
+			name: "nil annotations",
+			args: args{
+				object: &corev1.Pod{},
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationGPUMinors: "0",
+					},
+				},
+			},
+		},
+		{
+			name: "hami gpu isolation provider with nil annotations",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							apiext.LabelGPUIsolationProvider: string(apiext.GPUIsolationProviderHAMICore),
+						},
 					},
 				},
 				allocation: []*apiext.DeviceAllocation{
@@ -244,6 +316,43 @@ func TestHuaweiGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					Annotations: map[string]string{
 						AnnotationPredicateTime: strconv.FormatInt(now.UnixNano(), 10),
 						AnnotationHuaweiNPUCore: "0-vir02",
+					},
+				},
+			},
+		},
+		{
+			name: "full NPU - nil annotations",
+			args: args{
+				object: &corev1.Pod{},
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationPredicateTime: strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationHuaweiNPUCore: "0",
+					},
+				},
+			},
+		},
+		{
+			name:     "Ascend-310P3-300I-DUO - reservation with nil annotations",
+			gpuModel: "Ascend-310P3-300I-DUO",
+			args: args{
+				object: &schedulingv1alpha1.Reservation{},
+				allocation: []*apiext.DeviceAllocation{
+					{Minor: 0},
+				},
+			},
+			wantErr: false,
+			wantObject: &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationPredicateTime:    strconv.FormatInt(now.UnixNano(), 10),
+						AnnotationHuaweiAscend310P: "Ascend310P-0",
 					},
 				},
 			},
@@ -399,6 +508,37 @@ func TestCambriconGPUDevicePluginAdapter_Adapt(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "nil annotations",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						Minor: 0,
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("5"),
+							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationCambriconDsmluAssigned: "false",
+						AnnotationCambriconDsmluProfile:  "0_5_4",
+					},
+				},
+			},
+		},
 	}
 
 	adapter := &cambriconGPUDevicePluginAdapter{}
@@ -517,6 +657,36 @@ func TestMetaXGPUDevicePluginAdapter_Adapt(t *testing.T) {
 					Name:        "test-pod",
 					Namespace:   "default",
 					Annotations: map[string]string{},
+				},
+			},
+		},
+		{
+			name: "nil annotations",
+			args: args{
+				object: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+					},
+				},
+				allocation: []*apiext.DeviceAllocation{
+					{
+						ID: "GPU-0",
+						Resources: corev1.ResourceList{
+							apiext.ResourceGPUCore:   resource.MustParse("5"),
+							apiext.ResourceGPUMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+			wantErr: false,
+			wantObject: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+					Annotations: map[string]string{
+						AnnotationMetaXGPUDevicesAllocated: `[[{"uuid":"GPU-0","compute":5,"vRam":1024}]]`,
+					},
 				},
 			},
 		},
