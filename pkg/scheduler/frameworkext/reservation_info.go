@@ -17,6 +17,7 @@ limitations under the License.
 package frameworkext
 
 import (
+	"slices"
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
@@ -412,7 +413,7 @@ func (ri *ReservationInfo) UpdateReservation(r *schedulingv1alpha1.Reservation) 
 	sort.Slice(resourceNames, func(i, j int) bool {
 		return resourceNames[i] < resourceNames[j]
 	})
-	ri.ResourceNames = resourceNames
+	ri.updateResourceNames(resourceNames)
 
 	ri.Reservation = r
 	ri.Pod = reservationutil.NewReservePod(r)
@@ -454,7 +455,7 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 	sort.Slice(resourceNames, func(i, j int) bool {
 		return resourceNames[i] < resourceNames[j]
 	})
-	ri.ResourceNames = resourceNames
+	ri.updateResourceNames(resourceNames)
 
 	ri.Pod = pod
 	ri.AllocatablePorts = util.RequestedHostPorts(pod)
@@ -485,6 +486,19 @@ func (ri *ReservationInfo) UpdatePod(pod *corev1.Pod) {
 		parseError = utilerrors.NewAggregate(parseErrors)
 	}
 	ri.ParseError = parseError
+}
+
+func (ri *ReservationInfo) updateResourceNames(resourceNames []corev1.ResourceName) {
+	if !slices.Equal(ri.ResourceNames, resourceNames) && len(ri.AssignedPods) > 0 {
+		// Allocated only contains the previously tracked resources. Recover newly
+		// tracked resources from the full requests of the assigned pods.
+		allocated := corev1.ResourceList{}
+		for _, requirement := range ri.AssignedPods {
+			allocated = quotav1.Add(allocated, quotav1.Mask(requirement.Requests, resourceNames))
+		}
+		ri.Allocated = allocated
+	}
+	ri.ResourceNames = resourceNames
 }
 
 func (ri *ReservationInfo) AddAssignedPod(pod *corev1.Pod) {
