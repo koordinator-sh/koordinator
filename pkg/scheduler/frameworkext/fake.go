@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
@@ -379,4 +380,51 @@ func (nm *FakeNominator) DeleteNominatedReservePodOrReservation(pod *corev1.Pod)
 
 	nm.deleteReservePod(pod)
 	nm.deletePreAllocation(pod)
+}
+
+const (
+	// FakeEquivalenceClassMarkLabel marks a pod as a member of FakeEquivalenceClass.
+	FakeEquivalenceClassMarkLabel = "fake-equivalence-class"
+	// FakeEquivalenceClassKeyLabel carries the group identity of a FakeEquivalenceClass member.
+	FakeEquivalenceClassKeyLabel = "fake-equivalence-key"
+)
+
+// FakeEquivalenceClass is an EquivalenceClass that groups pods carrying the fake equivalence class
+// labels. It lets tests exercise equivalence-class scheduling and binding limiting without any real
+// workload semantics.
+type FakeEquivalenceClass struct{}
+
+// NewFakeEquivalenceClass creates a fake EquivalenceClass.
+func NewFakeEquivalenceClass() *FakeEquivalenceClass {
+	return &FakeEquivalenceClass{}
+}
+
+// Handles reports whether the pod is marked as a member and carries a group key.
+func (c *FakeEquivalenceClass) Handles(pod *corev1.Pod) bool {
+	return pod != nil && pod.Labels[FakeEquivalenceClassMarkLabel] == "true" && pod.Labels[FakeEquivalenceClassKeyLabel] != ""
+}
+
+// Key returns the group identity of the pod, or "" when it carries none.
+func (c *FakeEquivalenceClass) Key(pod *corev1.Pod) string {
+	if pod == nil {
+		return ""
+	}
+	return pod.Labels[FakeEquivalenceClassKeyLabel]
+}
+
+// MakePod builds a member pod of the class grouped under key. An empty key yields a marked pod the
+// class does not handle.
+func (c *FakeEquivalenceClass) MakePod(name, key string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      name,
+			UID:       types.UID("uid-" + name),
+			Labels: map[string]string{
+				FakeEquivalenceClassMarkLabel: "true",
+				FakeEquivalenceClassKeyLabel:  key,
+			},
+		},
+		Spec: corev1.PodSpec{SchedulerName: "koord-scheduler"},
+	}
 }

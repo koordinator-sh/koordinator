@@ -48,6 +48,9 @@ jobs:
         - step: govet
           name: Verify govet
           command: make vet && git add apis pkg cmd && git diff --cached --exit-code || (echo 'Please run "make vet" to verify govet' && exit 1);
+        - step: upstream-sync
+          name: Verify upstream scheduler mirrors
+          command: make verify-upstream-sync
         - step: build
           name: Run Go build
           command: make build

@@ -42,3 +42,5 @@ test/e2e/suites.go
 test/utils/image
 pkg/util/histogram
 pkg/util/metricsserver
+pkg/scheduler/equivalence/upstream_primitives.go
+pkg/scheduler/equivalence/equivalence_schedule.go
