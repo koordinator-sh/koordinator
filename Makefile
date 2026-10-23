@@ -81,6 +81,10 @@ vet: ## Run go vet against code.
 	go vet -unsafeptr=false $(PERFGROUPPACKAGE)
 	go list ./... | grep -v $(PERFGROUPPACKAGE) | xargs go vet
 
+.PHONY: verify-upstream-sync
+verify-upstream-sync: ## Verify the scheduler code forked from upstream Kubernetes against go.mod's version.
+	@hack/verify-upstream-sync.sh
+
 .PHONY: lint
 lint: lint-go lint-license ## Lint all code.
 
