@@ -1794,3 +1794,154 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 	}
 	framework.UnregisterQOSGreyCtrlPlugin(p.name())
 }
+
+// addInitContainer attaches an init container with the given CPU limit (milli) and state to the pod.
+func addInitContainer(podMeta *statesinformer.PodMeta, name string, cpuMilliLimit int64, running bool) {
+	pod := podMeta.Pod
+	pod.Spec.InitContainers = append(pod.Spec.InitContainers, corev1.Container{
+		Name: name,
+		Resources: corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(cpuMilliLimit, resource.DecimalSI),
+			},
+		},
+	})
+	containerStat := corev1.ContainerStatus{
+		Name:        name,
+		ContainerID: genTestContainerIDByName(name),
+	}
+	if running {
+		containerStat.State = corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}
+	} else {
+		containerStat.State = corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}}
+	}
+	pod.Status.InitContainerStatuses = append(pod.Status.InitContainerStatuses, containerStat)
+}
+
+func TestCPUBurst_applyCPUBurst_initContainer(t *testing.T) {
+	testHelper := system.NewFileTestUtil(t)
+
+	b := &cpuBurst{
+		executor: newTestExecutor(),
+	}
+	stop := make(chan struct{})
+	b.init(stop)
+	defer func() { stop <- struct{}{} }()
+
+	podMeta := createPodMetaByResource("test-pod-1", map[string]corev1.ResourceRequirements{
+		"test-container-1": {
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+			},
+		},
+	})
+	// the running init container must get cpu.cfs_burst_us; the terminated one must not,
+	// and must not be counted into the pod-level burst value.
+	addInitContainer(podMeta, "init-running", 4000, true)
+	addInitContainer(podMeta, "init-done", 8000, false)
+
+	initPodCPUBurst(podMeta, 0, testHelper)
+	initContainerCPUBurst(podMeta, 0, testHelper)
+	for i := range podMeta.Pod.Status.InitContainerStatuses {
+		containerStat := &podMeta.Pod.Status.InitContainerStatuses[i]
+		containerPath, _ := util.GetContainerCgroupParentDir(podMeta.CgroupDir, containerStat)
+		testHelper.WriteCgroupFileContents(containerPath, system.CPUBurst, "0")
+	}
+
+	b.applyCPUBurst(&defaultAutoBurstCfg, podMeta)
+
+	containerStat := &podMeta.Pod.Status.ContainerStatuses[0]
+	assert.Equal(t, int64(2*10*system.CFSBasePeriodValue), getContainerCPUBurst(podMeta.CgroupDir, containerStat, testHelper))
+
+	initRunningStat := &podMeta.Pod.Status.InitContainerStatuses[0]
+	assert.Equal(t, int64(4*10*system.CFSBasePeriodValue), getContainerCPUBurst(podMeta.CgroupDir, initRunningStat, testHelper),
+		"running init container should get cpu.cfs_burst_us")
+
+	initDoneStat := &podMeta.Pod.Status.InitContainerStatuses[1]
+	assert.Equal(t, int64(0), getContainerCPUBurst(podMeta.CgroupDir, initDoneStat, testHelper),
+		"terminated init container should be left untouched")
+
+	// pod-level burst sums the running init container and the regular container, not the terminated one.
+	assert.Equal(t, int64((2+4)*10*system.CFSBasePeriodValue), getPodCPUBurst(podMeta.CgroupDir, testHelper))
+}
+
+func TestCPUBurst_applyCFSQuotaBurst_initContainer(t *testing.T) {
+	testHelper := system.NewFileTestUtil(t)
+
+	podMeta := createPodMetaByResource("test-pod-1", map[string]corev1.ResourceRequirements{
+		"test-container-1": {
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+			},
+		},
+	})
+	addInitContainer(podMeta, "init-running", 3000, true)
+	addInitContainer(podMeta, "init-done", 5000, false)
+
+	ctl := gomock.NewController(t)
+	mockResultFactory := mock_metriccache.NewMockAggregateResultFactory(ctl)
+	metriccache.DefaultAggregateResultFactory = mockResultFactory
+	mockQuerier := mock_metriccache.NewMockQuerier(ctl)
+	mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
+	mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+	throttled := map[string]float64{
+		"test-container-1": 0.5,
+		"init-running":     0.5,
+		"init-done":        0.5,
+	}
+	for name, throttledValue := range throttled {
+		result := mock_metriccache.NewMockAggregateResult(ctl)
+		result.EXPECT().Count().Return(1).AnyTimes()
+		result.EXPECT().Value(metriccache.AggregationTypeLast).Return(throttledValue, nil).AnyTimes()
+
+		queryMeta, err := metriccache.ContainerCPUThrottledMetric.BuildQueryMeta(
+			metriccache.MetricPropertiesFunc.Container(genTestContainerIDByName(name)))
+		assert.NoError(t, err)
+		mockResultFactory.EXPECT().New(queryMeta).Return(result).AnyTimes()
+		mockQuerier.EXPECT().QueryAndClose(queryMeta, gomock.Any(), gomock.Any()).SetArg(2, *result).Return(nil).AnyTimes()
+
+		usageMeta, err := metriccache.ContainerCPUUsageMetric.BuildQueryMeta(
+			metriccache.MetricPropertiesFunc.Container(genTestContainerIDByName(name)))
+		assert.NoError(t, err)
+		testutil.BuildMockQueryResult(ctl, mockQuerier, mockResultFactory, usageMeta, 1.5)
+	}
+
+	initPodCFSQuota(podMeta, (2+3)*system.CFSBasePeriodValue, testHelper)
+	initContainerCFSQuota(podMeta, map[string]int64{
+		"test-container-1": 2 * system.CFSBasePeriodValue,
+	}, testHelper)
+	for _, name := range []string{"init-running", "init-done"} {
+		containerPath, _ := util.GetContainerCgroupParentDir(podMeta.CgroupDir,
+			&corev1.ContainerStatus{Name: name, ContainerID: genTestContainerIDByName(name)})
+		quota := int64(3 * system.CFSBasePeriodValue)
+		if name == "init-done" {
+			quota = 5 * system.CFSBasePeriodValue
+		}
+		testHelper.WriteCgroupFileContents(containerPath, system.CPUCFSQuota, strconv.FormatInt(quota, 10))
+	}
+
+	b := &cpuBurst{
+		metricCache:      mockMetricCache,
+		executor:         newTestExecutor(),
+		cgroupReader:     resourceexecutor.NewCgroupReader(),
+		containerLimiter: make(map[string]*burstLimiter),
+	}
+	stop := make(chan struct{})
+	b.init(stop)
+	defer func() { stop <- struct{}{} }()
+
+	b.applyCFSQuotaBurst(&defaultAutoBurstCfg, podMeta, nodeBurstIdle)
+
+	scaled := func(cores int64) int64 {
+		return int64(float64(cores*system.CFSBasePeriodValue) * cfsIncreaseStep)
+	}
+	assert.Equal(t, scaled(2), getContainerCFSQuota(podMeta.CgroupDir, &podMeta.Pod.Status.ContainerStatuses[0], testHelper))
+	assert.Equal(t, scaled(3), getContainerCFSQuota(podMeta.CgroupDir, &podMeta.Pod.Status.InitContainerStatuses[0], testHelper),
+		"running init container cfs quota should be scaled up")
+	assert.Equal(t, int64(5*system.CFSBasePeriodValue), getContainerCFSQuota(podMeta.CgroupDir, &podMeta.Pod.Status.InitContainerStatuses[1], testHelper),
+		"terminated init container cfs quota should stay unchanged")
+	// pod quota grows by the sum of the scaled deltas of the regular container and the running init container.
+	assert.Equal(t, (2+3)*system.CFSBasePeriodValue+(scaled(2)-2*system.CFSBasePeriodValue)+(scaled(3)-3*system.CFSBasePeriodValue),
+		getPodCFSQuota(podMeta, testHelper))
+}

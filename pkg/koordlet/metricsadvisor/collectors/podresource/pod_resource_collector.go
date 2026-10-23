@@ -222,9 +222,20 @@ func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodM
 	klog.V(6).Infof("start collectContainerResUsed")
 	pod := meta.Pod
 	count := 0
-	containerMetrics := make([]metriccache.MetricSample, 0)
+	statuses := make([]*corev1.ContainerStatus, 0, len(pod.Status.InitContainerStatuses)+len(pod.Status.ContainerStatuses))
+	// running init containers (including restartable sidecars) have their own cgroup and their
+	// usage is consumed by the CPUBurst limiter; completed ones are skipped since their cgroup is usually gone.
+	for i := range pod.Status.InitContainerStatuses {
+		if pod.Status.InitContainerStatuses[i].State.Running != nil {
+			statuses = append(statuses, &pod.Status.InitContainerStatuses[i])
+		}
+	}
 	for i := range pod.Status.ContainerStatuses {
-		containerStat := &pod.Status.ContainerStatuses[i]
+		statuses = append(statuses, &pod.Status.ContainerStatuses[i])
+	}
+
+	containerMetrics := make([]metriccache.MetricSample, 0)
+	for _, containerStat := range statuses {
 		containerKey := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, containerStat.Name)
 		collectTime := time.Now()
 		if len(containerStat.ContainerID) == 0 {
@@ -298,6 +309,6 @@ func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodM
 		count++
 	}
 	klog.V(5).Infof("collectContainerResUsed for pod %s/%s finished, container num %d, collected %d",
-		pod.Namespace, pod.Name, len(pod.Status.ContainerStatuses), count)
+		pod.Namespace, pod.Name, len(statuses), count)
 	return containerMetrics
 }
