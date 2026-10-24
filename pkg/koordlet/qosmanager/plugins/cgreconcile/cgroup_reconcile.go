@@ -17,8 +17,13 @@ limitations under the License.
 package cgreconcile
 
 import (
+	"context"
+	"errors"
 	"math"
 	"strconv"
+	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -31,6 +36,7 @@ import (
 	slov1alpha1 "github.com/koordinator-sh/koordinator/apis/slo/v1alpha1"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/audit"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/metrics"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/helpers"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
@@ -43,6 +49,18 @@ import (
 
 const (
 	CgroupReconcileName = "CgroupReconcile"
+	// memoryReclaimMaxBatch caps the bytes written to memory.reclaim in a single reconcile tick, to bound the
+	// synchronous reclaim cost per pod.
+	memoryReclaimMaxBatch = int64(32 * 1024 * 1024)
+	// memoryReclaimTimeout is the per-pod timeout for a memory.reclaim write.
+	memoryReclaimTimeout = 5 * time.Second
+	// memoryReclaimPSIThreshold is the kubepods-level memory PSI some avg10 threshold below which reclaim is skipped.
+	// ponytail: hardcoded constant; make configurable if observability shows it needs tuning per workload.
+	memoryReclaimPSIThreshold = 5.0
+	// memoryReclaimMaxBackoff is the upper bound on consecutive EAGAIN skip duration.
+	memoryReclaimMaxBackoff = 30 * time.Second
+	// memoryReclaimBackoffBase is the initial EAGAIN backoff duration.
+	memoryReclaimBackoffBase = 1 * time.Second
 )
 
 var _ framework.QOSStrategy = &cgroupResourcesReconcile{}
@@ -51,6 +69,11 @@ type cgroupResourcesReconcile struct {
 	reconcileInterval time.Duration
 	statesInformer    statesinformer.StatesInformer
 	executor          resourceexecutor.ResourceUpdateExecutor
+	// reclaimGatedUntil is the atomic timestamp (UnixNano) before which reclaim is skipped due to consecutive EAGAIN.
+	// ponytail: atomic int64 used here to avoid a mutex; pod-level tracking is overkill since backoff is node-wide.
+	reclaimGatedUntil atomic.Int64
+	// reclaimWG tracks in-flight reclaim goroutines so tests can wait for completion before teardown.
+	reclaimWG sync.WaitGroup
 }
 
 // cgroupResourceSummary summarizes values of cgroup resources to update; nil value means not to update
@@ -112,7 +135,160 @@ func (m *cgroupResourcesReconcile) reconcile() {
 	// apply CgroupReconcile: calculate resources to update, and then update them by a leveled order to avoid dynamic
 	// resource overcommitment/leak
 	m.calculateAndUpdateResources(nodeSLO)
+	m.reclaimBEMemory(nodeSLO)
 	klog.V(5).Infof("finish reconciling Cgroups!")
+}
+
+// reclaimBEMemory proactively reclaims BE pod memory on cgroups-v2 by writing a bounded amount to memory.reclaim
+// when the pod's memory usage exceeds its watermark. This is the userspace loop alternative to the Alinux-private
+// memory.wmark_ratio async reclaim on standard kernels. It only touches BE pods and never modifies memory QoS knobs.
+func (m *cgroupResourcesReconcile) reclaimBEMemory(nodeSLO *slov1alpha1.NodeSLO) {
+	if !system.UseCgroupsV2.Load() {
+		return
+	}
+	if supported, _ := system.MemoryReclaimV2.IsSupported(koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)); !supported {
+		klog.V(5).Infof("skip reclaiming BE memory since memory.reclaim is unsupported")
+		return
+	}
+	if nodeSLO == nil || nodeSLO.Spec.ResourceQOSStrategy == nil || nodeSLO.Spec.ResourceQOSStrategy.BEClass == nil ||
+		nodeSLO.Spec.ResourceQOSStrategy.BEClass.MemoryQOS == nil {
+		return
+	}
+	beMemQoS := nodeSLO.Spec.ResourceQOSStrategy.BEClass.MemoryQOS
+	if beMemQoS.Enable != nil && !*beMemQoS.Enable {
+		return
+	}
+	// reuse the wmarkRatio semantics as the reclaim watermark; wmarkRatio <= 0 (e.g. policy None) disables reclaim
+	wmarkRatio := int64(95)
+	if beMemQoS.WmarkRatio != nil {
+		wmarkRatio = *beMemQoS.WmarkRatio
+	}
+	if wmarkRatio <= 0 {
+		return
+	}
+
+	// PSI pressure gating: skip reclaim when kubepods-level memory PSI is low.
+	if !m.isPressureAboveThreshold() {
+		klog.V(5).Infof("skip reclaiming BE memory since memory PSI is below threshold")
+		metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultGated)
+		return
+	}
+
+	// EAGAIN backoff: skip if we're in the backoff window from consecutive EAGAIN failures.
+	if time.Now().UnixNano() < m.reclaimGatedUntil.Load() {
+		klog.V(5).Infof("skip reclaiming BE memory due to EAGAIN backoff")
+		metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultLimited)
+		return
+	}
+
+	reader := &resourceexecutor.CgroupV2Reader{}
+	for _, podMeta := range m.statesInformer.GetAllPods() {
+		pod := podMeta.Pod
+		if util.IsPodInactive(pod) || apiext.GetPodQoSClassRaw(pod) != apiext.QoSBE {
+			continue
+		}
+		podDir := podMeta.CgroupDir
+		usage, err := reader.ReadMemoryUsage(podDir)
+		if err != nil {
+			klog.V(5).Infof("failed to read memory.current for BE pod %s, err: %v", util.GetPodKey(pod), err)
+			continue
+		}
+		limit, err := reader.ReadMemoryLimit(podDir)
+		if err != nil {
+			klog.V(5).Infof("failed to read memory.max for BE pod %s, err: %v", util.GetPodKey(pod), err)
+			continue
+		}
+		// skip pods with no (or unlimited) memory limit
+		if limit <= 0 {
+			continue
+		}
+		watermark := limit * wmarkRatio / 100
+		if int64(usage) <= watermark {
+			continue
+		}
+		reclaimBytes := int64(usage) - watermark
+		if reclaimBytes > memoryReclaimMaxBatch {
+			reclaimBytes = memoryReclaimMaxBatch
+		}
+
+		// dispatch each reclaim to its own goroutine with timeout so a slow write does not block the reconcile loop.
+		// ponytail: goroutine-per-pod; a bounded worker pool is only needed if the node runs hundreds of BE pods.
+		m.reclaimWG.Add(1)
+		go m.doReclaim(podDir, reclaimBytes, pod)
+	}
+}
+
+// isPressureAboveThreshold checks if kubepods-level memory PSI some avg10 is above the reclaim threshold.
+// PSI files may not exist on all kernels; skip gating when they are absent.
+func (m *cgroupResourcesReconcile) isPressureAboveThreshold() bool {
+	kubepodsDir := koordletutil.GetPodQoSRelativePath(corev1.PodQOSBestEffort)
+	psiReader := &resourceexecutor.CgroupV2Reader{}
+	psi, err := psiReader.ReadPSI(kubepodsDir)
+	if err != nil {
+		// PSI not available on this kernel; proceed with reclaim.
+		klog.V(6).Infof("PSI not available, skip pressure gating: %v", err)
+		return true
+	}
+	if psi.Mem.Some == nil {
+		return true
+	}
+	return psi.Mem.Some.Avg10 >= memoryReclaimPSIThreshold
+}
+
+// doReclaim performs a single memory.reclaim write for the given BE pod with a context timeout.
+func (m *cgroupResourcesReconcile) doReclaim(podDir string, reclaimBytes int64, pod *corev1.Pod) {
+	defer m.reclaimWG.Done()
+	ctx, cancel := context.WithTimeout(context.Background(), memoryReclaimTimeout)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		// use the direct-write updater to avoid the read-before-write pattern which fails on write-only files.
+		updaterFn := resourceexecutor.NewCgroupUpdaterWithUpdateFunc(resourceexecutor.CgroupUpdateDirectWriteFunc)
+		updater, err := updaterFn(system.MemoryReclaimName, podDir, strconv.FormatInt(reclaimBytes, 10), nil)
+		if err != nil {
+			done <- err
+			return
+		}
+		_, err = m.executor.Update(false, updater)
+		done <- err
+	}()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-ctx.Done():
+		err = ctx.Err()
+		klog.V(5).Infof("reclaim BE pod %s timed out after %v", util.GetPodKey(pod), memoryReclaimTimeout)
+	}
+
+	if err == nil {
+		// Success: reset the EAGAIN backoff gate.
+		m.reclaimGatedUntil.Store(0)
+		metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultSuccess)
+		klog.V(6).Infof("reclaimed BE pod %s: %d bytes", util.GetPodKey(pod), reclaimBytes)
+		return
+	}
+	if errors.Is(err, syscall.EAGAIN) {
+		// EAGAIN means the kernel reclaimed as much as possible without reaching the target; apply exponential backoff.
+		klog.V(5).Infof("reclaimed BE pod %s partially (EAGAIN), err: %v", util.GetPodKey(pod), err)
+		metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultSuccess) // partial reclaim still makes progress
+		now := time.Now()
+		backoff := m.reclaimGatedUntil.Load()
+		if backoff == 0 {
+			m.reclaimGatedUntil.Store(now.Add(memoryReclaimBackoffBase).UnixNano())
+		} else {
+			next := now.Add(memoryReclaimMaxBackoff)
+			if time.Duration(next.UnixNano()-backoff)*2 < memoryReclaimMaxBackoff {
+				next = now.Add(time.Duration(now.UnixNano()-backoff) * 2) // double
+			}
+			m.reclaimGatedUntil.Store(next.UnixNano())
+		}
+		return
+	}
+	// Non-EAGAIN error, possibly transient; log and continue without backoff.
+	klog.V(5).Infof("failed to reclaim BE pod %s, err: %v", util.GetPodKey(pod), err)
+	metrics.RecordMemoryReclaimRound(metrics.MemoryReclaimResultError)
 }
 
 func (m *cgroupResourcesReconcile) calculateAndUpdateResources(nodeSLO *slov1alpha1.NodeSLO) {
