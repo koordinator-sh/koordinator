@@ -19,7 +19,7 @@ package cpuburst
 import (
 	"encoding/json"
 	"fmt"
-
+	"math"
 	"math/rand"
 	"strconv"
 	"time"
@@ -334,10 +334,35 @@ func (b *cpuBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 	return nodeBurstState
 }
 
+// cpuNormalizedPod reports whether the pod is a CPU-normalization target.
+// CPU burst's caller already filtered to burstable (LS/None) pods, so we only
+// need to exclude the None+cpuset case that normalization does not cover.
+func (b *cpuBurst) cpuNormalizedPod(pod *corev1.Pod, nodeNormalizedRatio float64) bool {
+	if nodeNormalizedRatio <= 1.0 {
+		return false
+	}
+	if qosClass := apiext.GetPodQoSClassRaw(pod); qosClass == apiext.QoSNone {
+		if cpusetVal, err := util.GetCPUSetFromPod(pod.Annotations); err == nil && cpusetVal != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // scale cpu.cfs_quota_us for pod/containers by container throttled state and node state
 func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *statesinformer.PodMeta,
 	nodeState nodeStateForBurst) {
 	pod := podMeta.Pod
+	// Resolve the node-level cpu normalization ratio once per call. It only engages
+	// when ratio > 1.0 (i.e. normalization actively shrinks CFS quota), matching the
+	// CPUNormalization hook so both features agree on the same cgroup value.
+	var nodeNormalizedRatio float64
+	if node := b.statesInformer.GetNode(); node != nil {
+		if ratio, err := apiext.GetCPUNormalizationRatio(node); err == nil && ratio > 1.0 {
+			nodeNormalizedRatio = ratio
+		}
+	}
+
 	containerMap := make(map[string]*corev1.Container)
 	for i := range pod.Spec.Containers {
 		container := &pod.Spec.Containers[i]
@@ -358,6 +383,12 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 		}
 
 		containerBaseCFS := koordletutil.GetContainerBaseCFSQuota(container)
+		if nodeNormalizedRatio > 0 && b.cpuNormalizedPod(pod, nodeNormalizedRatio) {
+			// CPUNormalization shrinks the pod/container CFS quota by the same ratio,
+			// so use the normalized base to keep clamp floor, burst ceiling and reset
+			// target aligned with the value the hook writes.
+			containerBaseCFS = int64(math.Ceil(float64(containerBaseCFS) / nodeNormalizedRatio))
+		}
 		if containerBaseCFS <= 0 {
 			continue
 		}
