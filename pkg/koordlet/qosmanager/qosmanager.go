@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	clientset "k8s.io/client-go/kubernetes"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -35,6 +36,7 @@ import (
 	ma "github.com/koordinator-sh/koordinator/pkg/koordlet/metricsadvisor/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/framework"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins"
+	_ "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/containercgroup"
 	qosmanagerUtil "github.com/koordinator-sh/koordinator/pkg/koordlet/qosmanager/plugins/util"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/resourceexecutor"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/statesinformer"
@@ -51,6 +53,11 @@ type qosManager struct {
 
 func NewQOSManager(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient clientset.Interface, crdClient *koordclientset.Clientset, nodeName string,
 	statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, metricAdvisorConfig *ma.Config, evictVersion string) QOSManager {
+	return NewQOSManagerWithDynamic(cfg, schema, kubeClient, crdClient, nil, nodeName, statesInformer, metricCache, metricAdvisorConfig, evictVersion)
+}
+
+func NewQOSManagerWithDynamic(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient clientset.Interface, crdClient *koordclientset.Clientset, dynClient dynamic.Interface, nodeName string,
+	statesInformer statesinformer.StatesInformer, metricCache metriccache.MetricCache, metricAdvisorConfig *ma.Config, evictVersion string) QOSManager {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartRecordingToSink(&clientcorev1.EventSinkImpl{Interface: kubeClient.CoreV1().Events("")})
 	recorder := eventBroadcaster.NewRecorder(schema, corev1.EventSource{Component: "koordlet-qosManager", Host: nodeName})
@@ -63,6 +70,7 @@ func NewQOSManager(cfg *framework.Config, schema *apiruntime.Scheme, kubeClient 
 		MetricCache:         metricCache,
 		EventRecorder:       recorder,
 		KubeClient:          kubeClient,
+		DynamicClient:       dynClient,
 		EvictVersion:        evictVersion,
 		Config:              cfg,
 		MetricAdvisorConfig: metricAdvisorConfig,
@@ -125,7 +133,7 @@ func (r *qosManager) Run(stopCh <-chan struct{}) error {
 	}
 
 	klog.Infof("start qos manager extensions")
-	framework.SetupPlugins(r.options.KubeClient, r.options.MetricCache, r.options.StatesInformer)
+	framework.SetupPluginsWithDynamic(r.options.KubeClient, r.options.DynamicClient, r.options.MetricCache, r.options.StatesInformer)
 	utilruntime.Must(framework.StartPlugins(r.options.Config.QOSExtensionCfg, stopCh))
 
 	klog.Info("Starting qosManager successfully")

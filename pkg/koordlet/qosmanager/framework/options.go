@@ -17,6 +17,7 @@ limitations under the License.
 package framework
 
 import (
+	"k8s.io/client-go/dynamic"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 
@@ -32,6 +33,7 @@ type Options struct {
 	MetricCache         metriccache.MetricCache
 	EventRecorder       record.EventRecorder
 	KubeClient          clientset.Interface
+	DynamicClient       dynamic.Interface
 	EvictVersion        string
 	Config              *Config
 	MetricAdvisorConfig *ma.Config

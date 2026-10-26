@@ -8,6 +8,7 @@ resources:
 - bases/scheduling.koordinator.sh_reservations.yaml
 - bases/slo.koordinator.sh_nodemetrics.yaml
 - bases/slo.koordinator.sh_nodeslos.yaml
+- bases/slo.koordinator.sh_containercgroupoverrides.yaml
 - bases/scheduling.sigs.k8s.io_elasticquotas.yaml
 - bases/scheduling.sigs.k8s.io_podgroups.yaml
 - bases/topology.node.k8s.io_noderesourcetopologies.yaml

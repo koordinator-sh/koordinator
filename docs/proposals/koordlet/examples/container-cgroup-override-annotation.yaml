@@ -1,0 +1,38 @@
+# Example: ContainerCgroupOverride phase-0 annotations
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cgroup-override-demo
+  namespace: default
+  annotations:
+    # Exact runtime hard limits (does not change Pod Spec).
+    koordinator.sh/cgroup-override: |
+      {"containerName":"app","memoryMax":"512Mi","cpuQuota":"200m"}
+    # Optional: hand ownership to NRC / external writer
+    # koordinator.sh/cgroup-override-skip: "true"
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "sleep infinity"]
+      resources:
+        requests:
+          cpu: "500m"
+          memory: 1Gi
+        limits:
+          cpu: "500m"
+          memory: 1Gi
+```
+
+Array form (multi-container):
+
+```yaml
+annotations:
+  koordinator.sh/cgroup-override: |
+    [
+      {"containerName":"app","memoryMax":"512Mi"},
+      {"containerName":"sidecar","cpuQuota":"100m","writebackOnDelete":true}
+    ]
+```
