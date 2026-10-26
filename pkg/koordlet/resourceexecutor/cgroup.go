@@ -70,6 +70,7 @@ func cgroupFileWriteIfDifferent(cgroupTaskDir string, r sysutil.Resource, value 
 	if err := cgroupFileWrite(cgroupTaskDir, r, value); err != nil {
 		return false, err
 	}
+	klog.V(4).Infof("updated cgroup %s: old value %q, new value %q", r.Path(cgroupTaskDir), currentValue, value)
 	return true, nil
 }
 

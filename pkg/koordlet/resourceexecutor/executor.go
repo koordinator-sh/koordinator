@@ -74,8 +74,13 @@ func (e *ResourceUpdateExecutorImpl) Update(cacheable bool, resource ResourceUpd
 }
 
 // UpdateBatch updates a batch of resources with the given cacheable attribute.
+// Duplicate updaters for the same key inside one batch are deduplicated, keeping the last value
+// and logging the dropped conflict; conflicts across separate calls are only observable via the
+// update logs (old -> new values are logged on each write).
 // TODO: merge and resolve conflicts of batch updates from multiple callers.
 func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...ResourceUpdater) {
+	total := len(updaters)
+	updaters = dedupeUpdaters(updaters)
 	failures := 0
 	if cacheable {
 		if !e.gcStarted {
@@ -108,7 +113,31 @@ func (e *ResourceUpdateExecutorImpl) UpdateBatch(cacheable bool, updaters ...Res
 		}
 	}
 	klog.V(6).Infof("finished batch updating resources, isCacheable %v, total %v, failures %v",
-		cacheable, len(updaters), failures)
+		cacheable, total, failures)
+}
+
+// dedupeUpdaters keeps the last updater for each key, preserving the original order of the
+// surviving updaters. Later updaters in one batch express the later intent, matching the
+// sequential-write semantics before deduplication.
+func dedupeUpdaters(updaters []ResourceUpdater) []ResourceUpdater {
+	if len(updaters) <= 1 {
+		return updaters
+	}
+	index := make(map[string]int, len(updaters))
+	result := make([]ResourceUpdater, 0, len(updaters))
+	for _, updater := range updaters {
+		if i, ok := index[updater.Key()]; ok {
+			if result[i].Value() != updater.Value() {
+				klog.Warningf("conflicting updates for resource %s: value %v overrides %v in the same batch",
+					updater.Key(), updater.Value(), result[i].Value())
+			}
+			result[i] = updater
+			continue
+		}
+		index[updater.Key()] = len(result)
+		result = append(result, updater)
+	}
+	return result
 }
 
 func (e *ResourceUpdateExecutorImpl) LeveledUpdateBatch(updaters [][]ResourceUpdater) {
