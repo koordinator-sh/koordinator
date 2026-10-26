@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: e2e-test
+    koordinator.sh/qosClass: BE
+    name: be-mem-pressurizer
+  name: be-mem-pressurizer
+spec:
+  schedulerName: koord-scheduler
+  priorityClassName: koord-batch
+  containers:
+  - image: {{.BusyBoxImage}}
+    imagePullPolicy: IfNotPresent
+    name: pressurizer
+    # No standard resources on purpose: the pod stays in the kubepods-besteffort cgroup whose
+    # memory PSI is what the reclaim pressure gate reads. With BE memoryQOS throttlingPercent
+    # enabled, koordlet sets this container's memory.high to its batch-memory request (512Mi);
+    # the fill goes ~90Mi beyond it and the sleep-less churn loop keeps allocating above it, so
+    # every page charge enters direct reclaim and generates sustained memory PSI (some avg10 >= 5).
+    command:
+    - sh
+    - -c
+    - |
+      dd if=/dev/zero of=/cache/fill bs=1M count=600 2>/dev/null
+      echo "fill done"
+      while true; do
+        dd if=/dev/zero of=/cache/churn bs=1M count=64 2>/dev/null
+        rm -f /cache/churn
+      done
+    resources:
+      limits:
+        kubernetes.io/batch-cpu: "1"
+        kubernetes.io/batch-memory: 512Mi
+      requests:
+        kubernetes.io/batch-cpu: "1"
+        kubernetes.io/batch-memory: 512Mi
+    volumeMounts:
+    - name: memcache
+      mountPath: /cache
+  volumes:
+  - name: memcache
+    emptyDir:
+      medium: Memory
+      sizeLimit: 1Gi
+  restartPolicy: Never
