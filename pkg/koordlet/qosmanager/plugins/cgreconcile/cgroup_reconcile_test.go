@@ -587,6 +587,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, podParentDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, podParentDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, podParentDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, podParentDirLS, "0", false),
 			},
 			want2: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirLS, "0", true),
@@ -598,6 +599,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirLS1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirLS1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirLS1, strconv.FormatInt(math.MaxInt64, 10), true),
@@ -607,6 +609,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirLS1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirLS1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirLS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirLS1, "0", false),
 			},
 		},
 		{
@@ -648,6 +651,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, podParentDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, podParentDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, podParentDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, podParentDirBE, "0", false),
 			},
 			want2: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE, "0", true),
@@ -659,6 +663,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE1, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE1, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
@@ -668,6 +673,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirBE1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirBE1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE1, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirBE1, "0", false),
 			},
 		},
 		{
@@ -721,6 +727,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, podParentDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, podParentDirLS, "50", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, podParentDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, podParentDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryMinName, podParentDirBE, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, podParentDirBE, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, podParentDirBE, "95", false),
@@ -729,6 +736,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, podParentDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, podParentDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, podParentDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, podParentDirBE, "0", false),
 			},
 			want2: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirLS, "0", true),
@@ -737,12 +745,14 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirLS, "50", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirLS1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirLS1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirLS1, strconv.FormatInt(math.MaxInt64, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryWmarkRatioName, containerDirLS1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkScaleFactorName, containerDirLS1, "50", false),
 				createCgroupResourceUpdater(t, system.MemoryWmarkMinAdjName, containerDirLS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirLS1, "0", false),
 
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE, "0", true),
@@ -753,6 +763,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE1, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE1, strconv.FormatInt(testingPodMemRequestLimitBytes, 10), true),
@@ -762,6 +773,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirBE1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirBE1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE1, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirBE1, "0", false),
 			},
 		},
 		{
@@ -803,6 +815,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, podParentDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, podParentDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, podParentDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, podParentDirBE, "0", false),
 			},
 			want2: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE, "0", true),
@@ -814,6 +827,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirBE, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirBE1, strconv.FormatInt(testingPodMemRequestLimitBytes*50/100, 10), true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirBE1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirBE1, strconv.FormatInt(((testingPodMemRequestLimitBytes)/system.PageSize)*system.PageSize, 10), true),
@@ -823,6 +837,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirBE1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirBE1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirBE1, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirBE1, "0", false),
 			},
 		},
 		{
@@ -863,6 +878,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, podParentDirSYS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, podParentDirSYS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, podParentDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, podParentDirSYS, "0", false),
 			},
 			want2: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirSYS, "0", true),
@@ -874,6 +890,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirSYS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirSYS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirSYS, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirSYS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirSYS1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirSYS1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryHighName, containerDirSYS1, strconv.FormatInt(math.MaxInt64, 10), true),
@@ -883,6 +900,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirSYS1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirSYS1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirSYS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirSYS1, "0", false),
 			},
 		},
 		{
@@ -935,6 +953,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, podParentDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, podParentDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, podParentDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, podParentDirLS, "0", false),
 			},
 			want2: []resourceexecutor.ResourceUpdater{
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirLS, "0", true),
@@ -947,6 +966,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirLS, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirLS, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryMinName, containerDirLS1, "0", true),
 				createCgroupResourceUpdater(t, system.MemoryLowName, containerDirLS1, "0", true),
 				// second container has 1Gi limit, memory.high = (1Gi + 0 * 80%) / pageSize * pageSize = 1Gi
@@ -957,6 +977,7 @@ func TestCgroupResourceReconcile_calculateResources(t *testing.T) {
 				createCgroupResourceUpdater(t, system.MemoryPriorityName, containerDirLS1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryUsePriorityOomName, containerDirLS1, "0", false),
 				createCgroupResourceUpdater(t, system.MemoryOomGroupName, containerDirLS1, "0", false),
+				createCgroupResourceUpdater(t, system.MemorySoftLimitName, containerDirLS1, "0", false),
 			},
 		},
 	}
