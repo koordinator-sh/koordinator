@@ -247,6 +247,9 @@ func (p *cpusetPlugin) ruleUpdateCb(target *statesinformer.CallbackTarget) error
 		return nil
 	}
 	for _, podMeta := range target.Pods {
+		if podMeta == nil || !podMeta.IsRunningOrPending() {
+			continue
+		}
 		allContainersSpec := make(map[string]*corev1.Container, len(podMeta.Pod.Spec.Containers)+len(podMeta.Pod.Spec.InitContainers))
 		for i := range podMeta.Pod.Spec.InitContainers {
 			initContainer := &podMeta.Pod.Spec.InitContainers[i]
