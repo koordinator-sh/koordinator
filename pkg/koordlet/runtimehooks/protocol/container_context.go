@@ -242,6 +242,9 @@ func (c *ContainerResponse) ProxyDone(resp *runtimeapi.ContainerResourceHookResp
 	if c.Resources.CPUSet != nil {
 		resp.ContainerResources.CpusetCpus = *c.Resources.CPUSet
 	}
+	if c.Resources.CPUSetMems != nil {
+		resp.ContainerResources.CpusetMems = *c.Resources.CPUSetMems
+	}
 	if c.Resources.CFSQuota != nil {
 		resp.ContainerResources.CpuQuota = *c.Resources.CFSQuota
 	}
@@ -300,6 +303,11 @@ func (c *ContainerContext) NriDone(executor resourceexecutor.ResourceUpdateExecu
 	if c.Response.Resources.CPUSet != nil {
 		adjust.SetLinuxCPUSetCPUs(*c.Response.Resources.CPUSet)
 		update.SetLinuxCPUSetCPUs(*c.Response.Resources.CPUSet)
+	}
+
+	if c.Response.Resources.CPUSetMems != nil {
+		adjust.SetLinuxCPUSetMems(*c.Response.Resources.CPUSetMems)
+		update.SetLinuxCPUSetMems(*c.Response.Resources.CPUSetMems)
 	}
 
 	if c.Response.Resources.CFSQuota != nil {
@@ -419,6 +427,20 @@ func (c *ContainerContext) injectForOrigin() {
 			klog.V(5).Infof("set container %v/%v/%v cpuset %v on cgroup parent %v",
 				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
 				*c.Response.Resources.CPUSet, c.Request.CgroupParent)
+		}
+	}
+	// If CPUSetMems is not nil and is not an empty string, set container cpuset.mems
+	if c.Response.Resources.CPUSetMems != nil && *c.Response.Resources.CPUSetMems != "" {
+		eventHelper := audit.V(3).Container(c.Request.ContainerMeta.ID).Reason("runtime-hooks").Message("set container cpuset.mems to %v", *c.Response.Resources.CPUSetMems)
+		updater, err := injectCPUSetMems(c.Request.CgroupParent, *c.Response.Resources.CPUSetMems, eventHelper, c.executor)
+		if err != nil {
+			klog.Infof("set container %v/%v/%v cpuset.mems %v on cgroup parent %v failed, error %v", c.Request.PodMeta.Namespace,
+				c.Request.PodMeta.Name, c.Request.ContainerMeta.Name, *c.Response.Resources.CPUSetMems, c.Request.CgroupParent, err)
+		} else {
+			c.updaters = append(c.updaters, updater)
+			klog.V(5).Infof("set container %v/%v/%v cpuset.mems %v on cgroup parent %v",
+				c.Request.PodMeta.Namespace, c.Request.PodMeta.Name, c.Request.ContainerMeta.Name,
+				*c.Response.Resources.CPUSetMems, c.Request.CgroupParent)
 		}
 	}
 	// If CFSQuota is not nil, set container cfs quota
