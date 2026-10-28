@@ -83,17 +83,11 @@ const (
 	equivalenceCacheMissQuotaExhausted equivalenceCacheMissReason = "quota_exhausted"
 	equivalenceCacheMissFilterRejected equivalenceCacheMissReason = "filter_rejected"
 	equivalenceCacheMissFilterError    equivalenceCacheMissReason = "filter_error"
-	equivalenceCacheMissExtenderError  equivalenceCacheMissReason = "extender_error"
 	equivalenceCacheMissSnapshotError  equivalenceCacheMissReason = "snapshot_error"
-	equivalenceCacheMissPreFilter      equivalenceCacheMissReason = "prefilter_failed"
-	equivalenceCacheMissNominated      equivalenceCacheMissReason = "nominated_node"
 	equivalenceCacheMissPluginVeto     equivalenceCacheMissReason = "plugin_not_reusable"
 	// equivalenceCacheMissNotBackfilled counts full cycles whose feasible nodes all had no quota.
 	equivalenceCacheMissNotBackfilled    equivalenceCacheMissReason = "not_backfilled"
 	equivalenceCacheMissEligibilityError equivalenceCacheMissReason = "eligibility_error"
-	// equivalenceCacheMissSnapshotUnsupported counts pods handed to the upstream path because the
-	// profile's snapshot lister cannot be refreshed by the equivalence path.
-	equivalenceCacheMissSnapshotUnsupported equivalenceCacheMissReason = "snapshot_unsupported"
 )
 
 func (r equivalenceCacheMissReason) String() string {

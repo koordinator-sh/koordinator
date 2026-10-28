@@ -17,293 +17,109 @@ limitations under the License.
 package equivalence
 
 import (
-	"context"
 	"fmt"
-	"sort"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/client-go/tools/events"
 	"k8s.io/component-base/metrics/testutil"
-	"k8s.io/klog/v2"
-	"k8s.io/klog/v2/ktesting"
-	"k8s.io/kubernetes/pkg/scheduler"
-	schedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
-	"k8s.io/kubernetes/pkg/scheduler/backend/cache"
-	internalqueue "k8s.io/kubernetes/pkg/scheduler/backend/queue"
-	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
-	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeports"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
-	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	"k8s.io/kubernetes/pkg/scheduler/metrics"
-	"k8s.io/kubernetes/pkg/scheduler/profile"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	koordmetrics "github.com/koordinator-sh/koordinator/pkg/scheduler/metrics"
 )
 
 const benchmarkNodeCount = 2000
 
-func BenchmarkEquivalenceScorePercentage(b *testing.B) {
-	fivePercent := int32(5)
-	kubernetesAdaptive := int32(0)
-	allNodes := int32(100)
-
-	testCases := []struct {
-		name       string
-		percentage *int32
-	}{
-		{name: "5-percent", percentage: &fivePercent},
-		{name: "kubernetes-adaptive", percentage: &kubernetesAdaptive},
-		{name: "100-percent", percentage: &allNodes},
-	}
-
-	for _, tt := range testCases {
-		b.Run(tt.name, func(b *testing.B) {
-			for _, placement := range []PlacementPolicy{PlacementSpread, PlacementPack} {
-				b.Run("equivalence-"+string(placement), func(b *testing.B) {
-					benchmarkDecisions(b, tt.percentage, placement, true)
-				})
-			}
-			b.Run("full-path", func(b *testing.B) {
-				benchmarkDecisions(b, tt.percentage, PlacementSpread, false)
-			})
-		})
-	}
-}
-
-func benchmarkDecisions(b *testing.B, percentage *int32, placement PlacementPolicy, equivalence bool) {
-	b.Helper()
-	b.StopTimer()
-
-	ctx := context.Background()
-	s := newBenchmarkScheduling(b, ctx, percentage, benchmarkNodeCount)
-	s.placement = placement
-	fwk := s.sched.Profiles["koord-scheduler"]
-	pod := makeClassPod("benchmark", "benchmark-hash")
-	pod.Spec.Containers = []corev1.Container{{
-		Name: "main",
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("1"),
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
-			},
-		},
-	}}
-
-	var evaluatedNodes int64
-	var scoredNodes int64
-	var fullPaths int64
-	logger := klog.Background()
-	koordmetrics.Register()
-	hits := koordmetrics.EquivalenceClassHits.WithLabelValues(fwk.ProfileName())
-	hitsBefore, err := testutil.GetCounterMetricValue(hits)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
-		state := framework.NewCycleState()
-		if equivalence {
-			result, err := s.decide(ctx, state, fwk, pod)
+// BenchmarkEquivalenceReuse measures a real upstream cycle with a warm class decision.
+func BenchmarkEquivalenceReuse(b *testing.B) {
+	for _, placement := range []PlacementPolicy{PlacementSpread, PlacementPack} {
+		b.Run(string(placement), func(b *testing.B) {
+			b.StopTimer()
+			h := newBenchmarkScheduling(b)
+			h.engine.placement = placement
+			pod := h.pod("benchmark", "benchmark-hash", "1")
+			key := equivalenceCacheKey(h.fwk.ProfileName(), "benchmark-hash")
+			primeClass(b, h, key)
+			before, err := testutil.GetCounterMetricValue(koordmetrics.EquivalenceClassHits.WithLabelValues(h.fwk.ProfileName()))
 			if err != nil {
 				b.Fatal(err)
 			}
-			evaluatedNodes += int64(result.EvaluatedNodes)
-			scoredNodes += int64(result.FeasibleNodes)
-			continue
-		}
-
-		snapshot, err := s.updateSnapshot(logger, fwk)
-		if err != nil {
-			b.Fatal(err)
-		}
-		preFilter := s.runPreFilter(ctx, state, fwk, pod)
-		result, _, err := s.schedulePod(ctx, state, fwk, pod, snapshot, preFilter)
-		if err != nil {
-			b.Fatal(err)
-		}
-		evaluatedNodes += int64(result.EvaluatedNodes)
-		scoredNodes += int64(result.FeasibleNodes)
-		fullPaths++
-	}
-	b.StopTimer()
-	if equivalence {
-		hitsAfter, err := testutil.GetCounterMetricValue(hits)
-		if err != nil {
-			b.Fatal(err)
-		}
-		fullPaths = int64(b.N) - int64(hitsAfter-hitsBefore)
-		scoredNodes -= int64(hitsAfter - hitsBefore)
-	}
-
-	operations := float64(b.N)
-	b.ReportMetric(float64(evaluatedNodes)/operations, "evaluated-nodes/op")
-	b.ReportMetric(float64(scoredNodes)/operations, "scored-nodes/op")
-	b.ReportMetric(float64(fullPaths)*100/operations, "full-path-pct")
-}
-
-func BenchmarkEquivalencePhaseCost(b *testing.B) {
-	fivePercent := int32(5)
-	kubernetesAdaptive := int32(0)
-	allNodes := int32(100)
-
-	testCases := []struct {
-		name       string
-		percentage *int32
-	}{
-		{name: "5-percent", percentage: &fivePercent},
-		{name: "kubernetes-adaptive", percentage: &kubernetesAdaptive},
-		{name: "100-percent", percentage: &allNodes},
-	}
-
-	for _, tt := range testCases {
-		b.Run(tt.name, func(b *testing.B) {
-			b.Run("prefilter-filter", func(b *testing.B) {
-				benchmarkFilterPhase(b, tt.percentage)
-			})
-			b.Run("prescore-score-sort", func(b *testing.B) {
-				benchmarkScorePhase(b, tt.percentage)
-			})
+			b.ReportAllocs()
+			b.ResetTimer()
+			b.StartTimer()
+			for i := 0; i < b.N; i++ {
+				if h.engine.equivalence.entries[key].consumed >= DefaultDriftFactor*benchmarkNodeCount {
+					b.StopTimer()
+					primeClass(b, h, key)
+					b.StartTimer()
+				}
+				result, err := h.schedule(b, pod)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if result.SuggestedHost == "" {
+					b.Fatal("warm cycle returned no host")
+				}
+			}
+			b.StopTimer()
+			after, err := testutil.GetCounterMetricValue(koordmetrics.EquivalenceClassHits.WithLabelValues(h.fwk.ProfileName()))
+			if err != nil {
+				b.Fatal(err)
+			}
+			hits := after - before
+			if hits != float64(b.N) || h.hooks.scoreCalls.Load() != 0 {
+				b.Fatalf("warm benchmark fell back: hits=%v/%d, score calls=%d", hits, b.N, h.hooks.scoreCalls.Load())
+			}
+			b.ReportMetric(hits*100/float64(b.N), "hit-pct")
+			b.ReportMetric(float64(h.hooks.filterCalls.Load())/float64(b.N), "filters/op")
 		})
 	}
 }
 
-func benchmarkFilterPhase(b *testing.B, percentage *int32) {
-	b.Helper()
+// BenchmarkEquivalenceFullCycle measures sampling, Filter, PreScore, Score and terminal backfill.
+func BenchmarkEquivalenceFullCycle(b *testing.B) {
 	b.StopTimer()
-
-	ctx := context.Background()
-	s := newBenchmarkScheduling(b, ctx, percentage, benchmarkNodeCount)
-	fwk := s.sched.Profiles["koord-scheduler"]
-	pod := makeClassPod("benchmark", "benchmark-hash")
-	pod.Spec.Containers = []corev1.Container{{
-		Name: "main",
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("1"),
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
-			},
-		},
-	}}
-	snapshot, err := s.updateSnapshot(klog.Background(), fwk)
-	if err != nil {
-		b.Fatal(err)
-	}
-	nodes, err := snapshot.NodeInfos().List()
-	if err != nil {
-		b.Fatal(err)
-	}
-
+	h := newBenchmarkScheduling(b)
+	pod := h.pod("benchmark", "benchmark-hash", "1")
+	key := equivalenceCacheKey(h.fwk.ProfileName(), "benchmark-hash")
 	b.ReportAllocs()
 	b.ResetTimer()
 	b.StartTimer()
+	evaluated := 0
 	for i := 0; i < b.N; i++ {
-		state := framework.NewCycleState()
-		_, status, _ := fwk.RunPreFilterPlugins(ctx, state, pod)
-		if !status.IsSuccess() {
-			b.Fatal(status.AsError())
-		}
-		diagnosis := framework.Diagnosis{NodeToStatus: framework.NewDefaultNodeToStatus()}
-		feasibleNodes, err := s.findNodesThatPassFilters(ctx, fwk, state, pod, &diagnosis, nodes)
+		h.engine.equivalence.remove(key)
+		result, err := h.schedule(b, pod)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if len(feasibleNodes) != int(s.numFeasibleNodesToFind(percentage, benchmarkNodeCount)) {
-			b.Fatalf("unexpected feasible node count %d", len(feasibleNodes))
+		if result.SuggestedHost == "" {
+			b.Fatal("full cycle returned no host")
 		}
+		evaluated += result.EvaluatedNodes
 	}
-}
-
-func benchmarkScorePhase(b *testing.B, percentage *int32) {
-	b.Helper()
 	b.StopTimer()
-
-	ctx := context.Background()
-	s := newBenchmarkScheduling(b, ctx, percentage, benchmarkNodeCount)
-	fwk := s.sched.Profiles["koord-scheduler"]
-	pod := makeClassPod("benchmark", "benchmark-hash")
-	pod.Spec.Containers = []corev1.Container{{
-		Name: "main",
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("1"),
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
-			},
-		},
-	}}
-	snapshot, err := s.updateSnapshot(klog.Background(), fwk)
-	if err != nil {
-		b.Fatal(err)
+	if h.hooks.preScoreCalls.Load() != int32(b.N) || h.hooks.scoreCalls.Load() == 0 {
+		b.Fatalf("full benchmark bypassed scoring: prescore=%d, score=%d", h.hooks.preScoreCalls.Load(), h.hooks.scoreCalls.Load())
 	}
-	nodes, err := snapshot.NodeInfos().List()
-	if err != nil {
-		b.Fatal(err)
-	}
-	nodes = nodes[:s.numFeasibleNodesToFind(percentage, benchmarkNodeCount)]
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
-		state := framework.NewCycleState()
-		nodeScores, err := prioritizeNodes(ctx, s.sched.Extenders, fwk, state, pod, nodes)
-		if err != nil {
-			b.Fatal(err)
-		}
-		sort.Slice(nodeScores, func(i, j int) bool {
-			return nodeScores[i].TotalScore > nodeScores[j].TotalScore ||
-				(nodeScores[i].TotalScore == nodeScores[j].TotalScore && nodeScores[i].Randomizer > nodeScores[j].Randomizer)
-		})
-	}
+	b.ReportMetric(float64(evaluated)/float64(b.N), "evaluated-nodes/op")
+	b.ReportMetric(float64(h.hooks.scoreCalls.Load())/float64(b.N), "scored-nodes/op")
 }
 
-func newBenchmarkScheduling(b *testing.B, ctx context.Context, percentage *int32, nodeCount int) *EquivalenceScheduling {
+func primeClass(b *testing.B, h *schedulingSuit, key string) {
 	b.Helper()
-	logger, _ := ktesting.NewTestContext(b)
-	metrics.Register()
-
-	schedulerCache := cache.New(ctx, 30*time.Second, nil)
-	for i := 0; i < nodeCount; i++ {
-		node := makeNode(fmt.Sprintf("node-%04d", i), "128", "256Gi")
-		schedulerCache.AddNode(logger, node)
+	names := make([]string, benchmarkNodeCount)
+	for i := range names {
+		names[i] = fmt.Sprintf("node-%04d", i)
 	}
-	snapshot := cache.NewEmptySnapshot()
+	h.engine.equivalence.store(key, quotaNodes(1<<40, names...), h.sched.CurrentCycle(), nil, h.engine.placement)
+}
 
-	fitFactory := frameworkruntime.FactoryAdapter(plfeature.Features{}, noderesources.NewFit)
-	nodePortsFactory := frameworkruntime.FactoryAdapter(plfeature.Features{}, nodeports.New)
-	registeredPlugins := []schedulertesting.RegisterPluginFunc{
-		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		schedulertesting.RegisterPluginAsExtensions(noderesources.Name, fitFactory, "PreFilter", "Filter", "PreScore", "Score"),
-		schedulertesting.RegisterPluginAsExtensions(nodeports.Name, nodePortsFactory, "PreFilter", "Filter"),
-		func(_ *frameworkruntime.Registry, profile *schedulerconfig.KubeSchedulerProfile) {
-			profile.PercentageOfNodesToScore = percentage
-		},
+func newBenchmarkScheduling(b *testing.B) *schedulingSuit {
+	b.Helper()
+	nodes := make([]*corev1.Node, benchmarkNodeCount)
+	for i := range nodes {
+		nodes[i] = makeNode(fmt.Sprintf("node-%04d", i), "128", "256Gi")
 	}
-	fwk, err := schedulertesting.NewFramework(ctx, registeredPlugins, "koord-scheduler",
-		frameworkruntime.WithEventRecorder(events.NewFakeRecorder(100)),
-		frameworkruntime.WithSnapshotSharedLister(snapshot),
-		frameworkruntime.WithPodNominator(internalqueue.NewTestQueue(ctx, nil)),
-	)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	s := NewEquivalenceScheduling(&scheduler.Scheduler{
-		Cache: schedulerCache,
-		Profiles: profile.Map{
-			"koord-scheduler": fwk,
-		},
-	}, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
-	s.equivalence = newEquivalenceClassCache(time.Hour, DefaultEquivalenceClassCacheSize)
-	return s
+	h := newSchedulingSuit(b, nodes...)
+	h.engine.equivalence.ttl = time.Hour
+	return h
 }

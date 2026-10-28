@@ -19,121 +19,40 @@ package equivalence
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
-	"k8s.io/klog/v2/ktesting"
 	fwktype "k8s.io/kube-scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler"
-	"k8s.io/kubernetes/pkg/scheduler/apis/config"
-	"k8s.io/kubernetes/pkg/scheduler/backend/cache"
-	internalqueue "k8s.io/kubernetes/pkg/scheduler/backend/queue"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
-	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
-	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
-	"k8s.io/kubernetes/pkg/scheduler/metrics"
-	"k8s.io/kubernetes/pkg/scheduler/profile"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 )
 
-type countingScorePlugin struct {
-	preScoreCalls atomic.Int32
-	scoreCalls    atomic.Int32
-}
-
-func (p *countingScorePlugin) Name() string {
-	return "CountingScore"
-}
-
-func (p *countingScorePlugin) PreScore(context.Context, fwktype.CycleState, *corev1.Pod, []fwktype.NodeInfo) *fwktype.Status {
-	p.preScoreCalls.Add(1)
-	return nil
-}
-
-func (p *countingScorePlugin) Score(context.Context, fwktype.CycleState, *corev1.Pod, fwktype.NodeInfo) (int64, *fwktype.Status) {
-	p.scoreCalls.Add(1)
-	return 0, nil
-}
-
-func (p *countingScorePlugin) ScoreExtensions() fwktype.ScoreExtensions {
-	return nil
-}
-
-// placementSuit schedules class pods with NodeResourcesFit and assumes each placed pod in the
-// scheduler cache, so each decision sees the pods placed before it.
+// placementSuit assumes each scheduled pod so subsequent real cycles see its resource usage.
 type placementSuit struct {
-	t      *testing.T
-	ctx    context.Context
-	logger klog.Logger
-	s      *EquivalenceScheduling
-	fwk    framework.Framework
-	score  *countingScorePlugin
+	t *testing.T
+	*schedulingSuit
 }
 
 func newPlacementSuit(t *testing.T, policy PlacementPolicy, nodes ...*corev1.Node) *placementSuit {
 	t.Helper()
-	logger, ctx := ktesting.NewTestContext(t)
-	ctx, cancel := context.WithCancel(ctx)
-	t.Cleanup(cancel)
-	metrics.Register()
-
-	schedulerCache := cache.New(ctx, 30*time.Second, nil)
-	for _, node := range nodes {
-		schedulerCache.AddNode(logger, node)
-	}
-	fitArgs := &config.NodeResourcesFitArgs{ScoringStrategy: &config.ScoringStrategy{
-		Type:      config.LeastAllocated,
-		Resources: []config.ResourceSpec{{Name: string(corev1.ResourceCPU), Weight: 1}, {Name: string(corev1.ResourceMemory), Weight: 1}},
-	}}
-	fitFactory := func(ctx context.Context, _ runtime.Object, h fwktype.Handle) (fwktype.Plugin, error) {
-		return noderesources.NewFit(ctx, fitArgs, h, plfeature.Features{})
-	}
-	score := &countingScorePlugin{}
-	fwk, err := schedulertesting.NewFramework(ctx, []schedulertesting.RegisterPluginFunc{
-		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		schedulertesting.RegisterPluginAsExtensions(noderesources.Name, fitFactory, "PreFilter", "Filter", "PreScore", "Score"),
-		schedulertesting.RegisterPluginAsExtensions(score.Name(), func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
-			return score, nil
-		}, "PreScore", "Score"),
-	}, "koord-scheduler",
-		frameworkruntime.WithEventRecorder(events.NewFakeRecorder(100)),
-		frameworkruntime.WithSnapshotSharedLister(cache.NewEmptySnapshot()),
-		frameworkruntime.WithPodNominator(internalqueue.NewTestQueue(ctx, nil)),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, fwk.Close()) })
-
-	s := NewEquivalenceScheduling(&scheduler.Scheduler{
-		Cache:    schedulerCache,
-		Profiles: profile.Map{"koord-scheduler": fwk},
-	}, nil, DefaultEquivalenceClassCacheSize, policy, fakeClass)
-	s.equivalence = newEquivalenceClassCache(time.Hour, DefaultEquivalenceClassCacheSize)
-	return &placementSuit{t: t, ctx: ctx, logger: logger, s: s, fwk: fwk, score: score}
+	h := newSchedulingSuit(t, nodes...)
+	h.engine.placement = policy
+	return &placementSuit{t: t, schedulingSuit: h}
 }
 
-// place schedules count class pods requesting one CPU and 1Gi each, and returns the node of each.
 func (p *placementSuit) place(count int) []string {
 	p.t.Helper()
 	placed := make([]string, 0, count)
 	for i := 0; i < count; i++ {
-		pod := makeClassPod(fmt.Sprintf("%s-%d", p.t.Name(), i), "class")
-		pod.Spec.Containers = makeQuotaPod("1", "1Gi").Spec.Containers
-		result, err := p.s.decide(p.ctx, framework.NewCycleState(), p.fwk, pod)
+		pod := p.pod(fmt.Sprintf("pod-%d", i), "class", "1")
+		result, err := p.schedule(p.t, pod)
 		require.NoError(p.t, err)
+		require.NotEmpty(p.t, result.SuggestedHost)
 		pod.Spec.NodeName = result.SuggestedHost
-		require.NoError(p.t, p.s.sched.Cache.AssumePod(p.logger, pod))
+		require.NoError(p.t, p.sched.Cache.AssumePod(p.logger, pod))
 		placed = append(placed, result.SuggestedHost)
 	}
 	return placed
@@ -200,8 +119,8 @@ func TestFastPathSkipsScoring(t *testing.T) {
 			p.place(8)
 
 			assert.Equal(t, hits+7, hitCount(t, p.fwk.ProfileName()))
-			assert.Equal(t, int32(1), p.score.preScoreCalls.Load(), "only the full path runs PreScore")
-			assert.Equal(t, int32(4), p.score.scoreCalls.Load(), "only the full path scores the four nodes")
+			assert.Equal(t, int32(1), p.hooks.preScoreCalls.Load(), "only the full path runs PreScore")
+			assert.Equal(t, int32(4), p.hooks.scoreCalls.Load(), "only the full path scores the four nodes")
 		})
 	}
 }
@@ -227,72 +146,58 @@ func TestFastPathTriesEachCandidateOnce(t *testing.T) {
 			key := equivalenceCacheKey(fwk.ProfileName(), "hash")
 			s.equivalence.store(key, quotaNodes(100, names...), s.sched.CurrentCycle(), nil, policy)
 			s.equivalence.consume(key, names[0], s.sched.CurrentCycle())
-			snapshot, err := s.updateSnapshot(klog.FromContext(ctx), fwk)
+			_, err := s.updateSnapshot(klog.FromContext(ctx), fwk)
 			require.NoError(t, err)
 			pod := makeClassPod("pod", "hash")
+
+			// PreFilter runs first: the hook sits at its end, and Filter plugins read the state it
+			// writes. Called on a fresh state, NodeResourcesFit's Filter errors out and the narrowing
+			// would drop the class instead of reporting a rejection.
 			state := framework.NewCycleState()
+			_, status, _ := fwk.RunPreFilterPlugins(ctx, state, pod)
+			require.True(t, status.IsSuccess(), "PreFilter: %v", status.Message())
 
-			result, reason := s.scheduleFromEquivalenceClass(ctx, state, fwk, pod, key, snapshot, s.runPreFilter(ctx, state, fwk, pod))
+			node := s.Reuse(ctx, state, fwk, pod)
 
-			assert.Empty(t, result.SuggestedHost)
-			assert.Equal(t, equivalenceCacheMissFilterRejected, reason)
-			assert.Equal(t, len(names), result.EvaluatedNodes, "each candidate is checked once")
+			// Every candidate is rejected by this pod's Filter, so the class has no usable node left
+			// and the entry is dropped: later pods pay the full path rather than retrying the same
+			// rejected nodes.
+			assert.Empty(t, node, "no candidate survives this pod's Filter")
+			assert.NotContains(t, s.equivalence.entries, key, "a class with no usable candidate is dropped")
 		})
 	}
 }
 
 func TestFastPathPackRejectedAnchor(t *testing.T) {
-	for _, stage := range []string{"PreFilter", "Filter", "extender"} {
-		t.Run(stage, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			var plugins []schedulertesting.RegisterPluginFunc
-			switch stage {
-			case "PreFilter":
-				plugins = append(plugins, schedulertesting.RegisterPreFilterPlugin("Restrict",
-					schedulertesting.NewFakePreFilterPlugin("Restrict", &fwktype.PreFilterResult{NodeNames: sets.New("node-2")}, nil)))
-			case "Filter":
-				plugins = append(plugins, schedulertesting.RegisterFilterPlugin("Reject",
-					schedulertesting.NewFakeFilterPlugin(map[string]fwktype.Code{"node-1": fwktype.Unschedulable})))
-			}
-			s := newTestSchedulingWithPlugins(t, ctx, plugins, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
-			if stage == "extender" {
-				s.sched.Extenders = []fwktype.Extender{&schedulertesting.FakeExtender{
-					Predicates: []schedulertesting.FitPredicate{func(_ *corev1.Pod, node fwktype.NodeInfo) *fwktype.Status {
-						if node.Node().Name == "node-1" {
-							return fwktype.NewStatus(fwktype.Unschedulable)
-						}
-						return nil
-					}},
-				}}
-			}
-			fwk := s.sched.Profiles["koord-scheduler"]
-			key := equivalenceCacheKey(fwk.ProfileName(), "hash")
-			cycle := s.sched.CurrentCycle()
-			s.equivalence.store(key, quotaNodes(100, "node-1", "node-2"), cycle, nil, PlacementPack)
-			s.equivalence.consume(key, "node-1", cycle)
-			snapshot, err := s.updateSnapshot(klog.FromContext(ctx), fwk)
-			require.NoError(t, err)
-			pod := makeClassPod("pod", "hash")
-			state := framework.NewCycleState()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := newTestSchedulingWithPlugins(t, ctx, []schedulertesting.RegisterPluginFunc{
+		schedulertesting.RegisterFilterPlugin("Reject",
+			schedulertesting.NewFakeFilterPlugin(map[string]fwktype.Code{"node-1": fwktype.Unschedulable})),
+	}, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
+	fwk := s.sched.Profiles["koord-scheduler"]
+	key := equivalenceCacheKey(fwk.ProfileName(), "hash")
+	cycle := s.sched.CurrentCycle()
+	s.equivalence.store(key, quotaNodes(100, "node-1", "node-2"), cycle, nil, PlacementPack)
+	s.equivalence.consume(key, "node-1", cycle)
+	_, err := s.updateSnapshot(klog.FromContext(ctx), fwk)
+	require.NoError(t, err)
+	pod := makeClassPod("pod", "hash")
+	state := framework.NewCycleState()
+	_, status, _ := fwk.RunPreFilterPlugins(ctx, state, pod)
+	require.True(t, status.IsSuccess(), "PreFilter: %v", status.Message())
 
-			result, reason := s.scheduleFromEquivalenceClass(ctx, state, fwk, pod, key, snapshot, s.runPreFilter(ctx, state, fwk, pod))
+	node := s.Reuse(ctx, state, fwk, pod)
 
-			assert.Empty(t, reason)
-			assert.Equal(t, "node-2", result.SuggestedHost)
-			assert.Equal(t, 1, result.FeasibleNodes)
-			entry := s.equivalence.entries[key]
-			require.NotNil(t, entry)
-			quota, evaluated := int64(0), 2
-			if stage == "PreFilter" {
-				quota, evaluated = 99, 1
-			}
-			assert.Equal(t, evaluated, result.EvaluatedNodes)
-			assert.Equal(t, quota, entry.nodes[0].quota)
-			assert.Equal(t, int64(99), entry.nodes[1].quota)
-			assert.Equal(t, 1, entry.last)
-		})
-	}
+	// The pack anchor was node-1, which this pod's Filter rejects. The anchor is dropped permanently
+	// for this entry and the pod moves on to the next candidate.
+	assert.Equal(t, "node-2", node)
+	s.RecordResult(ctx, state, fwk, pod, node, nil, 0)
+	entry := s.equivalence.entries[key]
+	require.NotNil(t, entry)
+	assert.Equal(t, int64(0), entry.nodes[0].quota, "the rejected anchor stays rejected")
+	assert.Equal(t, int64(99), entry.nodes[1].quota)
+	assert.Equal(t, 1, entry.last)
 }
 
 func TestFullPathBackfillsConfiguredPlacement(t *testing.T) {
@@ -300,7 +205,7 @@ func TestFullPathBackfillsConfiguredPlacement(t *testing.T) {
 		t.Run(string(policy), func(t *testing.T) {
 			p := newPlacementSuit(t, policy, placementNodes()...)
 			p.place(1)
-			entry := p.s.equivalence.entries[equivalenceCacheKey(p.fwk.ProfileName(), "class")]
+			entry := p.engine.equivalence.entries[equivalenceCacheKey(p.fwk.ProfileName(), "class")]
 			require.NotNil(t, entry)
 			assert.Equal(t, policy, entry.placement)
 		})

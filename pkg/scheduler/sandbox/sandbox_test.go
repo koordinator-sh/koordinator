@@ -250,7 +250,18 @@ func (s *setupTestSuit) requireWired(t *testing.T) {
 	for name, fwk := range s.sched.Profiles {
 		handle, ok := fwk.(frameworkext.EquivalenceAwareHandle)
 		require.True(t, ok, name)
-		require.Len(t, handle.GetSchedulingDecisionProviders(), 1, "profile %s must get the equivalence path", name)
+		require.NotNil(t, handle.GetReuseProvider(), "profile %s must get the equivalence path", name)
+		require.NotNil(t, handle.GetReuseRecorder(), "profile %s must record scores for the equivalence path", name)
+	}
+}
+
+func (s *setupTestSuit) requireNotWired(t *testing.T) {
+	t.Helper()
+	for name, fwk := range s.sched.Profiles {
+		handle, ok := fwk.(frameworkext.EquivalenceAwareHandle)
+		require.True(t, ok, name)
+		assert.Nil(t, handle.GetReuseProvider(), "profile %s must stay on the upstream path", name)
+		assert.Nil(t, handle.GetReuseRecorder(), "profile %s must stay on the upstream path", name)
 	}
 }
 
@@ -265,8 +276,7 @@ func TestSetupWiresEveryProfile(t *testing.T) {
 
 	_, ctx := ktesting.NewTestContext(t)
 	s := newSetupTestSuit(t, ctx)
-	percentage := int32(5)
-	require.NoError(t, Setup(s.sched, s.informers, &percentage))
+	require.NoError(t, Setup(s.sched, s.informers))
 	s.requireWired(t)
 }
 
@@ -286,11 +296,8 @@ func TestSetupDoesNothingWhenDisabled(t *testing.T) {
 
 	_, ctx := ktesting.NewTestContext(t)
 	s := newSetupTestSuit(t, ctx)
-	require.NoError(t, Setup(s.sched, s.informers, nil))
-	for name, fwk := range s.sched.Profiles {
-		handle := fwk.(frameworkext.EquivalenceAwareHandle)
-		assert.Empty(t, handle.GetSchedulingDecisionProviders(), "profile %s must stay on the upstream path", name)
-	}
+	require.NoError(t, Setup(s.sched, s.informers))
+	s.requireNotWired(t)
 }
 
 func TestSetupRejectsInvalidConfig(t *testing.T) {
@@ -333,7 +340,7 @@ func TestSetupRejectsInvalidConfig(t *testing.T) {
 
 			_, ctx := ktesting.NewTestContext(t)
 			s := newSetupTestSuit(t, ctx)
-			err := Setup(s.sched, s.informers, nil)
+			err := Setup(s.sched, s.informers)
 			require.EqualError(t, err, tt.wantErr)
 		})
 	}
@@ -345,7 +352,7 @@ func TestSetupRejectsInlineBatchSchedule(t *testing.T) {
 
 	_, ctx := ktesting.NewTestContext(t)
 	s := newSetupTestSuit(t, ctx)
-	err := Setup(s.sched, s.informers, nil)
+	err := Setup(s.sched, s.informers)
 	require.Error(t, err, "the sandbox path and inline batch schedule must be mutually exclusive")
 	assert.Contains(t, err.Error(), string(koordfeatures.EnableSandboxEquivalenceScheduling))
 	assert.Contains(t, err.Error(), string(koordfeatures.EnableInlineBatchSchedule))

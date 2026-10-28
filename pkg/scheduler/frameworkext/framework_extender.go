@@ -19,6 +19,7 @@ package frameworkext
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
@@ -113,7 +114,13 @@ type frameworkExtenderImpl struct {
 
 	factory *FrameworkExtenderFactory
 
-	schedulingDecisionProviders []SchedulingDecisionProvider
+	// reuseProvider optionally narrows a scheduling cycle to a node whose earlier decision is still
+	// valid. It is registered externally to avoid import cycles.
+	reuseProvider ReuseProvider
+
+	// reuseRecorder optionally receives the score table of a full scheduling cycle and the node it
+	// ended on, so the cycle's decision can be reused by interchangeable pods.
+	reuseRecorder ReuseRecorder
 
 	// bindingLimiter optionally bounds the number of concurrent binding cycles for the pods it
 	// handles (e.g. the sandbox equivalence-class path). It is registered externally to avoid
@@ -258,14 +265,20 @@ func (ext *frameworkExtenderImpl) EquivalenceEligibilityPlugins() []EquivalenceE
 	return append([]EquivalenceEligibilityPlugin(nil), ext.equivalenceEligibilityPlugins...)
 }
 
-func (ext *frameworkExtenderImpl) RegisterSchedulingDecisionProvider(provider SchedulingDecisionProvider) {
-	if provider != nil {
-		ext.schedulingDecisionProviders = append(ext.schedulingDecisionProviders, provider)
-	}
+func (ext *frameworkExtenderImpl) SetReuseProvider(provider ReuseProvider) {
+	ext.reuseProvider = provider
 }
 
-func (ext *frameworkExtenderImpl) GetSchedulingDecisionProviders() []SchedulingDecisionProvider {
-	return append([]SchedulingDecisionProvider(nil), ext.schedulingDecisionProviders...)
+func (ext *frameworkExtenderImpl) GetReuseProvider() ReuseProvider {
+	return ext.reuseProvider
+}
+
+func (ext *frameworkExtenderImpl) SetReuseRecorder(recorder ReuseRecorder) {
+	ext.reuseRecorder = recorder
+}
+
+func (ext *frameworkExtenderImpl) GetReuseRecorder() ReuseRecorder {
+	return ext.reuseRecorder
 }
 
 // SetBindingLimiter registers the limiter bounding concurrent binding cycles. It is registered
@@ -477,6 +490,18 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 		return nil, status, nil
 	} // skip
 
+	// Reuse
+	if ext.reuseProvider != nil && ext.reuseProvider.Handles(pod) &&
+		result.AllNodes() && pod.Status.NominatedNodeName == "" {
+		// Pass the extender itself, not ext.Framework: the provider validates candidates with
+		// RunFilterPluginsWithNominatedPods, and it must see the same filter transformers the
+		// upstream cycle will run a moment later.
+		if nodeName := ext.reuseProvider.Reuse(ctx, cycleState, ext, pod); nodeName != "" {
+			klog.V(6).InfoS("Reuse provider narrowed the candidate set", "pod", klog.KObj(pod), "nodeName", nodeName)
+			return &fwktype.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil, rejectors
+		}
+	}
+
 	return result, nil, rejectors
 }
 
@@ -595,6 +620,10 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state fwk
 	pluginToNodeScores, status := ext.Framework.RunScorePlugins(ctx, state, pod, nodeInfos)
 	if status.IsSuccess() && debugTopNScores > 0 {
 		debugScores(debugTopNScores, pod, pluginToNodeScores, nodeInfos)
+	}
+	if status.IsSuccess() && ext.reuseRecorder != nil && ext.reuseRecorder.Handles(pod) {
+		// Upstream's newSortedNodeScores aliases and reorders the returned slice.
+		ext.reuseRecorder.RecordScoreTable(state, pod, slices.Clone(pluginToNodeScores))
 	}
 	return pluginToNodeScores, status
 }

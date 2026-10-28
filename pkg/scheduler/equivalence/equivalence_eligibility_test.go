@@ -30,6 +30,7 @@ import (
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/component-base/metrics/testutil"
+	"k8s.io/klog/v2"
 	"k8s.io/klog/v2/ktesting"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
@@ -42,7 +43,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
-	"k8s.io/kubernetes/pkg/scheduler/profile"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -69,22 +69,19 @@ func (p *eligibilityPlugin) EquivalenceEligible(context.Context, fwktype.CycleSt
 	return p.status
 }
 
-// eligibilityTestSuit is newTestScheduling plus the FrameworkExtender wrapping, which is what makes
+// eligibilityTestSuit is a real framework wrapped by the FrameworkExtender, which is what makes
 // EquivalenceEligibilityPlugins visible to the equivalence path: the path discovers eligibility
 // plugins by asserting its framework is an EquivalenceAwareHandle (see checkEligibility), so a bare
 // framework silently runs without any of them.
 type eligibilityTestSuit struct {
 	scheduling *EquivalenceScheduling
 	sched      *scheduler.Scheduler
+	base       framework.Framework
+	fwk        framework.Framework
+	snapshot   *cache.Snapshot
 }
 
 func newEligibilityTestSuit(t *testing.T, ctx context.Context, plugin fwktype.Plugin, nodes ...*corev1.Node) *eligibilityTestSuit {
-	t.Helper()
-	return newEligibilityTestSuitWithLister(t, ctx, plugin, cache.NewEmptySnapshot(), nodes...)
-}
-
-// newEligibilityTestSuitWithLister builds the suit with the given snapshot lister on its profile.
-func newEligibilityTestSuitWithLister(t *testing.T, ctx context.Context, plugin fwktype.Plugin, lister fwktype.SharedLister, nodes ...*corev1.Node) *eligibilityTestSuit {
 	t.Helper()
 	logger, _ := ktesting.NewTestContext(t)
 	metrics.Register()
@@ -107,14 +104,11 @@ func newEligibilityTestSuitWithLister(t *testing.T, ctx context.Context, plugin 
 	q := internalqueue.NewTestQueue(ctx, (&queuesort.PrioritySort{}).Less)
 	t.Cleanup(q.Close)
 
+	snapshot := cache.NewEmptySnapshot()
 	sched := &scheduler.Scheduler{
 		Cache:           schedulerCache,
 		SchedulingQueue: q,
 		NextPod:         q.Pop,
-		Profiles:        profile.Map{},
-		SchedulePod: func(context.Context, framework.Framework, fwktype.CycleState, *corev1.Pod) (scheduler.ScheduleResult, error) {
-			return scheduler.ScheduleResult{SuggestedHost: "node-1", EvaluatedNodes: 1, FeasibleNodes: 1}, nil
-		},
 	}
 
 	proxy := frameworkext.PluginFactoryProxy(extenderFactory, func(context.Context, runtime.Object, fwktype.Handle) (fwktype.Plugin, error) {
@@ -127,27 +121,78 @@ func newEligibilityTestSuitWithLister(t *testing.T, ctx context.Context, plugin 
 			frameworkruntime.FactoryAdapter(plfeature.Features{}, noderesources.NewFit), "PreFilter", "Filter", "Score"),
 		schedulertesting.RegisterPluginAsExtensions(plugin.Name(), proxy, "PreFilter"),
 	}
-	fwk, err := schedulertesting.NewFramework(ctx, registeredPlugins, "koord-scheduler",
+	base, err := schedulertesting.NewFramework(ctx, registeredPlugins, "koord-scheduler",
 		frameworkruntime.WithClientSet(client),
 		frameworkruntime.WithInformerFactory(informerFactory),
-		frameworkruntime.WithSnapshotSharedLister(lister),
+		frameworkruntime.WithSnapshotSharedLister(snapshot),
 		frameworkruntime.WithEventRecorder(events.NewFakeRecorder(100)),
 		frameworkruntime.WithPodNominator(q),
 	)
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, fwk.Close()) })
+	t.Cleanup(func() { require.NoError(t, base.Close()) })
 
 	// Wrapping is what exposes EquivalenceEligibilityPlugins to the equivalence path.
-	ext := extenderFactory.NewFrameworkExtender(fwk)
-	ext.SetConfiguredPlugins(fwk.ListPlugins())
-	sched.Profiles["koord-scheduler"] = ext
+	ext := extenderFactory.NewFrameworkExtender(base)
+	ext.SetConfiguredPlugins(base.ListPlugins())
 
-	scheduling := NewEquivalenceScheduling(sched, nil, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
+	scheduling := NewEquivalenceScheduling(sched, DefaultEquivalenceClassCacheSize, PlacementSpread, fakeClass)
 	scheduling.equivalence = newEquivalenceClassCache(time.Hour, DefaultEquivalenceClassCacheSize)
-	ext.(frameworkext.EquivalenceAwareHandle).RegisterSchedulingDecisionProvider(scheduling)
-	extenderFactory.InitScheduler(&frameworkext.SchedulerAdapter{Scheduler: sched})
+	ext.(frameworkext.EquivalenceAwareHandle).SetReuseProvider(scheduling)
+	ext.(frameworkext.EquivalenceAwareHandle).SetReuseRecorder(scheduling)
 
-	return &eligibilityTestSuit{scheduling: scheduling, sched: sched}
+	return &eligibilityTestSuit{scheduling: scheduling, sched: sched, base: base, fwk: ext, snapshot: snapshot}
+}
+
+// refresh makes the framework's snapshot reflect the scheduler cache, as the upstream cycle does at
+// the start of every scheduling attempt.
+func (h *eligibilityTestSuit) refresh(t *testing.T, ctx context.Context) {
+	t.Helper()
+	require.NoError(t, h.sched.Cache.UpdateSnapshot(klog.FromContext(ctx), h.snapshot))
+}
+
+// reuse runs PreFilter, which ends by consulting the reuse provider, and returns the single node it
+// narrowed the cycle to, or "" when the cycle still covers every node.
+func (h *eligibilityTestSuit) reuse(ctx context.Context, pod *corev1.Pod) string {
+	state := framework.NewCycleState()
+	result, status, _ := h.fwk.RunPreFilterPlugins(ctx, state, pod)
+	if !status.IsSuccess() || result.AllNodes() {
+		return ""
+	}
+	for node := range result.NodeNames {
+		h.scheduling.RecordResult(ctx, state, h.fwk, pod, node, nil, 0)
+		return node
+	}
+	return ""
+}
+
+// backfill runs the three hooks a successful full cycle runs, so the class ends with a decision the
+// next pod can reuse: PreFilter (which declines to narrow), the score capture, and the backfill.
+func (h *eligibilityTestSuit) backfill(t *testing.T, ctx context.Context, pod *corev1.Pod, host string) {
+	t.Helper()
+	h.refresh(t, ctx)
+	state := framework.NewCycleState()
+	result, status, _ := h.fwk.RunPreFilterPlugins(ctx, state, pod)
+	require.True(t, status.IsSuccess(), "PreFilter: %v", status.Message())
+	require.True(t, result.AllNodes(), "the first pod of a class has nothing to reuse")
+	h.scheduling.RecordScoreTable(state, pod, []fwktype.NodePluginScores{
+		{Name: "node-1", TotalScore: 10},
+		{Name: "node-2", TotalScore: 5},
+	})
+	h.scheduling.RecordResult(ctx, state, h.fwk, pod, host, nil, 0)
+}
+
+func (h *eligibilityTestSuit) missCount(t *testing.T, reason equivalenceCacheMissReason) float64 {
+	t.Helper()
+	value, err := testutil.GetCounterMetricValue(koordmetrics.EquivalenceClassMisses.WithLabelValues(h.fwk.ProfileName(), reason.String()))
+	require.NoError(t, err)
+	return value
+}
+
+func (h *eligibilityTestSuit) hitCount(t *testing.T) float64 {
+	t.Helper()
+	value, err := testutil.GetCounterMetricValue(koordmetrics.EquivalenceClassHits.WithLabelValues(h.fwk.ProfileName()))
+	require.NoError(t, err)
+	return value
 }
 
 func TestEligibilityStatusSemantics(t *testing.T) {
@@ -171,57 +216,39 @@ func TestEligibilityStatusSemantics(t *testing.T) {
 			_, ctx := ktesting.NewTestContext(t)
 			plugin := &eligibilityPlugin{}
 			h := newEligibilityTestSuit(t, ctx, plugin, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
-			s := h.scheduling
-			fwk := h.sched.Profiles["koord-scheduler"]
-			keyA := equivalenceCacheKey(fwk.ProfileName(), "key-a")
-			keyB := equivalenceCacheKey(fwk.ProfileName(), "key-b")
 
 			for _, key := range []string{"key-a", "key-b"} {
-				_, err := h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeClassPod("first-"+key, key))
-				require.NoError(t, err)
+				h.backfill(t, ctx, makeClassPod("first-"+key, key), "node-1")
 			}
-			require.Len(t, s.equivalence.entries, 2)
-			cachedA := s.equivalence.entries[keyA]
+			require.Len(t, h.scheduling.equivalence.entries, 2)
 
 			plugin.status = tt.status
-			hits := koordmetrics.EquivalenceClassHits.WithLabelValues(fwk.ProfileName())
-			hitsBefore, err := testutil.GetCounterMetricValue(hits)
-			require.NoError(t, err)
+			hitsBefore := h.hitCount(t)
 			var missesBefore float64
 			if tt.missReason != "" {
-				missesBefore, err = testutil.GetCounterMetricValue(koordmetrics.EquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), tt.missReason.String()))
-				require.NoError(t, err)
+				missesBefore = h.missCount(t, tt.missReason)
 			}
 
-			result, err := h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeClassPod("second", "key-a"))
-			require.NoError(t, err)
+			node := h.reuse(ctx, makeClassPod("second", "key-a"))
 
-			hitsAfter, err := testutil.GetCounterMetricValue(hits)
-			require.NoError(t, err)
 			if tt.missReason == "" {
-				assert.Equal(t, hitsBefore+1, hitsAfter, "an eligible pod reuses the cached decision")
+				// The class was backfilled by a pod placed on node-1, which makes node-1 the placement
+				// anchor; spread walks on to the next cached node.
+				assert.Equal(t, "node-2", node, "an eligible pod reuses the cached decision")
+				assert.Equal(t, hitsBefore+1, h.hitCount(t))
 			} else {
-				assert.Equal(t, 2, result.FeasibleNodes, "an ineligible pod runs full node selection")
-				assert.Equal(t, 2, result.EvaluatedNodes, "an ineligible pod makes no fast-path attempt")
-				assert.Equal(t, hitsBefore, hitsAfter)
-				missesAfter, err := testutil.GetCounterMetricValue(koordmetrics.EquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), tt.missReason.String()))
-				require.NoError(t, err)
-				assert.Equal(t, missesBefore+1, missesAfter)
+				assert.Empty(t, node, "an ineligible pod leaves the candidate set untouched")
+				assert.Equal(t, hitsBefore, h.hitCount(t))
+				assert.Equal(t, missesBefore+1, h.missCount(t, tt.missReason))
 			}
 
-			assert.Contains(t, s.equivalence.entries, keyB, "a pod's eligibility never touches other classes")
+			assert.Contains(t, h.scheduling.equivalence.entries, equivalenceCacheKey(h.fwk.ProfileName(), "key-b"),
+				"a pod's eligibility never touches other classes")
+			keyA := equivalenceCacheKey(h.fwk.ProfileName(), "key-a")
 			if tt.keepsClass {
-				require.Contains(t, s.equivalence.entries, keyA)
-				if tt.missReason != "" {
-					assert.Same(t, cachedA, s.equivalence.entries[keyA], "an ineligible pod must not backfill")
-				}
+				assert.Contains(t, h.scheduling.equivalence.entries, keyA)
 			} else {
-				assert.NotContains(t, s.equivalence.entries, keyA)
-				_, ok, reason := s.equivalence.next(keyA, h.sched.CurrentCycle())
-				assert.False(t, ok)
-				// The veto drops the class decision; key-b is still cached, so the lookup reports
-				// the class as unknown rather than the cache as empty.
-				assert.Equal(t, equivalenceCacheMissUnknownClass, reason)
+				assert.NotContains(t, h.scheduling.equivalence.entries, keyA)
 			}
 		})
 	}
@@ -231,49 +258,59 @@ func TestIneligiblePodDoesNotBackfill(t *testing.T) {
 	_, ctx := ktesting.NewTestContext(t)
 	plugin := &eligibilityPlugin{status: fwktype.NewStatus(fwktype.Unschedulable, "veto")}
 	h := newEligibilityTestSuit(t, ctx, plugin, makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
-	s := h.scheduling
-	fwk := h.sched.Profiles["koord-scheduler"]
+	key := equivalenceCacheKey(h.fwk.ProfileName(), "key-a")
 
-	result, err := h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeClassPod("vetoed", "key-a"))
-	require.NoError(t, err)
-	assert.Equal(t, 2, result.FeasibleNodes)
-	assert.Empty(t, s.equivalence.entries, "a vetoed pod must not build a decision")
+	// A vetoed pod runs the full cycle, but the class must not be built from its decision.
+	h.refresh(t, ctx)
+	state := framework.NewCycleState()
+	require.Empty(t, h.scheduling.Reuse(ctx, state, h.fwk, makeClassPod("vetoed", "key-a")))
+	h.scheduling.RecordScoreTable(state, makeClassPod("vetoed", "key-a"), []fwktype.NodePluginScores{{Name: "node-1", TotalScore: 10}})
+	h.scheduling.RecordResult(ctx, state, h.fwk, makeClassPod("vetoed", "key-a"), "node-1", nil, 0)
+	assert.Empty(t, h.scheduling.equivalence.entries, "a vetoed pod must not build a decision")
 
 	// Once the pod is eligible again, the class is backfilled and then reused.
 	plugin.status = nil
-	result, err = h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeClassPod("backfill", "key-a"))
-	require.NoError(t, err)
-	assert.Equal(t, 2, result.FeasibleNodes)
-	require.Len(t, s.equivalence.entries, 1)
-	hits := hitCount(t, fwk.ProfileName())
-	_, err = h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeClassPod("reuse", "key-a"))
-	require.NoError(t, err)
-	assert.Equal(t, hits+1, hitCount(t, fwk.ProfileName()))
+	h.backfill(t, ctx, makeClassPod("backfill", "key-a"), "node-1")
+	require.Contains(t, h.scheduling.equivalence.entries, key)
+
+	hits := h.hitCount(t)
+	// The backfilling pod was placed on node-1, which makes node-1 the placement anchor; spread
+	// walks on to the next cached node.
+	assert.Equal(t, "node-2", h.reuse(ctx, makeClassPod("reuse", "key-a")))
+	assert.Equal(t, hits+1, h.hitCount(t))
 }
 
-// replacedLister stands for a snapshot lister a profile swapped in for the scheduler's own
-// *cache.Snapshot, which the equivalence path cannot refresh.
+// replacedLister stands for a snapshot lister a profile swapped in for the scheduler's own one. The
+// narrowing reads whatever lister the profile exposes, so a replaced lister that does not hold the
+// cached node must be reported, not silently ignored.
 type replacedLister struct {
 	fwktype.SharedLister
 }
 
-func TestUnsupportedSnapshotListerFallsBackToUpstream(t *testing.T) {
-	_, ctx := ktesting.NewTestContext(t)
-	plugin := &eligibilityPlugin{status: fwktype.AsStatus(errors.New("eligibility must not be consulted"))}
-	h := newEligibilityTestSuitWithLister(t, ctx, plugin, replacedLister{cache.NewEmptySnapshot()},
-		makeNode("node-1", "4", "8Gi"), makeNode("node-2", "4", "8Gi"))
-	fwk := h.sched.Profiles["koord-scheduler"]
-	declined := koordmetrics.EquivalenceClassMisses.WithLabelValues(fwk.ProfileName(), equivalenceCacheMissSnapshotUnsupported.String())
-	before, err := testutil.GetCounterMetricValue(declined)
-	require.NoError(t, err)
+// listerFramework overrides the snapshot lister of the wrapped framework.
+type listerFramework struct {
+	framework.Framework
+	lister fwktype.SharedLister
+}
 
-	// h.sched.SchedulePod is FrameworkExtenderFactory.scheduleOne, which hands a declined pod to the
-	// upstream schedulePod (the stub configured by the suit) instead of failing it.
-	result, err := h.sched.SchedulePod(ctx, fwk, framework.NewCycleState(), makeClassPod("pod", "key-a"))
-	require.NoError(t, err)
-	assert.Equal(t, scheduler.ScheduleResult{SuggestedHost: "node-1", EvaluatedNodes: 1, FeasibleNodes: 1}, result)
-	after, err := testutil.GetCounterMetricValue(declined)
-	require.NoError(t, err)
-	assert.Equal(t, before+1, after)
-	assert.Empty(t, h.scheduling.equivalence.entries)
+func (f *listerFramework) SnapshotSharedLister() fwktype.SharedLister {
+	return f.lister
+}
+
+func TestReplacedSnapshotListerIsUsed(t *testing.T) {
+	_, ctx := ktesting.NewTestContext(t)
+	h := newEligibilityTestSuit(t, ctx, &eligibilityPlugin{}, makeNode("node-1", "4", "8Gi"))
+	h.refresh(t, ctx)
+	h.scheduling.equivalence.store(equivalenceCacheKey(h.fwk.ProfileName(), "key-a"), quotaNodes(1, "node-1"), h.sched.CurrentCycle(), nil, PlacementSpread)
+
+	// The narrowing reads the lister of the framework it is handed, not the scheduler's own. Here that
+	// lister does not hold the cached node, so the candidate cannot be resolved and the pod must be
+	// reported as a snapshot miss rather than narrowed to a node nothing validated.
+	empty := &listerFramework{Framework: h.base, lister: &replacedLister{SharedLister: cache.NewEmptySnapshot()}}
+	hits := h.hitCount(t)
+	missesBefore := h.missCount(t, equivalenceCacheMissSnapshotError)
+
+	assert.Empty(t, h.scheduling.Reuse(ctx, framework.NewCycleState(), empty, makeClassPod("pod", "key-a")))
+	assert.Equal(t, hits, h.hitCount(t))
+	assert.Equal(t, missesBefore+1, h.missCount(t, equivalenceCacheMissSnapshotError))
 }

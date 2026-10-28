@@ -158,7 +158,8 @@ const (
 	// alpha: v1.9
 	//
 	// EnableSandboxEquivalenceScheduling enables equivalence-class node selection and binding concurrency
-	// limits for sandbox pods while reusing the upstream scheduler loop.
+	// limits for sandbox pods while reusing the upstream scheduler loop. It is disabled when scheduler
+	// extenders are configured.
 	EnableSandboxEquivalenceScheduling featuregate.Feature = "EnableSandboxEquivalenceScheduling"
 )
 

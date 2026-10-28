@@ -599,7 +599,7 @@ func Setup(ctx context.Context, opts *options.Options, outOfTreeRegistryOptions 
 
 	// Sandbox equivalence scheduling is an enhancement of the default scheduling loop, so it is
 	// only assembled when no custom workflow takes that loop over.
-	if err := sandbox.Setup(sched, cc.InformerFactory, cc.ComponentConfig.PercentageOfNodesToScore); err != nil {
+	if err := sandbox.Setup(sched, cc.InformerFactory); err != nil {
 		return nil, nil, nil, nil, err
 	}
 

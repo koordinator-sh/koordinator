@@ -18,8 +18,8 @@ package frameworkext
 
 import (
 	"context"
-	"errors"
 	"reflect"
+	"time"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 
@@ -119,12 +118,17 @@ type EquivalenceAwareHandle interface {
 	// equivalence-class reuse.
 	EquivalenceEligibilityPlugins() []EquivalenceEligibilityPlugin
 
-	// RegisterSchedulingDecisionProvider appends a provider during setup, before scheduling starts.
-	// The first registered provider whose Handles returns true owns the decision, including errors.
-	// A nil provider is ignored.
-	RegisterSchedulingDecisionProvider(provider SchedulingDecisionProvider)
-	// GetSchedulingDecisionProviders returns providers in registration order. The returned slice is read-only.
-	GetSchedulingDecisionProviders() []SchedulingDecisionProvider
+	// SetReuseProvider registers the component consulted at the end of PreFilter to narrow the
+	// candidate set. It must be called during setup, before scheduling starts.
+	SetReuseProvider(provider ReuseProvider)
+	// GetReuseProvider returns the registered provider, or nil.
+	GetReuseProvider() ReuseProvider
+
+	// SetReuseRecorder registers the component told about the scores of a full scheduling cycle
+	// and about where the cycle ended. It must be called during setup, before scheduling starts.
+	SetReuseRecorder(recorder ReuseRecorder)
+	// GetReuseRecorder returns the registered recorder, or nil.
+	GetReuseRecorder() ReuseRecorder
 
 	// SetBindingLimiter registers a BindingLimiter that bounds the number of concurrent binding
 	// cycles for the pods it handles. It must be called during setup, before scheduling starts.
@@ -133,26 +137,30 @@ type EquivalenceAwareHandle interface {
 	SetBindingLimiter(limiter BindingLimiter)
 }
 
-// ErrSchedulingDecisionDeclined is returned by SchedulingDecisionProvider.SchedulePod when the
-// provider cannot decide for this pod in this profile after all, e.g. because the profile's
-// snapshot lister is not one it can refresh. The pod is then scheduled by the upstream path.
-var ErrSchedulingDecisionDeclined = errors.New("scheduling decision declined by provider")
-
-// SchedulingDecisionProvider lets a scheduling extension override the node-selection decision for the
-// pods it handles, while keeping the upstream Scheduler.Run/ScheduleOne loop and reusing
-// FrameworkExtenderFactory.scheduleOne's Koordinator lifecycle hooks (diagnosis, monitor, auditor,
-// reservation nomination, ResizePod). FrameworkExtenderFactory.scheduleOne calls SchedulePod instead
-// of the upstream schedulePod when Handles(pod) is true. Implementations live outside frameworkext
-// and are registered on the EquivalenceAwareHandle to avoid import cycles.
-type SchedulingDecisionProvider interface {
-	// Handles reports whether the provider wants to make the scheduling decision for the pod.
+// ReuseProvider narrows a scheduling cycle to a node whose earlier decision is still valid, so a
+// group of interchangeable pods pays for full node selection once. It is consulted at the end of
+// RunPreFilterPlugins, which koord already owns; the upstream cycle then filters and, if more than
+// one node survives, scores exactly as usual.
+type ReuseProvider interface {
+	// Handles reports whether the provider participates for this pod.
 	Handles(pod *corev1.Pod) bool
-	// SchedulePod returns the scheduling decision for the pod, mirroring scheduler.SchedulePod's
-	// contract: a ScheduleResult with the suggested host, or a *framework.FitError when the pod does
-	// not fit any node. It must not recurse back into scheduleOne. Returning
-	// ErrSchedulingDecisionDeclined, before any plugin has run for the pod, hands the pod to the
-	// upstream path.
-	SchedulePod(ctx context.Context, state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod) (scheduler.ScheduleResult, error)
+	// Reuse returns a node this cycle's Filter has already validated, or "" to leave the PreFilter
+	// result unchanged. The caller invokes it only when PreFilter still covers every node and the
+	// pod carries no NominatedNodeName.
+	Reuse(ctx context.Context, state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod) string
+}
+
+// ReuseRecorder captures what a reuse decision needs from the cycle that produced it: the weighted
+// scores of a full cycle, and where that cycle ended.
+type ReuseRecorder interface {
+	// Handles reports whether the recorder participates for this pod.
+	Handles(pod *corev1.Pod) bool
+	// RecordScoreTable receives a copy of the weighted per-node scores aligned to the input nodes,
+	// before the upstream scheduler reorders them in place.
+	RecordScoreTable(state fwktype.CycleState, pod *corev1.Pod, scores []fwktype.NodePluginScores)
+	// RecordResult receives the terminal outcome and elapsed time, including PreFilter,
+	// reservation nomination and resizing. host is meaningful only when err is nil.
+	RecordResult(ctx context.Context, state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod, host string, err error, duration time.Duration)
 }
 
 // BindingLimiter bounds concurrent PreBind/Bind execution for the pods it handles.

@@ -393,32 +393,20 @@ func PodScheduleAttemptInfo(pod *corev1.Pod) (attempts int, initialAttemptTimest
 	return podInfo.Attempts, podInfo.InitialAttemptTimestamp, true
 }
 
-// dispatchSchedulePod routes the node-selection decision to a registered SchedulingDecisionProvider
-// (e.g. the sandbox equivalence-class path) when it handles the pod; otherwise, or when the provider
-// declines, it falls back to the upstream schedulePod. f.schedulePod is the raw upstream
-// Scheduler.SchedulePod captured in InitScheduler, so this must not recurse into scheduleOne.
-func (f *FrameworkExtenderFactory) dispatchSchedulePod(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
-	if handle, ok := fwk.(EquivalenceAwareHandle); ok {
-		for _, provider := range handle.GetSchedulingDecisionProviders() {
-			if provider.Handles(pod) {
-				result, err := provider.SchedulePod(ctx, cycleState, fwk, pod)
-				if !errors.Is(err, ErrSchedulingDecisionDeclined) {
-					return result, err
-				}
-				break
-			}
-		}
+func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduleResult scheduler.ScheduleResult, err error) {
+	extender, ok := fwk.(*frameworkExtenderImpl)
+	if ok && extender.reuseRecorder != nil && extender.reuseRecorder.Handles(pod) {
+		startedAt := time.Now()
+		defer func() {
+			extender.reuseRecorder.RecordResult(ctx, cycleState, fwk, pod, scheduleResult.SuggestedHost, err, time.Since(startedAt))
+		}()
 	}
-	return f.schedulePod(ctx, fwk, cycleState, pod)
-}
-
-func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
 	InitDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
 	if f.workloadAuditor != nil {
 		f.workloadAuditor.RecordAttemptPod(pod)
 	}
-	scheduleResult, err := f.dispatchSchedulePod(ctx, fwk, cycleState, pod)
+	scheduleResult, err = f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
 		if st := getBatchScheduleState(cycleState); st != nil && st.handled && st.success {
 			// The whole job (including this pod) has already been assumed and bound by the inline
@@ -430,7 +418,6 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 		return scheduleResult, err
 	}
 
-	extender, ok := fwk.(*frameworkExtenderImpl)
 	if ok {
 		// Due to some ResizePod plugins need the reservation nomination before the real Reserve phase,
 		// and the PreScore phase might be skipped, we force to nominate reservation here.

@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
+	"k8s.io/klog/v2"
 	"k8s.io/kubernetes/pkg/scheduler"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
@@ -125,10 +126,11 @@ func (sandboxClass) Key(pod *corev1.Pod) string {
 var _ frameworkext.EquivalenceClass = sandboxClass{}
 
 // Setup wires equivalence-class node selection and shared binding admission onto every profile's
-// EquivalenceAwareHandle, so FrameworkExtenderFactory.scheduleOne routes sandbox pods through the
-// equivalence path and the upstream binding cycle bounds their concurrency through the limiter.
-// It wires nothing when the feature gate is off, leaving the upstream scheduling path untouched.
-func Setup(sched *scheduler.Scheduler, informerFactory informers.SharedInformerFactory, percentageOfNodesToScore *int32) error {
+// EquivalenceAwareHandle, so the equivalence path narrows sandbox pods at PreFilter and backfills
+// them at the end of the cycle, and the upstream binding cycle bounds their concurrency through the
+// limiter. It wires nothing when the feature gate is off, leaving the upstream scheduling path
+// untouched.
+func Setup(sched *scheduler.Scheduler, informerFactory informers.SharedInformerFactory) error {
 	if !feature.DefaultFeatureGate.Enabled(koordfeatures.EnableSandboxEquivalenceScheduling) {
 		return nil
 	}
@@ -138,6 +140,16 @@ func Setup(sched *scheduler.Scheduler, informerFactory informers.SharedInformerF
 	if feature.DefaultFeatureGate.Enabled(koordfeatures.EnableInlineBatchSchedule) {
 		return fmt.Errorf("feature gates %s and %s are mutually exclusive",
 			koordfeatures.EnableSandboxEquivalenceScheduling, koordfeatures.EnableInlineBatchSchedule)
+	}
+	// Configuring extenders changes how the upstream cycle ranks nodes: their scores are merged
+	// after Score and their randomizer breaks ties, so the table captured at RunScorePlugins would no
+	// longer be the final order. Sandbox equivalence scheduling does not need extenders, so leave
+	// those clusters entirely on the upstream path instead of caching a wrong order.
+	if len(sched.Extenders) > 0 {
+		klog.Warningf("Feature gate %s is enabled but the scheduler configures %d extenders; "+
+			"sandbox equivalence scheduling stays disabled because the captured score order would not "+
+			"match the upstream ranking", koordfeatures.EnableSandboxEquivalenceScheduling, len(sched.Extenders))
+		return nil
 	}
 	if MaxConcurrentBindings <= 0 {
 		return fmt.Errorf("sandbox max concurrent bindings must be greater than 0")
@@ -152,7 +164,7 @@ func Setup(sched *scheduler.Scheduler, informerFactory informers.SharedInformerF
 	}
 	// One class feeds both modules so membership and identity cannot diverge between them.
 	class := sandboxClass{}
-	scheduling := equivalence.NewEquivalenceScheduling(sched, percentageOfNodesToScore, EquivalenceCacheSize, placement, class)
+	scheduling := equivalence.NewEquivalenceScheduling(sched, EquivalenceCacheSize, placement, class)
 	// One limiter instance is shared across all profiles so its semaphore bounds the total number
 	// of concurrent sandbox binding cycles, not the number per profile.
 	limiter := bindinglimiter.NewBindingLimiter(MaxConcurrentBindings, class)
@@ -163,7 +175,8 @@ func Setup(sched *scheduler.Scheduler, informerFactory informers.SharedInformerF
 
 	for _, fwk := range sched.Profiles {
 		if handle, ok := fwk.(frameworkext.EquivalenceAwareHandle); ok {
-			handle.RegisterSchedulingDecisionProvider(scheduling)
+			handle.SetReuseProvider(scheduling)
+			handle.SetReuseRecorder(scheduling)
 			handle.SetBindingLimiter(limiter)
 		}
 	}

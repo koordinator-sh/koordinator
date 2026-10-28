@@ -18,9 +18,7 @@ package reservation
 
 import (
 	"context"
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,18 +35,12 @@ import (
 	"k8s.io/klog/v2/ktesting"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
+	kubeschedulerconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/backend/cache"
-	internalqueue "k8s.io/kubernetes/pkg/scheduler/backend/queue"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
-	plfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/noderesources"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulermetrics "k8s.io/kubernetes/pkg/scheduler/metrics"
-	"k8s.io/kubernetes/pkg/scheduler/profile"
 	st "k8s.io/kubernetes/pkg/scheduler/testing"
-	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/scheduling/v1alpha1"
 	koordfake "github.com/koordinator-sh/koordinator/pkg/client/clientset/versioned/fake"
@@ -84,13 +76,6 @@ func newEquivalenceSuit(t *testing.T) *equivalenceSuit {
 	koordmetrics.Register()
 	frameworkexthelper.ResetRegistrations()
 
-	schedulerCache := cache.New(ctx, 30*time.Second, nil)
-	for _, name := range []string{"node-1", "node-2"} {
-		schedulerCache.AddNode(logger, st.MakeNode().Name(name).Capacity(map[corev1.ResourceName]string{
-			corev1.ResourceCPU: "4", corev1.ResourceMemory: "8Gi",
-		}).Obj())
-	}
-
 	koordClient := koordfake.NewSimpleClientset()
 	extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClient),
@@ -112,54 +97,64 @@ func newEquivalenceSuit(t *testing.T) *equivalenceSuit {
 	})
 
 	client := kubefake.NewSimpleClientset()
-	q := internalqueue.NewTestQueue(ctx, (&queuesort.PrioritySort{}).Less)
-	t.Cleanup(q.Close)
-	// A per-test profile keeps the per-profile hit and miss counters independent across tests.
 	profileName := t.Name()
-	fw, err := schedulertesting.NewFramework(ctx, []schedulertesting.RegisterPluginFunc{
-		schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
-		schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
-		schedulertesting.RegisterPluginAsExtensions(noderesources.Name,
-			frameworkruntime.FactoryAdapter(plfeature.Features{}, noderesources.NewFit), "PreFilter", "Filter", "Score"),
-		schedulertesting.RegisterPluginAsExtensions(Name, proxy, "PreFilter", "Filter", "PreScore", "Score"),
-	}, profileName,
-		frameworkruntime.WithClientSet(client),
-		frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(client, 0)),
-		frameworkruntime.WithSnapshotSharedLister(cache.NewEmptySnapshot()),
-		frameworkruntime.WithEventRecorder(events.NewFakeRecorder(100)),
-		frameworkruntime.WithPodNominator(q),
-	)
+	profile := kubeschedulerconfig.KubeSchedulerProfile{
+		SchedulerName: profileName,
+		Plugins: &kubeschedulerconfig.Plugins{
+			QueueSort: kubeschedulerconfig.PluginSet{Enabled: []kubeschedulerconfig.Plugin{{Name: "PrioritySort"}}},
+			Bind:      kubeschedulerconfig.PluginSet{Enabled: []kubeschedulerconfig.Plugin{{Name: "DefaultBinder"}}},
+			PreFilter: kubeschedulerconfig.PluginSet{Enabled: []kubeschedulerconfig.Plugin{{Name: "NodeResourcesFit"}, {Name: Name}}},
+			Filter:    kubeschedulerconfig.PluginSet{Enabled: []kubeschedulerconfig.Plugin{{Name: "NodeResourcesFit"}, {Name: Name}}},
+			PreScore:  kubeschedulerconfig.PluginSet{Enabled: []kubeschedulerconfig.Plugin{{Name: "NodeResourcesFit"}, {Name: Name}}},
+			Score:     kubeschedulerconfig.PluginSet{Enabled: []kubeschedulerconfig.Plugin{{Name: "NodeResourcesFit", Weight: 1}, {Name: Name, Weight: 1}}},
+		},
+		PluginConfig: []kubeschedulerconfig.PluginConfig{{Name: "NodeResourcesFit", Args: &kubeschedulerconfig.NodeResourcesFitArgs{
+			ScoringStrategy: &kubeschedulerconfig.ScoringStrategy{Type: kubeschedulerconfig.LeastAllocated,
+				Resources: []kubeschedulerconfig.ResourceSpec{{Name: "cpu", Weight: 1}, {Name: "memory", Weight: 1}}},
+		}}},
+	}
+	sched, err := scheduler.New(ctx, client, informers.NewSharedInformerFactory(client, 0), nil,
+		func(string) events.EventRecorder { return events.NewFakeRecorder(100) },
+		scheduler.WithProfiles(profile), scheduler.WithFrameworkOutOfTreeRegistry(frameworkruntime.Registry{Name: proxy}),
+		scheduler.WithParallelism(1))
 	require.NoError(t, err)
+	t.Cleanup(sched.SchedulingQueue.Close)
+	fw := sched.Profiles[profileName]
 	t.Cleanup(func() { require.NoError(t, fw.Close()) })
 	require.NotNil(t, pl)
-
-	ext := extenderFactory.NewFrameworkExtender(fw)
+	ext := extenderFactory.GetExtender(profileName)
+	require.NotNil(t, ext)
 	ext.SetConfiguredPlugins(fw.ListPlugins())
-	sched := &scheduler.Scheduler{
-		Cache:           schedulerCache,
-		SchedulingQueue: q,
-		NextPod:         q.Pop,
-		Profiles:        profile.Map{profileName: ext},
-		SchedulePod: func(context.Context, framework.Framework, fwktype.CycleState, *corev1.Pod) (scheduler.ScheduleResult, error) {
-			return scheduler.ScheduleResult{}, fmt.Errorf("class pods must not reach the upstream scheduling path")
-		},
+	sched.Profiles[profileName] = ext
+	for _, name := range []string{"node-1", "node-2"} {
+		sched.Cache.AddNode(logger, st.MakeNode().Name(name).Capacity(map[corev1.ResourceName]string{
+			corev1.ResourceCPU: "4", corev1.ResourceMemory: "8Gi",
+		}).Obj())
 	}
-	scheduling := equivalence.NewEquivalenceScheduling(sched, nil, equivalence.DefaultEquivalenceClassCacheSize, equivalence.PlacementSpread, frameworkext.NewFakeEquivalenceClass())
-	ext.(frameworkext.EquivalenceAwareHandle).RegisterSchedulingDecisionProvider(scheduling)
+
+	scheduling := equivalence.NewEquivalenceScheduling(sched, equivalence.DefaultEquivalenceClassCacheSize, equivalence.PlacementSpread, frameworkext.NewFakeEquivalenceClass())
+	handle := ext.(frameworkext.EquivalenceAwareHandle)
+	handle.SetReuseProvider(scheduling)
+	handle.SetReuseRecorder(scheduling)
 	extenderFactory.InitScheduler(&frameworkext.SchedulerAdapter{Scheduler: sched})
 
-	return &equivalenceSuit{t: t, ctx: ctx, logger: logger, cache: schedulerCache, sched: sched, fwk: ext, pl: pl}
+	return &equivalenceSuit{t: t, ctx: ctx, logger: logger, cache: sched.Cache, sched: sched, fwk: ext, pl: pl}
 }
 
-// schedule decides a node for a pod of the class labeled app, requesting one CPU.
+// schedule runs the wrapped upstream node-selection cycle with real Reservation state.
 func (s *equivalenceSuit) schedule(name, app string) scheduler.ScheduleResult {
 	s.t.Helper()
 	pod := frameworkext.NewFakeEquivalenceClass().MakePod(name, "class-"+app)
 	pod.Labels["app"] = app
+	pod.Spec.SchedulerName = s.fwk.ProfileName()
 	pod.Spec.Containers = []corev1.Container{{Name: "main", Resources: corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
 	}}}
-	result, err := s.sched.SchedulePod(s.ctx, s.fwk, framework.NewCycleState(), pod)
+	s.sched.SchedulingQueue.Add(s.logger, pod)
+	info, err := s.sched.NextPod(s.logger)
+	require.NoError(s.t, err)
+	defer s.sched.SchedulingQueue.Done(info.Pod.UID)
+	result, err := s.sched.SchedulePod(s.ctx, s.fwk, framework.NewCycleState(), info.Pod)
 	require.NoError(s.t, err)
 	return result
 }
@@ -293,5 +288,8 @@ func TestEquivalenceStaleQuotaIsRejectedByFilter(t *testing.T) {
 		evaluated += result.EvaluatedNodes
 	}
 	assert.Equal(t, hits+2, s.hits(), "both pods are still served from the cached decision")
-	assert.Equal(t, 3, evaluated, "node-1 is tried once, rejected, and then dropped from the decision")
+
+	// The first pod that fails on the stale node drops it from the decision, so the second pod never
+	// pays for it again, and both pods are charged to the surviving node.
+	assert.Equal(t, 2, evaluated, "node-1 is tried once by the first pod and then skipped")
 }
