@@ -129,6 +129,7 @@ func NewReservePod(r *schedulingv1alpha1.Reservation) *corev1.Pod {
 	} else if IsReservationExpired(r) || IsReservationFailed(r) {
 		reservePod.Status.Phase = corev1.PodFailed
 	}
+	reservePod.Status.NominatedNodeName = r.Status.NominatedNodeName
 	if IsReservationAvailable(r) {
 		podRequests := resource.PodRequests(reservePod, resource.PodResourcesOptions{})
 		if !quotav1.Equals(podRequests, r.Status.Allocatable) {
@@ -296,6 +297,8 @@ func SetReservationUnschedulable(r *schedulingv1alpha1.Reservation, msg string) 
 
 func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
 	r.Status.Phase = schedulingv1alpha1.ReservationFailed
+	// Clear any stale nomination — the reservation will not be scheduled on the nominated node.
+	r.Status.NominatedNodeName = ""
 	// not duplicate expired info
 	idx := -1
 	isReady := false
@@ -331,6 +334,8 @@ func SetReservationExpired(r *schedulingv1alpha1.Reservation) {
 
 func SetReservationSucceeded(r *schedulingv1alpha1.Reservation) {
 	r.Status.Phase = schedulingv1alpha1.ReservationSucceeded
+	// Clear any stale nomination — the reservation has been fully allocated.
+	r.Status.NominatedNodeName = ""
 	idx := -1
 	for i, condition := range r.Status.Conditions {
 		if condition.Type == schedulingv1alpha1.ReservationConditionReady {
@@ -365,6 +370,8 @@ func SetReservationAvailable(r *schedulingv1alpha1.Reservation, nodeName string)
 	r.Status.Allocatable = requests
 	r.Status.NodeName = nodeName
 	r.Status.Phase = schedulingv1alpha1.ReservationAvailable
+	// Clear nomination once the reservation is successfully scheduled to a real node.
+	r.Status.NominatedNodeName = ""
 
 	// initialize the conditions
 	r.Status.Conditions = []schedulingv1alpha1.ReservationCondition{
