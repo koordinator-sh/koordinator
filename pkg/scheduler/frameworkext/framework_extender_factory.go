@@ -393,13 +393,20 @@ func PodScheduleAttemptInfo(pod *corev1.Pod) (attempts int, initialAttemptTimest
 	return podInfo.Attempts, podInfo.InitialAttemptTimestamp, true
 }
 
-func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduler.ScheduleResult, error) {
+func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framework.Framework, cycleState fwktype.CycleState, pod *corev1.Pod) (scheduleResult scheduler.ScheduleResult, err error) {
+	extender, ok := fwk.(*frameworkExtenderImpl)
+	if ok && extender.reuseRecorder != nil && extender.reuseRecorder.Handles(pod) {
+		startedAt := time.Now()
+		defer func() {
+			extender.reuseRecorder.RecordResult(ctx, cycleState, fwk, pod, scheduleResult.SuggestedHost, err, time.Since(startedAt))
+		}()
+	}
 	InitDiagnosis(cycleState, pod)
 	f.monitor.StartMonitoring(pod)
 	if f.workloadAuditor != nil {
 		f.workloadAuditor.RecordAttemptPod(pod)
 	}
-	scheduleResult, err := f.schedulePod(ctx, fwk, cycleState, pod)
+	scheduleResult, err = f.schedulePod(ctx, fwk, cycleState, pod)
 	if err != nil {
 		if st := getBatchScheduleState(cycleState); st != nil && st.handled && st.success {
 			// The whole job (including this pod) has already been assumed and bound by the inline
@@ -411,7 +418,6 @@ func (f *FrameworkExtenderFactory) scheduleOne(ctx context.Context, fwk framewor
 		return scheduleResult, err
 	}
 
-	extender, ok := fwk.(*frameworkExtenderImpl)
 	if ok {
 		// Due to some ResizePod plugins need the reservation nomination before the real Reserve phase,
 		// and the PreScore phase might be skipped, we force to nominate reservation here.

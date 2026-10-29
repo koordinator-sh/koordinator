@@ -19,6 +19,7 @@ package frameworkext
 import (
 	"context"
 	"reflect"
+	"time"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	corev1 "k8s.io/api/core/v1"
@@ -108,6 +109,87 @@ type FrameworkExtender interface {
 	RunResizePod(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, nodeName string) *fwktype.Status
 }
 
+// EquivalenceAwareHandle is implemented by the FrameworkExtender of every profile, but kept apart
+// from FrameworkExtender so that out-of-tree FrameworkExtender implementations do not have to
+// implement it. Callers discover it with a type assertion, as with the other optional capabilities
+// in this package; a framework without it schedules every pod through the upstream path.
+type EquivalenceAwareHandle interface {
+	// EquivalenceEligibilityPlugins returns plugins that can opt a pod out of
+	// equivalence-class reuse.
+	EquivalenceEligibilityPlugins() []EquivalenceEligibilityPlugin
+
+	// SetReuseProvider registers the component consulted at the end of PreFilter to narrow the
+	// candidate set. It must be called during setup, before scheduling starts.
+	SetReuseProvider(provider ReuseProvider)
+	// GetReuseProvider returns the registered provider, or nil.
+	GetReuseProvider() ReuseProvider
+
+	// SetReuseRecorder registers the component told about the scores of a full scheduling cycle
+	// and about where the cycle ended. It must be called during setup, before scheduling starts.
+	SetReuseRecorder(recorder ReuseRecorder)
+	// GetReuseRecorder returns the registered recorder, or nil.
+	GetReuseRecorder() ReuseRecorder
+
+	// SetBindingLimiter registers a BindingLimiter that bounds the number of concurrent binding
+	// cycles for the pods it handles. It must be called during setup, before scheduling starts.
+	// It is registered externally (e.g. by a scheduling assembly package) to avoid import cycles.
+	// A nil limiter disables the bound.
+	SetBindingLimiter(limiter BindingLimiter)
+}
+
+// ReuseProvider narrows a scheduling cycle to a node whose earlier decision is still valid, so a
+// group of interchangeable pods pays for full node selection once. It is consulted at the end of
+// RunPreFilterPlugins, which koord already owns; the upstream cycle then filters and, if more than
+// one node survives, scores exactly as usual.
+type ReuseProvider interface {
+	// Handles reports whether the provider participates for this pod.
+	Handles(pod *corev1.Pod) bool
+	// Reuse returns a node this cycle's Filter has already validated, or "" to leave the PreFilter
+	// result unchanged. The caller invokes it only when PreFilter still covers every node and the
+	// pod carries no NominatedNodeName.
+	Reuse(ctx context.Context, state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod) string
+}
+
+// ReuseRecorder captures what a reuse decision needs from the cycle that produced it: the weighted
+// scores of a full cycle, and where that cycle ended.
+type ReuseRecorder interface {
+	// Handles reports whether the recorder participates for this pod.
+	Handles(pod *corev1.Pod) bool
+	// RecordScoreTable receives a copy of the weighted per-node scores aligned to the input nodes,
+	// before the upstream scheduler reorders them in place.
+	RecordScoreTable(state fwktype.CycleState, pod *corev1.Pod, scores []fwktype.NodePluginScores)
+	// RecordResult receives the terminal outcome and elapsed time, including PreFilter,
+	// reservation nomination and resizing. host is meaningful only when err is nil.
+	RecordResult(ctx context.Context, state fwktype.CycleState, fwk framework.Framework, pod *corev1.Pod, host string, err error, duration time.Duration)
+}
+
+// BindingLimiter bounds concurrent PreBind/Bind execution for the pods it handles.
+// The extender acquires in PreBind and releases at the two hooks that end every binding cycle:
+// PostBind on success and Unreserve on failure. It does not bound the number of pods waiting for
+// a slot.
+type BindingLimiter interface {
+	// Handles reports whether the limiter bounds the binding concurrency for the pod.
+	Handles(pod *corev1.Pod) bool
+	// Acquire blocks until a slot is available for the pod or ctx is done, returning ctx.Err() on
+	// cancellation. It is a no-op when the pod already holds a slot.
+	Acquire(ctx context.Context, pod *corev1.Pod) error
+	// Release returns the slot held for the pod. It is a no-op when the pod holds no slot, so
+	// repeated calls across the binding lifecycle are harmless.
+	Release(pod *corev1.Pod)
+}
+
+// EquivalenceClass groups pods whose scheduling decisions are interchangeable. Implementations own
+// the grouping semantics — membership and identity — so consumers (equivalence-class scheduling,
+// binding concurrency limiting) stay agnostic of how pods are grouped and the same machinery can
+// serve any workload class. Key must be non-empty whenever Handles reports true, and pods sharing a
+// Key must be equivalent in every scheduling-relevant field.
+type EquivalenceClass interface {
+	// Handles reports whether the pod participates in this grouping.
+	Handles(pod *corev1.Pod) bool
+	// Key returns the identity of the group the pod belongs to, or "" when it has none.
+	Key(pod *corev1.Pod) string
+}
+
 // SchedulingTransformer is the parent type for all the custom transformer plugins.
 type SchedulingTransformer interface {
 	Name() string
@@ -164,6 +246,22 @@ type PreferNodesPlugin interface {
 	fwktype.Plugin
 	// PreferNodes is used to provide preferred nodes for the scheduler to try scheduling first.
 	PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status)
+}
+
+// EquivalenceEligibilityPlugin decides whether a pod may take part in equivalence-class reuse in
+// the current scheduling cycle. It runs once per pod after PreFilter, so PreFilter-computed cycle
+// state is available, and before any cached decision is consulted. The status semantics mirror
+// fwktype.SignPlugin.SignPod, except that the cycle state is visible because eligibility may
+// depend on cluster state such as matched reservations:
+//   - Success or Skip: no objection.
+//   - Unschedulable or UnschedulableAndUnresolvable: the pod's placement depends on state a
+//     per-class decision cannot carry. The cached decision of the pod's class is invalidated and
+//     the pod runs full node selection without backfilling it.
+//   - Error: the plugin could not decide. The pod runs full node selection without backfilling,
+//     but the cached decision is kept, since a plugin failure says nothing about its staleness.
+type EquivalenceEligibilityPlugin interface {
+	fwktype.Plugin
+	EquivalenceEligible(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod) *fwktype.Status
 }
 
 // FilterTransformer is executed before Filter.
