@@ -137,23 +137,55 @@ func NewWithOptions(args runtime.Object, handle fwktype.Handle, opts ...Option) 
 		optFnc(options)
 	}
 
-	if options.topologyOptionsManager == nil {
-		options.topologyOptionsManager = NewTopologyOptionsManager()
+	// Production path: register a single shared cache across all scheduler profiles. The concrete
+	// *resourceManager implements frameworkext.SharedPluginCache and owns the shared
+	// topologyOptionsManager and the NodeResourceTopology informer factory; its Start() (invoked once
+	// by StartSharedCaches) registers the NRT and Reservation handlers, and core pod/node events
+	// arrive via the unified dispatcher. The Option seam (WithResourceManager/WithTopologyOptionsManager)
+	// is used only by tests, which inject their own managers and do not share.
+	var nrtInformerFactory nrtinformers.SharedInformerFactory
+	if options.resourceManager == nil && options.topologyOptionsManager == nil {
+		extendedHandle := handle.(frameworkext.ExtendedHandle)
+		// The create closure runs once (for the first profile that registers the key); it must capture
+		// nothing profile-specific — the shared cache owns only cluster-wide state. nrtInitErr is set
+		// only on that first run and handled right after, matching the injected path below.
+		var nrtInitErr error
+		cache := extendedHandle.GetOrRegisterSharedCache("nodenumaresource",
+			func(h frameworkext.ExtendedHandle) frameworkext.SharedPluginCache {
+				rm := NewResourceManager(h, NewTopologyOptionsManager()).(*resourceManager)
+				rm.nrtInformerFactory, nrtInitErr = initNRTInformerFactory(h)
+				return rm
+			})
+		if nrtInitErr != nil {
+			return nil, nrtInitErr
+		}
+		rm, ok := cache.(*resourceManager)
+		if !ok {
+			return nil, fmt.Errorf("shared cache %q has unexpected type %T, want *resourceManager", "nodenumaresource", cache)
+		}
+		options.resourceManager = rm
+		options.topologyOptionsManager = rm.topologyOptionsManager
+		// Reuse the shared cache's NRT factory (created by the first profile) so the lister and the
+		// Start()-registered NRT handler share one instance.
+		nrtInformerFactory = rm.nrtInformerFactory
+	} else {
+		if options.topologyOptionsManager == nil {
+			options.topologyOptionsManager = NewTopologyOptionsManager()
+		}
+		if options.resourceManager == nil {
+			options.resourceManager = NewResourceManager(handle, options.topologyOptionsManager)
+		}
+		var err error
+		if nrtInformerFactory, err = initNRTInformerFactory(handle); err != nil {
+			return nil, err
+		}
 	}
 
-	if options.resourceManager == nil {
-		defaultNUMAAllocateStrategy := GetDefaultNUMAAllocateStrategy(pluginArgs)
-		options.resourceManager = NewResourceManager(handle, defaultNUMAAllocateStrategy, options.topologyOptionsManager)
+	// ForgetPod handlers are per-extender state, so register per profile in New() (not in the shared
+	// Start()); otherwise a forget through another profile's extender never reaches the shared cache.
+	if extendedHandle, ok := handle.(frameworkext.ExtendedHandle); ok {
+		extendedHandle.RegisterForgetPodHandler((&podEventHandler{resourceManager: options.resourceManager}).deletePod)
 	}
-
-	nrtInformerFactory, err := initNRTInformerFactory(handle)
-	if err != nil {
-		return nil, err
-	}
-	if err := registerNodeResourceTopologyEventHandler(nrtInformerFactory, options.topologyOptionsManager); err != nil {
-		return nil, err
-	}
-	registerPodEventHandler(handle, options.resourceManager)
 
 	nrtLister := nrtInformerFactory.Topology().V1alpha1().NodeResourceTopologies().Lister()
 
@@ -854,6 +886,7 @@ func (p *Plugin) getResourceOptions(state *preFilterState, node *corev1.Node, re
 		requiredCPUBindPolicy:    requiredCPUBindPolicy,
 		cpuBindPolicy:            cpuBindPolicy,
 		cpuExclusivePolicy:       state.preferredCPUExclusivePolicy,
+		numaAllocateStrategy:     GetNUMAAllocateStrategy(node, GetDefaultNUMAAllocateStrategy(p.pluginArgs)),
 		preferWidestNUMAAffinity: p.isDistributeEvenly(state, node, topologyOptions),
 		hint:                     affinity,
 		requiredFromReservation:  state.hasReservationAffinity,

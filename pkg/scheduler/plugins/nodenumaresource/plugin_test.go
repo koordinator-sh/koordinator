@@ -24,6 +24,7 @@ import (
 	"time"
 
 	nrtfake "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -192,11 +193,13 @@ func newPluginTestSuit(t testing.TB, pods []*corev1.Pod, nodes []*corev1.Node) *
 	assert.NoError(t, err)
 
 	nrtClientSet := nrtfake.NewSimpleClientset()
+	nrtInformerFactory := nrtinformers.NewSharedInformerFactoryWithOptions(nrtClientSet, 0)
 	koordClientSet := koordfake.NewSimpleClientset()
 	koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
 	extenderFactory, err := frameworkext.NewFrameworkExtenderFactory(
 		frameworkext.WithKoordinatorClientSet(koordClientSet),
 		frameworkext.WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+		frameworkext.WithNodeResourceTopologySharedInformerFactory(nrtInformerFactory),
 		frameworkext.WithReservationNominator(frameworkext.NewFakeReservationNominator()),
 	)
 	assert.NoError(t, err)
@@ -260,6 +263,10 @@ func (p *pluginTestSuit) start(t testing.TB) {
 	// and silently stop the informer watchers.
 	stopCh := make(chan struct{})
 	t.Cleanup(func() { close(stopCh) })
+	// Start the shared plugin caches first (four-phase startup): this registers the unified
+	// pod/node dispatcher and invokes each registered cache's Start(ctx) — for NodeNUMAResource
+	// that registers the NRT and Reservation handlers — before any informer factory starts.
+	assert.NoError(t, p.ExtenderFactory.StartSharedCaches(context.TODO(), p.Handle.SharedInformerFactory()))
 	p.Handle.SharedInformerFactory().Start(stopCh)
 	p.ExtenderFactory.KoordinatorSharedInformerFactory().Start(stopCh)
 	p.Handle.SharedInformerFactory().WaitForCacheSync(stopCh)
