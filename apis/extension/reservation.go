@@ -262,7 +262,10 @@ func ExactMatchReservation(podRequests, reservationAllocatable corev1.ResourceLi
 		request, existsInPod := podRequests[resourceName]
 		if !existsInReservation || !existsInPod {
 			if !existsInReservation && !existsInPod {
-				return true
+				// This resource is absent on both sides, so it trivially
+				// matches. Continue checking the remaining resources instead
+				// of returning early, otherwise a later mismatch is missed.
+				continue
 			}
 			return false
 		}
