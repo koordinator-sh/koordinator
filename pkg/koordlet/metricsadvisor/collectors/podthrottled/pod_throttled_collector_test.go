@@ -155,6 +155,18 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 			args: args{},
 		},
 	}
+	for _, original := range tests[:1] {
+		tc := original
+		tc.name = "native sidecar metrics"
+		meta := *tc.fields.getPodMetas[0]
+		meta.Pod = meta.Pod.DeepCopy()
+		restart := corev1.ContainerRestartPolicyAlways
+		meta.Pod.Spec.InitContainers = []corev1.Container{{Name: meta.Pod.Status.ContainerStatuses[0].Name, RestartPolicy: &restart}}
+		meta.Pod.Status.InitContainerStatuses = meta.Pod.Status.ContainerStatuses
+		meta.Pod.Status.ContainerStatuses = nil
+		tc.fields.getPodMetas = []*statesinformer.PodMeta{&meta}
+		tests = append(tests, tc)
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			helper := system.NewFileTestUtil(t)
@@ -191,6 +203,9 @@ func Test_podThrottledCollector_collectPodThrottledInfo(t *testing.T) {
 			c := collector.(*podThrottledCollector)
 			tt.fields.initPodLastStat(c.lastPodCPUThrottled)
 			tt.fields.initContainerLastStat(c.lastContainerCPUThrottled)
+			if tt.name == "native sidecar metrics" {
+				assert.NotEmpty(t, c.collectContainerThrottledInfo(tt.fields.getPodMetas[0]))
+			}
 			assert.NotPanics(t, func() {
 				c.collectPodThrottledInfo()
 			})

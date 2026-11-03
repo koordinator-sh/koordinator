@@ -1169,7 +1169,7 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 				nodeState: nodeBurstIdle,
 			},
 			want: want{
-				podCFSQuotaVal: int64((2 + 3) * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
+				podCFSQuotaVal: int64((2 + 3) * 3 * float64(system.CFSBasePeriodValue)),
 				containerCFSQuotaVal: map[string]int64{
 					testContainerName1: int64(2 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
 					testContainerName2: int64(3 * cfsIncreaseStep * float64(system.CFSBasePeriodValue)),
@@ -1232,6 +1232,33 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			},
 		},
 	}
+	for _, quotas := range []struct {
+		name             string
+		pod, child, want int64
+	}{
+		{"parent-only-reset-at-ceiling", 50000, 150000, 150000},
+		{"container-only-reset", 150000, 50000, 50000},
+	} {
+		cfg := defaultAutoBurstCfg
+		cfg.CFSQuotaBurstPeriodSeconds = ptr.To[int64](-1)
+		tests = append(tests, struct {
+			name   string
+			fields fields
+			args   args
+			want   want
+		}{
+			name: quotas.name,
+			fields: fields{
+				podName:              testPodName1,
+				containerRes:         map[string]corev1.ResourceRequirements{testContainerName1: {Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")}}},
+				podCurCFSQuota:       quotas.pod,
+				containerCurCFSQuota: map[string]int64{testContainerName1: quotas.child},
+				containersThrottled:  map[string]testThrottledMetrics{testContainerName1: {count: 1, aggregateValues: map[metriccache.AggregationType]float64{metriccache.AggregationTypeLast: 0}}},
+			},
+			args: args{burstCfg: cfg, nodeState: nodeBurstIdle},
+			want: want{podCFSQuotaVal: quotas.want, containerCFSQuotaVal: map[string]int64{testContainerName1: quotas.child}},
+		})
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
@@ -1250,6 +1277,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+			parentMeta, err := metriccache.PodCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(podMeta.Pod.UID)))
+			assert.NoError(t, err)
+			testutil.BuildMockQueryResult(ctl, mockQuerier, mockResultFactory, parentMeta, 0)
 
 			for _, containerMetric := range tt.fields.containerMetric {
 				querMeta, err := metriccache.ContainerCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Container(containerMetric.ContainerID))
@@ -1793,4 +1824,387 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 		})
 	}
 	framework.UnregisterQOSGreyCtrlPlugin(p.name())
+}
+
+func TestCPUBurst_ExternalQuotaReset(t *testing.T) {
+	h := system.NewFileTestUtil(t)
+	defer h.Cleanup()
+	p := newTestPodWithQOS("reset", apiext.QoSLS, 500, 1024)
+	m := testutil.GetPodMetas([]*corev1.Pod{p})[0]
+	c := &m.Pod.Status.ContainerStatuses[0]
+	b := &cpuBurst{executor: newTestExecutor(), cgroupReader: resourceexecutor.NewCgroupReader()}
+	stop := make(chan struct{})
+	b.init(stop)
+	defer close(stop)
+	for i := 0; i < 2; i++ {
+		// Emulate kubelet resetting both quotas while the executor retains its cache.
+		initPodCFSQuota(m, 50000, h)
+		initContainerCFSQuota(m, map[string]int64{c.Name: 50000}, h)
+		assert.NoError(t, b.applyContainerCFSQuota(m, c, 50000, 10000))
+		assert.Equal(t, int64(60000), getPodCFSQuota(m, h))
+		assert.Equal(t, int64(60000), getContainerCFSQuota(m.CgroupDir, c, h))
+	}
+}
+
+func TestCPUBurst_ParentThrottling(t *testing.T) {
+	for _, missing := range []bool{false, true} {
+		for _, tc := range []struct {
+			name   string
+			parent float64
+			extra  string
+			policy slov1alpha1.CPUBurstPolicy
+			want   cfsOperation
+		}{
+			{"parent-only", .5, "", slov1alpha1.CPUBurstAuto, cfsScaleUp},
+			{"idle", 0, "", slov1alpha1.CPUBurstAuto, cfsRemain},
+			{"multiple-containers", .5, "regular", slov1alpha1.CPUBurstAuto, cfsRemain},
+			{"init-container", .5, "init", slov1alpha1.CPUBurstAuto, cfsRemain},
+			{"ephemeral-container", .5, "ephemeral", slov1alpha1.CPUBurstAuto, cfsRemain},
+			{"disabled", .5, "", slov1alpha1.CPUBurstNone, cfsReset},
+			{"pod-resource-budget", .5, "resources", slov1alpha1.CPUBurstAuto, cfsRemain},
+			{"pod-overhead", .5, "overhead", slov1alpha1.CPUBurstAuto, cfsRemain},
+			{"missing-parent-metric", -1, "", slov1alpha1.CPUBurstAuto, cfsRemain},
+		} {
+			t.Run(fmt.Sprintf("%s/missing=%t", tc.name, missing), func(t *testing.T) {
+				ctl := gomock.NewController(t)
+				mc := mock_metriccache.NewMockMetricCache(ctl)
+				q := mock_metriccache.NewMockQuerier(ctl)
+				f := mock_metriccache.NewMockAggregateResultFactory(ctl)
+				old := metriccache.DefaultAggregateResultFactory
+				metriccache.DefaultAggregateResultFactory = f
+				t.Cleanup(func() { metriccache.DefaultAggregateResultFactory = old })
+				mc.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(q, nil).AnyTimes()
+				p := newTestPodWithQOS("parent", apiext.QoSLS, 500, 1024)
+				switch tc.extra {
+				case "regular":
+					p.Spec.Containers = append(p.Spec.Containers, corev1.Container{Name: "other"})
+				case "init":
+					p.Spec.InitContainers = []corev1.Container{{Name: "init"}}
+				case "overhead":
+					p.Spec.Overhead = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")}
+				case "resources":
+					p.Spec.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}}
+				case "ephemeral":
+					p.Spec.EphemeralContainers = []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debug"}}}
+				}
+				cm, err := metriccache.ContainerCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Container(p.Status.ContainerStatuses[0].ContainerID))
+				assert.NoError(t, err)
+				if missing {
+					result := mock_metriccache.NewMockAggregateResult(ctl)
+					result.EXPECT().Count().Return(0).AnyTimes()
+					f.EXPECT().New(cm).Return(result).AnyTimes()
+					q.EXPECT().QueryAndClose(cm, gomock.Any(), result).Return(nil).AnyTimes()
+				} else {
+					testutil.BuildMockQueryResult(ctl, q, f, cm, 0)
+				}
+				if tc.extra == "" && tc.policy == slov1alpha1.CPUBurstAuto {
+					pm, err := metriccache.PodCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(p.UID)))
+					assert.NoError(t, err)
+					if tc.parent < 0 {
+						result := mock_metriccache.NewMockAggregateResult(ctl)
+						result.EXPECT().Value(gomock.Any()).Return(float64(0), fmt.Errorf("no samples"))
+						f.EXPECT().New(pm).Return(result)
+						q.EXPECT().QueryAndClose(pm, gomock.Any(), result).Return(nil)
+					} else {
+						testutil.BuildMockQueryResult(ctl, q, f, pm, tc.parent)
+					}
+				}
+				b := &cpuBurst{metricCache: mc, metricCollectInterval: time.Second}
+				cfg := defaultAutoBurstCfg
+				cfg.Policy = tc.policy
+				cfg.CFSQuotaBurstPeriodSeconds = ptr.To[int64](-1)
+				assert.Equal(t, tc.want, b.genOperationByContainer(&cfg, p, &p.Spec.Containers[0], &p.Status.ContainerStatuses[0]))
+			})
+		}
+	}
+}
+
+func TestCPUBurst_MissingContainerThrottling(t *testing.T) {
+	for _, tc := range []struct {
+		name, failure string
+		parent        float64
+		state         nodeStateForBurst
+		policy        slov1alpha1.CPUBurstPolicy
+		limited       bool
+		current, want int64
+	}{
+		{"empty", "empty", .5, nodeBurstIdle, slov1alpha1.CPUBurstAuto, false, 50000, 60000},
+		{"query-error", "query", .5, nodeBurstIdle, slov1alpha1.CPUBurstAuto, false, 50000, 60000},
+		{"value-error", "value", .5, nodeBurstIdle, slov1alpha1.CPUBurstAuto, false, 50000, 60000},
+		{"no-parent", "empty", -1, nodeBurstIdle, slov1alpha1.CPUBurstAuto, false, 50000, 50000},
+		{"idle-parent", "empty", 0, nodeBurstIdle, slov1alpha1.CPUBurstAuto, false, 50000, 50000},
+		{"cooling", "empty", .5, nodeBurstCooling, slov1alpha1.CPUBurstAuto, false, 50000, 50000},
+		{"unknown", "empty", .5, nodeBurstUnknown, slov1alpha1.CPUBurstAuto, false, 50000, 50000},
+		{"overload", "empty", .5, nodeBurstOverload, slov1alpha1.CPUBurstAuto, false, 60000, 50000},
+		{"ceiling", "empty", .5, nodeBurstIdle, slov1alpha1.CPUBurstAuto, false, 60000, 60000},
+		{"disabled", "empty", .5, nodeBurstIdle, slov1alpha1.CPUBurstNone, false, 60000, 50000},
+		{"burst-only", "empty", .5, nodeBurstIdle, slov1alpha1.CPUBurstOnly, false, 60000, 50000},
+		{"limiter", "empty", .5, nodeBurstIdle, slov1alpha1.CPUBurstAuto, true, 60000, 50000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctl := gomock.NewController(t)
+			mc := mock_metriccache.NewMockMetricCache(ctl)
+			q := mock_metriccache.NewMockQuerier(ctl)
+			f := mock_metriccache.NewMockAggregateResultFactory(ctl)
+			old := metriccache.DefaultAggregateResultFactory
+			metriccache.DefaultAggregateResultFactory = f
+			t.Cleanup(func() { metriccache.DefaultAggregateResultFactory = old })
+			mc.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(q, nil).AnyTimes()
+			p := createPodMetaByResource("missing", map[string]corev1.ResourceRequirements{"app": {Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")}}})
+			id := p.Pod.Status.ContainerStatuses[0].ContainerID
+			cfg := defaultAutoBurstCfg
+			cfg.Policy = tc.policy
+			cfg.CFSQuotaBurstPercent = ptr.To[int64](120)
+			cfg.CFSQuotaBurstPeriodSeconds = ptr.To[int64](-1)
+			b := &cpuBurst{metricCache: mc, metricCollectInterval: time.Second, executor: newTestExecutor(), cgroupReader: resourceexecutor.NewCgroupReader(), containerLimiter: make(map[string]*burstLimiter)}
+			if tc.limited {
+				cfg.CFSQuotaBurstPeriodSeconds = ptr.To[int64](60)
+				l := newBurstLimiter(60, 120)
+				l.currentToken = -l.bucketCapacity
+				b.containerLimiter[id] = l
+				m, err := metriccache.ContainerCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Container(id))
+				assert.NoError(t, err)
+				testutil.BuildMockQueryResult(ctl, q, f, m, .5)
+			}
+			if cfsQuotaBurstEnabled(tc.policy) && !tc.limited {
+				m, err := metriccache.ContainerCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Container(id))
+				assert.NoError(t, err)
+				result := mock_metriccache.NewMockAggregateResult(ctl)
+				f.EXPECT().New(m).Return(result)
+				if tc.failure == "query" {
+					q.EXPECT().QueryAndClose(m, gomock.Any(), result).Return(fmt.Errorf("query failed"))
+				} else {
+					q.EXPECT().QueryAndClose(m, gomock.Any(), result).Return(nil)
+					if tc.failure == "empty" {
+						result.EXPECT().Count().Return(0)
+					} else {
+						result.EXPECT().Count().Return(1)
+						result.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(0), fmt.Errorf("value failed"))
+					}
+				}
+				pm, err := metriccache.PodCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(p.Pod.UID)))
+				assert.NoError(t, err)
+				pr := mock_metriccache.NewMockAggregateResult(ctl)
+				f.EXPECT().New(pm).Return(pr)
+				q.EXPECT().QueryAndClose(pm, gomock.Any(), pr).Return(nil)
+				if tc.parent < 0 {
+					pr.EXPECT().Value(metriccache.AggregationTypeLast).Return(float64(0), fmt.Errorf("no samples"))
+				} else {
+					pr.EXPECT().Value(metriccache.AggregationTypeLast).Return(tc.parent, nil)
+				}
+			}
+			h := system.NewFileTestUtil(t)
+			initPodCFSQuota(p, tc.current, h)
+			initContainerCFSQuota(p, map[string]int64{"app": tc.current}, h)
+			stop := make(chan struct{})
+			b.init(stop)
+			defer close(stop)
+			b.applyCFSQuotaBurst(&cfg, p, tc.state)
+			assert.Equal(t, tc.want, getPodCFSQuota(p, h))
+			assert.Equal(t, tc.want, getContainerCFSQuota(p.CgroupDir, &p.Pod.Status.ContainerStatuses[0], h))
+		})
+	}
+}
+
+func TestCPUBurst_ContainerBudgets(t *testing.T) {
+	for _, native := range []bool{false, true} {
+		for _, tc := range []struct {
+			name                  string
+			mainBusy, sidecarBusy bool
+			state                 nodeStateForBurst
+		}{
+			{"main-busy", true, false, nodeBurstIdle},
+			{"sidecar-busy", false, true, nodeBurstIdle},
+			{"both-busy", true, true, nodeBurstIdle},
+			{"both-idle", false, false, nodeBurstIdle},
+			{"cooling", true, true, nodeBurstCooling},
+			{"unknown", true, true, nodeBurstUnknown},
+			{"overload", true, true, nodeBurstOverload},
+			{"pod-cap", true, false, nodeBurstIdle},
+			{"missing-metrics", false, false, nodeBurstIdle},
+			{"limiter", true, true, nodeBurstIdle},
+		} {
+			t.Run(fmt.Sprintf("native=%v/%s", native, tc.name), func(t *testing.T) {
+				h := system.NewFileTestUtil(t)
+				defer h.Cleanup()
+				p := newTestPodWithQOS("multi", apiext.QoSLS, 500, 1024)
+				if tc.name == "pod-cap" {
+					p.Spec.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("800m")}}
+				}
+				main := p.Spec.Containers[0].Name
+				side := p.Spec.Containers[0].DeepCopy()
+				side.Name = "sidecar"
+				side.Resources.Limits[corev1.ResourceCPU] = resource.MustParse("100m")
+				status := p.Status.ContainerStatuses[0]
+				status.Name = side.Name
+				status.ContainerID = genTestContainerIDByName(side.Name)
+				if native {
+					side.RestartPolicy = ptr.To(corev1.ContainerRestartPolicyAlways)
+					p.Spec.InitContainers = []corev1.Container{*side}
+					p.Status.InitContainerStatuses = []corev1.ContainerStatus{status}
+				} else {
+					p.Spec.Containers = append(p.Spec.Containers, *side)
+					p.Status.ContainerStatuses = append(p.Status.ContainerStatuses, status)
+				}
+				m := testutil.GetPodMetas([]*corev1.Pod{p})[0]
+				_, statuses := util.GetPodRegularAndSidecarContainers(p)
+				fixture := *m
+				fixture.Pod = p.DeepCopy()
+				fixture.Pod.Status.ContainerStatuses = statuses
+				initPodCFSQuota(m, 60000, h)
+				initContainerCFSQuota(&fixture, map[string]int64{main: 50000, "sidecar": 10000}, h)
+				ctl := gomock.NewController(t)
+				mc := mock_metriccache.NewMockMetricCache(ctl)
+				q := mock_metriccache.NewMockQuerier(ctl)
+				f := mock_metriccache.NewMockAggregateResultFactory(ctl)
+				old := metriccache.DefaultAggregateResultFactory
+				metriccache.DefaultAggregateResultFactory = f
+				t.Cleanup(func() { metriccache.DefaultAggregateResultFactory = old })
+				mc.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(q, nil).AnyTimes()
+				for _, c := range statuses {
+					meta, err := metriccache.ContainerCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Container(c.ContainerID))
+					assert.NoError(t, err)
+					throttle := float64(0)
+					if (c.Name == "sidecar" && tc.sidecarBusy) || (c.Name == main && tc.mainBusy) {
+						throttle = .5
+					}
+					if tc.name == "missing-metrics" {
+						result := mock_metriccache.NewMockAggregateResult(ctl)
+						result.EXPECT().Count().Return(0).AnyTimes()
+						f.EXPECT().New(meta).Return(result).AnyTimes()
+						q.EXPECT().QueryAndClose(meta, gomock.Any(), result).Return(nil).AnyTimes()
+					} else {
+						testutil.BuildMockQueryResult(ctl, q, f, meta, throttle)
+					}
+				}
+				b := &cpuBurst{metricCache: mc, metricCollectInterval: time.Second, executor: newTestExecutor(), cgroupReader: resourceexecutor.NewCgroupReader()}
+				cfg := defaultAutoBurstCfg
+				cfg.CFSQuotaBurstPeriodSeconds = ptr.To[int64](-1)
+				if tc.name == "limiter" {
+					cfg.CFSQuotaBurstPeriodSeconds = ptr.To[int64](60)
+					b.containerLimiter = make(map[string]*burstLimiter)
+					for _, status := range statuses {
+						limiter := newBurstLimiter(60, 300)
+						limiter.currentToken = -limiter.bucketCapacity
+						b.containerLimiter[status.ContainerID] = limiter
+						meta, err := metriccache.ContainerCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Container(status.ContainerID))
+						assert.NoError(t, err)
+						usage := .5
+						if status.Name == "sidecar" {
+							usage = .1
+						}
+						testutil.BuildMockQueryResult(ctl, q, f, meta, usage)
+					}
+				}
+				b.applyCFSQuotaBurst(&cfg, m, tc.state)
+				if tc.name == "pod-cap" {
+					for round := 0; round < 6; round++ {
+						b.applyCFSQuotaBurst(&cfg, m, tc.state)
+					}
+					assert.Equal(t, int64(80000), getPodCFSQuota(m, h))
+					assert.Equal(t, int64(80000), getContainerCFSQuota(m.CgroupDir, &statuses[0], h))
+					assert.Equal(t, int64(10000), getContainerCFSQuota(m.CgroupDir, &statuses[1], h))
+					return
+				}
+				assert.Equal(t, int64(180000), getPodCFSQuota(m, h))
+				for i := range statuses {
+					want := int64(50000)
+					if statuses[i].Name == "sidecar" {
+						want = 10000
+					}
+					if tc.name != "limiter" && tc.state == nodeBurstIdle && ((statuses[i].Name == "sidecar" && tc.sidecarBusy) || (statuses[i].Name == main && tc.mainBusy)) {
+						want = want * 12 / 10
+					}
+					assert.Equal(t, want, getContainerCFSQuota(m.CgroupDir, &statuses[i], h))
+				}
+			})
+		}
+	}
+}
+
+func TestPodQuotaCeiling(t *testing.T) {
+	p := newTestPodWithQOS("budget", apiext.QoSLS, 500, 1024)
+	native := corev1.Container{Name: "native", RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways), Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")}}}
+	init := corev1.Container{Name: "init", Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}}}
+	p.Spec.InitContainers = []corev1.Container{native, init}
+	cfg := defaultAutoBurstCfg
+	assert.Equal(t, int64(180000), podQuotaCeiling(p, &cfg))
+	p.Spec.Overhead = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m")}
+	assert.Equal(t, int64(185000), podQuotaCeiling(p, &cfg))
+	cfg.Policy = slov1alpha1.CPUBurstNone
+	assert.Equal(t, int64(115000), podQuotaCeiling(p, &cfg))
+	cfg.Policy = slov1alpha1.CPUBurstAuto
+	p.Spec.EphemeralContainers = []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debug"}}}
+	assert.Equal(t, int64(115000), podQuotaCeiling(p, &cfg))
+	p.Spec.EphemeralContainers = nil
+	p.Spec.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("800m")}}
+	assert.Equal(t, int64(85000), podQuotaCeiling(p, &cfg))
+	p.Spec.Resources = nil
+	p.Spec.InitContainers[0].Resources.Limits = nil
+	assert.Equal(t, int64(-1), podQuotaCeiling(p, &cfg))
+}
+
+func TestCPUBurst_MultiContainerQuotaRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		current, target int64
+		policy          slov1alpha1.CPUBurstPolicy
+		overhead        string
+		podLimit        string
+	}{
+		{"reset", 60000, 180000, slov1alpha1.CPUBurstAuto, "", ""},
+		{"unlimited", -1, -1, slov1alpha1.CPUBurstAuto, "", ""},
+		{"disabled", 180000, 60000, slov1alpha1.CPUBurstNone, "", ""},
+		{"static-only", 180000, 60000, slov1alpha1.CPUBurstOnly, "", ""},
+		{"overhead", 65000, 185000, slov1alpha1.CPUBurstAuto, "50m", ""},
+		{"pod-limit", 80000, 80000, slov1alpha1.CPUBurstAuto, "", "800m"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := system.NewFileTestUtil(t)
+			defer h.Cleanup()
+			p := newTestPodWithQOS("recovery", apiext.QoSLS, 500, 1024)
+			p.Spec.Containers = append(p.Spec.Containers, corev1.Container{Name: "sidecar", Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")}}})
+			if tc.overhead != "" {
+				p.Spec.Overhead = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(tc.overhead)}
+			}
+			if tc.podLimit != "" {
+				p.Spec.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(tc.podLimit)}}
+			}
+			m := testutil.GetPodMetas([]*corev1.Pod{p})[0]
+			b := &cpuBurst{executor: newTestExecutor(), cgroupReader: resourceexecutor.NewCgroupReader()}
+			stop := make(chan struct{})
+			b.init(stop)
+			defer close(stop)
+			cfg := defaultAutoBurstCfg
+			cfg.Policy = tc.policy
+			for round := 0; round < 2; round++ {
+				initPodCFSQuota(m, tc.current, h)
+				assert.NoError(t, b.reconcilePodQuota(m, &cfg, false))
+				if tc.current > tc.target {
+					assert.Equal(t, tc.current, getPodCFSQuota(m, h))
+				}
+				assert.NoError(t, b.reconcilePodQuota(m, &cfg, true))
+				assert.Equal(t, tc.target, getPodCFSQuota(m, h))
+			}
+		})
+	}
+}
+
+func TestPodQuotaCeiling_MinimumContainerQuota(t *testing.T) {
+	p := newTestPodWithQOS("tiny", apiext.QoSLS, 1, 1024)
+	side := p.Spec.Containers[0].DeepCopy()
+	side.Name = "sidecar"
+	p.Spec.Containers = append(p.Spec.Containers, *side)
+	cfg := defaultAutoBurstCfg
+	assert.Equal(t, int64(6000), podQuotaCeiling(p, &cfg))
+}
+
+func TestPodQuotaCeiling_RoundsUpChildCeilings(t *testing.T) {
+	p := newTestPodWithQOS("rounding", apiext.QoSLS, 333, 1024)
+	side := p.Spec.Containers[0].DeepCopy()
+	side.Name = "sidecar"
+	p.Spec.Containers = append(p.Spec.Containers, *side)
+	cfg := defaultAutoBurstCfg
+	cfg.CFSQuotaBurstPercent = ptr.To[int64](120)
+	assert.GreaterOrEqual(t, podQuotaCeiling(p, &cfg), int64(2*39960))
 }

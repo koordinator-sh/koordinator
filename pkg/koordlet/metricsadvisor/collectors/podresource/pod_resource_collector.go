@@ -223,8 +223,9 @@ func (p *podResourceCollector) collectContainerResUsed(meta *statesinformer.PodM
 	pod := meta.Pod
 	count := 0
 	containerMetrics := make([]metriccache.MetricSample, 0)
-	for i := range pod.Status.ContainerStatuses {
-		containerStat := &pod.Status.ContainerStatuses[i]
+	_, statuses := koordletutil.GetPodRegularAndSidecarContainers(pod)
+	for i := range statuses {
+		containerStat := &statuses[i]
 		containerKey := fmt.Sprintf("%s/%s/%s", pod.Namespace, pod.Name, containerStat.Name)
 		collectTime := time.Now()
 		if len(containerStat.ContainerID) == 0 {
