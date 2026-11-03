@@ -1232,6 +1232,33 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 			},
 		},
 	}
+	for _, quotas := range []struct {
+		name             string
+		pod, child, want int64
+	}{
+		{"parent-only-reset-at-ceiling", 50000, 150000, 150000},
+		{"container-only-reset", 150000, 50000, 50000},
+	} {
+		cfg := defaultAutoBurstCfg
+		cfg.CFSQuotaBurstPeriodSeconds = ptr.To[int64](-1)
+		tests = append(tests, struct {
+			name   string
+			fields fields
+			args   args
+			want   want
+		}{
+			name: quotas.name,
+			fields: fields{
+				podName:              testPodName1,
+				containerRes:         map[string]corev1.ResourceRequirements{testContainerName1: {Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")}}},
+				podCurCFSQuota:       quotas.pod,
+				containerCurCFSQuota: map[string]int64{testContainerName1: quotas.child},
+				containersThrottled:  map[string]testThrottledMetrics{testContainerName1: {count: 1, aggregateValues: map[metriccache.AggregationType]float64{metriccache.AggregationTypeLast: 0}}},
+			},
+			args: args{burstCfg: cfg, nodeState: nodeBurstIdle},
+			want: want{podCFSQuotaVal: quotas.want, containerCFSQuotaVal: map[string]int64{testContainerName1: quotas.child}},
+		})
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testHelper := system.NewFileTestUtil(t)
@@ -1250,6 +1277,10 @@ func TestCPUBurst_applyCFSQuotaBurst(t *testing.T) {
 
 			mockMetricCache := mock_metriccache.NewMockMetricCache(ctl)
 			mockMetricCache.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(mockQuerier, nil).AnyTimes()
+
+			parentMeta, err := metriccache.PodCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(podMeta.Pod.UID)))
+			assert.NoError(t, err)
+			testutil.BuildMockQueryResult(ctl, mockQuerier, mockResultFactory, parentMeta, 0)
 
 			for _, containerMetric := range tt.fields.containerMetric {
 				querMeta, err := metriccache.ContainerCPUUsageMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Container(containerMetric.ContainerID))
@@ -1793,4 +1824,88 @@ func Test_genPodBurstConfigWithPlugin(t *testing.T) {
 		})
 	}
 	framework.UnregisterQOSGreyCtrlPlugin(p.name())
+}
+
+func TestCPUBurst_ExternalQuotaReset(t *testing.T) {
+	h := system.NewFileTestUtil(t)
+	defer h.Cleanup()
+	p := newTestPodWithQOS("reset", apiext.QoSLS, 500, 1024)
+	m := testutil.GetPodMetas([]*corev1.Pod{p})[0]
+	c := &m.Pod.Status.ContainerStatuses[0]
+	b := &cpuBurst{executor: newTestExecutor(), cgroupReader: resourceexecutor.NewCgroupReader()}
+	stop := make(chan struct{})
+	b.init(stop)
+	defer close(stop)
+	for i := 0; i < 2; i++ {
+		// Emulate kubelet resetting both quotas while the executor retains its cache.
+		initPodCFSQuota(m, 50000, h)
+		initContainerCFSQuota(m, map[string]int64{c.Name: 50000}, h)
+		assert.NoError(t, b.applyContainerCFSQuota(m, c, 50000, 10000))
+		assert.Equal(t, int64(60000), getPodCFSQuota(m, h))
+		assert.Equal(t, int64(60000), getContainerCFSQuota(m.CgroupDir, c, h))
+	}
+}
+
+func TestCPUBurst_ParentThrottling(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		parent float64
+		extra  string
+		policy slov1alpha1.CPUBurstPolicy
+		want   cfsOperation
+	}{
+		{"parent-only", .5, "", slov1alpha1.CPUBurstAuto, cfsScaleUp},
+		{"idle", 0, "", slov1alpha1.CPUBurstAuto, cfsRemain},
+		{"multiple-containers", .5, "regular", slov1alpha1.CPUBurstAuto, cfsRemain},
+		{"init-container", .5, "init", slov1alpha1.CPUBurstAuto, cfsRemain},
+		{"ephemeral-container", .5, "ephemeral", slov1alpha1.CPUBurstAuto, cfsRemain},
+		{"disabled", .5, "", slov1alpha1.CPUBurstNone, cfsReset},
+		{"pod-resource-budget", .5, "resources", slov1alpha1.CPUBurstAuto, cfsRemain},
+		{"pod-overhead", .5, "overhead", slov1alpha1.CPUBurstAuto, cfsRemain},
+		{"missing-parent-metric", -1, "", slov1alpha1.CPUBurstAuto, cfsRemain},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctl := gomock.NewController(t)
+			mc := mock_metriccache.NewMockMetricCache(ctl)
+			q := mock_metriccache.NewMockQuerier(ctl)
+			f := mock_metriccache.NewMockAggregateResultFactory(ctl)
+			old := metriccache.DefaultAggregateResultFactory
+			metriccache.DefaultAggregateResultFactory = f
+			t.Cleanup(func() { metriccache.DefaultAggregateResultFactory = old })
+			mc.EXPECT().Querier(gomock.Any(), gomock.Any()).Return(q, nil).AnyTimes()
+			p := newTestPodWithQOS("parent", apiext.QoSLS, 500, 1024)
+			switch tc.extra {
+			case "regular":
+				p.Spec.Containers = append(p.Spec.Containers, corev1.Container{Name: "other"})
+			case "init":
+				p.Spec.InitContainers = []corev1.Container{{Name: "init"}}
+			case "overhead":
+				p.Spec.Overhead = corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")}
+			case "resources":
+				p.Spec.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}}
+			case "ephemeral":
+				p.Spec.EphemeralContainers = []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debug"}}}
+			}
+			cm, err := metriccache.ContainerCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Container(p.Status.ContainerStatuses[0].ContainerID))
+			assert.NoError(t, err)
+			testutil.BuildMockQueryResult(ctl, q, f, cm, 0)
+			if tc.extra == "" && tc.policy == slov1alpha1.CPUBurstAuto {
+				pm, err := metriccache.PodCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(p.UID)))
+				assert.NoError(t, err)
+				if tc.parent < 0 {
+					result := mock_metriccache.NewMockAggregateResult(ctl)
+					result.EXPECT().Value(gomock.Any()).Return(float64(0), fmt.Errorf("no samples"))
+					f.EXPECT().New(pm).Return(result)
+					q.EXPECT().QueryAndClose(pm, gomock.Any(), result).Return(nil)
+				} else {
+					testutil.BuildMockQueryResult(ctl, q, f, pm, tc.parent)
+				}
+			}
+			b := &cpuBurst{metricCache: mc, metricCollectInterval: time.Second}
+			cfg := defaultAutoBurstCfg
+			cfg.Policy = tc.policy
+			cfg.CFSQuotaBurstPeriodSeconds = ptr.To[int64](-1)
+			assert.Equal(t, tc.want, b.genOperationByContainer(&cfg, p, &p.Spec.Containers[0], &p.Status.ContainerStatuses[0]))
+		})
+	}
 }

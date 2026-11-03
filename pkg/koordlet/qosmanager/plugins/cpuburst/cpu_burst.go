@@ -405,7 +405,7 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 		}
 		containerTargetCFS = util.MaxInt64(containerBaseCFS, util.MinInt64(containerTargetCFS, containerCeilCFS))
 
-		if containerTargetCFS == containerCurCFS {
+		if containerTargetCFS == containerCurCFS && !isSingleContainerBurstPod(pod) {
 			klog.V(5).Infof("no need to scale for container %v/%v/%v, operation %v, target cfs quota %v",
 				pod.Namespace, pod.Name, containerStat.Name, finalOperation, containerTargetCFS)
 			continue
@@ -415,6 +415,9 @@ func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podM
 		if err != nil {
 			klog.Infof("scale container %v/%v/%v cfs quota failed, operation %v, delta cfs quota %v, reason %v",
 				pod.Namespace, pod.Name, containerStat.Name, finalOperation, deltaContainerCFS, err)
+			continue
+		}
+		if deltaContainerCFS == 0 {
 			continue
 		}
 		metrics.RecordContainerScaledCFSQuotaUS(pod.Namespace, pod.Name, containerStat.ContainerID, containerStat.Name, float64(containerTargetCFS))
@@ -496,9 +499,27 @@ func (b *cpuBurst) genOperationByContainer(burstCfg *slov1alpha1.CPUBurstConfig,
 	if containerThrottledLastValue > 0 {
 		return cfsScaleUp
 	}
+	// With one workload container, parent throttling is attributable without
+	// increasing unrelated sidecar quotas. Preserve explicit Pod resource budgets.
+	if isSingleContainerBurstPod(pod) {
+		meta, err := metriccache.PodCPUThrottledMetric.BuildQueryMeta(metriccache.MetricPropertiesFunc.Pod(string(pod.UID)))
+		if err == nil {
+			throttled, err := helpers.CollectPodMetricLast(b.metricCache, meta, b.metricCollectInterval)
+			if err == nil && throttled > 0 {
+				return cfsScaleUp
+			}
+		}
+	}
+
 	klog.V(5).Infof("container %s/%s/%s is not throttled, no need to scale up cfs quota",
 		pod.Namespace, pod.Name, containerStat.Name)
 	return cfsRemain
+}
+
+// A single child with no additional resource budget can share its parent's quota.
+func isSingleContainerBurstPod(pod *corev1.Pod) bool {
+	return len(pod.Spec.Containers) == 1 && len(pod.Spec.InitContainers) == 0 &&
+		len(pod.Spec.EphemeralContainers) == 0 && pod.Spec.Resources == nil && len(pod.Spec.Overhead) == 0
 }
 
 func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, containerStat *corev1.ContainerStatus,
@@ -515,17 +536,23 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 			podMeta.Pod.Namespace, podMeta.Pod.Name, containerStat.Name, containerPathErr)
 	}
 
+	targetPodCFS := curPodCFS + deltaContainerCFS
+	if curPodCFS > 0 && isSingleContainerBurstPod(podMeta.Pod) {
+		// Kubelet can reset either level independently, so a delta cannot repair drift.
+		targetPodCFS = curContaienrCFS + deltaContainerCFS
+	}
+
+	// The targets use live cgroup reads; cached writes can hide an external quota reset.
 	updatePodCFSQuota := func() error {
 		// no need to adjust pod cpu.cfs_quota if it is already -1
-		if curPodCFS <= 0 {
+		if curPodCFS <= 0 || curPodCFS == targetPodCFS {
 			return nil
 		}
 
-		targetPodCFS := curPodCFS + deltaContainerCFS
 		podCFSValStr := strconv.FormatInt(targetPodCFS, 10)
 		eventHelper := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason("CFSQuotaBurst").Message("update pod CFSQuota: %v", podCFSValStr)
 		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, podDir, podCFSValStr, eventHelper)
-		if _, err := b.executor.Update(true, updater); err != nil {
+		if _, err := b.executor.Update(false, updater); err != nil {
 			return fmt.Errorf("update pod cgroup %v failed, error %v", podMeta.CgroupDir, err)
 		}
 
@@ -533,11 +560,14 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 	}
 
 	updateContainerCFSQuota := func() error {
+		if deltaContainerCFS == 0 {
+			return nil
+		}
 		targetContainerCFS := curContaienrCFS + deltaContainerCFS
 		containerCFSValStr := strconv.FormatInt(targetContainerCFS, 10)
 		eventHelper := audit.V(3).Container(containerStat.Name).Reason("CFSQuotaBurst").Message("update container CFSQuota: %v", containerCFSValStr)
 		updater, _ := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUCFSQuotaName, containerDir, containerCFSValStr, eventHelper)
-		if _, err := b.executor.Update(true, updater); err != nil {
+		if _, err := b.executor.Update(false, updater); err != nil {
 			return fmt.Errorf("update container cgroup %v failed, reason %v", containerDir, err)
 		}
 
@@ -546,7 +576,7 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 
 	// cfs scale down, order: container->pod
 	sortOfUpdateQuota := []func() error{updateContainerCFSQuota, updatePodCFSQuota}
-	if deltaContainerCFS > 0 {
+	if targetPodCFS > curPodCFS {
 		// cfs scale up, order: pod->container
 		sortOfUpdateQuota = []func() error{updatePodCFSQuota, updateContainerCFSQuota}
 	}
