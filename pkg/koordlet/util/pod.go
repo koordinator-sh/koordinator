@@ -113,3 +113,23 @@ func GetPodSandboxContainerID(pod *corev1.Pod) (string, error) {
 	}
 	return fmt.Sprintf("%s://%s", containerRuntime, containerHashID), nil
 }
+
+// GetPodRegularAndSidecarContainers includes restartable init containers, but not
+// ordinary init or ephemeral containers, which do not share the steady-state budget.
+func GetPodRegularAndSidecarContainers(pod *corev1.Pod) ([]corev1.Container, []corev1.ContainerStatus) {
+	containers := append([]corev1.Container(nil), pod.Spec.Containers...)
+	statuses := append([]corev1.ContainerStatus(nil), pod.Status.ContainerStatuses...)
+	for _, c := range pod.Spec.InitContainers {
+		if c.RestartPolicy == nil || *c.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+			continue
+		}
+		containers = append(containers, c)
+		for _, s := range pod.Status.InitContainerStatuses {
+			if s.Name == c.Name {
+				statuses = append(statuses, s)
+				break
+			}
+		}
+	}
+	return containers, statuses
+}

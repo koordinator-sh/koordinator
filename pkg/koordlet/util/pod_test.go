@@ -353,3 +353,21 @@ func TestGetPodSandboxContainerID(t *testing.T) {
 		})
 	}
 }
+
+func TestGetPodRegularAndSidecarContainers(t *testing.T) {
+	restart := corev1.ContainerRestartPolicyAlways
+	pod := &corev1.Pod{Spec: corev1.PodSpec{
+		Containers:          []corev1.Container{{Name: "main"}},
+		InitContainers:      []corev1.Container{{Name: "setup"}, {Name: "sidecar", RestartPolicy: &restart}, {Name: "waiting-sidecar", RestartPolicy: &restart}},
+		EphemeralContainers: []corev1.EphemeralContainer{{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debug"}}},
+	}, Status: corev1.PodStatus{
+		ContainerStatuses:          []corev1.ContainerStatus{{Name: "main"}},
+		InitContainerStatuses:      []corev1.ContainerStatus{{Name: "setup"}, {Name: "sidecar"}},
+		EphemeralContainerStatuses: []corev1.ContainerStatus{{Name: "debug"}},
+	}}
+	original := pod.DeepCopy()
+	containers, statuses := GetPodRegularAndSidecarContainers(pod)
+	assert.Equal(t, []string{"main", "sidecar", "waiting-sidecar"}, []string{containers[0].Name, containers[1].Name, containers[2].Name})
+	assert.Equal(t, []corev1.ContainerStatus{{Name: "main"}, {Name: "sidecar"}}, statuses)
+	assert.Equal(t, original, pod)
+}
