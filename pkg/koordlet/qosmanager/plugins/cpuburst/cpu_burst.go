@@ -478,26 +478,19 @@ func (b *cpuBurst) genOperationByContainer(burstCfg *slov1alpha1.CPUBurstConfig,
 
 	containerThrottled, err := helpers.CollectContainerThrottledMetric(b.metricCache, &containerStat.ContainerID, b.metricCollectInterval)
 	if err != nil {
-		klog.V(4).Infof("failed to get container %s/%s/%s throttled metric, maybe not exist, skip this round, reason %v",
+		klog.V(4).Infof("failed to get container %s/%s/%s throttled metric, reason %v",
 			pod.Namespace, pod.Name, containerStat.Name, err)
-		return cfsRemain
-	}
-
-	if containerThrottled.Count() == 0 {
-		klog.V(4).Infof("container %s/%s/%s throttled metric is empty, skip this round",
+	} else if containerThrottled.Count() == 0 {
+		klog.V(4).Infof("container %s/%s/%s throttled metric is empty",
 			pod.Namespace, pod.Name, containerStat.Name)
-		return cfsRemain
-	}
-
-	containerThrottledLastValue, err := containerThrottled.Value(metriccache.AggregationTypeLast)
-	if err != nil {
-		klog.V(4).Infof("failed to get container %s/%s/%s last throttled metric, skip this round, reason %v",
-			pod.Namespace, pod.Name, containerStat.Name, err)
-		return cfsRemain
-	}
-
-	if containerThrottledLastValue > 0 {
-		return cfsScaleUp
+	} else {
+		containerThrottledLastValue, err := containerThrottled.Value(metriccache.AggregationTypeLast)
+		if err != nil {
+			klog.V(4).Infof("failed to get container %s/%s/%s last throttled metric, reason %v",
+				pod.Namespace, pod.Name, containerStat.Name, err)
+		} else if containerThrottledLastValue > 0 {
+			return cfsScaleUp
+		}
 	}
 	// With one workload container, parent throttling is attributable without
 	// increasing unrelated sidecar quotas. Preserve explicit Pod resource budgets.
@@ -511,7 +504,7 @@ func (b *cpuBurst) genOperationByContainer(burstCfg *slov1alpha1.CPUBurstConfig,
 		}
 	}
 
-	klog.V(5).Infof("container %s/%s/%s is not throttled, no need to scale up cfs quota",
+	klog.V(5).Infof("no throttling signal for container %s/%s/%s, no need to scale up cfs quota",
 		pod.Namespace, pod.Name, containerStat.Name)
 	return cfsRemain
 }
