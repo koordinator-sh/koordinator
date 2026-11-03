@@ -104,3 +104,12 @@ func Test_InitFlags(t *testing.T) {
 		})
 	}
 }
+
+func Test_CPUBurstExcludedNamespacesFlag(t *testing.T) {
+	c := NewDefaultConfig()
+	assert.Empty(t, c.CPUBurstExcludedNamespaces)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	c.InitFlags(fs)
+	assert.NoError(t, fs.Parse([]string{"--cpu-burst-excluded-namespaces=kube-system,example"}))
+	assert.Equal(t, "kube-system,example", c.CPUBurstExcludedNamespaces)
+}

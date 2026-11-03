@@ -22,9 +22,11 @@ import (
 
 	"math/rand"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
@@ -165,6 +167,7 @@ func (l *burstLimiter) Expire() bool {
 var _ framework.QOSStrategy = &cpuBurst{}
 
 type cpuBurst struct {
+	excludedNamespaces    sets.Set[string]
 	reconcileInterval     time.Duration
 	metricCollectInterval time.Duration
 	statesInformer        statesinformer.StatesInformer
@@ -176,7 +179,14 @@ type cpuBurst struct {
 }
 
 func New(opt *framework.Options) framework.QOSStrategy {
+	excludedNamespaces := sets.New[string]()
+	for _, namespace := range strings.Split(opt.Config.CPUBurstExcludedNamespaces, ",") {
+		if namespace = strings.TrimSpace(namespace); namespace != "" {
+			excludedNamespaces.Insert(namespace)
+		}
+	}
 	return &cpuBurst{
+		excludedNamespaces:    excludedNamespaces,
 		reconcileInterval:     time.Duration(opt.Config.ReconcileIntervalSeconds) * time.Second,
 		metricCollectInterval: opt.MetricAdvisorConfig.CollectResUsedInterval,
 		statesInformer:        opt.StatesInformer,
@@ -224,6 +234,10 @@ func (b *cpuBurst) start() {
 	for _, podMeta := range podsMeta {
 		if podMeta == nil || podMeta.Pod == nil {
 			klog.Warningf("podMeta is illegal, detail %v", podMeta)
+			continue
+		}
+		// Exclusion must precede both burst updates and quota resets, including policy none.
+		if b.excludedNamespaces.Has(podMeta.Pod.Namespace) {
 			continue
 		}
 		if !util.IsPodCPUBurstable(podMeta.Pod) {
