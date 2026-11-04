@@ -18,10 +18,13 @@ package core
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	quotav1 "k8s.io/apiserver/pkg/quota/v1"
@@ -500,6 +503,183 @@ func (m *MockHookPlugin) UpdateQuotaStatus(_, _ *v1alpha1.ElasticQuota) *v1alpha
 
 func (m *MockHookPlugin) CheckPod(quotaName string, pod *v1.Pod) error {
 	return nil
+}
+
+// TestReadQuotaChain verifies traversal, callback errors, and the hierarchy read-lock lifetime.
+// Each case builds a quota hierarchy, captures its path while probing the callback's lock scope,
+// then checks the path, callback result, and lock release.
+func TestReadQuotaChain(t *testing.T) {
+	failure := fmt.Errorf("capture failed")
+	for _, tt := range []struct {
+		name          string
+		quotaName     string
+		missingParent bool
+		callbackError error
+		wantNames     []string
+	}{
+		{name: "leaf", quotaName: "leaf", wantNames: []string{"leaf", "parent", extension.RootQuotaName}},
+		{name: "root", quotaName: extension.RootQuotaName, wantNames: []string{extension.RootQuotaName}},
+		{name: "missing", quotaName: "missing"},
+		{name: "empty name"},
+		{name: "missing parent", quotaName: "leaf", missingParent: true, wantNames: []string{"leaf"}},
+		{name: "callback error", quotaName: "leaf", callbackError: failure, wantNames: []string{"leaf", "parent", extension.RootQuotaName}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build leaf -> parent -> root, then apply the case's missing-parent condition.
+			gqm := NewGroupQuotaManager("", true, nil, nil)
+			require.NoError(t, gqm.UpdateQuota(CreateQuota("parent", extension.RootQuotaName, 100, 100, 10, 10, true, false)))
+			require.NoError(t, gqm.UpdateQuota(CreateQuota("leaf", "parent", 50, 50, 5, 5, false, false)))
+			if tt.missingParent {
+				// Keep the leaf's parent reference to exercise traversal of an incomplete hierarchy.
+				delete(gqm.quotaInfoMap, "parent")
+			}
+			reader := gqm.GetQuotaInfoReader()
+			var names []string
+			calls := 0
+			err := reader.ReadQuotaChain(tt.quotaName, func(chain []*QuotaInfo) error {
+				calls++
+				// Together, these probes distinguish a held read lock from a write lock or no lock.
+				locked := gqm.hierarchyUpdateLock.TryLock()
+				if locked {
+					gqm.hierarchyUpdateLock.Unlock()
+				}
+				require.False(t, locked, "topology must stay stable during capture")
+				readLocked := gqm.hierarchyUpdateLock.TryRLock()
+				if readLocked {
+					gqm.hierarchyUpdateLock.RUnlock()
+				}
+				require.True(t, readLocked, "reader must allow concurrent readers")
+				for _, qi := range chain {
+					names = append(names, qi.Name)
+					require.Same(t, qi, reader.GetQuotaInfoNoLock(qi.Name))
+				}
+				return tt.callbackError
+			})
+			// Check the captured path and callback result after the reader returns.
+			require.Equal(t, 1, calls)
+			if tt.callbackError != nil {
+				require.Same(t, tt.callbackError, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.wantNames, names)
+			// Callback errors must not leave the hierarchy locked either.
+			locked := gqm.hierarchyUpdateLock.TryLock()
+			if locked {
+				gqm.hierarchyUpdateLock.Unlock()
+			}
+			require.True(t, locked, "reader must release the hierarchy lock")
+		})
+	}
+}
+
+// TestReadQuotaChainWithHookLocks verifies that quota updates wait for capture and subsequent reads observe the updated state and path.
+// Pause a reader holding hierarchy and plugin read locks, start a quota update, and confirm its write lock is waiting.
+// Release the reader to check the old state, wait for the update, then read again to check the new state and path.
+func TestReadQuotaChainWithHookLocks(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		parent string
+		cpu    int64
+	}{
+		{name: "max update", parent: "old-parent", cpu: 60},
+		{name: "parent update", parent: "new-parent", cpu: 50},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// Prepare both parent quotas and plugin state before starting concurrent operations.
+			gqm := NewGroupQuotaManager("", true, nil, nil)
+			require.NoError(t, gqm.UpdateQuota(CreateQuota("old-parent", extension.RootQuotaName, 100, 100, 10, 10, true, false)))
+			require.NoError(t, gqm.UpdateQuota(CreateQuota("new-parent", extension.RootQuotaName, 100, 100, 10, 10, true, false)))
+			require.NoError(t, gqm.UpdateQuota(CreateQuota("leaf", "old-parent", 50, 50, 5, 5, false, false)))
+			var pluginLock sync.RWMutex
+			var revision int
+			entered := make(chan struct{})
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			// Release the paused callback even if a synchronization assertion fails.
+			defer unblock()
+			hook := &MockHookPlugin{key: "chain-reader"}
+			hook.SetPreQuotaUpdateValidateFn(func(_, newQuotaInfo *QuotaInfo, _ *v1alpha1.ElasticQuota, _ *QuotaUpdateState) {
+				// UpdateQuota holds the hierarchy write lock before invoking this hook.
+				pluginLock.Lock()
+				defer pluginLock.Unlock()
+				// Reparenting invokes delete and create hooks; count only the new quota state.
+				if newQuotaInfo != nil {
+					revision++
+				}
+			})
+			gqm.SetHookPlugins([]QuotaHookPlugin{hook})
+			read := func(wantRevision int, wantCPU int64, wantParent string, pause bool) error {
+				return gqm.GetQuotaInfoReader().ReadQuotaChain("leaf", func(chain []*QuotaInfo) error {
+					// Match the hook's lock order: hierarchy first, plugin second.
+					pluginLock.RLock()
+					defer pluginLock.RUnlock()
+					if pause {
+						// Signal that both locks are held, then keep them until the writer is waiting.
+						close(entered)
+						<-release
+					}
+					// Check node order and parent links to reject a path mixing topology versions.
+					if len(chain) != 3 || chain[0].Name != "leaf" || chain[1].Name != wantParent || chain[2].Name != extension.RootQuotaName {
+						return fmt.Errorf("unexpected quota chain: %v", chain)
+					}
+					if chain[0].ParentName != wantParent || chain[1].ParentName != extension.RootQuotaName {
+						return fmt.Errorf("unexpected parent links in quota chain")
+					}
+					max := chain[0].GetMax()
+					if revision != wantRevision || max.Cpu().Value() != wantCPU {
+						return fmt.Errorf("captured revision %d and CPU %d, want %d and %d", revision, max.Cpu().Value(), wantRevision, wantCPU)
+					}
+					return nil
+				})
+			}
+			readDone := make(chan error, 1)
+			updateDone := make(chan error, 1)
+			// Hold both read locks until the quota update is waiting on the hierarchy lock.
+			go func() { readDone <- read(0, 50, "old-parent", true) }()
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("reader did not acquire hierarchy and plugin locks")
+			}
+			go func() {
+				updateDone <- gqm.UpdateQuota(CreateQuota("leaf", tt.parent, tt.cpu, 50, 5, 5, false, false))
+			}()
+			// A waiting writer blocks new readers. Since the callback still holds RLock,
+			// TryRLock failing proves UpdateQuota is waiting rather than merely started.
+			deadline := time.NewTimer(5 * time.Second)
+			defer deadline.Stop()
+			for gqm.hierarchyUpdateLock.TryRLock() {
+				gqm.hierarchyUpdateLock.RUnlock()
+				select {
+				case <-deadline.C:
+					t.Fatal("quota update did not wait for the hierarchy lock")
+				default:
+					// Let the updater run while polling the lock state without a fixed sleep.
+					runtime.Gosched()
+				}
+			}
+			// Let the callback validate the old state, then allow the waiting update to complete.
+			unblock()
+			for _, done := range []<-chan error{readDone, updateDone} {
+				select {
+				case err := <-done:
+					require.NoError(t, err)
+				case <-time.After(5 * time.Second):
+					t.Fatal("quota reader and update hook did not complete")
+				}
+			}
+			// A fresh read must observe the updated plugin state, configuration, and complete path.
+			go func() { readDone <- read(1, tt.cpu, tt.parent, false) }()
+			select {
+			case err := <-readDone:
+				require.NoError(t, err)
+			case <-time.After(5 * time.Second):
+				t.Fatal("reader did not complete after the quota update")
+			}
+		})
+	}
 }
 
 func TestResetQuotasForHookPlugins(t *testing.T) {
