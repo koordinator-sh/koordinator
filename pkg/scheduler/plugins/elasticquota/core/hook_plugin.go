@@ -39,8 +39,14 @@ type QuotaUpdateState struct {
 type QuotaInfoReader struct {
 	GetQuotaInfo       func(quotaName string) *QuotaInfo
 	GetChildQuotaInfos func(quotaName string) map[string]*QuotaInfo
+	// ReadQuotaChain visits the quota-to-root path under the hierarchy read lock.
+	// Traversal stops at the root or a missing quota; a missing starting quota yields an empty path.
+	// An empty path may be nil or a zero-length slice.
+	// The callback's error is returned unchanged. The callback must not modify or retain live quota data
+	// or reacquire the hierarchy lock. Mutable resource data still requires QuotaInfo's locking readers.
+	ReadQuotaChain func(quotaName string, visit func([]*QuotaInfo) error) error
 
-	// NoLock methods are used for read-only access without acquiring locks
+	// NoLock methods require the caller to hold the corresponding GQM hierarchy lock.
 	GetQuotaInfoNoLock       func(quotaName string) *QuotaInfo
 	GetChildQuotaInfosNoLock func(quotaName string) map[string]*QuotaInfo
 }
@@ -233,6 +239,7 @@ func (gqm *GroupQuotaManager) GetHookPlugins() []QuotaHookPlugin {
 	return gqm.hookPlugins
 }
 
+// SetHookPlugins initializes plugins before any concurrent access to the GQM.
 func (gqm *GroupQuotaManager) SetHookPlugins(hookPlugins []QuotaHookPlugin) {
 	// Wrap plugins with metrics
 	gqm.hookPlugins = WrapWithMetrics(hookPlugins)
@@ -244,7 +251,14 @@ func (gqm *GroupQuotaManager) GetQuotaInfoReader() *QuotaInfoReader {
 		GetChildQuotaInfos:       gqm.GetChildGroupQuotaInfos,
 		GetQuotaInfoNoLock:       gqm.getQuotaInfoByNameNoLock,
 		GetChildQuotaInfosNoLock: gqm.getChildGroupQuotaInfosNoLock,
+		ReadQuotaChain:           gqm.readQuotaChain,
 	}
+}
+
+func (gqm *GroupQuotaManager) readQuotaChain(quotaName string, visit func([]*QuotaInfo) error) error {
+	gqm.hierarchyUpdateLock.RLock()
+	defer gqm.hierarchyUpdateLock.RUnlock()
+	return visit(gqm.getCurToAllParentGroupQuotaInfoNoLock(quotaName))
 }
 
 func (gqm *GroupQuotaManager) GetChildGroupQuotaInfos(quotaName string) map[string]*QuotaInfo {
