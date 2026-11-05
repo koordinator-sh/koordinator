@@ -45,9 +45,7 @@ func GetFailurePolicyType(typeString string) (FailurePolicyType, error) {
 
 type RuntimeHookType string
 
-const (
-	defaultRuntimeHookConfigPath string = "/etc/runtime/hookserver.d"
-)
+var defaultRuntimeHookConfigPath = "/etc/runtime/hookserver.d"
 
 const (
 	PreRunPodSandbox            RuntimeHookType = "PreRunPodSandbox"
