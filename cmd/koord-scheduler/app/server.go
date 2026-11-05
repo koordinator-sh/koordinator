@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
@@ -127,6 +128,10 @@ for cost reduction and efficiency enhancement.
 	for _, f := range nfs.FlagSets {
 		fs.AddFlagSet(f)
 	}
+	// Wire flags registered to pflag.CommandLine via init() (e.g.
+	// --scheduler-monitor-period in frameworkext/scheduler_monitor.go)
+	// so they are visible to cobra's flag parsing and --help output.
+	fs.AddFlagSet(pflag.CommandLine)
 
 	cols, _, _ := term.TerminalSize(cmd.OutOrStdout())
 	cliflag.SetUsageAndHelpFunc(cmd, *nfs, cols)
