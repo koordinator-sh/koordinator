@@ -44,33 +44,6 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/util"
 )
 
-// podResources are the set of resources managed by quota associated with pods.
-var podResources = []corev1.ResourceName{
-	corev1.ResourceCPU,
-	corev1.ResourceMemory,
-	corev1.ResourceEphemeralStorage,
-	corev1.ResourceRequestsCPU,
-	corev1.ResourceRequestsMemory,
-	corev1.ResourceRequestsEphemeralStorage,
-
-	// batch resource
-	extension.BatchCPU,
-	extension.BatchMemory,
-
-	// mid resource
-	extension.MidCPU,
-	extension.MidMemory,
-
-	// gpu resource
-	extension.ResourceGPU,
-	extension.ResourceNvidiaGPU,
-	extension.ResourceGPUShared,
-	extension.ResourceGPUMemoryRatio,
-}
-
-// podResourcesSet is a pre-computed set of podResources for O(1) lookup.
-var podResourcesSet = sets.New(podResources...)
-
 const (
 	// quotaUpdateMinRetries is the fixed lower bound of UpdateQuotaStatus retries
 	// per batch, matching the original hardcoded value so small batches keep the
@@ -490,10 +463,6 @@ func (e *quotaEvaluator) checkRequest(quota *v1alpha1.ElasticQuota, a *Attribute
 
 	if ctx.fatal != nil {
 		return ctx.fatal
-	}
-
-	if ctx.names.Intersection(podResourcesSet).Len() == 0 {
-		return nil
 	}
 
 	requestedUsage, err := PodUsageFunc(a.Pod, clock.RealClock{})

@@ -203,6 +203,30 @@ func TestCheckRequest(t *testing.T) {
 			expectUsed:  corev1.ResourceList{extension.ResourceNvidiaGPU: resource.MustParse("1")},
 			expectDelta: corev1.ResourceList{extension.ResourceNvidiaGPU: resource.MustParse("1")},
 		},
+		{
+			name: "custom resource exceeded returns error",
+			quota: elasticquota.MakeQuota("test").Namespace("ns").Max(
+				corev1.ResourceList{
+					corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+				}).Obj(),
+			ctx: &quotaCheckContext{
+				used:      corev1.ResourceList{corev1.ResourceName("example.io/gpu"): resource.MustParse("2")},
+				admission: corev1.ResourceList{corev1.ResourceName("example.io/gpu"): resource.MustParse("2")},
+				delta:     corev1.ResourceList{},
+				names:     sets.New(corev1.ResourceName("example.io/gpu")),
+			},
+			attr: &Attributes{
+				Operation: admissionv1.Create,
+				Pod: elasticquota.MakePod("ns", "pod1").Container(
+					corev1.ResourceList{
+						corev1.ResourceName("example.io/gpu"): resource.MustParse("1"),
+					}).Obj(),
+			},
+			expectErr:   true,
+			errContains: "exceeded quota",
+			expectUsed:  corev1.ResourceList{corev1.ResourceName("example.io/gpu"): resource.MustParse("2")},
+			expectDelta: corev1.ResourceList{},
+		},
 	}
 
 	for _, tt := range tests {
@@ -478,6 +502,32 @@ func TestEvaluate(t *testing.T) {
 			errMessage:  "exceeded quota: ns1/test1, requested: nvidia.com/gpu=2, used: nvidia.com/gpu=2, limited: nvidia.com/gpu=2",
 			expectUsed: corev1.ResourceList{
 				extension.ResourceNvidiaGPU: resource.MustParse("2"),
+			},
+		},
+		{
+			name: "custom resource exceed",
+			quota: elasticquota.MakeQuota("test1").Namespace("ns1").Max(
+				corev1.ResourceList{
+					corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+				}).ChildRequest(
+				corev1.ResourceList{
+					corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+				}).Obj(),
+			attribute: &Attributes{
+				QuotaNamespace: "ns1",
+				QuotaName:      "test1",
+				Operation:      admissionv1.Create,
+				Pod: elasticquota.MakePod("ns1", "pod1").Container(
+					corev1.ResourceList{
+						corev1.ResourceCPU:                    resource.MustParse("2"),
+						corev1.ResourceMemory:                 resource.MustParse("4Gi"),
+						corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+					}).Obj(),
+			},
+			expectError: true,
+			errMessage:  "exceeded quota: ns1/test1, requested: example.io/gpu=2, used: example.io/gpu=2, limited: example.io/gpu=2",
+			expectUsed: corev1.ResourceList{
+				corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
 			},
 		},
 	}
