@@ -45,6 +45,12 @@ rules:
 - apiGroups:
     - ""
   resources:
+    - nodes/finalizers
+  verbs:
+    - update
+- apiGroups:
+    - ""
+  resources:
     - pods/eviction
   verbs:
     - '*'
