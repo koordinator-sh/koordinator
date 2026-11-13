@@ -17,6 +17,7 @@ limitations under the License.
 package gpu
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,9 +25,23 @@ import (
 	ext "github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/koordlet/runtimehooks/protocol"
+	"github.com/koordinator-sh/koordinator/pkg/koordlet/util/system"
 )
 
 func Test_InjectContainerGPUEnv(t *testing.T) {
+	// Point the HAMi-core library path at a temp dir so the hook can create the
+	// host ld.so.preload file and the vgpu monitor cache dir hermetically, without
+	// depending on /usr/local/vgpu being writable on the test host.
+	tmpDir := t.TempDir()
+	lib := filepath.Join(tmpDir, "libvgpu.so")
+	preloadHostPath := filepath.Join(tmpDir, "ld.so.preload")
+	cacheHostDir := filepath.Join(tmpDir, "containers", "pod-uid_container-name")
+	origConf := *system.Conf
+	defer system.SetConf(origConf)
+	testConf := origConf
+	testConf.HAMICoreLibraryDirectoryPath = lib
+	system.SetConf(testConf)
+
 	tests := []struct {
 		name             string
 		expectedAllocStr string
@@ -90,14 +105,20 @@ func Test_InjectContainerGPUEnv(t *testing.T) {
 				GpuAllocEnv:                       "1",
 				"CUDA_DEVICE_MEMORY_LIMIT":        "17179869184",
 				"CUDA_DEVICE_SM_LIMIT":            "50",
-				"LD_PRELOAD":                      "/usr/local/vgpu/libvgpu.so",
-				"CUDA_DEVICE_MEMORY_SHARED_CACHE": "/usr/local/vgpu/pod-uid_container-name.cache",
+				"LD_PRELOAD":                      lib,
+				"CUDA_DEVICE_MEMORY_SHARED_CACHE": tmpDir + "/pod-uid_container-name.cache",
 			},
 			expectedMounts: []*protocol.Mount{
 				{
-					Destination: "/usr/local/vgpu/libvgpu.so",
+					Destination: "/etc/ld.so.preload",
 					Type:        "bind",
-					Source:      "/usr/local/vgpu/libvgpu.so",
+					Source:      preloadHostPath,
+					Options:     []string{"rbind", "ro"},
+				},
+				{
+					Destination: lib,
+					Type:        "bind",
+					Source:      lib,
 					Options:     []string{"rbind"},
 				},
 				{
@@ -107,9 +128,9 @@ func Test_InjectContainerGPUEnv(t *testing.T) {
 					Options:     []string{"rbind"},
 				},
 				{
-					Destination: "/usr/local/vgpu",
+					Destination: tmpDir,
 					Type:        "bind",
-					Source:      "/usr/local/vgpu/containers/pod-uid_container-name",
+					Source:      cacheHostDir,
 					Options:     []string{"rbind"},
 				},
 			},
