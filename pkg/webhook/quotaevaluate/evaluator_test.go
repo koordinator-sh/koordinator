@@ -35,7 +35,9 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 	"github.com/koordinator-sh/koordinator/pkg/webhook/elasticquota"
 )
 
@@ -59,6 +61,7 @@ func TestCheckRequest(t *testing.T) {
 
 	tests := []struct {
 		name        string
+		enableGate  bool
 		quota       *v1alpha1.ElasticQuota
 		ctx         *quotaCheckContext
 		attr        *Attributes
@@ -203,10 +206,59 @@ func TestCheckRequest(t *testing.T) {
 			expectUsed:  corev1.ResourceList{extension.ResourceNvidiaGPU: resource.MustParse("1")},
 			expectDelta: corev1.ResourceList{extension.ResourceNvidiaGPU: resource.MustParse("1")},
 		},
+		{
+			name:       "extended resource exceeded returns error",
+			enableGate: true,
+			quota: elasticquota.MakeQuota("test").Namespace("ns").Max(
+				corev1.ResourceList{
+					corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+				}).Obj(),
+			ctx: &quotaCheckContext{
+				used:      corev1.ResourceList{corev1.ResourceName("example.io/gpu"): resource.MustParse("2")},
+				admission: corev1.ResourceList{corev1.ResourceName("example.io/gpu"): resource.MustParse("2")},
+				delta:     corev1.ResourceList{},
+				names:     sets.New(corev1.ResourceName("example.io/gpu")),
+			},
+			attr: &Attributes{
+				Operation: admissionv1.Create,
+				Pod: elasticquota.MakePod("ns", "pod1").Container(
+					corev1.ResourceList{
+						corev1.ResourceName("example.io/gpu"): resource.MustParse("1"),
+					}).Obj(),
+			},
+			expectErr:   true,
+			errContains: "exceeded quota",
+			expectUsed:  corev1.ResourceList{corev1.ResourceName("example.io/gpu"): resource.MustParse("2")},
+			expectDelta: corev1.ResourceList{},
+		},
+		{
+			name: "extended resource only request skipped when gate disabled",
+			quota: elasticquota.MakeQuota("test").Namespace("ns").Max(
+				corev1.ResourceList{
+					corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+				}).Obj(),
+			ctx: &quotaCheckContext{
+				used:      corev1.ResourceList{corev1.ResourceName("example.io/gpu"): resource.MustParse("2")},
+				admission: corev1.ResourceList{corev1.ResourceName("example.io/gpu"): resource.MustParse("2")},
+				delta:     corev1.ResourceList{},
+				names:     sets.New(corev1.ResourceName("example.io/gpu")),
+			},
+			attr: &Attributes{
+				Operation: admissionv1.Create,
+				Pod: elasticquota.MakePod("ns", "pod1").Container(
+					corev1.ResourceList{
+						corev1.ResourceName("example.io/gpu"): resource.MustParse("1"),
+					}).Obj(),
+			},
+			expectErr:   false,
+			expectUsed:  corev1.ResourceList{corev1.ResourceName("example.io/gpu"): resource.MustParse("2")},
+			expectDelta: corev1.ResourceList{},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate, features.QuotaAdmissionOnlyExtendedResources, tt.enableGate)()
 			err := e.checkRequest(tt.quota, tt.attr, tt.ctx)
 			if tt.expectErr {
 				assert.Error(t, err)
@@ -344,6 +396,7 @@ func TestCheckQuotaFastRetry(t *testing.T) {
 func TestEvaluate(t *testing.T) {
 	testCases := []struct {
 		name        string
+		enableGate  bool
 		quota       *v1alpha1.ElasticQuota
 		attribute   *Attributes
 		expectError bool
@@ -480,10 +533,59 @@ func TestEvaluate(t *testing.T) {
 				extension.ResourceNvidiaGPU: resource.MustParse("2"),
 			},
 		},
+		{
+			name:       "extended resource only exceed",
+			enableGate: true,
+			quota: elasticquota.MakeQuota("test1").Namespace("ns1").Max(
+				corev1.ResourceList{
+					corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+				}).ChildRequest(
+				corev1.ResourceList{
+					corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+				}).Obj(),
+			attribute: &Attributes{
+				QuotaNamespace: "ns1",
+				QuotaName:      "test1",
+				Operation:      admissionv1.Create,
+				Pod: elasticquota.MakePod("ns1", "pod1").Container(
+					corev1.ResourceList{
+						corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+					}).Obj(),
+			},
+			expectError: true,
+			errMessage:  "exceeded quota: ns1/test1, requested: example.io/gpu=2, used: example.io/gpu=2, limited: example.io/gpu=2",
+			expectUsed: corev1.ResourceList{
+				corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+			},
+		},
+		{
+			name: "extended resource only request skipped when gate disabled",
+			quota: elasticquota.MakeQuota("test1").Namespace("ns1").Max(
+				corev1.ResourceList{
+					corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+				}).ChildRequest(
+				corev1.ResourceList{
+					corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+				}).Obj(),
+			attribute: &Attributes{
+				QuotaNamespace: "ns1",
+				QuotaName:      "test1",
+				Operation:      admissionv1.Create,
+				Pod: elasticquota.MakePod("ns1", "pod1").Container(
+					corev1.ResourceList{
+						corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+					}).Obj(),
+			},
+			expectError: false,
+			expectUsed: corev1.ResourceList{
+				corev1.ResourceName("example.io/gpu"): resource.MustParse("2"),
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			defer utilfeature.SetFeatureGateDuringTest(t, utilfeature.DefaultMutableFeatureGate, features.QuotaAdmissionOnlyExtendedResources, tc.enableGate)()
 			evaluator, c := newTestEvaluator(tc.quota)
 
 			err := evaluator.Evaluate(tc.attribute)
