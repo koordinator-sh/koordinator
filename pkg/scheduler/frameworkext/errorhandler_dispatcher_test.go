@@ -25,8 +25,17 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/informers"
+	kubefake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
+	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
+
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 func TestErrorHandlerDispatcher(t *testing.T) {
@@ -202,4 +211,85 @@ func TestErrorHandlerDispatcherReleasesInFlightPodOnSuppression(t *testing.T) {
 			dispatcher.Error(context.TODO(), nil, podInfo, nil, nil, time.Now())
 		})
 	})
+}
+
+// TestErrorHandlerDispatcherDropsDeletedPod covers the race where the pod is deleted after the
+// default handler found it in the informer cache but before it was requeued as unschedulable.
+func TestErrorHandlerDispatcherDropsDeletedPod(t *testing.T) {
+	newPod := func(name string, reservePod bool) *corev1.Pod {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "default",
+				Name:      name,
+				UID:       types.UID(name + "-uid"),
+			},
+		}
+		if reservePod {
+			pod.Annotations = map[string]string{reservationutil.AnnotationReservePod: "true"}
+		}
+		return pod
+	}
+	tests := []struct {
+		name          string
+		pod           *corev1.Pod
+		inInformer    bool
+		wantInUnsched bool
+	}{
+		{
+			name:          "pod deleted during failure handling is removed from the queue",
+			pod:           newPod("deleted", false),
+			inInformer:    false,
+			wantInUnsched: false,
+		},
+		{
+			name:          "pod still in informer cache stays in the queue",
+			pod:           newPod("alive", false),
+			inInformer:    true,
+			wantInUnsched: true,
+		},
+		{
+			name:          "reserve pod is left alone",
+			pod:           newPod("reserve", true),
+			inInformer:    false,
+			wantInUnsched: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeClient := kubefake.NewSimpleClientset()
+			sharedInformerFactory := informers.NewSharedInformerFactory(fakeClient, 0)
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				[]schedulertesting.RegisterPluginFunc{
+					schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+					schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				},
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(sharedInformerFactory),
+			)
+			assert.NoError(t, err)
+			if tt.inInformer {
+				assert.NoError(t, sharedInformerFactory.Core().V1().Pods().Informer().GetStore().Add(tt.pod))
+			}
+
+			queue := &FakeQueue{
+				Pods:              map[string]*corev1.Pod{},
+				UnschedulablePods: map[string]*corev1.Pod{},
+			}
+			dispatcher := newErrorHandlerDispatcher()
+			dispatcher.setSchedulingQueue(queue)
+			// The default handler requeues the pod as if its informer lookup won the race against the delete.
+			dispatcher.setDefaultHandler(func(ctx context.Context, fwk framework.Framework, podInfo *framework.QueuedPodInfo, status *fwktype.Status, nominatingInfo *fwktype.NominatingInfo, start time.Time) {
+				assert.NoError(t, queue.AddUnschedulableIfNotPresent(klog.Background(), podInfo, 0))
+			})
+
+			podInfo := &framework.QueuedPodInfo{PodInfo: &framework.PodInfo{Pod: tt.pod}}
+			dispatcher.Error(context.TODO(), fh, podInfo, fwktype.NewStatus(fwktype.Unschedulable), nil, time.Now())
+
+			key, _ := framework.GetPodKey(tt.pod)
+			_, ok := queue.UnschedulablePods[key]
+			assert.Equal(t, tt.wantInUnsched, ok)
+		})
+	}
 }

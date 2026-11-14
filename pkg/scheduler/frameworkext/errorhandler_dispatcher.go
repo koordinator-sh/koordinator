@@ -20,9 +20,14 @@ import (
 	"context"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
+
+	reservationutil "github.com/koordinator-sh/koordinator/pkg/util/reservation"
 )
 
 // TODO: We should refactor these function types with scheduler.FailureHandlerFn
@@ -89,4 +94,26 @@ func (d *errorHandlerDispatcher) Error(ctx context.Context, fwk framework.Framew
 		}
 	}
 	d.defaultHandler(ctx, fwk, podInfo, status, nominatingInfo, start)
+	d.dropDeletedPodFromQueue(fwk, podInfo.Pod)
+}
+
+// dropDeletedPodFromQueue removes a pod that the default handler requeued after it was deleted.
+// The default handler looks the pod up in the informer cache before AddUnschedulableIfNotPresent,
+// so a Delete event handled in between leaves the deleted pod in unschedulablePods with nothing
+// left to remove it. The informer store drops the pod before delete handlers run, so a pod that
+// is missing from the lister here was either already removed from the queue or leaked by that race.
+func (d *errorHandlerDispatcher) dropDeletedPodFromQueue(fwk framework.Framework, pod *corev1.Pod) {
+	if d.schedulingQueue == nil || fwk == nil || pod == nil || reservationutil.IsReservePod(pod) {
+		return
+	}
+	informerFactory := fwk.SharedInformerFactory()
+	if informerFactory == nil {
+		return
+	}
+	_, err := informerFactory.Core().V1().Pods().Lister().Pods(pod.Namespace).Get(pod.Name)
+	if !apierrors.IsNotFound(err) {
+		return
+	}
+	klog.V(4).InfoS("Pod was deleted while handling scheduling failure, removing it from the scheduling queue", "pod", klog.KObj(pod))
+	d.schedulingQueue.Delete(pod)
 }
