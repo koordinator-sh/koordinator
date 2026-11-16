@@ -49,14 +49,14 @@ func init() {
 	internalKubeMustRegister(CPUSuppressRegisterableCollectors...)
 	internalKubeMustRegister(CPUBurstRegisterableCollectors...)
 	internalKubeMustRegister(CPUSetRegisterableCollectors...)
+	internalKubeMustRegister(NodeMetricRegisterableCollectors...)
+	internalKubeMustRegister(PredictionRegisterableCollectors...)
+	internalKubeMustRegister(HostApplicationRegisterableCollectors...)
 
 	internalMustRegister(CommonCollectors...)
-	internalMustRegister(PredictionCollectors...)
 	internalMustRegister(CoreSchedCollector...)
-	internalMustRegister(NodeMetricCollectors...)
 	internalMustRegister(OOMScoreAdjCollector...)
 	internalMustRegister(ResourceExecutorCollector...)
 	internalMustRegister(KubeletStubCollector...)
 	internalMustRegister(RuntimeHookCollectors...)
-	internalMustRegister(HostApplicationCollectors...)
 }

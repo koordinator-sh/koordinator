@@ -19,7 +19,7 @@ package metrics
 import (
 	"strconv"
 
-	"github.com/prometheus/client_golang/prometheus"
+	k8smetrics "k8s.io/component-base/metrics"
 )
 
 const (
@@ -35,31 +35,35 @@ const (
 // NOTE: the predicted peak is NOT recorded here since the prediction module already records it as
 // node_predicted_resource_peak.
 var (
-	NodeMetricNodeUsage = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "node_metric_node_usage",
-		Help:      "the node usage reported in the NodeMetric",
+	NodeMetricNodeUsage = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "node_metric_node_usage",
+		Help:           "the node usage reported in the NodeMetric",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, ResourceKey, UnitKey})
 
-	NodeMetricSystemUsage = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "node_metric_system_usage",
-		Help:      "the system usage reported in the NodeMetric",
+	NodeMetricSystemUsage = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "node_metric_system_usage",
+		Help:           "the system usage reported in the NodeMetric",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, ResourceKey, UnitKey})
 
-	NodeMetricNUMANodeUsage = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "node_metric_numa_node_usage",
-		Help:      "the per-NUMA node usage reported in the NodeMetric",
+	NodeMetricNUMANodeUsage = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "node_metric_numa_node_usage",
+		Help:           "the per-NUMA node usage reported in the NodeMetric",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, NUMANodeKey, ResourceKey, UnitKey})
 
-	NodeMetricNUMASystemUsage = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "node_metric_numa_system_usage",
-		Help:      "the per-NUMA system usage reported in the NodeMetric",
+	NodeMetricNUMASystemUsage = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "node_metric_numa_system_usage",
+		Help:           "the per-NUMA system usage reported in the NodeMetric",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, NUMANodeKey, ResourceKey, UnitKey})
 
-	NodeMetricCollectors = []prometheus.Collector{
+	NodeMetricRegisterableCollectors = []k8smetrics.Registerable{
 		NodeMetricNodeUsage,
 		NodeMetricSystemUsage,
 		NodeMetricNUMANodeUsage,
@@ -76,7 +80,7 @@ func ResetNodeMetricUsages() {
 	NodeMetricNUMASystemUsage.Reset()
 }
 
-func recordNodeMetricUsage(vec *prometheus.GaugeVec, resourceName, unit string, value float64) {
+func recordNodeMetricUsage(vec *k8smetrics.GaugeVec, resourceName, unit string, value float64) {
 	labels := genNodeLabels()
 	if labels == nil {
 		return
@@ -96,7 +100,7 @@ func RecordNodeMetricSystemUsage(resourceName, unit string, value float64) {
 	recordNodeMetricUsage(NodeMetricSystemUsage, resourceName, unit, value)
 }
 
-func recordNodeMetricNUMAUsage(vec *prometheus.GaugeVec, numaNodeID int32, resourceName, unit string, value float64) {
+func recordNodeMetricNUMAUsage(vec *k8smetrics.GaugeVec, numaNodeID int32, resourceName, unit string, value float64) {
 	labels := genNodeLabels()
 	if labels == nil {
 		return
