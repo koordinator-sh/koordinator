@@ -105,7 +105,6 @@ func Test_InjectContainerGPUEnv(t *testing.T) {
 				GpuAllocEnv:                       "1",
 				"CUDA_DEVICE_MEMORY_LIMIT":        "17179869184",
 				"CUDA_DEVICE_SM_LIMIT":            "50",
-				"LD_PRELOAD":                      lib,
 				"CUDA_DEVICE_MEMORY_SHARED_CACHE": tmpDir + "/pod-uid_container-name.cache",
 			},
 			expectedMounts: []*protocol.Mount{
@@ -119,7 +118,7 @@ func Test_InjectContainerGPUEnv(t *testing.T) {
 					Destination: lib,
 					Type:        "bind",
 					Source:      lib,
-					Options:     []string{"rbind"},
+					Options:     []string{"rbind", "ro"},
 				},
 				{
 					Destination: "/tmp/vgpulock",

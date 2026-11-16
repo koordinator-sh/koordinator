@@ -101,23 +101,17 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 			if ok {
 				containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_SM_LIMIT"] = fmt.Sprintf("%d", gpuCore.Value())
 			}
-			// Keep LD_PRELOAD for musl-based images, which honor the env var but
-			// ignore /etc/ld.so.preload. On glibc the env var alone is NOT a
-			// security boundary: the container's own entrypoint can run
-			// `unset LD_PRELOAD` (or `env -u LD_PRELOAD`) before exec'ing the real
-			// workload, and ld.so reads the variable from the process environment,
-			// so the interception library is skipped for that exec.
-			containerCtx.Response.AddContainerEnvs["LD_PRELOAD"] = system.Conf.HAMICoreLibraryDirectoryPath
-
-			// Bind-mount a system-wide /etc/ld.so.preload read-only to make the
-			// isolation non-bypassable from inside the container: ld.so reads that
-			// file unconditionally for every dynamically-linked process, regardless
-			// of the process environment, so the workload cannot opt out the way it
-			// can with the env var.
+			// Activate HAMi-core the same way HAMi's own device plugin does: a
+			// system-wide /etc/ld.so.preload bind-mounted read-only, and no
+			// LD_PRELOAD env var at all. ld.so reads that file unconditionally for
+			// every dynamically-linked process, regardless of the process
+			// environment, so the workload cannot opt out the way it could by
+			// running `unset LD_PRELOAD` (or `env -u LD_PRELOAD`) in its own
+			// entrypoint before exec'ing the real workload.
 			preloadHostPath, err := ensureHAMICorePreloadFile(system.Conf.HAMICoreLibraryDirectoryPath)
 			if err != nil {
-				// Fail closed: never leave the container with only the bypassable
-				// env var, otherwise the tenant silently loses the GPU memory/compute
+				// Fail closed: never leave the container without the interception
+				// library, otherwise the tenant silently loses the GPU memory/compute
 				// limit it was supposed to get.
 				return fmt.Errorf("failed to prepare HAMi-core %s for GPU isolation: %w", ldSoPreloadContainerPath, err)
 			}
@@ -133,7 +127,7 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 					Destination: system.Conf.HAMICoreLibraryDirectoryPath,
 					Type:        "bind",
 					Source:      system.Conf.HAMICoreLibraryDirectoryPath,
-					Options:     []string{"rbind"},
+					Options:     []string{"rbind", "ro"},
 				},
 				// Because https://github.com/Project-HAMi/HAMi/issues/696, we create the directory in pod.
 				&protocol.Mount{
