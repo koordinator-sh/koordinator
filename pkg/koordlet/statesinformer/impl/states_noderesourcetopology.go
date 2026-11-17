@@ -749,6 +749,9 @@ func (s *nodeTopoInformer) calCPUSharePools(lsSharedPoolCPUs map[int32]*extensio
 
 	podMetas := s.podsInformer.GetAllPods()
 	for _, podMeta := range podMetas {
+		if podMeta == nil || podMeta.Pod == nil || util.IsPodInactive(podMeta.Pod) {
+			continue
+		}
 		status, err := extension.GetResourceStatus(podMeta.Pod.Annotations)
 		if err != nil {
 			klog.Errorf("failed to get resource status of pod %s, err: %v", podMeta.Pod.Name, err)

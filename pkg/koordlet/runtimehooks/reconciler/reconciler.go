@@ -438,6 +438,9 @@ func (c *reconciler) reconcilePodCgroup(stopCh <-chan struct{}) {
 		case <-c.podUpdated:
 			podsMeta := c.getPodsMeta()
 			for _, podMeta := range podsMeta {
+				if podMeta == nil || !podMeta.IsRunningOrPending() {
+					continue
+				}
 				for resourceType, r := range globalCgroupReconcilers.podLevel {
 					condition := r.filter.Filter(podMeta)
 					reconcileFn, ok := r.fn[condition]
