@@ -108,6 +108,15 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 			// environment, so the workload cannot opt out the way it could by
 			// running `unset LD_PRELOAD` (or `env -u LD_PRELOAD`) in its own
 			// entrypoint before exec'ing the real workload.
+			//
+			// Known limitation, same as HAMi upstream: the mount replaces the
+			// whole file, so entries from an image's own /etc/ld.so.preload are
+			// shadowed and no longer loaded. Images relying on a custom preload
+			// conflict with HAMi-core activation regardless of which component
+			// wires it, and LD_PRELOAD env libs are preloaded before the file
+			// (see ld.so(8)), so a workload exporting its own shadowing library
+			// can still defeat the hook: in-process enforcement is not a hard
+			// boundary against an adversarial container, as documented upstream.
 			preloadHostPath, err := ensureHAMICorePreloadFile(system.Conf.HAMICoreLibraryDirectoryPath)
 			if err != nil {
 				// Fail closed: never leave the container without the interception
