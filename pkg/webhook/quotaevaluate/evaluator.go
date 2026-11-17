@@ -41,7 +41,9 @@ import (
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
 	"github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/features"
 	"github.com/koordinator-sh/koordinator/pkg/util"
+	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 // podResources are the set of resources managed by quota associated with pods.
@@ -492,7 +494,8 @@ func (e *quotaEvaluator) checkRequest(quota *v1alpha1.ElasticQuota, a *Attribute
 		return ctx.fatal
 	}
 
-	if ctx.names.Intersection(podResourcesSet).Len() == 0 {
+	if !utilfeature.DefaultFeatureGate.Enabled(features.QuotaAdmissionOnlyExtendedResources) &&
+		ctx.names.Intersection(podResourcesSet).Len() == 0 {
 		return nil
 	}
 
