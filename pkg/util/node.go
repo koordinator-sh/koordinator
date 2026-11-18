@@ -143,10 +143,15 @@ func TrimNodeAllocatableByNodeReservation(node *corev1.Node) (trimmedAllocatable
 	allocatable := node.Status.Allocatable
 	trimmedAllocatable = quotav1.SubtractWithNonNegativeResult(allocatable, reservedResources)
 
-	// node.alloc(batch-memory) and node.alloc(batch-memory) have subtracted the reserved resources from the koord-manager,
-	// so we should keep the original data here.
-	trimmedAllocatable[apiext.BatchMemory] = allocatable[apiext.BatchMemory]
-	trimmedAllocatable[apiext.BatchCPU] = allocatable[apiext.BatchCPU]
+	// node.alloc(batch-memory) and node.alloc(batch-cpu) have subtracted the reserved resources from the koord-manager,
+	// so we should keep the original data here. Only restore them when the node actually advertises them, otherwise
+	// a zero-valued entry would be fabricated on nodes without batch resources.
+	if batchMemory, ok := allocatable[apiext.BatchMemory]; ok {
+		trimmedAllocatable[apiext.BatchMemory] = batchMemory
+	}
+	if batchCPU, ok := allocatable[apiext.BatchCPU]; ok {
+		trimmedAllocatable[apiext.BatchCPU] = batchCPU
+	}
 	trimmed = !quotav1.Equals(allocatable, trimmedAllocatable)
 	return
 }
