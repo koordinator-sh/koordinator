@@ -57,15 +57,10 @@ func newTestExecutor() resourceexecutor.ResourceUpdateExecutor {
 }
 
 func newTestCPUBurst(opt *framework.Options) *cpuBurst {
-	return &cpuBurst{
-		reconcileInterval:     time.Duration(opt.Config.ReconcileIntervalSeconds) * time.Second,
-		metricCollectInterval: opt.MetricAdvisorConfig.CollectResUsedInterval,
-		statesInformer:        opt.StatesInformer,
-		metricCache:           opt.MetricCache,
-		executor:              newTestExecutor(),
-		cgroupReader:          resourceexecutor.NewCgroupReader(),
-		containerLimiter:      make(map[string]*burstLimiter),
-	}
+	b := New(opt).(*cpuBurst)
+	b.executor = newTestExecutor()
+	b.cgroupReader = resourceexecutor.NewCgroupReader()
+	return b
 }
 
 type testThrottledMetrics struct {
@@ -1468,6 +1463,8 @@ func TestCPUBurst_start(t *testing.T) {
 	}
 
 	type fields struct {
+		excludedNamespaces   string
+		initialBurst         int64
 		nodeCPUUsed          *resource.Quantity
 		podsMetric           map[string]podMetricSample
 		nodeCPUInfo          *metriccache.NodeCPUInfo
@@ -1552,6 +1549,45 @@ func TestCPUBurst_start(t *testing.T) {
 			},
 		},
 	}
+	for _, policy := range []slov1alpha1.CPUBurstPolicy{slov1alpha1.CPUBurstAuto, slov1alpha1.CPUBurstNone, slov1alpha1.CPUBurstOnly, slov1alpha1.CFSQuotaBurstOnly} {
+		tc := tests[0]
+		tc.name = "excluded-namespace-" + string(policy)
+		tc.fields.excludedNamespaces = " other, excluded, ,excluded "
+		tc.fields.initialBurst = 12345
+		tc.fields.pods = []*corev1.Pod{tc.fields.pods[0].DeepCopy(), tc.fields.pods[1].DeepCopy()}
+		tc.fields.pods[1].Namespace = "excluded"
+		tc.fields.nodeSLO = tc.fields.nodeSLO.DeepCopy()
+		tc.fields.nodeSLO.Spec.CPUBurstStrategy.Policy = policy
+		tc.want = want{
+			podBurstVal:          map[string]int64{lsrPodName: 12345, lsPodName: 12345},
+			containerBurstVal:    map[string]int64{lsrContainerName: 12345, lsContainerName: 12345},
+			podCFSQuotaVal:       map[string]int64{lsrPodName: -1, lsPodName: 2 * system.CFSBasePeriodValue},
+			containerCFSQuotaVal: map[string]int64{lsrContainerName: -1, lsContainerName: 2 * system.CFSBasePeriodValue},
+		}
+		tests = append(tests, tc)
+	}
+	tc := tests[0]
+	tc.name = "nonmatching-namespace-retains-burst"
+	tc.fields.excludedNamespaces = "excluded"
+	tc.fields.pods = []*corev1.Pod{tc.fields.pods[0].DeepCopy(), tc.fields.pods[1].DeepCopy()}
+	tc.fields.pods[1].Namespace = "excluded-suffix"
+	tests = append(tests, tc)
+	// An excluded Pod must not stop reconciliation or disappear from pool accounting.
+	tc = tests[0]
+	tc.name = "excluded-pod-before-eligible-pod"
+	tc.fields.excludedNamespaces = "excluded"
+	tc.fields.pods = []*corev1.Pod{tc.fields.pods[0].DeepCopy(), tc.fields.pods[1].DeepCopy()}
+	tc.fields.pods[0].Namespace = "excluded"
+	tests = append(tests, tc)
+
+	// Pod overrides must not bypass the namespace boundary.
+	tc = tests[2] // Excluded namespace with node policy none.
+	tc.name = "excluded-namespace-with-pod-auto-override"
+	tc.fields.pods = []*corev1.Pod{tc.fields.pods[0].DeepCopy(), tc.fields.pods[1].DeepCopy()}
+	tc.fields.pods[1].Annotations = map[string]string{
+		slov1alpha1.AnnotationPodCPUBurst: `{"policy":"auto"}`,
+	}
+	tests = append(tests, tc)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			podMetas := testutil.GetPodMetas(tt.fields.pods)
@@ -1607,6 +1643,7 @@ func TestCPUBurst_start(t *testing.T) {
 
 			testHelper := system.NewFileTestUtil(t)
 
+			opt.Config.CPUBurstExcludedNamespaces = tt.fields.excludedNamespaces
 			b := newTestCPUBurst(opt)
 			stop := make(chan struct{})
 			b.init(stop)
@@ -1614,8 +1651,8 @@ func TestCPUBurst_start(t *testing.T) {
 
 			for _, podMeta := range podMetas {
 				podCurCFSQuota := tt.fields.podsCurCFSQuota[podMeta.Pod.Name]
-				initPodCPUBurst(podMeta, 0, testHelper)
-				initContainerCPUBurst(podMeta, 0, testHelper)
+				initPodCPUBurst(podMeta, tt.fields.initialBurst, testHelper)
+				initContainerCPUBurst(podMeta, tt.fields.initialBurst, testHelper)
 				initPodCFSQuota(podMeta, podCurCFSQuota, testHelper)
 				initContainerCFSQuota(podMeta, tt.fields.containerCurCFSQuota, testHelper)
 			}
