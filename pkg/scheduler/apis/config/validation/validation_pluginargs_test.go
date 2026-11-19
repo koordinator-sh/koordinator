@@ -769,3 +769,41 @@ func TestValidateDefaultPreBindArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateBindingPoolArgs(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    *config.BindingPoolArgs
+		wantErr bool
+	}{
+		{
+			name: "valid args",
+			args: &config.BindingPoolArgs{Workers: 256},
+		},
+		{
+			name: "single worker",
+			args: &config.BindingPoolArgs{Workers: 1},
+		},
+		{
+			name:    "zero workers",
+			args:    &config.BindingPoolArgs{Workers: 0},
+			wantErr: true,
+		},
+		{
+			name:    "negative workers",
+			args:    &config.BindingPoolArgs{Workers: -1},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateBindingPoolArgs(tt.args)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "workers")
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}

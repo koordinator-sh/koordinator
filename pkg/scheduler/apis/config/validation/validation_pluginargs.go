@@ -357,3 +357,15 @@ func ValidateDefaultPreBindArgs(args *config.DefaultPreBindArgs) error {
 	}
 	return allErrs.ToAggregate()
 }
+
+// ValidateBindingPoolArgs validates that BindingPoolArgs are correct.
+func ValidateBindingPoolArgs(args *config.BindingPoolArgs) error {
+	var allErrs field.ErrorList
+	if args.Workers <= 0 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("workers"), args.Workers, "must be a positive value"))
+	}
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
+}

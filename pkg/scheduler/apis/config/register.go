@@ -45,6 +45,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&SchedulingHintArgs{},
 		&ScheduleAdmissionArgs{},
 		&DefaultPreBindArgs{},
+		&BindingPoolArgs{},
 	)
 	return nil
 }
