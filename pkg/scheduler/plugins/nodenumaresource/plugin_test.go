@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/informers"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	apiresource "k8s.io/component-helpers/resource"
+	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
 	k8sschedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
@@ -1509,6 +1510,176 @@ func TestFilterWithAmplifiedCPUs(t *testing.T) {
 
 			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get("node-1")
 			assert.NoError(t, err)
+			gotStatus := pl.Filter(context.TODO(), cycleState, tt.pod, nodeInfo)
+			assert.Equal(t, tt.wantStatus, gotStatus)
+		})
+	}
+}
+
+func TestFilterWithAmplifiedCPUsAndReservation(t *testing.T) {
+	makeCPUSharePodOnNode := func(cpu string) *corev1.Pod {
+		pod := makePodOnNode(map[corev1.ResourceName]string{"cpu": cpu}, "node-1", false)
+		pod.UID = uuid.NewUUID()
+		return pod
+	}
+	makeCPUSetPodOnNode := func(cpus cpuset.CPUSet) *corev1.Pod {
+		pod := makePodOnNode(map[corev1.ResourceName]string{"cpu": fmt.Sprintf("%d", cpus.Size())}, "node-1", true)
+		pod.UID = uuid.NewUUID()
+		_ = extension.SetResourceStatus(pod, &extension.ResourceStatus{CPUSet: cpus.String()})
+		return pod
+	}
+	tests := []struct {
+		name                string
+		pod                 *corev1.Pod
+		existingPods        []*corev1.Pod
+		reservedCPUs        cpuset.CPUSet
+		reservationAssigned []*corev1.Pod
+		matched             bool
+		wantStatus          *fwktype.Status
+	}{
+		{
+			name:         "owner cpuset pod reuses reserved cpus",
+			pod:          makePod(map[corev1.ResourceName]string{"cpu": "8"}, true),
+			existingPods: []*corev1.Pod{makeCPUSharePodOnNode("42")},
+			reservedCPUs: cpuset.MustParse("8-15"),
+			matched:      true,
+		},
+		{
+			name:         "non-owner cpuset pod cannot use reserved cpus",
+			pod:          makePod(map[corev1.ResourceName]string{"cpu": "8"}, true),
+			existingPods: []*corev1.Pod{makeCPUSharePodOnNode("42")},
+			reservedCPUs: cpuset.MustParse("8-15"),
+			matched:      false,
+			wantStatus:   fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientAmplifiedCPU),
+		},
+		{
+			name:         "owner cpushare pod reuses amplified capacity of reserved cpus",
+			pod:          makePod(map[corev1.ResourceName]string{"cpu": "12"}, false),
+			existingPods: []*corev1.Pod{makeCPUSharePodOnNode("48")},
+			reservedCPUs: cpuset.MustParse("8-15"),
+			matched:      true,
+		},
+		{
+			name:                "owner cpuset pod reuses remaining reserved cpus of an allocated reservation",
+			pod:                 makePod(map[corev1.ResourceName]string{"cpu": "4"}, true),
+			existingPods:        []*corev1.Pod{makeCPUSharePodOnNode("46")},
+			reservedCPUs:        cpuset.MustParse("8-15"),
+			reservationAssigned: []*corev1.Pod{makeCPUSetPodOnNode(cpuset.MustParse("8-11"))},
+			matched:             true,
+		},
+		{
+			name:         "owner cpuset pod fits the reserved cpus with cpuset pod on node",
+			pod:          makePod(map[corev1.ResourceName]string{"cpu": "8"}, true),
+			existingPods: []*corev1.Pod{makeCPUSetPodOnNode(cpuset.MustParse("0-23"))},
+			reservedCPUs: cpuset.MustParse("24-31"),
+			matched:      true,
+		},
+		{
+			name:         "owner cpuset pod exceeds the reserved cpus with cpuset pod on node",
+			pod:          makePod(map[corev1.ResourceName]string{"cpu": "10"}, true),
+			existingPods: []*corev1.Pod{makeCPUSetPodOnNode(cpuset.MustParse("0-23"))},
+			reservedCPUs: cpuset.MustParse("24-31"),
+			matched:      true,
+			wantStatus:   fwktype.NewStatus(fwktype.Unschedulable, ErrInsufficientAmplifiedCPU),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cpuTopology := buildCPUTopologyForTest(2, 1, 8, 2)
+			cpuAmplificationRatio := extension.Ratio(2.0)
+			node := makeNode("node-1", map[corev1.ResourceName]string{"cpu": fmt.Sprintf("%d", cpuTopology.NumCPUs), "memory": "40Gi"}, cpuAmplificationRatio)
+
+			reservation := &schedulingv1alpha1.Reservation{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-reservation",
+					UID:  uuid.NewUUID(),
+				},
+				Spec: schedulingv1alpha1.ReservationSpec{
+					Template: &corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								extension.LabelPodQoS: string(extension.QoSLSR),
+							},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU: *resource.NewQuantity(int64(tt.reservedCPUs.Size()), resource.DecimalSI),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				Status: schedulingv1alpha1.ReservationStatus{
+					NodeName: node.Name,
+				},
+			}
+			rInfo := frameworkext.NewReservationInfo(reservation)
+			reservePod := rInfo.GetReservePod()
+			for _, assignedPod := range tt.reservationAssigned {
+				rInfo.AddAssignedPod(assignedPod)
+			}
+
+			var pods []*corev1.Pod
+			pods = append(pods, tt.existingPods...)
+			pods = append(pods, tt.reservationAssigned...)
+			pods = append(pods, reservePod)
+			suit := newPluginTestSuit(t, pods, []*corev1.Node{node})
+			p, err := suit.proxyNew(context.TODO(), suit.nodeNUMAResourceArgs, suit.Handle)
+			assert.NoError(t, err)
+			suit.start(t)
+			pl := p.(*Plugin)
+
+			topologyOptions := TopologyOptions{
+				CPUTopology: cpuTopology,
+				MaxRefCount: 1,
+			}
+			for i := 0; i < cpuTopology.NumNodes; i++ {
+				topologyOptions.NUMANodeResources = append(topologyOptions.NUMANodeResources, NUMANodeResource{
+					Node: i,
+					Resources: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse(fmt.Sprintf("%d", extension.Amplify(int64(cpuTopology.CPUsPerNode()), cpuAmplificationRatio))),
+						corev1.ResourceMemory: resource.MustParse("20Gi"),
+					}})
+			}
+			pl.topologyOptionsManager.UpdateTopologyOptions(node.Name, func(options *TopologyOptions) {
+				*options = topologyOptions
+			})
+			handler := &podEventHandler{resourceManager: pl.resourceManager}
+			for _, v := range tt.existingPods {
+				handler.OnAdd(v, true)
+			}
+			for _, v := range tt.reservationAssigned {
+				handler.OnAdd(v, true)
+			}
+			pl.resourceManager.Update(node.Name, &PodAllocation{
+				UID:       reservePod.UID,
+				Namespace: reservePod.Namespace,
+				Name:      reservePod.Name,
+				CPUSet:    tt.reservedCPUs,
+			})
+
+			cycleState := framework.NewCycleState()
+			_, preFilterStatus := pl.PreFilter(context.TODO(), cycleState, tt.pod, nil)
+			assert.True(t, preFilterStatus.IsSuccess() || preFilterStatus.IsSkip())
+
+			nodeInfo, err := suit.Handle.SnapshotSharedLister().NodeInfos().Get(node.Name)
+			assert.NoError(t, err)
+			nodeInfo = nodeInfo.Snapshot()
+			if tt.matched {
+				// simulate the reservation restoring of the matched reservation
+				status := pl.PreRestoreReservation(context.TODO(), cycleState, tt.pod)
+				assert.True(t, status.IsSuccess())
+				_, status = pl.RestoreReservation(context.TODO(), cycleState, tt.pod, []*frameworkext.ReservationInfo{rInfo}, nil, nodeInfo)
+				assert.True(t, status.IsSuccess())
+				assert.NoError(t, nodeInfo.RemovePod(klog.Background(), reservePod))
+			}
+
 			gotStatus := pl.Filter(context.TODO(), cycleState, tt.pod, nodeInfo)
 			assert.Equal(t, tt.wantStatus, gotStatus)
 		})

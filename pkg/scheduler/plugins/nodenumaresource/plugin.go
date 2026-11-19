@@ -409,7 +409,9 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 	if !status.IsSuccess() {
 		return status
 	}
-	if status := p.filterAmplifiedCPUs(state.requests.Cpu().MilliValue(), nodeInfo, requestCPUBind); !status.IsSuccess() {
+	reservationRestoreState := getReservationRestoreState(cycleState)
+	restoreState := reservationRestoreState.getNodeState(node.Name)
+	if status := p.filterAmplifiedCPUs(state.requests.Cpu().MilliValue(), nodeInfo, requestCPUBind, restoreState.mergedMatchedRemainCPUs); !status.IsSuccess() {
 		return status
 	}
 
@@ -443,9 +445,6 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 				return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 			}
 
-			reservationRestoreState := getReservationRestoreState(cycleState)
-			restoreState := reservationRestoreState.getNodeState(node.Name)
-
 			podAllocation, status := tryAllocateFromReusable(p.resourceManager, restoreState, resourceOptions, restoreState.matched, pod, node)
 			if !status.IsSuccess() {
 				return status
@@ -476,7 +475,13 @@ func (p *Plugin) Filter(ctx context.Context, cycleState fwktype.CycleState, pod 
 	return nil
 }
 
-func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.NodeInfo, requestCPUBind bool) *fwktype.Status {
+// filterAmplifiedCPUs checks whether the node has enough amplified CPU capacity for the pod when the node enables the
+// CPU amplification. The CPUs allocated as CPUSets consume the amplified capacity by the amplification ratio, while the
+// requests of the other pods consume it as is.
+// The reusableCPUs are the remaining reserved CPUs of the reservations (or pre-allocatable pods) matched by the pod.
+// Their requests have already been returned from the NodeInfo by the reservation restoring, so they must not be
+// counted as allocated CPUSets either. Otherwise, the owner pod cannot reuse the CPUs reserved for it.
+func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.NodeInfo, requestCPUBind bool, reusableCPUs cpuset.CPUSet) *fwktype.Status {
 	if podRequestMilliCPU == 0 {
 		return nil
 	}
@@ -497,9 +502,8 @@ func (p *Plugin) filterAmplifiedCPUs(podRequestMilliCPU int64, nodeInfo fwktype.
 		podRequestMilliCPU = extension.Amplify(podRequestMilliCPU, cpuAmplificationRatio)
 	}
 
-	// TODO(joseph): Reservations and preemption should be considered here.
-	// TODO: support allocate reserved cpus with amplified ratios
-	_, allocated, err := p.resourceManager.GetAvailableCPUs(node.Name, cpuset.CPUSet{})
+	// TODO(joseph): Preemption should be considered here.
+	_, allocated, err := p.resourceManager.GetAvailableCPUs(node.Name, reusableCPUs)
 	if err != nil {
 		return fwktype.NewStatus(fwktype.UnschedulableAndUnresolvable, err.Error())
 	}
