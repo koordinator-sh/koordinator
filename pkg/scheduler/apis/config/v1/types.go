@@ -454,3 +454,15 @@ type DefaultPreBindArgs struct {
 	// RetryMaxBackoff caps the backoff duration between retry attempts.
 	RetryMaxBackoff *metav1.Duration `json:"retryMaxBackoff,omitempty"`
 }
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// BindingPoolArgs holds arguments used to configure the BindingPool plugin.
+type BindingPoolArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Workers is the size of the binding pool, i.e. the number of goroutines that
+	// send Binding requests. It limits the Binding requests in flight, not the
+	// request rate.
+	Workers *int32 `json:"workers,omitempty"`
+}

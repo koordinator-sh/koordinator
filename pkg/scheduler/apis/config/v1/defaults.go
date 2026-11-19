@@ -315,3 +315,12 @@ func SetDefaults_DefaultPreBindArgs(obj *DefaultPreBindArgs) {
 		obj.RetryMaxBackoff = defaultPreBindRetryMaxBackoff
 	}
 }
+
+var defaultBindingPoolWorkers = ptr.To[int32](256)
+
+// SetDefaults_BindingPoolArgs sets the default parameters for BindingPool plugin.
+func SetDefaults_BindingPoolArgs(obj *BindingPoolArgs) {
+	if obj.Workers == nil {
+		obj.Workers = defaultBindingPoolWorkers
+	}
+}

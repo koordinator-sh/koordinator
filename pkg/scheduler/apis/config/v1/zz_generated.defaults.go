@@ -29,6 +29,7 @@ import (
 // Public to allow building arbitrary schemes.
 // All generated defaulters are covering - they call all nested defaulters.
 func RegisterDefaults(scheme *runtime.Scheme) error {
+	scheme.AddTypeDefaultingFunc(&BindingPoolArgs{}, func(obj interface{}) { SetObjectDefaults_BindingPoolArgs(obj.(*BindingPoolArgs)) })
 	scheme.AddTypeDefaultingFunc(&CoschedulingArgs{}, func(obj interface{}) { SetObjectDefaults_CoschedulingArgs(obj.(*CoschedulingArgs)) })
 	scheme.AddTypeDefaultingFunc(&DefaultPreBindArgs{}, func(obj interface{}) { SetObjectDefaults_DefaultPreBindArgs(obj.(*DefaultPreBindArgs)) })
 	scheme.AddTypeDefaultingFunc(&DeviceShareArgs{}, func(obj interface{}) { SetObjectDefaults_DeviceShareArgs(obj.(*DeviceShareArgs)) })
@@ -39,6 +40,10 @@ func RegisterDefaults(scheme *runtime.Scheme) error {
 	scheme.AddTypeDefaultingFunc(&ScheduleAdmissionArgs{}, func(obj interface{}) { SetObjectDefaults_ScheduleAdmissionArgs(obj.(*ScheduleAdmissionArgs)) })
 	scheme.AddTypeDefaultingFunc(&SchedulingHintArgs{}, func(obj interface{}) { SetObjectDefaults_SchedulingHintArgs(obj.(*SchedulingHintArgs)) })
 	return nil
+}
+
+func SetObjectDefaults_BindingPoolArgs(in *BindingPoolArgs) {
+	SetDefaults_BindingPoolArgs(in)
 }
 
 func SetObjectDefaults_CoschedulingArgs(in *CoschedulingArgs) {

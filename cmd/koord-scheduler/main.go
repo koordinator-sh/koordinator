@@ -25,6 +25,7 @@ import (
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
 	"github.com/koordinator-sh/koordinator/cmd/koord-scheduler/app"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/bindingpool"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/defaultprebind"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/deviceshare"
@@ -55,6 +56,7 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	scarceresourceavoidance.Name: scarceresourceavoidance.New,
 	scheduleadmission.Name:       scheduleadmission.New,
 	schedulinghint.Name:          schedulinghint.New,
+	bindingpool.Name:             bindingpool.New,
 }
 
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {
