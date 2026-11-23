@@ -35,6 +35,17 @@ import (
 
 const GpuAllocEnv = "NVIDIA_VISIBLE_DEVICES"
 
+const (
+	// ldSoPreloadContainerPath is the system-wide preload file that glibc's
+	// dynamic linker (ld.so) reads for every dynamically-linked process,
+	// independent of the process environment.
+	ldSoPreloadContainerPath = "/etc/ld.so.preload"
+	// ldSoPreloadHostFileName is the file koordlet writes next to the HAMi-core
+	// interception library and bind-mounts (read-only) as the container's
+	// /etc/ld.so.preload.
+	ldSoPreloadHostFileName = "ld.so.preload"
+)
+
 type gpuPlugin struct{}
 
 func (p *gpuPlugin) Register(op hooks.Options) {
@@ -90,14 +101,42 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 			if ok {
 				containerCtx.Response.AddContainerEnvs["CUDA_DEVICE_SM_LIMIT"] = fmt.Sprintf("%d", gpuCore.Value())
 			}
-			containerCtx.Response.AddContainerEnvs["LD_PRELOAD"] = system.Conf.HAMICoreLibraryDirectoryPath
+			// Activate HAMi-core the same way HAMi's own device plugin does: a
+			// system-wide /etc/ld.so.preload bind-mounted read-only, and no
+			// LD_PRELOAD env var at all. ld.so reads that file unconditionally for
+			// every dynamically-linked process, regardless of the process
+			// environment, so the workload cannot opt out the way it could by
+			// running `unset LD_PRELOAD` (or `env -u LD_PRELOAD`) in its own
+			// entrypoint before exec'ing the real workload.
+			//
+			// Known limitation, same as HAMi upstream: the mount replaces the
+			// whole file, so entries from an image's own /etc/ld.so.preload are
+			// shadowed and no longer loaded. Images relying on a custom preload
+			// conflict with HAMi-core activation regardless of which component
+			// wires it, and LD_PRELOAD env libs are preloaded before the file
+			// (see ld.so(8)), so a workload exporting its own shadowing library
+			// can still defeat the hook: in-process enforcement is not a hard
+			// boundary against an adversarial container, as documented upstream.
+			preloadHostPath, err := ensureHAMICorePreloadFile(system.Conf.HAMICoreLibraryDirectoryPath)
+			if err != nil {
+				// Fail closed: never leave the container without the interception
+				// library, otherwise the tenant silently loses the GPU memory/compute
+				// limit it was supposed to get.
+				return fmt.Errorf("failed to prepare HAMi-core %s for GPU isolation: %w", ldSoPreloadContainerPath, err)
+			}
 
 			containerCtx.Response.AddContainerMounts = append(containerCtx.Response.AddContainerMounts,
+				&protocol.Mount{
+					Destination: ldSoPreloadContainerPath,
+					Type:        "bind",
+					Source:      preloadHostPath,
+					Options:     []string{"rbind", "ro"},
+				},
 				&protocol.Mount{
 					Destination: system.Conf.HAMICoreLibraryDirectoryPath,
 					Type:        "bind",
 					Source:      system.Conf.HAMICoreLibraryDirectoryPath,
-					Options:     []string{"rbind"},
+					Options:     []string{"rbind", "ro"},
 				},
 				// Because https://github.com/Project-HAMi/HAMi/issues/696, we create the directory in pod.
 				&protocol.Mount{
@@ -130,4 +169,34 @@ func (p *gpuPlugin) InjectContainerGPUEnv(proto protocol.HooksProtocol) error {
 	}
 
 	return nil
+}
+
+// hamiCorePreloadHostPath returns the host path of the ld.so.preload file
+// koordlet generates for HAMi-core isolation. It lives next to the interception
+// library, which is already present on the host (it is the source of the
+// libvgpu.so bind mount), so the directory is available to koordlet the same way
+// the library is.
+func hamiCorePreloadHostPath(libraryPath string) string {
+	return filepath.Join(filepath.Dir(libraryPath), ldSoPreloadHostFileName)
+}
+
+// ensureHAMICorePreloadFile writes an ld.so.preload file on the host whose only
+// entry is the container-internal path of the HAMi-core interception library, and
+// returns that host path so the caller can bind-mount it as the container's
+// /etc/ld.so.preload. The library path is identical inside the container because
+// the library is bind-mounted at the exact same location. The write is
+// idempotent: an existing file with the expected content is left untouched.
+func ensureHAMICorePreloadFile(libraryPath string) (string, error) {
+	hostPath := hamiCorePreloadHostPath(libraryPath)
+	content := libraryPath + "\n"
+	if old, err := os.ReadFile(hostPath); err == nil && string(old) == content {
+		return hostPath, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(hostPath), 0755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(hostPath, []byte(content), 0644); err != nil {
+		return "", err
+	}
+	return hostPath, nil
 }
