@@ -21,6 +21,7 @@ import (
 )
 
 type Config struct {
+	CPUBurstExcludedNamespaces string
 	ReconcileIntervalSeconds   int
 	CPUSuppressIntervalSeconds int
 	CPUEvictIntervalSeconds    int
@@ -45,6 +46,7 @@ func NewDefaultConfig() *Config {
 }
 
 func (c *Config) InitFlags(fs *flag.FlagSet) {
+	fs.StringVar(&c.CPUBurstExcludedNamespaces, "cpu-burst-excluded-namespaces", c.CPUBurstExcludedNamespaces, "Comma-separated namespaces excluded from CPU Burst cgroup updates; does not reset previously applied settings")
 	fs.IntVar(&c.ReconcileIntervalSeconds, "reconcile-interval-seconds", c.ReconcileIntervalSeconds, "reconcile be pod cgroup interval by seconds")
 	fs.IntVar(&c.CPUSuppressIntervalSeconds, "cpu-suppress-interval-seconds", c.CPUSuppressIntervalSeconds, "suppress be pod cpu resource interval by seconds")
 	fs.IntVar(&c.CPUEvictIntervalSeconds, "cpu-evict-interval-seconds", c.CPUEvictIntervalSeconds, "evict be pod(cpu) interval by seconds")
