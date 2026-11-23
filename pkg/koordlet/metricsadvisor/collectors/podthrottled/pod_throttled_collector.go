@@ -161,9 +161,10 @@ func (c *podThrottledCollector) collectPodThrottledInfo() {
 func (c *podThrottledCollector) collectContainerThrottledInfo(podMeta *statesinformer.PodMeta) []metriccache.MetricSample {
 	pod := podMeta.Pod
 	containersMetric := make([]metriccache.MetricSample, 0, len(pod.Status.ContainerStatuses))
-	for i := range pod.Status.ContainerStatuses {
+	_, statuses := koordletutil.GetPodRegularAndSidecarContainers(pod)
+	for i := range statuses {
 		collectTime := time.Now()
-		containerStat := &pod.Status.ContainerStatuses[i]
+		containerStat := &statuses[i]
 		if len(containerStat.ContainerID) == 0 {
 			klog.V(5).Infof("container %s/%s/%s id is empty, maybe not ready, skip this round",
 				pod.Namespace, pod.Name, containerStat.Name)
