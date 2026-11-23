@@ -36,6 +36,9 @@ import (
 )
 
 func TestSyncedEventHandler(t *testing.T) {
+	ResetRegistrations()
+	defer ResetRegistrations()
+
 	var objects []runtime.Object
 	for i := 0; i < 10; i++ {
 		node := &corev1.Node{
@@ -52,8 +55,6 @@ func TestSyncedEventHandler(t *testing.T) {
 	nodeInformer := sharedInformerFactory.Core().V1().Nodes()
 	addTimes := map[string]int{}
 	var mu sync.Mutex
-	var wg sync.WaitGroup
-	wg.Add(10)
 
 	// ForceSyncFromInformer only registers the handler; the informer must be
 	// started explicitly via factory.Start().
@@ -63,7 +64,6 @@ func TestSyncedEventHandler(t *testing.T) {
 			mu.Lock()
 			addTimes[node.Name]++
 			mu.Unlock()
-			wg.Done()
 		},
 	})
 
@@ -72,9 +72,19 @@ func TestSyncedEventHandler(t *testing.T) {
 	defer close(stopCh)
 	sharedInformerFactory.Start(stopCh)
 
-	wg.Wait()
+	// WaitForHandlersSync times out instead of hanging the CI job forever when
+	// the fake informer never delivers the initial list (see #2957).
+	syncCtx, syncCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer syncCancel()
+	if err := WaitForHandlersSync(syncCtx); err != nil {
+		t.Fatalf("timed out waiting for initial Add events: %v", err)
+	}
 
 	mu.Lock()
+	if len(addTimes) != 10 {
+		mu.Unlock()
+		t.Fatalf("expected Add for 10 nodes, got %d", len(addTimes))
+	}
 	for _, v := range addTimes {
 		if v > 1 {
 			mu.Unlock()
@@ -220,6 +230,7 @@ func TestForceSyncFromInformerWithReplace_CtxCanceledBeforeSync(t *testing.T) {
 
 func TestSyncedEventHandlerWithReplace(t *testing.T) {
 	ResetRegistrations()
+	defer ResetRegistrations()
 
 	var objects []runtime.Object
 	for i := 0; i < 10; i++ {
@@ -237,8 +248,6 @@ func TestSyncedEventHandlerWithReplace(t *testing.T) {
 	nodeInformer := sharedInformerFactory.Core().V1().Nodes()
 	addTimes := map[string]int{}
 	var mu sync.Mutex
-	var wg sync.WaitGroup
-	wg.Add(10)
 
 	// replaceHandlerCalled is closed once replaceHandler has run.
 	replaceHandlerCalled := make(chan struct{})
@@ -256,7 +265,6 @@ func TestSyncedEventHandlerWithReplace(t *testing.T) {
 				mu.Lock()
 				addTimes[node.Name]++
 				mu.Unlock()
-				wg.Done()
 			},
 		},
 		func(objs []interface{}) error {
@@ -273,9 +281,18 @@ func TestSyncedEventHandlerWithReplace(t *testing.T) {
 	defer close(stopCh)
 	sharedInformerFactory.Start(stopCh)
 
-	wg.Wait()
+	// Bound the initial-list wait so a missed Add cannot hang CI (#2957 / #2993).
+	syncCtx, syncCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer syncCancel()
+	if err := WaitForHandlersSync(syncCtx); err != nil {
+		t.Fatalf("timed out waiting for initial Add events: %v", err)
+	}
 
 	mu.Lock()
+	if len(addTimes) != 10 {
+		mu.Unlock()
+		t.Fatalf("expected Add for 10 nodes, got %d", len(addTimes))
+	}
 	for _, v := range addTimes {
 		if v > 1 {
 			mu.Unlock()
@@ -303,14 +320,6 @@ func TestSyncedEventHandlerWithReplace(t *testing.T) {
 	replaceMu.Lock()
 	assert.Equal(t, 10, len(replacedObjs), "replaceHandler should receive all 10 nodes")
 	replaceMu.Unlock()
-
-	// WaitForHandlersSync should return quickly now that the initial list has been
-	// fully delivered (registrations no longer gate on replaceHandler completion).
-	syncCtx, syncCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer syncCancel()
-	if err := WaitForHandlersSync(syncCtx); err != nil {
-		t.Fatalf("WaitForHandlersSync timed out: %v", err)
-	}
 
 	sharedInformerFactory.WaitForCacheSync(stopCh)
 
