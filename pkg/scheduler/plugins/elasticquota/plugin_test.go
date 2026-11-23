@@ -1460,6 +1460,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 		quotaInfos           []*v1alpha1.ElasticQuota
 		enableCheckParent    bool
 		expectedQueueingHint fwktype.QueueingHint
+		wantErr              bool
 	}{
 		{
 			name: "quota changed (max increased) - should queue after backoff",
@@ -1947,7 +1948,7 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 			expectedQueueingHint: fwktype.QueueSkip,
 		},
 		{
-			name: "invalid oldObj or newObj - should queue after backoff",
+			name: "quota add (nil old object) - should queue",
 			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
 				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
 			originalQuota: nil,
@@ -1979,6 +1980,39 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 			},
 			expectedQueueingHint: fwktype.Queue,
 		},
+		{
+			name: "undecodable old object - should queue and return the decode error",
+			pod: MakePod("t1-ns1", "pod1").Label(extension.LabelQuotaName, "test1").
+				Label(extension.LabelQuotaTreeID, "tree1").Obj(),
+			modifiedQuota: &v1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test1",
+					Labels: map[string]string{
+						extension.LabelQuotaTreeID: "tree1",
+					},
+				},
+				Spec: v1alpha1.ElasticQuotaSpec{
+					Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+					Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+				},
+			},
+			quotaInfos: []*v1alpha1.ElasticQuota{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test1",
+						Labels: map[string]string{
+							extension.LabelQuotaTreeID: "tree1",
+						},
+					},
+					Spec: v1alpha1.ElasticQuotaSpec{
+						Max: MakeResourceList().CPU(10).Mem(30).Obj(),
+						Min: MakeResourceList().CPU(0).Mem(0).Obj(),
+					},
+				},
+			},
+			expectedQueueingHint: fwktype.Queue,
+			wantErr:              true,
+		},
 	}
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2008,11 +2042,15 @@ func TestPlugin_QueueingHint_IsSchedulableAfterQuotaChanged(t *testing.T) {
 
 			// Call the queueing hint function
 			var oldObj, newObj interface{} = tt.originalQuota, tt.modifiedQuota
-			if tt.originalQuota == nil {
+			if tt.wantErr {
 				oldObj = "invalid"
 			}
 			result, err := gp.isSchedulableAfterQuotaChanged(klog.Background(), tt.pod, oldObj, newObj)
-			assert.NoError(t, err)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 			assert.Equal(t, tt.expectedQueueingHint, result)
 		})
 	}
@@ -2573,6 +2611,7 @@ func TestToElasticQuota(t *testing.T) {
 		name    string
 		obj     interface{}
 		wantNil bool
+		wantErr bool
 	}{
 		{
 			name:    "nil object",
@@ -2609,12 +2648,45 @@ func TestToElasticQuota(t *testing.T) {
 			name:    "unhandled type",
 			obj:     &corev1.Pod{},
 			wantNil: true,
+			wantErr: true,
+		},
+		{
+			name: "DeletedFinalStateUnknown wrapping unhandled type",
+			obj: cache.DeletedFinalStateUnknown{
+				Key: "test-ns/test-quota",
+				Obj: &corev1.Pod{},
+			},
+			wantNil: true,
+			wantErr: true,
+		},
+		{
+			name:    "unstructured with no content",
+			obj:     &unstructured.Unstructured{},
+			wantNil: true,
+			wantErr: true,
+		},
+		{
+			name: "unstructured that cannot be decoded",
+			obj: &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "scheduling.x-k8s.io/v1alpha1",
+				"kind":       "ElasticQuota",
+				"metadata":   map[string]interface{}{"name": "bad"},
+				"spec":       map[string]interface{}{"max": "not-a-list"},
+			}},
+			wantNil: true,
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := toElasticQuota(tt.obj)
+			got, err := toElasticQuota(tt.obj)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, got)
+				return
+			}
+			assert.NoError(t, err)
 			if tt.wantNil {
 				assert.Nil(t, got)
 				return
