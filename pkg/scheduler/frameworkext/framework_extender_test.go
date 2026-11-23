@@ -62,6 +62,26 @@ func init() {
 	}
 }
 
+type testEquivalenceEligibilityPlugin struct{}
+
+func (p *testEquivalenceEligibilityPlugin) Name() string {
+	return "TestEquivalenceEligibilityPlugin"
+}
+
+func (p *testEquivalenceEligibilityPlugin) EquivalenceEligible(context.Context, fwktype.CycleState, *corev1.Pod) *fwktype.Status {
+	return nil
+}
+
+func TestFrameworkExtenderCollectsEquivalenceEligibilityPlugins(t *testing.T) {
+	impl := &frameworkExtenderImpl{}
+	plugin := &testEquivalenceEligibilityPlugin{}
+	impl.updatePlugins(plugin)
+
+	plugins := impl.EquivalenceEligibilityPlugins()
+	assert.Len(t, plugins, 1)
+	assert.Same(t, plugin, plugins[0])
+}
+
 // TestForgetPod_SchedulerNil verifies that ForgetPod does not panic when the scheduler
 // has not been initialized yet (InitScheduler not called), and that all registered
 // ForgetPodHandlers are still invoked so plugin-level accounting stays consistent.
@@ -2559,6 +2579,129 @@ func Test_frameworkExtenderImpl_GangActivator_Registration(t *testing.T) {
 					assert.Nil(t, mock.activatedPod)
 				}
 			}
+		})
+	}
+}
+
+// recordingBindingLimiter records how the extender drives a BindingLimiter across the binding cycle.
+type recordingBindingLimiter struct {
+	handles    bool
+	acquireErr error
+	acquired   []string
+	released   []string
+}
+
+func (l *recordingBindingLimiter) Handles(*corev1.Pod) bool { return l.handles }
+
+func (l *recordingBindingLimiter) Acquire(_ context.Context, pod *corev1.Pod) error {
+	if l.acquireErr != nil {
+		return l.acquireErr
+	}
+	l.acquired = append(l.acquired, pod.Name)
+	return nil
+}
+
+func (l *recordingBindingLimiter) Release(pod *corev1.Pod) {
+	l.released = append(l.released, pod.Name)
+}
+
+func TestFrameworkExtenderBindingLimiter(t *testing.T) {
+	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, features.DynamicSchedulerCheck, false)()
+
+	newExtender := func(t *testing.T, preBindErr error) FrameworkExtender {
+		extenderFactory, err := NewFrameworkExtenderFactory(
+			WithKoordinatorClientSet(koordfake.NewSimpleClientset()),
+			WithKoordinatorSharedInformerFactory(koordinatorinformers.NewSharedInformerFactory(koordfake.NewSimpleClientset(), 0)),
+		)
+		assert.NoError(t, err)
+		fakeClient := kubefake.NewSimpleClientset()
+		fh, err := schedulertesting.NewFramework(
+			context.TODO(),
+			[]schedulertesting.RegisterPluginFunc{
+				schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+				schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				schedulertesting.RegisterPreBindPlugin("fakePreBindPlugin", func(_ context.Context, _ runtime.Object, _ fwktype.Handle) (fwktype.Plugin, error) {
+					return &fakePreBindPlugin{err: preBindErr, skipApplyPatch: true}, nil
+				}),
+			},
+			"koord-scheduler",
+			frameworkruntime.WithClientSet(fakeClient),
+			frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(fakeClient, 0)),
+		)
+		assert.NoError(t, err)
+		extender := extenderFactory.NewFrameworkExtender(fh)
+		extender.SetConfiguredPlugins(fh.ListPlugins())
+		return extender
+	}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "pod-1", UID: "uid-1"}}
+
+	tests := []struct {
+		name         string
+		limiter      *recordingBindingLimiter
+		preBindErr   error
+		postBind     bool
+		unreserve    bool
+		wantSuccess  bool
+		wantAcquired []string
+		wantReleased []string
+	}{
+		{
+			name:         "unhandled pod is not bounded on PreBind",
+			limiter:      &recordingBindingLimiter{},
+			wantSuccess:  true,
+			wantAcquired: nil,
+			wantReleased: nil,
+		},
+		{
+			name:         "successful PreBind keeps the slot until PostBind",
+			limiter:      &recordingBindingLimiter{handles: true},
+			postBind:     true,
+			wantSuccess:  true,
+			wantAcquired: []string{"pod-1"},
+			wantReleased: []string{"pod-1"},
+		},
+		{
+			name:         "failed PreBind keeps the slot until Unreserve",
+			limiter:      &recordingBindingLimiter{handles: true},
+			preBindErr:   errors.New("prebind failed"),
+			unreserve:    true,
+			wantSuccess:  false,
+			wantAcquired: []string{"pod-1"},
+			wantReleased: []string{"pod-1"},
+		},
+		{
+			name:         "acquire failure fails PreBind without releasing",
+			limiter:      &recordingBindingLimiter{handles: true, acquireErr: context.Canceled},
+			wantSuccess:  false,
+			wantAcquired: nil,
+			wantReleased: nil,
+		},
+		{
+			name:         "Unreserve releases the slot",
+			limiter:      &recordingBindingLimiter{handles: true},
+			unreserve:    true,
+			wantSuccess:  true,
+			wantAcquired: []string{"pod-1"},
+			wantReleased: []string{"pod-1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			extender := newExtender(t, tt.preBindErr)
+			extender.(EquivalenceAwareHandle).SetBindingLimiter(tt.limiter)
+
+			cycleState := framework.NewCycleState()
+			status := extender.RunPreBindPlugins(context.TODO(), cycleState, pod, "node-1")
+			assert.Equal(t, tt.wantSuccess, status.IsSuccess(), status.Message())
+			assert.Empty(t, tt.limiter.released, "PreBind never releases the slot itself")
+			if tt.postBind {
+				extender.RunPostBindPlugins(context.TODO(), cycleState, pod, "node-1")
+			}
+			if tt.unreserve {
+				extender.RunReservePluginsUnreserve(context.TODO(), cycleState, pod, "node-1")
+			}
+			assert.Equal(t, tt.wantAcquired, tt.limiter.acquired)
+			assert.Equal(t, tt.wantReleased, tt.limiter.released)
 		})
 	}
 }
