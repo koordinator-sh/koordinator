@@ -338,14 +338,31 @@ func (b *cpuBurst) getNodeStateForBurst(sharePoolThresholdPercent int64,
 func (b *cpuBurst) applyCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *statesinformer.PodMeta,
 	nodeState nodeStateForBurst) {
 	pod := podMeta.Pod
-	containerMap := make(map[string]*corev1.Container)
-	for i := range pod.Spec.Containers {
-		container := &pod.Spec.Containers[i]
-		containerMap[container.Name] = container
-	}
+	containerMap := containerSpecByName(pod.Spec.Containers)
+	initContainerMap := containerSpecByName(pod.Spec.InitContainers)
 
-	for i := range pod.Status.ContainerStatuses {
-		containerStat := &pod.Status.ContainerStatuses[i]
+	// init containers run before regular containers and have their own cgroup, so the
+	// burst policy has to cover them too; otherwise a CPU-heavy init container stays
+	// throttled at its base quota for the whole pod startup.
+	b.scaleCFSQuotaBurst(burstCfg, podMeta, nodeState, pod.Status.InitContainerStatuses, initContainerMap)
+	b.scaleCFSQuotaBurst(burstCfg, podMeta, nodeState, pod.Status.ContainerStatuses, containerMap)
+}
+
+// containerSpecByName indexes containers by name for status lookups.
+func containerSpecByName(containers []corev1.Container) map[string]*corev1.Container {
+	containerMap := make(map[string]*corev1.Container, len(containers))
+	for i := range containers {
+		containerMap[containers[i].Name] = &containers[i]
+	}
+	return containerMap
+}
+
+// scaleCFSQuotaBurst scales cpu.cfs_quota_us for each running container in statuses.
+func (b *cpuBurst) scaleCFSQuotaBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *statesinformer.PodMeta,
+	nodeState nodeStateForBurst, statuses []corev1.ContainerStatus, containerMap map[string]*corev1.Container) {
+	pod := podMeta.Pod
+	for i := range statuses {
+		containerStat := &statuses[i]
 		container, exist := containerMap[containerStat.Name]
 		if !exist || container == nil {
 			klog.Warningf("container %s/%s/%s not found in pod spec", pod.Namespace, pod.Name, containerStat.Name)
@@ -563,15 +580,45 @@ func (b *cpuBurst) applyContainerCFSQuota(podMeta *statesinformer.PodMeta, conta
 // set cpu.cfs_burst_us for containers
 func (b *cpuBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *statesinformer.PodMeta) {
 	pod := podMeta.Pod
-	containerMap := make(map[string]*corev1.Container)
-	for i := range pod.Spec.Containers {
-		container := &pod.Spec.Containers[i]
-		containerMap[container.Name] = container
-	}
 
 	podCFSBurstVal := int64(0)
-	for i := range pod.Status.ContainerStatuses {
-		containerStat := &pod.Status.ContainerStatuses[i]
+	// a running init container has its own cgroup and needs cpu.cfs_burst_us set just
+	// like regular containers; completed init containers are skipped so they do not
+	// inflate the pod-level burst value once the regular containers are running.
+	podCFSBurstVal += b.applyContainerCPUBurst(burstCfg, podMeta, pod.Status.InitContainerStatuses, containerSpecByName(pod.Spec.InitContainers), true)
+	podCFSBurstVal += b.applyContainerCPUBurst(burstCfg, podMeta, pod.Status.ContainerStatuses, containerSpecByName(pod.Spec.Containers), false)
+
+	podDir := podMeta.CgroupDir
+	podCFSBurstValStr := strconv.FormatInt(podCFSBurstVal, 10)
+	eventHelper := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason("CPUBurst").Message("update pod CFSQuota: %v", podCFSBurstValStr)
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUBurstName, podDir, podCFSBurstValStr, eventHelper)
+	if err != nil { // normally cpu burst resource not supported on current system
+		klog.V(5).Infof("get cpu burst updater for pod %s/%s failed, maybe system unsupported, err: %v",
+			pod.Namespace, pod.Name, err)
+		return
+	}
+	updated, err := b.executor.Update(true, updater)
+	if err != nil && system.IsResourceUnsupportedErr(err) {
+		klog.V(5).Infof("update pod %v/%v cpu burst failed, cfs burst not supported, dir %v, info %v",
+			pod.Namespace, pod.Name, podDir, err)
+	} else if err != nil {
+		klog.V(4).Infof("update pod %v/%v cpu burst failed, dir %v, updated %v, err %v",
+			pod.Namespace, pod.Name, podDir, updated, err)
+	} else {
+		klog.V(5).Infof("apply pod %v/%v cpu burst value successfully, dir %v, value %v",
+			pod.Namespace, pod.Name, podDir, podCFSBurstValStr)
+	}
+}
+
+// applyContainerCPUBurst sets cpu.cfs_burst_us for each container in statuses and returns
+// the sum of the burst values written. When onlyRunning is set, containers that are not
+// currently running are skipped and excluded from the sum.
+func (b *cpuBurst) applyContainerCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *statesinformer.PodMeta,
+	statuses []corev1.ContainerStatus, containerMap map[string]*corev1.Container, onlyRunning bool) int64 {
+	pod := podMeta.Pod
+	podCFSBurstVal := int64(0)
+	for i := range statuses {
+		containerStat := &statuses[i]
 		container, exist := containerMap[containerStat.Name]
 		if !exist || container == nil {
 			klog.Warningf("container %s/%s/%s not found in pod spec", pod.Namespace, pod.Name, containerStat.Name)
@@ -580,6 +627,11 @@ func (b *cpuBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 
 		if containerStat.ContainerID == "" {
 			klog.V(5).Infof("container %s/%s/%s got empty id, skip since it may not start",
+				pod.Namespace, pod.Name, containerStat.Name)
+			continue
+		}
+		if onlyRunning && containerStat.State.Running == nil {
+			klog.V(6).Infof("skip container %s/%s/%s, because it is not running",
 				pod.Namespace, pod.Name, containerStat.Name)
 			continue
 		}
@@ -613,28 +665,8 @@ func (b *cpuBurst) applyCPUBurst(burstCfg *slov1alpha1.CPUBurstConfig, podMeta *
 			klog.V(5).Infof("apply container %v/%v/%v cpu burst value successfully, dir %v, value %v",
 				pod.Namespace, pod.Name, containerStat.Name, containerDir, containerCFSBurstVal)
 		}
-	} // end for containers
-
-	podDir := podMeta.CgroupDir
-	podCFSBurstValStr := strconv.FormatInt(podCFSBurstVal, 10)
-	eventHelper := audit.V(3).Pod(podMeta.Pod.Namespace, podMeta.Pod.Name).Reason("CPUBurst").Message("update pod CFSQuota: %v", podCFSBurstValStr)
-	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(system.CPUBurstName, podDir, podCFSBurstValStr, eventHelper)
-	if err != nil { // normally cpu burst resource not supported on current system
-		klog.V(5).Infof("get cpu burst updater for pod %s/%s failed, maybe system unsupported, err: %v",
-			pod.Namespace, pod.Name, err)
-		return
 	}
-	updated, err := b.executor.Update(true, updater)
-	if err != nil && system.IsResourceUnsupportedErr(err) {
-		klog.V(5).Infof("update pod %v/%v cpu burst failed, cfs burst not supported, dir %v, info %v",
-			pod.Namespace, pod.Name, podDir, err)
-	} else if err != nil {
-		klog.V(4).Infof("update pod %v/%v cpu burst failed, dir %v, updated %v, err %v",
-			pod.Namespace, pod.Name, podDir, updated, err)
-	} else {
-		klog.V(5).Infof("apply pod %v/%v cpu burst value successfully, dir %v, value %v",
-			pod.Namespace, pod.Name, podDir, podCFSBurstValStr)
-	}
+	return podCFSBurstVal
 }
 
 func (b *cpuBurst) Recycle() {
