@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	utilvalidation "k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	schedconfig "k8s.io/kubernetes/pkg/scheduler/apis/config"
@@ -332,6 +333,38 @@ func ValidateSchedulingHintArgs(path *field.Path, args *config.SchedulingHintArg
 			path.Child("maxHintNodes"),
 			args.MaxHintNodes,
 			"must be a positive value",
+		))
+	}
+	if len(allErrs) == 0 {
+		return nil
+	}
+	return allErrs.ToAggregate()
+}
+
+// ValidateSandboxEquivalenceArgs validates that SandboxEquivalenceArgs are correct.
+func ValidateSandboxEquivalenceArgs(path *field.Path, args *config.SandboxEquivalenceArgs) error {
+	var allErrs field.ErrorList
+	if args.MaxCachedNodes <= 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("maxCachedNodes"),
+			args.MaxCachedNodes,
+			"must be a positive value",
+		))
+	}
+	if args.CacheTTL.Duration <= 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("cacheTTL"),
+			args.CacheTTL.Duration.String(),
+			"must be a positive duration",
+		))
+	}
+	if args.TemplateHashLabel == "" {
+		allErrs = append(allErrs, field.Required(path.Child("templateHashLabel"), "must be set"))
+	} else if errs := utilvalidation.IsQualifiedName(args.TemplateHashLabel); len(errs) > 0 {
+		allErrs = append(allErrs, field.Invalid(
+			path.Child("templateHashLabel"),
+			args.TemplateHashLabel,
+			strings.Join(errs, "; "),
 		))
 	}
 	if len(allErrs) == 0 {

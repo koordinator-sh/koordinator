@@ -1984,6 +1984,7 @@ type TestPreferNodesPlugin struct {
 	name           string
 	preferredNodes []string
 	returnStatus   *fwktype.Status
+	called         bool
 }
 
 func (p *TestPreferNodesPlugin) Name() string {
@@ -1999,14 +2000,25 @@ func (p *TestPreferNodesPlugin) PreferNodes(ctx context.Context, cycleState fwkt
 		pod.Annotations = map[string]string{}
 	}
 	pod.Annotations["PreferNodesPlugin-called"] = p.name
+	p.called = true
 	return p.preferredNodes, p.returnStatus
+}
+
+// preFilterPlugins builds the configured plugins with the given PreFilter plugins in order.
+func preFilterPlugins(names ...string) *schedconfig.Plugins {
+	plugins := &schedconfig.Plugins{}
+	for _, name := range names {
+		plugins.PreFilter.Enabled = append(plugins.PreFilter.Enabled, schedconfig.Plugin{Name: name})
+	}
+	return plugins
 }
 
 func Test_frameworkExtenderImpl_PreferNodesPlugin_Registration(t *testing.T) {
 	tests := []struct {
-		name           string
-		plugins        []fwktype.Plugin
-		wantPluginName string
+		name             string
+		plugins          []fwktype.Plugin
+		preFilterPlugins []string
+		wantPluginNames  []string
 	}{
 		{
 			name: "register single PreferNodesPlugin",
@@ -2017,10 +2029,11 @@ func Test_frameworkExtenderImpl_PreferNodesPlugin_Registration(t *testing.T) {
 					returnStatus:   fwktype.NewStatus(fwktype.Success),
 				},
 			},
-			wantPluginName: "test-prefer-nodes-1",
+			preFilterPlugins: []string{"test-prefer-nodes-1"},
+			wantPluginNames:  []string{"test-prefer-nodes-1"},
 		},
 		{
-			name: "register multiple PreferNodesPlugin - only first one is used",
+			name: "register multiple PreferNodesPlugin - follow the PreFilter order",
 			plugins: []fwktype.Plugin{
 				&TestPreferNodesPlugin{
 					name:           "test-prefer-nodes-1",
@@ -2033,7 +2046,25 @@ func Test_frameworkExtenderImpl_PreferNodesPlugin_Registration(t *testing.T) {
 					returnStatus:   fwktype.NewStatus(fwktype.Success),
 				},
 			},
-			wantPluginName: "test-prefer-nodes-1",
+			preFilterPlugins: []string{"test-prefer-nodes-2", "test-prefer-nodes-1"},
+			wantPluginNames:  []string{"test-prefer-nodes-2", "test-prefer-nodes-1"},
+		},
+		{
+			name: "PreferNodesPlugin not enabled in PreFilter is ignored",
+			plugins: []fwktype.Plugin{
+				&TestPreferNodesPlugin{
+					name:           "test-prefer-nodes-1",
+					preferredNodes: []string{"node-1"},
+					returnStatus:   fwktype.NewStatus(fwktype.Success),
+				},
+				&TestPreferNodesPlugin{
+					name:           "test-prefer-nodes-2",
+					preferredNodes: []string{"node-2"},
+					returnStatus:   fwktype.NewStatus(fwktype.Success),
+				},
+			},
+			preFilterPlugins: []string{"test-prefer-nodes-1"},
+			wantPluginNames:  []string{"test-prefer-nodes-1"},
 		},
 	}
 
@@ -2068,10 +2099,13 @@ func Test_frameworkExtenderImpl_PreferNodesPlugin_Registration(t *testing.T) {
 			for _, pl := range tt.plugins {
 				impl.updatePlugins(pl)
 			}
+			impl.SetConfiguredPlugins(preFilterPlugins(tt.preFilterPlugins...))
 
-			// Verify only the first plugin is registered
-			assert.NotNil(t, impl.preferNodesPlugin)
-			assert.Equal(t, tt.wantPluginName, impl.preferNodesPlugin.Name())
+			var gotPluginNames []string
+			for _, pl := range impl.preferNodesPluginsEnabled {
+				gotPluginNames = append(gotPluginNames, pl.Name())
+			}
+			assert.Equal(t, tt.wantPluginNames, gotPluginNames)
 		})
 	}
 }
@@ -2188,6 +2222,7 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 				returnStatus:   tt.preferNodesStatus,
 			}
 			impl.updatePlugins(preferNodesPlugin)
+			impl.SetConfiguredPlugins(preFilterPlugins(preferNodesPlugin.Name()))
 
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2217,6 +2252,101 @@ func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithPreferNodes(t *testing.T
 				assert.NotNil(t, result)
 				assert.Equal(t, tt.expectResult.NodeNames, result.NodeNames)
 			}
+		})
+	}
+}
+
+func Test_frameworkExtenderImpl_RunPreFilterPlugins_WithMultiplePreferNodes(t *testing.T) {
+	tests := []struct {
+		name             string
+		first            *TestPreferNodesPlugin
+		second           *TestPreferNodesPlugin
+		wantNodes        sets.Set[string]
+		wantCode         fwktype.Code
+		wantPlugin       string
+		wantSecondCalled bool
+	}{
+		{
+			name:             "first plugin skips - the second one decides",
+			first:            &TestPreferNodesPlugin{name: "first", returnStatus: fwktype.NewStatus(fwktype.Skip)},
+			second:           &TestPreferNodesPlugin{name: "second", preferredNodes: []string{"node-2"}},
+			wantNodes:        sets.New("node-2"),
+			wantCode:         fwktype.Success,
+			wantSecondCalled: true,
+		},
+		{
+			name:      "first plugin succeeds - the second one is not called",
+			first:     &TestPreferNodesPlugin{name: "first", preferredNodes: []string{"node-1"}},
+			second:    &TestPreferNodesPlugin{name: "second", preferredNodes: []string{"node-2"}},
+			wantNodes: sets.New("node-1"),
+			wantCode:  fwktype.Success,
+		},
+		{
+			name:       "first plugin fails - abort with its name",
+			first:      &TestPreferNodesPlugin{name: "first", returnStatus: fwktype.NewStatus(fwktype.Error, "test error")},
+			second:     &TestPreferNodesPlugin{name: "second", preferredNodes: []string{"node-2"}},
+			wantCode:   fwktype.Error,
+			wantPlugin: "first",
+		},
+		{
+			name:     "preferred nodes of the first plugin fail - fall back without the second one",
+			first:    &TestPreferNodesPlugin{name: "first", preferredNodes: []string{"non-existent-node"}},
+			second:   &TestPreferNodesPlugin{name: "second", preferredNodes: []string{"node-2"}},
+			wantCode: fwktype.Success,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			koordClientSet := koordfake.NewSimpleClientset()
+			koordSharedInformerFactory := koordinatorinformers.NewSharedInformerFactory(koordClientSet, 0)
+			extenderFactory, err := NewFrameworkExtenderFactory(
+				WithKoordinatorClientSet(koordClientSet),
+				WithKoordinatorSharedInformerFactory(koordSharedInformerFactory),
+			)
+			assert.NoError(t, err)
+
+			var nodeInfos nodeInfoLister
+			for _, name := range []string{"node-1", "node-2"} {
+				ni := framework.NewNodeInfo()
+				ni.SetNode(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name}})
+				nodeInfos = append(nodeInfos, ni)
+			}
+			fakeClient := kubefake.NewSimpleClientset()
+			fh, err := schedulertesting.NewFramework(
+				context.TODO(),
+				[]schedulertesting.RegisterPluginFunc{
+					schedulertesting.RegisterBindPlugin(defaultbinder.Name, defaultbinder.New),
+					schedulertesting.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
+				},
+				"koord-scheduler",
+				frameworkruntime.WithClientSet(fakeClient),
+				frameworkruntime.WithInformerFactory(informers.NewSharedInformerFactory(fakeClient, 0)),
+				frameworkruntime.WithSnapshotSharedLister(fakeNodeInfoLister{nodeInfoLister: nodeInfos}),
+				frameworkruntime.WithPodNominator(NewFakePodNominator()),
+			)
+			assert.NoError(t, err)
+
+			impl := extenderFactory.NewFrameworkExtender(fh).(*frameworkExtenderImpl)
+			impl.updatePlugins(tt.second)
+			impl.updatePlugins(tt.first)
+			impl.SetConfiguredPlugins(preFilterPlugins(tt.first.Name(), tt.second.Name()))
+
+			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"}}
+			result, status, _ := impl.RunPreFilterPlugins(context.TODO(), framework.NewCycleState(), pod)
+
+			assert.Equal(t, tt.wantCode, status.Code())
+			if tt.wantPlugin != "" {
+				assert.Equal(t, tt.wantPlugin, status.Plugin())
+			}
+			if tt.wantNodes != nil {
+				assert.NotNil(t, result)
+				assert.Equal(t, tt.wantNodes, result.NodeNames)
+			} else {
+				assert.Nil(t, result)
+			}
+			assert.True(t, tt.first.called)
+			assert.Equal(t, tt.wantSecondCalled, tt.second.called)
 		})
 	}
 }
