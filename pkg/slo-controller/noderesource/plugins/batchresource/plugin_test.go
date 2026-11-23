@@ -3635,6 +3635,60 @@ func TestPluginCalculate(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "calculate with maxUsageRequest and HP pod without metric",
+			args: args{
+				strategy: &configuration.ColocationStrategy{
+					Enable:                        ptr.To[bool](true),
+					DegradeTimeMinutes:            ptr.To[int64](15),
+					UpdateTimeThresholdSeconds:    ptr.To[int64](300),
+					ResourceDiffThreshold:         ptr.To[float64](0.1),
+					CPUReclaimThresholdPercent:    ptr.To[int64](70),
+					CPUCalculatePolicy:            &cpuCalculateByMaxUsageReq,
+					MemoryReclaimThresholdPercent: ptr.To[int64](80),
+					MemoryCalculatePolicy:         &memoryCalculateByMaxUsageReq,
+				},
+				node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "test-node1",
+					},
+					Status: makeNodeStat("100", "120G"),
+				},
+				resourceMetrics: &framework.ResourceMetrics{
+					NodeMetric: &slov1alpha1.NodeMetric{
+						Status: slov1alpha1.NodeMetricStatus{
+							UpdateTime: &metav1.Time{Time: time.Now()},
+							NodeMetric: &slov1alpha1.NodeMetricInfo{
+								NodeUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("50", "55G"),
+								},
+								SystemUsage: slov1alpha1.ResourceMap{
+									ResourceList: makeResourceList("7", "12G"),
+								},
+							},
+							PodsMetric: []*slov1alpha1.PodMetricInfo{
+								genPodMetric("test", "podA", "11", "11G"),
+								genPodMetric("test", "podB", "10", "10G"),
+								// podC is pending and has not reported a metric yet
+							},
+						},
+					},
+				},
+			},
+			want: []framework.ResourceItem{
+				{
+					Name:     extension.BatchCPU,
+					Quantity: resource.NewQuantity(23000, resource.DecimalSI),
+					Message:  "batchAllocatable[CPU(Milli-Core)]:23000 = nodeCapacity:100000 - nodeSafetyMargin:30000 - systemUsageOrNodeReserved:7000 - podHPMaxUsedRequest:40000",
+				},
+				{
+					Name:     extension.BatchMemory,
+					Quantity: resource.NewScaledQuantity(24, 9),
+					Message:  "batchAllocatable[Mem(GB)]:24 = nodeCapacity:120 - nodeSafetyMargin:24 - systemUsage:12 - podHPMaxUsedRequest:60",
+				},
+			},
+			wantErr: false,
+		},
+		{
 			name: "calculate with adjusted reclaim ratio",
 			args: args{
 				strategy: &configuration.ColocationStrategy{
