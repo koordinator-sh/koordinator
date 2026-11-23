@@ -29,21 +29,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	clienttesting "k8s.io/client-go/testing"
 	fwktype "k8s.io/kube-scheduler/framework"
-	kubefeatures "k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/defaultbinder"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/queuesort"
 	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 	schedulertesting "k8s.io/kubernetes/pkg/scheduler/testing/framework"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
-	utilfeature "github.com/koordinator-sh/koordinator/pkg/util/feature"
 )
 
 func newTestHandle(t *testing.T, cs clientset.Interface) fwktype.Handle {
@@ -67,6 +64,17 @@ func newTestHandle(t *testing.T, cs clientset.Interface) fwktype.Handle {
 func newTestPlugin(t *testing.T, cs clientset.Interface, workers int32) *Plugin {
 	t.Helper()
 	p, err := New(t.Context(), &config.BindingPoolArgs{Workers: workers}, newTestHandle(t, cs))
+	if err != nil {
+		t.Fatalf("failed to build the plugin: %v", err)
+	}
+	return p.(*Plugin)
+}
+
+func newTestPluginWithAPICacher(t *testing.T, cs clientset.Interface, workers int32, apiCacher fwktype.APICacher) *Plugin {
+	t.Helper()
+	fh := newTestHandle(t, cs)
+	fh.(interface{ SetAPICacher(fwktype.APICacher) }).SetAPICacher(apiCacher)
+	p, err := New(t.Context(), &config.BindingPoolArgs{Workers: workers}, fh)
 	if err != nil {
 		t.Fatalf("failed to build the plugin: %v", err)
 	}
@@ -121,16 +129,6 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestNewRejectsSchedulerAsyncAPICalls(t *testing.T) {
-	defer utilfeature.SetFeatureGateDuringTest(t, k8sfeature.DefaultMutableFeatureGate, kubefeatures.SchedulerAsyncAPICalls, true)()
-
-	// The gate is checked before the handle is used, so no framework is needed.
-	p, err := New(context.Background(), &config.BindingPoolArgs{Workers: 8}, nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), string(kubefeatures.SchedulerAsyncAPICalls))
-	assert.Nil(t, p)
-}
-
 func TestBind(t *testing.T) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "test-pod", UID: "test-uid"},
@@ -176,6 +174,88 @@ func TestBind(t *testing.T) {
 	})
 }
 
+// fakeAPICacher records the dispatched Bindings and replays queued results. It
+// stands in for the APIDispatcher wiring without its scheduling semantics.
+type fakeAPICacher struct {
+	enqueueErr error
+	resultErr  error
+
+	mu    sync.Mutex
+	bound []*corev1.Binding
+}
+
+func (f *fakeAPICacher) PatchPodStatus(*corev1.Pod, *corev1.PodCondition, *fwktype.NominatingInfo) (<-chan error, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f *fakeAPICacher) BindPod(binding *corev1.Binding) (<-chan error, error) {
+	if f.enqueueErr != nil {
+		return nil, f.enqueueErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.bound = append(f.bound, binding.DeepCopy())
+	onFinish := make(chan error, 1)
+	onFinish <- f.resultErr
+	return onFinish, nil
+}
+
+func (f *fakeAPICacher) WaitOnFinish(ctx context.Context, onFinish <-chan error) error {
+	select {
+	case err := <-onFinish:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (f *fakeAPICacher) bindings() []*corev1.Binding {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.bound
+}
+
+func TestBindViaAPICacher(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "test-pod", UID: "test-uid"},
+	}
+
+	t.Run("dispatches the Binding through the APICacher", func(t *testing.T) {
+		cs := kubefake.NewSimpleClientset()
+		cacher := &fakeAPICacher{}
+		p := newTestPluginWithAPICacher(t, cs, 1, cacher)
+
+		status := p.Bind(context.Background(), nil, pod, "test-node")
+		assert.Nil(t, status)
+
+		bound := cacher.bindings()
+		assert.Len(t, bound, 1)
+		assert.Equal(t, pod.Namespace, bound[0].Namespace)
+		assert.Equal(t, pod.Name, bound[0].Name)
+		assert.Equal(t, pod.UID, bound[0].UID)
+		assert.Equal(t, corev1.ObjectReference{Kind: "Node", Name: "test-node"}, bound[0].Target)
+		assert.Empty(t, cs.Actions(), "the Binding should not go to the client when an APICacher is set")
+	})
+
+	t.Run("returns the failure to the binding cycle", func(t *testing.T) {
+		bindErr := errors.New("apiserver rejected the binding")
+		p := newTestPluginWithAPICacher(t, kubefake.NewSimpleClientset(), 1, &fakeAPICacher{resultErr: bindErr})
+
+		status := p.Bind(context.Background(), nil, pod, "test-node")
+		assert.NotNil(t, status)
+		assert.ErrorIs(t, status.AsError(), bindErr)
+	})
+
+	t.Run("returns the enqueue failure to the binding cycle", func(t *testing.T) {
+		enqueueErr := errors.New("dispatcher rejected the call")
+		p := newTestPluginWithAPICacher(t, kubefake.NewSimpleClientset(), 1, &fakeAPICacher{enqueueErr: enqueueErr})
+
+		status := p.Bind(context.Background(), nil, pod, "test-node")
+		assert.NotNil(t, status)
+		assert.ErrorIs(t, status.AsError(), enqueueErr)
+	})
+}
+
 func TestBindHonorsCanceledContext(t *testing.T) {
 	cs := kubefake.NewSimpleClientset()
 	p := newTestPlugin(t, cs, 1)
@@ -197,30 +277,104 @@ func TestBindLimitsBindingsInFlight(t *testing.T) {
 		callers = 10
 	)
 
-	pods := &blockingPods{release: make(chan struct{})}
-	p := newTestPlugin(t, &blockingClientset{Interface: kubefake.NewSimpleClientset(), pods: pods}, workers)
-
-	var wg sync.WaitGroup
-	for i := range callers {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: fmt.Sprintf("test-pod-%d", i)}}
-			status := p.Bind(context.Background(), nil, pod, "test-node")
-			assert.Nil(t, status)
-		}(i)
+	tests := []struct {
+		name string
+		// setup returns the plugin under test, how many binds are currently
+		// blocked, and a release function that lets them finish.
+		setup func(t *testing.T) (*Plugin, func() int, func())
+	}{
+		{
+			name: "direct client",
+			setup: func(t *testing.T) (*Plugin, func() int, func()) {
+				pods := &blockingPods{release: make(chan struct{})}
+				p := newTestPlugin(t, &blockingClientset{Interface: kubefake.NewSimpleClientset(), pods: pods}, workers)
+				return p, pods.maxInFlight, func() { close(pods.release) }
+			},
+		},
+		{
+			name: "through the APICacher",
+			setup: func(t *testing.T) (*Plugin, func() int, func()) {
+				cacher := &blockingAPICacher{release: make(chan struct{})}
+				p := newTestPluginWithAPICacher(t, kubefake.NewSimpleClientset(), workers, cacher)
+				return p, cacher.maxInFlight, func() { close(cacher.release) }
+			},
+		},
 	}
 
-	assert.Eventually(t, func() bool {
-		return pods.maxInFlight() == workers
-	}, 10*time.Second, 10*time.Millisecond, "the workers should all be busy")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, maxInFlight, release := tt.setup(t)
 
-	// Give the remaining callers a chance to leak past the workers.
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, workers, pods.maxInFlight())
+			var wg sync.WaitGroup
+			for i := range callers {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: fmt.Sprintf("test-pod-%d", i)}}
+					status := p.Bind(context.Background(), nil, pod, "test-node")
+					assert.Nil(t, status)
+				}(i)
+			}
 
-	close(pods.release)
-	wg.Wait()
+			assert.Eventually(t, func() bool {
+				return maxInFlight() == workers
+			}, 10*time.Second, 10*time.Millisecond, "the workers should all be busy")
+
+			// Give the remaining callers a chance to leak past the workers.
+			time.Sleep(100 * time.Millisecond)
+			assert.Equal(t, workers, maxInFlight())
+
+			release()
+			wg.Wait()
+		})
+	}
+}
+
+// blockingAPICacher blocks every dispatched Binding until release is closed and
+// records how many run at once, the way blockingPods does for the direct client.
+type blockingAPICacher struct {
+	release chan struct{}
+
+	mu       sync.Mutex
+	inFlight int
+	max      int
+}
+
+func (b *blockingAPICacher) PatchPodStatus(*corev1.Pod, *corev1.PodCondition, *fwktype.NominatingInfo) (<-chan error, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (b *blockingAPICacher) BindPod(*corev1.Binding) (<-chan error, error) {
+	onFinish := make(chan error, 1)
+	onFinish <- nil
+	return onFinish, nil
+}
+
+func (b *blockingAPICacher) WaitOnFinish(ctx context.Context, _ <-chan error) error {
+	b.mu.Lock()
+	b.inFlight++
+	if b.inFlight > b.max {
+		b.max = b.inFlight
+	}
+	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		b.inFlight--
+		b.mu.Unlock()
+	}()
+
+	select {
+	case <-b.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (b *blockingAPICacher) maxInFlight() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.max
 }
 
 // blockingPods blocks every Bind until release is closed and records how many

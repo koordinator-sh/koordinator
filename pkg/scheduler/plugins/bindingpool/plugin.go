@@ -23,11 +23,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	k8sfeature "k8s.io/apiserver/pkg/util/feature"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	fwktype "k8s.io/kube-scheduler/framework"
-	kubefeatures "k8s.io/kubernetes/pkg/features"
 
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/validation"
@@ -51,19 +49,13 @@ type bindRequest struct {
 // the worker count, and the binding cycles beyond that wait in submit.
 type Plugin struct {
 	client clientset.Interface
+	// handle provides the APICacher, which is set only after the plugins are
+	// built, so it is read on each bind rather than stored at construction.
+	handle fwktype.Handle
 	queue  chan *bindRequest
 }
 
 func New(ctx context.Context, args runtime.Object, handle fwktype.Handle) (fwktype.Plugin, error) {
-	// With SchedulerAsyncAPICalls the scheduler sends API calls through its
-	// APIDispatcher, which runs each call in a new goroutine without a limit.
-	// Binding through it would bypass the workers, and binding around it would
-	// skip its merging of calls for the same pod, so refuse to run with the gate.
-	// Check the gate rather than handle.APICacher(), which is set only after the
-	// plugins are built.
-	if k8sfeature.DefaultFeatureGate.Enabled(kubefeatures.SchedulerAsyncAPICalls) {
-		return nil, fmt.Errorf("%s does not support the %s feature gate", Name, kubefeatures.SchedulerAsyncAPICalls)
-	}
 	pluginArgs, ok := args.(*config.BindingPoolArgs)
 	if !ok {
 		return nil, fmt.Errorf("want args to be of type BindingPoolArgs, got %T", args)
@@ -74,6 +66,7 @@ func New(ctx context.Context, args runtime.Object, handle fwktype.Handle) (fwkty
 
 	pl := &Plugin{
 		client: handle.ClientSet(),
+		handle: handle,
 		queue:  make(chan *bindRequest),
 	}
 	for i := 0; i < int(pluginArgs.Workers); i++ {
@@ -106,9 +99,25 @@ func (pl *Plugin) worker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case req := <-pl.queue:
-			req.result <- pl.client.CoreV1().Pods(req.binding.Namespace).Bind(req.ctx, req.binding, metav1.CreateOptions{})
+			req.result <- pl.bind(req)
 		}
 	}
+}
+
+// bind sends the Binding through the APIDispatcher when one is set up by the
+// SchedulerAsyncAPICalls feature gate. The dispatcher serializes
+// calls for the same pod, so the Binding cannot overtake a pending
+// NominatedNodeName patch from the binding cycle. Otherwise it sends the
+// Binding straight to the apiserver.
+func (pl *Plugin) bind(req *bindRequest) error {
+	if apiCacher := pl.handle.APICacher(); apiCacher != nil {
+		onFinish, err := apiCacher.BindPod(req.binding)
+		if err != nil {
+			return err
+		}
+		return apiCacher.WaitOnFinish(req.ctx, onFinish)
+	}
+	return pl.client.CoreV1().Pods(req.binding.Namespace).Bind(req.ctx, req.binding, metav1.CreateOptions{})
 }
 
 // submit hands the Binding to a worker and waits for its result. It blocks
