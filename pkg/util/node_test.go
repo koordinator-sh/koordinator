@@ -294,6 +294,29 @@ func TestTrimNodeAllocatableByNodeReservation(t *testing.T) {
 			},
 			expectedTrimmed: false,
 		},
+		{
+			name: "do not fabricate batch resources on a node without them",
+			node: &corev1.Node{
+				Status: corev1.NodeStatus{
+					Allocatable: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("96"),
+						corev1.ResourceMemory: resource.MustParse("512Gi"),
+					},
+				},
+			},
+			reservation: &apiext.NodeReservation{
+				Resources: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("16"),
+					corev1.ResourceMemory: resource.MustParse("12Gi"),
+				},
+				ApplyPolicy: apiext.NodeReservationApplyPolicyDefault,
+			},
+			expectedAllocatable: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("80"),
+				corev1.ResourceMemory: resource.MustParse("500Gi"),
+			},
+			expectedTrimmed: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
