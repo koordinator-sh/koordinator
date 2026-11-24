@@ -16,22 +16,24 @@ limitations under the License.
 
 package metrics
 
-import "github.com/prometheus/client_golang/prometheus"
+import k8smetrics "k8s.io/component-base/metrics"
 
 var (
-	NodePredictedResourceReclaimable = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "node_predicted_resource_reclaimable",
-		Help:      "the node reclaimable resources predicted by koordinator",
+	NodePredictedResourceReclaimable = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "node_predicted_resource_reclaimable",
+		Help:           "the node reclaimable resources predicted by koordinator",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, PredictorKey, ResourceKey, UnitKey})
 
-	NodePredictedResourcePeak = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: KoordletSubsystem,
-		Name:      "node_predicted_resource_peak",
-		Help:      "the node peak resources predicted by koordinator",
+	NodePredictedResourcePeak = k8smetrics.NewGaugeVec(&k8smetrics.GaugeOpts{
+		Subsystem:      KoordletSubsystem,
+		Name:           "node_predicted_resource_peak",
+		Help:           "the node peak resources predicted by koordinator",
+		StabilityLevel: k8smetrics.ALPHA,
 	}, []string{NodeKey, PredictorKey, ResourceKey, UnitKey})
 
-	PredictionCollectors = []prometheus.Collector{
+	PredictionRegisterableCollectors = []k8smetrics.Registerable{
 		NodePredictedResourceReclaimable,
 		NodePredictedResourcePeak,
 	}
