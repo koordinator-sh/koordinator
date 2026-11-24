@@ -162,6 +162,12 @@ type ReservationStatus struct {
 	// Resource allocated by current owners.
 	// +optional
 	Allocated corev1.ResourceList `json:"allocated,omitempty" protobuf:"bytes,6,rep,name=allocated,casttype=k8s.io/api/core/v1.ResourceList,castkey=k8s.io/api/core/v1.ResourceName"`
+	// NominatedNodeName is set when the Reservation preempts other pods on the node but cannot be
+	// scheduled right away (e.g. waiting for preempted pods to terminate). The scheduler uses this
+	// field to persist the preemption nomination across restarts and to avoid repeated preemption
+	// loops, maintaining compatibility with upstream KEP-5278 scheduler semantics.
+	// +optional
+	NominatedNodeName string `json:"nominatedNodeName,omitempty" protobuf:"bytes,7,opt,name=nominatedNodeName"`
 }
 
 // ReservationOwner indicates the owner specification which can allocate reserved resources.
