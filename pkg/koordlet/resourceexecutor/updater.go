@@ -70,6 +70,9 @@ func init() {
 	DefaultCgroupUpdaterFactory.Register(NewMergeableCgroupUpdaterWithConditionFunc(CommonCgroupUpdateFunc, MergeConditionIfCPUSetIsLooser),
 		sysutil.CPUSetCPUSName,
 	)
+	DefaultCgroupUpdaterFactory.Register(NewMergeableCgroupUpdaterWithConditionFunc(CommonCgroupUpdateFunc, MergeConditionIfCPUSetIsLooser),
+		sysutil.CPUSetMemsName,
+	)
 	DefaultCgroupUpdaterFactory.Register(NewBlkIOResourceUpdater,
 		sysutil.BlkioTRIopsName,
 		sysutil.BlkioTRBpsName,

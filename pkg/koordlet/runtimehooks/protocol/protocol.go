@@ -86,6 +86,7 @@ type Resources struct {
 	CPUShares     *int64
 	CFSQuota      *int64
 	CPUSet        *string
+	CPUSetMems    *string
 	MemoryLimit   *int64
 	NetClsClassId *uint32
 
@@ -96,7 +97,7 @@ type Resources struct {
 }
 
 func (r *Resources) IsOriginResSet() bool {
-	return r.CPUShares != nil || r.CFSQuota != nil || r.CPUSet != nil || r.MemoryLimit != nil
+	return r.CPUShares != nil || r.CFSQuota != nil || r.CPUSet != nil || r.CPUSetMems != nil || r.MemoryLimit != nil
 }
 
 func (r *Resources) FromPod(pod *corev1.Pod) {
@@ -162,6 +163,10 @@ func (r *Resources) FromLinuxContainerResources(resources *runtimeapi.LinuxConta
 		cpusetCpus := resources.CpusetCpus
 		r.CPUSet = &cpusetCpus
 	}
+	if resources.CpusetMems != "" {
+		cpusetMems := resources.CpusetMems
+		r.CPUSetMems = &cpusetMems
+	}
 }
 
 // FromNriLinuxResources extracts resource information from NRI's LinuxResources
@@ -181,6 +186,9 @@ func (r *Resources) FromNriLinuxResources(resources *api.LinuxResources) {
 		}
 		if cpus := cpu.GetCpus(); cpus != "" {
 			r.CPUSet = &cpus
+		}
+		if mems := cpu.GetMems(); mems != "" {
+			r.CPUSetMems = &mems
 		}
 	}
 	// Extract Memory resources
@@ -213,6 +221,14 @@ func injectCPUShares(cgroupParent string, cpuShares int64, a *audit.EventHelper,
 
 func injectCPUSet(cgroupParent string, cpuset string, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) (resourceexecutor.ResourceUpdater, error) {
 	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUSetCPUSName, cgroupParent, cpuset, a)
+	if err != nil {
+		return nil, err
+	}
+	return updater, nil
+}
+
+func injectCPUSetMems(cgroupParent string, mems string, a *audit.EventHelper, e resourceexecutor.ResourceUpdateExecutor) (resourceexecutor.ResourceUpdater, error) {
+	updater, err := resourceexecutor.DefaultCgroupUpdaterFactory.New(sysutil.CPUSetMemsName, cgroupParent, mems, a)
 	if err != nil {
 		return nil, err
 	}
