@@ -96,6 +96,40 @@ func TestNodeAllocationAddCPUs(t *testing.T) {
 	assert.Equal(t, expectAllocatedCPUs, allocationState.allocatedCPUs)
 }
 
+func TestNodeAllocation_addPodAllocation(t *testing.T) {
+	allocationState := NewNodeAllocation("test-node-1")
+	assert.NotNil(t, allocationState)
+
+	podUID := uuid.NewUUID()
+	request := &PodAllocation{
+		UID: podUID,
+		NUMANodeResources: []NUMANodeResource{
+			{
+				Node: 1, // Start from 1 to test the slice index bug
+				Resources: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("2"),
+				},
+			},
+			{
+				Node: 2,
+				Resources: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+			},
+		},
+	}
+
+	// Add pod allocation
+	allocationState.addPodAllocation(request, nil)
+
+	// Verify that the allocatedResources map keys match the Node field in the values
+	for _, numaNodeRes := range request.NUMANodeResources {
+		storedRes := allocationState.allocatedResources[numaNodeRes.Node]
+		assert.NotNil(t, storedRes)
+		assert.Equal(t, numaNodeRes.Node, storedRes.Node, "stored node ID should match the map key and the requested node ID")
+	}
+}
+
 func TestNodeAllocationStateReleaseCPUs(t *testing.T) {
 	cpuTopology := buildCPUTopologyForTest(2, 1, 4, 2)
 	for _, v := range cpuTopology.CPUDetails {
