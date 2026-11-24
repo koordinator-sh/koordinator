@@ -196,11 +196,11 @@ func GetXPUCount(deviceType string) (int, error) {
 		if totalCountLine == "" {
 			return 0, fmt.Errorf("get npu count err, no total count line")
 		}
-		fidlds := strings.Fields(totalCountLine)
-		if len(fidlds) < 4 {
+		fields := strings.Fields(totalCountLine)
+		if len(fields) < 5 {
 			return 0, fmt.Errorf("get npu count err, no total count field")
 		}
-		count, err := strconv.Atoi(fidlds[4])
+		count, err := strconv.Atoi(fields[4])
 		if err != nil {
 			return 0, fmt.Errorf("get npu count err, failed to convert field to integer, %w", err)
 		}
