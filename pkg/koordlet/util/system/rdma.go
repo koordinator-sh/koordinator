@@ -27,9 +27,12 @@ import (
 	"k8s.io/klog/v2"
 )
 
-const (
+var (
 	SysInfinibandDir = "/sys/class/infiniband"
-	RDMAStateActive  = "ACTIVE"
+)
+
+const (
+	RDMAStateActive = "ACTIVE"
 )
 
 var (
