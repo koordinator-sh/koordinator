@@ -49,7 +49,7 @@ func New(_ context.Context, args runtime.Object, handle fwk.Handle) (fwk.Plugin,
 	nodeResourcesFitPlusArgs, ok := args.(*config.NodeResourcesFitPlusArgs)
 
 	if !ok {
-		return nil, fmt.Errorf("want args to be of type NodeResourcesArgs, got %T", nodeResourcesFitPlusArgs)
+		return nil, fmt.Errorf("want args to be of type NodeResourcesFitPlusArgs, got %T", args)
 	}
 
 	return &Plugin{
