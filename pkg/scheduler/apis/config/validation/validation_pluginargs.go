@@ -57,7 +57,6 @@ func ValidateLoadAwareSchedulingArgs(args *config.LoadAwareSchedulingArgs) error
 	for resourceName := range args.ResourceWeights {
 		if _, ok := args.EstimatedScalingFactors[resourceName]; !ok {
 			allErrs = append(allErrs, field.NotFound(field.NewPath("estimatedScalingFactors"), resourceName))
-			break
 		}
 	}
 
