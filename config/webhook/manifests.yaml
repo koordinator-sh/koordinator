@@ -161,6 +161,27 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /validate-quota-koordinator-sh-v1alpha1-elasticquotaprofile
+  failurePolicy: Fail
+  name: velasticquotaprofile.koordinator.sh
+  rules:
+  - apiGroups:
+    - quota.koordinator.sh
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - elasticquotaprofiles
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  - v1beta1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /validate-node
   failurePolicy: Ignore
   name: vnode.koordinator.sh
