@@ -280,6 +280,7 @@ func createPerfConfig(event string) (*unix.PerfEventAttr, error) {
 	perfEventAttrPtr := C.malloc(C.ulong(unsafe.Sizeof(unix.PerfEventAttr{})))
 	C.memset(perfEventAttrPtr, 0, C.ulong(unsafe.Sizeof(unix.PerfEventAttr{})))
 	if err := pfmGetOsEventEncoding(event, perfEventAttrPtr); err != nil {
+		C.free(perfEventAttrPtr)
 		return nil, err
 	}
 
