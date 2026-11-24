@@ -18,6 +18,7 @@ package core
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	pgformers "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/generated/informers/externalversions"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config"
 	v1 "github.com/koordinator-sh/koordinator/pkg/scheduler/apis/config/v1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/frameworkext/workloadauditor"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/coscheduling/util"
 )
 
@@ -1275,6 +1277,160 @@ func TestGangCache_onPodGroupUpdate(t *testing.T) {
 	cache.onPodGroupUpdate(podGroup, newPodGroup)
 	gang = cache.getGangFromCacheByGangId(gangId, false)
 	assert.Equal(t, gang.MinRequiredNumber, int(newPodGroup.Spec.MinMember))
+}
+
+// gangAuditorRecorder is a minimal WorkloadAuditor stub that records the
+// AddGangGroup / DeleteGangGroup calls observed by GangCache. It implements
+// every method of workloadauditor.WorkloadAuditor as a no-op except for the
+// two we want to assert on, so the real GangCache.workloadAuditor field can
+// be wired with this fake.
+type gangAuditorRecorder struct {
+	mu      sync.Mutex
+	added   []string
+	deleted []string
+}
+
+func (r *gangAuditorRecorder) Enabled() bool           { return true }
+func (r *gangAuditorRecorder) AddPod(_ *corev1.Pod)    {}
+func (r *gangAuditorRecorder) DeletePod(_ *corev1.Pod) {}
+func (r *gangAuditorRecorder) RecordPod(_ *corev1.Pod, _ workloadauditor.RecordType, _ string) {
+}
+func (r *gangAuditorRecorder) RecordPodGating(_ *corev1.Pod, _ bool) {}
+func (r *gangAuditorRecorder) RecordAttemptPod(_ *corev1.Pod)        {}
+func (r *gangAuditorRecorder) RecordPodScheduleResult(_ *corev1.Pod, _ workloadauditor.RecordType, _ string) {
+}
+func (r *gangAuditorRecorder) AddGangGroup(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.added = append(r.added, id)
+}
+func (r *gangAuditorRecorder) DeleteGangGroup(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.deleted = append(r.deleted, id)
+}
+func (r *gangAuditorRecorder) RecordGangGroup(_ string, _ *corev1.Pod, _ workloadauditor.RecordType, _ string) {
+}
+func (r *gangAuditorRecorder) RecordGangGating(_ string, _ *corev1.Pod, _ bool) {}
+func (r *gangAuditorRecorder) RecordGangScheduleResult(_ string, _ workloadauditor.RecordType, _ string) {
+}
+func (r *gangAuditorRecorder) RecordDiagnosis(_ *corev1.Pod, _ string, _ workloadauditor.RecordType, _ string) {
+}
+
+func (r *gangAuditorRecorder) snapshot() (added, deleted []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.added...), append([]string(nil), r.deleted...)
+}
+
+func (r *gangAuditorRecorder) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.added = nil
+	r.deleted = nil
+}
+
+// TestGangCache_onPodGroupUpdate_PhaseTransitions verifies that the workload
+// auditor is notified correctly when a PodGroup transitions between pending
+// and non-pending phases:
+//
+//  1. pending -> non-pending: DeleteGangGroup (gang finished scheduling)
+//  2. non-pending -> pending: no-op (the reverse transition is intentionally
+//     ignored to avoid leaving stale/partial records; onPodGroupAdd already
+//     seeds the record when the PodGroup is first observed)
+//  3. pending -> pending and non-pending -> non-pending: no-op
+func TestGangCache_onPodGroupUpdate_PhaseTransitions(t *testing.T) {
+	pgClient := fakepgclientset.NewSimpleClientset()
+	preTimeNowFn := timeNowFn
+	defer func() { timeNowFn = preTimeNowFn }()
+	timeNowFn = fakeTimeNowFn
+
+	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
+	pgLister := pgInformerFactory.Scheduling().V1alpha1().PodGroups().Lister()
+	cache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, pgLister, pgClient, nil)
+	recorder := &gangAuditorRecorder{}
+	cache.workloadAuditor = recorder
+
+	podGroup := &v1alpha1.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "phase-pg"},
+		Spec:       v1alpha1.PodGroupSpec{MinMember: 2},
+	}
+	cache.onPodGroupAdd(podGroup)
+	gangId := util.GetId("default", "phase-pg")
+	gang := cache.getGangFromCacheByGangId(gangId, false)
+	assert.NotNil(t, gang)
+	gangGroupID := gang.GangGroupId
+	// onPodGroupAdd already calls AddGangGroup for the pending phase. Reset the
+	// recorder so subsequent assertions only observe what onPodGroupUpdate does.
+	recorder.reset()
+
+	// Helper to build PodGroup deep-copies with a given phase.
+	withPhase := func(phase v1alpha1.PodGroupPhase) *v1alpha1.PodGroup {
+		pg := podGroup.DeepCopy()
+		pg.Status.Phase = phase
+		return pg
+	}
+
+	// Case 1: pending -> non-pending should trigger DeleteGangGroup.
+	pending := withPhase(v1alpha1.PodGroupPending)
+	finished := withPhase(v1alpha1.PodGroupFinished)
+	cache.onPodGroupUpdate(pending, finished)
+	added, deleted := recorder.snapshot()
+	assert.Empty(t, added, "pending->non-pending must not call AddGangGroup")
+	assert.Equal(t, []string{gangGroupID}, deleted, "pending->non-pending must call DeleteGangGroup once")
+
+	// Case 2: non-pending -> pending must be a no-op (reverse transition is
+	// intentionally ignored to avoid leaving stale/partial records).
+	recorder.reset()
+	cache.onPodGroupUpdate(finished, pending)
+	added, deleted = recorder.snapshot()
+	assert.Empty(t, added, "non-pending->pending must not call AddGangGroup")
+	assert.Empty(t, deleted, "non-pending->pending must not call DeleteGangGroup")
+
+	// Case 3a: pending -> pending must be a no-op.
+	recorder.reset()
+	prescheduling := withPhase(v1alpha1.PodGroupPreScheduling)
+	cache.onPodGroupUpdate(pending, prescheduling)
+	added, deleted = recorder.snapshot()
+	assert.Empty(t, added, "pending->pending must not call AddGangGroup")
+	assert.Empty(t, deleted, "pending->pending must not call DeleteGangGroup")
+
+	// Case 3b: non-pending -> non-pending must be a no-op.
+	running := withPhase(v1alpha1.PodGroupRunning)
+	cache.onPodGroupUpdate(finished, running)
+	added, deleted = recorder.snapshot()
+	assert.Empty(t, added, "non-pending->non-pending must not call AddGangGroup")
+	assert.Empty(t, deleted, "non-pending->non-pending must not call DeleteGangGroup")
+}
+
+// TestGangCache_onPodGroupUpdate_NilAuditor ensures onPodGroupUpdate does not
+// panic when the workload auditor is not configured (the original code path
+// before the workload auditor integration).
+func TestGangCache_onPodGroupUpdate_NilAuditor(t *testing.T) {
+	pgClient := fakepgclientset.NewSimpleClientset()
+	preTimeNowFn := timeNowFn
+	defer func() { timeNowFn = preTimeNowFn }()
+	timeNowFn = fakeTimeNowFn
+
+	pgInformerFactory := pgformers.NewSharedInformerFactory(pgClient, 0)
+	pgLister := pgInformerFactory.Scheduling().V1alpha1().PodGroups().Lister()
+	cache := NewGangCache(&config.CoschedulingArgs{DefaultTimeout: metav1.Duration{Duration: time.Second}}, nil, pgLister, pgClient, nil)
+	// workloadAuditor intentionally left nil.
+
+	podGroup := &v1alpha1.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "default", Name: "nil-aud-pg"},
+		Spec:       v1alpha1.PodGroupSpec{MinMember: 1},
+	}
+	cache.onPodGroupAdd(podGroup)
+
+	oldPg := podGroup.DeepCopy()
+	oldPg.Status.Phase = v1alpha1.PodGroupPending
+	newPg := podGroup.DeepCopy()
+	newPg.Status.Phase = v1alpha1.PodGroupFinished
+
+	assert.NotPanics(t, func() {
+		cache.onPodGroupUpdate(oldPg, newPg)
+	})
 }
 
 func TestGetGangGroupInfo_DeleteGangGroupInfo(t *testing.T) {
