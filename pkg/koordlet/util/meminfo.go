@@ -108,7 +108,9 @@ func (i *MemInfo) MemUsageBytes() uint64 {
 	return (i.MemTotal - i.MemAvailable) * 1024
 }
 
-// MemWithPageCacheUsageBytes returns the usage of mem with page cache bytes.
+// MemUsageWithPageCache returns the memory usage with page cache in bytes.
+// This calculates total - free, which includes anonymous pages, file cache (page cache),
+// slab, and other kernel memory.
 func (i *MemInfo) MemUsageWithPageCache() uint64 {
 	// total - free
 	return (i.MemTotal - i.MemFree) * 1024
