@@ -225,7 +225,10 @@ func (c *Controller) sync(key string) (result, error) {
 		return result{}, err
 	}
 	reservation, err := c.reservationLister.Get(reservationName)
-	if errors.IsNotFound(err) {
+	// The reservation this key refers to is gone: deleted, or replaced by a
+	// same-named one with a different UID. The replacement is enqueued under
+	// its own key, so it must not be reconciled under this one.
+	if errors.IsNotFound(err) || (err == nil && reservation.UID != reservationUID) {
 		if k8sfeature.DefaultFeatureGate.Enabled(features.CleanExpiredReservationAllocated) {
 			// Clean the reservation-allocated annotation for owner pods when a reservation is deleted.
 			err = c.syncPodsForTerminatedReservation(reservationName, reservationUID)
