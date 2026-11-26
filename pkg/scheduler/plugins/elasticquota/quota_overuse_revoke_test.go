@@ -22,11 +22,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/koordinator-sh/koordinator/apis/extension"
+	schedulingv1alpha1 "github.com/koordinator-sh/koordinator/apis/thirdparty/scheduler-plugins/pkg/apis/scheduling/v1alpha1"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/elasticquota/core"
 )
 
 func TestQuotaOverUsedGroupMonitor_Monitor(t *testing.T) {
@@ -135,6 +138,93 @@ func TestQuotaOverUsedRevokeController_GetToRevokePodList(t *testing.T) {
 	result = con.monitors["test1"].getToRevokePodList("test1")
 	if len(result) != 3 {
 		t.Errorf("error:%v", len(result))
+	}
+}
+
+func TestQuotaOverUsedGroupMonitor_ReclaimMixedResources(t *testing.T) {
+	const gpu corev1.ResourceName = "nvidia.com/gpu"
+	newGPUPod := func(name string, priority, gpuCount int32) *corev1.Pod {
+		pod := defaultCreatePod(name, priority, 1, 0)
+		pod.Spec.Containers[0].Resources.Requests[gpu] = *resource.NewQuantity(int64(gpuCount), resource.DecimalSI)
+		return pod
+	}
+	protectedGPU := newGPUPod("protected-gpu", 10, 2)
+	protectedGPU.Labels[extension.LabelPreemptible] = "false"
+	tests := []struct {
+		name      string
+		cpuLimit  string
+		pods      []*corev1.Pod
+		gpuUsed   int64
+		wantNames []string
+	}{
+		{
+			name:      "keep CPU-only pod when GPUs are over quota",
+			cpuLimit:  "10",
+			pods:      []*corev1.Pod{defaultCreatePod("cpu", 1, 1, 0), newGPUPod("gpu", 2, 2)},
+			gpuUsed:   2,
+			wantNames: []string{"gpu"},
+		},
+		{
+			name:     "keep tracking GPU usage when restoring CPU-only pod fails",
+			cpuLimit: "6",
+			pods: []*corev1.Pod{
+				newGPUPod("low-priority-gpu", 1, 1),
+				defaultCreatePod("cpu", 2, 6, 0),
+				newGPUPod("high-priority-gpu", 3, 1),
+			},
+			gpuUsed:   2,
+			wantNames: []string{"cpu", "low-priority-gpu"},
+		},
+		{
+			name:     "keep CPU-only pod when non-preemptible GPU usage exceeds quota",
+			cpuLimit: "10",
+			pods:     []*corev1.Pod{defaultCreatePod("cpu", 1, 1, 0), protectedGPU},
+			gpuUsed:  2,
+		},
+		{
+			name:     "reclaim additional GPUs in priority order when non-preemptible usage exceeds quota",
+			cpuLimit: "10",
+			pods: []*corev1.Pod{
+				newGPUPod("low-priority-gpu", 1, 1),
+				defaultCreatePod("cpu", 2, 1, 0),
+				newGPUPod("high-priority-gpu", 3, 1),
+				protectedGPU,
+			},
+			gpuUsed:   4,
+			wantNames: []string{"low-priority-gpu", "high-priority-gpu"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gqm := core.NewGroupQuotaManager("", false, nil, nil)
+			quota := &schedulingv1alpha1.ElasticQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "mixed"},
+				Spec: schedulingv1alpha1.ElasticQuotaSpec{Max: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("10"),
+					gpu:                *resource.NewQuantity(tt.gpuUsed, resource.DecimalSI),
+				}},
+			}
+			require.NoError(t, gqm.UpdateQuota(quota))
+			for _, pod := range tt.pods {
+				gqm.OnPodAdd(quota.Name, pod)
+			}
+			qi := gqm.GetQuotaInfoByName(quota.Name)
+			qi.Lock()
+			qi.CalculateInfo.Runtime = corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse(tt.cpuLimit),
+				gpu:                resource.MustParse("1"),
+			}
+			qi.UnLock()
+			gpuUsed := qi.GetUsed()[gpu]
+			require.Equal(t, tt.gpuUsed, gpuUsed.Value())
+
+			monitor := NewQuotaOverUsedGroupMonitor(quota.Name, gqm, time.Second)
+			var names []string
+			for _, pod := range monitor.getToRevokePodList(quota.Name) {
+				names = append(names, pod.Name)
+			}
+			assert.Equal(t, tt.wantNames, names)
+		})
 	}
 }
 
