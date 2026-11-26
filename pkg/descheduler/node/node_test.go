@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
+	"github.com/koordinator-sh/koordinator/pkg/descheduler/framework"
 	"github.com/koordinator-sh/koordinator/pkg/descheduler/test"
 )
 
@@ -756,6 +757,36 @@ func TestPodFitsAnyOtherNode(t *testing.T) {
 	}
 }
 
+func TestPodFitsNodePodSlots(t *testing.T) {
+	source := test.BuildTestNode("source", 4000, 1<<30, 1, nil)
+	full := test.BuildTestNode("full", 4000, 1<<30, 2, func(node *corev1.Node) {
+		node.Status.Allocatable[corev1.ResourcePods] = *resource.NewQuantity(1, resource.DecimalSI)
+	})
+	available := test.BuildTestNode("available", 4000, 1<<30, 2, nil)
+	moving := test.BuildTestPod("moving", 100, 64<<20, source.Name, test.MakeBestEffortPod)
+	pods := map[string]*corev1.Pod{
+		source.Name:    moving,
+		full.Name:      test.BuildTestPod("full-resident", 100, 64<<20, full.Name, nil),
+		available.Name: test.BuildTestPod("available-resident", 100, 64<<20, available.Name, nil),
+	}
+	indexer := func(nodeName string, filter framework.FilterFunc) ([]*corev1.Pod, error) {
+		if pod := pods[nodeName]; pod != nil && (filter == nil || filter(pod)) {
+			return []*corev1.Pod{pod}, nil
+		}
+		return nil, nil
+	}
+
+	if PodFitsAnyOtherNode(indexer, moving, []*corev1.Node{source, full}) {
+		t.Error("pod fits another node with no allocatable pod slots left")
+	}
+	if !PodFitsAnyOtherNode(indexer, moving, []*corev1.Node{source, available}) {
+		t.Error("pod does not fit another node with one allocatable pod slot left")
+	}
+	if !PodFitsCurrentNode(indexer, moving, source) {
+		t.Error("resident pod does not fit its current node at its allocatable pod limit")
+	}
+}
+
 // createResourceList builds a small resource list of core resources
 func createResourceList(cpu int64, memory int64, ephemeralStorage int64) corev1.ResourceList {
 	resourceList := make(map[corev1.ResourceName]resource.Quantity)
@@ -766,6 +797,9 @@ func createResourceList(cpu int64, memory int64, ephemeralStorage int64) corev1.
 }
 
 func TestPodFitsAnyNode(t *testing.T) {
+	status := corev1.NodeStatus{
+		Allocatable: corev1.ResourceList{corev1.ResourcePods: *resource.NewQuantity(10, resource.DecimalSI)},
+	}
 	tests := []struct {
 		name  string
 		pod   *corev1.Pod
@@ -815,6 +849,7 @@ func TestPodFitsAnyNode(t *testing.T) {
 							"test-node-type": "test-node-type-C",
 						},
 					},
+					Status: status,
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -823,6 +858,7 @@ func TestPodFitsAnyNode(t *testing.T) {
 							"test-node-type": "test-node-type-A",
 						},
 					},
+					Status: status,
 				},
 			},
 			want: true,
@@ -870,6 +906,7 @@ func TestPodFitsAnyNode(t *testing.T) {
 							"test-node-type": "test-node-type-C",
 						},
 					},
+					Status: status,
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -878,6 +915,7 @@ func TestPodFitsAnyNode(t *testing.T) {
 							"test-node-type": "test-node-type-D",
 						},
 					},
+					Status: status,
 				},
 			},
 			want: false,
