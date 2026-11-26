@@ -19,6 +19,7 @@ package elasticquota
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -115,17 +116,15 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 			continue
 		}
 		podReq := core.PodRequests(pod)
-		used = quotav1.Mask(quotav1.Subtract(used, podReq), quotav1.ResourceNames(podReq))
+		used = quotav1.Subtract(used, podReq)
 		tryAssignBackPodCache = append(tryAssignBackPodCache, pod)
 	}
 
-	// means should evict all
-	if lessThanOrEqual, _ := quotav1.LessThanOrEqual(used, runtime); !lessThanOrEqual {
-		for _, pod := range tryAssignBackPodCache {
-			klog.Infof("pod should be revoked by QuotaOverUsedMonitor, pod:%v, quotaName:%v"+
-				"used:%v, runtime:%v", pod.Name, quotaName, oriUsed, runtime)
-		}
-		return tryAssignBackPodCache
+	canMeetRuntime, _ := quotav1.LessThanOrEqual(used, runtime)
+	reclaimLimit := runtime
+	if !canMeetRuntime {
+		// Usage from non-preemptible pods can exceed runtime after capacity shrinks.
+		reclaimLimit = quotav1.Max(runtime, quotav1.Mask(used, quotav1.ResourceNames(runtime)))
 	}
 
 	//try assign back from high->low
@@ -133,11 +132,16 @@ func (monitor *QuotaOverUsedGroupMonitor) getToRevokePodList(quotaName string) [
 	for index := len(tryAssignBackPodCache) - 1; index >= 0; index-- {
 		pod := tryAssignBackPodCache[index]
 		podRequest := core.PodRequests(pod)
-		used = quotav1.Mask(quotav1.Add(used, podRequest), quotav1.ResourceNames(podRequest))
-		if canAssignBack, _ := quotav1.LessThanOrEqual(used, runtime); !canAssignBack {
-			used = quotav1.Subtract(used, podRequest)
+		newUsed := quotav1.Add(used, podRequest)
+		if canAssignBack, _ := quotav1.LessThanOrEqual(newUsed, reclaimLimit); canAssignBack {
+			used = newUsed
+		} else {
 			realRevokePodCache = append(realRevokePodCache, pod)
 		}
+	}
+	if !canMeetRuntime {
+		// Try lower-priority victims first when disruption budgets limit reclaim.
+		slices.Reverse(realRevokePodCache)
 	}
 	for _, pod := range realRevokePodCache {
 		klog.Infof("pod should be evict by QuotaOverUseGroupMonitor, pod:%v, quotaName:%v,"+
