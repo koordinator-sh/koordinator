@@ -213,6 +213,10 @@ func fitsRequest(nodeIndexer podutil.GetPodsAssignedToNodeFunc, pod *corev1.Pod,
 	}
 
 	podFitsOnNode := true
+	if pod.Spec.NodeName != node.Name && availableResources[corev1.ResourcePods].Value() < 1 {
+		insufficientResources = append(insufficientResources, fmt.Errorf("insufficient %v", corev1.ResourcePods))
+		podFitsOnNode = false
+	}
 	for _, resourceName := range resourceNames {
 		podResourceRequest := podRequests[resourceName]
 		availableResource, ok := availableResources[resourceName]
