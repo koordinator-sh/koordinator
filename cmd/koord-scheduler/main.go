@@ -33,6 +33,7 @@ import (
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/nodenumaresource"
 	noderesourcesfitplus "github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/noderesourcefitplus"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/reservation"
+	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/sandboxequivalence"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scarceresourceavoidance"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/scheduleadmission"
 	"github.com/koordinator-sh/koordinator/pkg/scheduler/plugins/schedulinghint"
@@ -55,6 +56,7 @@ var koordinatorPlugins = map[string]frameworkruntime.PluginFactory{
 	scarceresourceavoidance.Name: scarceresourceavoidance.New,
 	scheduleadmission.Name:       scheduleadmission.New,
 	schedulinghint.Name:          schedulinghint.New,
+	sandboxequivalence.Name:      sandboxequivalence.New,
 }
 
 func flatten(plugins map[string]frameworkruntime.PluginFactory) []app.Option {

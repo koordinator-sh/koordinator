@@ -159,11 +159,20 @@ type PreferNodesPluginProvider interface {
 	PreferNodesPlugin() PreferNodesPlugin
 }
 
-// PreferNodesPlugin is responsible to provide preferred nodes for the pod according to scheduling hints.
+// PreferNodesPlugin provides preferred nodes for the pod.
+// It takes effect only when the plugin is enabled in the PreFilter extension point. Multiple plugins run
+// in the PreFilter order, and the first one not returning Skip decides the preferred nodes.
 type PreferNodesPlugin interface {
 	fwktype.Plugin
 	// PreferNodes is used to provide preferred nodes for the scheduler to try scheduling first.
 	PreferNodes(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status)
+}
+
+// ScoreResultRecorder is notified with the node scores after the Score phase succeeds.
+// The scheduler reorders the scores afterwards, so they must not be retained or modified.
+type ScoreResultRecorder interface {
+	fwktype.Plugin
+	RecordScoreResult(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, scores []fwktype.NodePluginScores)
 }
 
 // FilterTransformer is executed before Filter.

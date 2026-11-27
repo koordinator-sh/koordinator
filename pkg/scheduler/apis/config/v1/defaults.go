@@ -95,6 +95,11 @@ var (
 
 	defaultMaxHintNodes = ptr.To[int32](100)
 
+	defaultMaxCachedNodes = ptr.To[int32](100)
+	// defaultCacheTTL equals the batch age of the upstream OpportunisticBatching.
+	defaultCacheTTL          = &metav1.Duration{Duration: 500 * time.Millisecond}
+	defaultTemplateHashLabel = ptr.To(extension.LabelSandboxTemplateHash)
+
 	defaultEnablePrefixMatch = ptr.To(false)
 )
 
@@ -287,6 +292,19 @@ func SetDefaults_DeviceShareArgs(obj *DeviceShareArgs) {
 func SetDefaults_SchedulingHintArgs(obj *SchedulingHintArgs) {
 	if obj.MaxHintNodes == nil {
 		obj.MaxHintNodes = defaultMaxHintNodes
+	}
+}
+
+// SetDefaults_SandboxEquivalenceArgs sets the default parameters for SandboxEquivalence plugin.
+func SetDefaults_SandboxEquivalenceArgs(obj *SandboxEquivalenceArgs) {
+	if obj.MaxCachedNodes == nil {
+		obj.MaxCachedNodes = defaultMaxCachedNodes
+	}
+	if obj.CacheTTL == nil {
+		obj.CacheTTL = defaultCacheTTL
+	}
+	if obj.TemplateHashLabel == nil {
+		obj.TemplateHashLabel = defaultTemplateHashLabel
 	}
 }
 

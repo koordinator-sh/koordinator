@@ -83,8 +83,14 @@ type frameworkExtenderImpl struct {
 	scoreTransformersEnabled      []ScoreTransformer
 	postFilterTransformersEnabled []PostFilterTransformer
 
-	findOneNodePlugin FindOneNodePlugin
-	preferNodesPlugin PreferNodesPlugin
+	findOneNodePlugin    FindOneNodePlugin
+	scoreResultRecorders []ScoreResultRecorder
+
+	// preferNodesPlugins holds the registered PreferNodesPlugins by name, and preferNodesPluginsEnabled
+	// holds the ones enabled in the PreFilter extension point, in the configured order.
+	preferNodesPlugins        map[string]PreferNodesPlugin
+	preferNodesPluginsEnabled []PreferNodesPlugin
+
 	// gangActivator exposes the gang-aware pod activation of the gang scheduling plugin to the other
 	// plugins. It is registered in updatePlugins and is nil when the gang scheduling is not enabled.
 	gangActivator GangActivator
@@ -133,6 +139,7 @@ func NewFrameworkExtender(f *FrameworkExtenderFactory, fw framework.Framework) F
 		filterTransformers:                  map[string]FilterTransformer{},
 		scoreTransformers:                   map[string]ScoreTransformer{},
 		postFilterTransformers:              map[string]PostFilterTransformer{},
+		preferNodesPlugins:                  map[string]PreferNodesPlugin{},
 		reservationPreBindPlugins:           map[string]ReservationPreBindPlugin{},
 		preBindExtensionsPlugins:            map[string]PreBindExtensions{},
 		metricsRecorder:                     f.metricsRecorder,
@@ -224,12 +231,11 @@ func (ext *frameworkExtenderImpl) updatePlugins(pl fwktype.Plugin) {
 		}
 	}
 	if p, ok := pl.(PreferNodesPluginProvider); ok && p.PreferNodesPlugin() != nil {
-		if ext.preferNodesPlugin == nil {
-			ext.preferNodesPlugin = p.PreferNodesPlugin()
-			klog.V(4).InfoS("framework extender got PreferNodesPlugin registered", "profile", ext.ProfileName(), "plugin", pl.Name())
-		} else {
-			klog.Warningf("framework extender got multiple PreferNodesPlugin registered, using the first one with name: %s", ext.preferNodesPlugin.Name())
-		}
+		ext.preferNodesPlugins[pl.Name()] = p.PreferNodesPlugin()
+		klog.V(4).InfoS("framework extender got PreferNodesPlugin registered", "profile", ext.ProfileName(), "plugin", pl.Name())
+	}
+	if r, ok := pl.(ScoreResultRecorder); ok {
+		ext.scoreResultRecorders = append(ext.scoreResultRecorders, r)
 	}
 	if p, ok := pl.(GangActivator); ok {
 		if ext.gangActivator == nil {
@@ -273,6 +279,16 @@ func (ext *frameworkExtenderImpl) SetConfiguredPlugins(plugins *schedconfig.Plug
 		"FilterTransformer", len(ext.filterTransformersEnabled),
 		"ScoreTransformer", len(ext.scoreTransformersEnabled),
 		"PostFilterTransformer", len(ext.postFilterTransformersEnabled))
+
+	var preferNodesPluginNames []string
+	for _, pl := range ext.configuredPlugins.PreFilter.Enabled {
+		preferNodesPlugin := ext.preferNodesPlugins[pl.Name]
+		if preferNodesPlugin != nil {
+			ext.preferNodesPluginsEnabled = append(ext.preferNodesPluginsEnabled, preferNodesPlugin)
+			preferNodesPluginNames = append(preferNodesPluginNames, pl.Name)
+		}
+	}
+	klog.V(5).InfoS("Set configured PreferNodes plugins", "plugins", preferNodesPluginNames)
 }
 
 func (ext *frameworkExtenderImpl) KoordinatorClientSet() koordinatorclientset.Interface {
@@ -436,11 +452,9 @@ func (ext *frameworkExtenderImpl) RunPreFilterPlugins(ctx context.Context, cycle
 	// PreferNodes
 	nodeName, status := ext.RunPreferNodesPlugin(ctx, cycleState, pod, result)
 	if status.IsSuccess() {
-		klog.V(6).InfoS("PreferNodesPlugin succeeded", "pod", klog.KObj(pod), "plugin", ext.preferNodesPlugin.Name(), "nodeName", nodeName)
 		return &fwktype.PreFilterResult{NodeNames: sets.New[string](nodeName)}, nil, nil
 	} else if !status.IsSkip() {
-		status = status.WithPlugin(ext.preferNodesPlugin.Name())
-		klog.ErrorS(status.AsError(), "Failed to run PreferNodesPlugin", "pod", klog.KObj(pod), "plugin", ext.preferNodesPlugin.Name())
+		klog.ErrorS(status.AsError(), "Failed to run PreferNodesPlugin", "pod", klog.KObj(pod), "plugin", status.Plugin())
 		return nil, status, nil
 	} // skip
 
@@ -490,12 +504,15 @@ func getBatchScheduleState(cycleState fwktype.CycleState) *batchScheduleStateDat
 }
 
 func (ext *frameworkExtenderImpl) RunPreferNodesPlugin(ctx context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) (string, *fwktype.Status) {
-	if ext.preferNodesPlugin != nil {
+	for _, pl := range ext.preferNodesPluginsEnabled {
 		startTime := time.Now()
-		nodeNames, status := ext.preferNodesPlugin.PreferNodes(ctx, cycleState, pod, result)
-		ext.metricsRecorder.ObservePluginDurationAsync("PreferNodesPlugin", ext.preferNodesPlugin.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
+		nodeNames, status := pl.PreferNodes(ctx, cycleState, pod, result)
+		ext.metricsRecorder.ObservePluginDurationAsync("PreferNodesPlugin", pl.Name(), status.Code().String(), metrics.SinceInSeconds(startTime))
+		if status.IsSkip() {
+			continue
+		}
 		if !status.IsSuccess() {
-			return "", status
+			return "", status.WithPlugin(pl.Name())
 		}
 
 		// If the PreferNodes plugin returns Success, try to filter the preferred nodes.
@@ -504,7 +521,7 @@ func (ext *frameworkExtenderImpl) RunPreferNodesPlugin(ctx context.Context, cycl
 		for _, nodeName := range nodeNames {
 			nodeInfo, err := ext.SnapshotSharedLister().NodeInfos().Get(nodeName)
 			if err != nil {
-				klog.ErrorS(err, "Failed to get preferred nodeInfo, aborted", "pod", klog.KObj(pod), "plugin", ext.preferNodesPlugin.Name(), "node", nodeName)
+				klog.ErrorS(err, "Failed to get preferred nodeInfo, aborted", "pod", klog.KObj(pod), "plugin", pl.Name(), "node", nodeName)
 				continue
 			}
 			status = ext.RunFilterPluginsWithNominatedPods(ctx, cycleState, pod, nodeInfo)
@@ -512,12 +529,12 @@ func (ext *frameworkExtenderImpl) RunPreferNodesPlugin(ctx context.Context, cycl
 				return nodeName, nil
 			} else {
 				klog.V(4).InfoS("Failed to filter for Pod on preferred Node",
-					"pod", klog.KObj(pod), "node", nodeName, "preferNodesPlugin", ext.preferNodesPlugin.Name(), "failedPlugin", status.Plugin(), "reason", status.Message())
+					"pod", klog.KObj(pod), "node", nodeName, "preferNodesPlugin", pl.Name(), "failedPlugin", status.Plugin(), "reason", status.Message())
 			}
 		}
 		klog.V(5).InfoS("Failed to filter for Pod on all preferred Nodes, fallback to original prefilter result",
-			"pod", klog.KObj(pod), "preferNodesPlugin", ext.preferNodesPlugin.Name(), "failedNodes", nodeNames)
-
+			"pod", klog.KObj(pod), "preferNodesPlugin", pl.Name(), "failedNodes", nodeNames)
+		break
 	}
 	return "", fwktype.NewStatus(fwktype.Skip)
 }
@@ -560,6 +577,13 @@ func (ext *frameworkExtenderImpl) RunScorePlugins(ctx context.Context, state fwk
 		}
 	}
 	pluginToNodeScores, status := ext.Framework.RunScorePlugins(ctx, state, pod, nodeInfos)
+	if status.IsSuccess() {
+		for _, recorder := range ext.scoreResultRecorders {
+			startTime := time.Now()
+			recorder.RecordScoreResult(ctx, state, pod, pluginToNodeScores)
+			ext.metricsRecorder.ObservePluginDurationAsync("RecordScoreResult", recorder.Name(), "", metrics.SinceInSeconds(startTime))
+		}
+	}
 	if status.IsSuccess() && debugTopNScores > 0 {
 		debugScores(debugTopNScores, pod, pluginToNodeScores, nodeInfos)
 	}

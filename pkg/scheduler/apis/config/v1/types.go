@@ -429,6 +429,25 @@ type SchedulingHintArgs struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
+// SandboxEquivalenceArgs holds arguments used to configure the SandboxEquivalence plugin.
+type SandboxEquivalenceArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// MaxCachedNodes is the maximum number of nodes cached for each equivalence class.
+	// Defaults to 100 if unspecified.
+	MaxCachedNodes *int32 `json:"maxCachedNodes,omitempty"`
+	// CacheTTL is how long a cache entry is trusted after it is stored.
+	// Defaults to 500ms if unspecified.
+	CacheTTL *metav1.Duration `json:"cacheTTL,omitempty"`
+	// TemplateHashLabel is the pod label that identifies the equivalence class of a pod. Pods carrying
+	// the same value are treated as equivalent and may reuse each other's node ranking. Pods without
+	// this label take no part in cache reuse.
+	// Defaults to scheduling.koordinator.sh/sandbox-template-hash if unspecified.
+	TemplateHashLabel *string `json:"templateHashLabel,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
 // ScheduleAdmissionArgs holds arguments used to configure the ScheduleAdmission plugin.
 type ScheduleAdmissionArgs struct {
 	metav1.TypeMeta `json:",inline"`
