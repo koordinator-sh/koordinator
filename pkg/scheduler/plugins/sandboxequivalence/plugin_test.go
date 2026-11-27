@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fwktype "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/backend/cache"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/utils/ptr"
 
@@ -125,4 +126,95 @@ func TestPlugin_RecordScoreResult_WithoutEquivalenceClass(t *testing.T) {
 	// The cycle state carries no equivalence class when PreFilter does not run for the plugin.
 	p.RecordScoreResult(context.TODO(), framework.NewCycleState(), pod, []fwktype.NodePluginScores{{Name: "node-1", TotalScore: 10}})
 	assert.Empty(t, p.equivalenceCache)
+}
+
+// testHandle serves the snapshot reads of the plugin.
+type testHandle struct {
+	fwktype.Handle
+	snapshot fwktype.SharedLister
+}
+
+func (h *testHandle) SnapshotSharedLister() fwktype.SharedLister {
+	return h.snapshot
+}
+
+func TestPlugin_PreferNodes(t *testing.T) {
+	var nodes []*corev1.Node
+	for _, name := range []string{"node-1", "node-2", "node-3", "node-4"} {
+		nodes = append(nodes, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: name, ResourceVersion: "1"}})
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "pod-1",
+			Labels:    map[string]string{extension.LabelSandboxTemplateHash: "template-1"},
+		},
+	}
+	tests := []struct {
+		name string
+		// fallbackScores and reservedNode describe the cycle that is handed node-2: the scores of the full
+		// cycle run after the hint is rejected, and the node the pod is reserved on, "" if no node fits.
+		fallbackScores []fwktype.NodePluginScores
+		reservedNode   string
+		wantNodes      []string
+	}{
+		{
+			name:         "a used hint is taken out of the entry",
+			reservedNode: "node-2",
+			wantNodes:    []string{"node-3"},
+		},
+		{
+			name:           "a rejected hint is replaced by the ranking of the fallback cycle",
+			fallbackScores: []fwktype.NodePluginScores{{Name: "node-4", TotalScore: 50}, {Name: "node-1", TotalScore: 40}},
+			reservedNode:   "node-4",
+			wantNodes:      []string{"node-1"},
+		},
+		{
+			name:         "a rejected hint stays at the head when the fallback cycle finds a single node",
+			reservedNode: "node-4",
+			wantNodes:    []string{"node-2"},
+		},
+		{
+			name:      "a rejected hint stays at the head when no node fits",
+			wantNodes: []string{"node-2"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.TODO()
+			pl, err := New(ctx, buildArgs(t, configv1.SandboxEquivalenceArgs{}), &testHandle{snapshot: cache.NewSnapshot(nil, nodes)})
+			assert.NoError(t, err)
+			p := pl.(*Plugin)
+
+			// A full cycle ranks node-1 to node-4 and reserves node-1.
+			cycleState := framework.NewCycleState()
+			_, status := p.PreFilter(ctx, cycleState, pod, nil)
+			assert.True(t, status.IsSuccess())
+			p.RecordScoreResult(ctx, cycleState, pod, []fwktype.NodePluginScores{
+				{Name: "node-1", TotalScore: 40}, {Name: "node-2", TotalScore: 30},
+				{Name: "node-3", TotalScore: 20}, {Name: "node-4", TotalScore: 10},
+			})
+			assert.True(t, p.Reserve(ctx, cycleState, pod, "node-1").IsSuccess())
+
+			cycleState = framework.NewCycleState()
+			_, status = p.PreFilter(ctx, cycleState, pod, nil)
+			assert.True(t, status.IsSuccess())
+			gotNodes, status := p.PreferNodes(ctx, cycleState, pod, nil)
+			assert.True(t, status.IsSuccess())
+			assert.Equal(t, []string{"node-2"}, gotNodes)
+			if tt.fallbackScores != nil {
+				p.RecordScoreResult(ctx, cycleState, pod, tt.fallbackScores)
+			}
+			if tt.reservedNode != "" {
+				assert.True(t, p.Reserve(ctx, cycleState, pod, tt.reservedNode).IsSuccess())
+			}
+
+			cycleState = framework.NewCycleState()
+			_, status = p.PreFilter(ctx, cycleState, pod, nil)
+			assert.True(t, status.IsSuccess())
+			gotNodes, status = p.PreferNodes(ctx, cycleState, pod, nil)
+			assert.True(t, status.IsSuccess())
+			assert.Equal(t, tt.wantNodes, gotNodes)
+		})
+	}
 }

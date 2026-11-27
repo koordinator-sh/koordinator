@@ -127,17 +127,18 @@ The lookup has four steps. The first three only read memory and the snapshot; th
   │     · A is in the PreFilterResult
   │     · A still exists and its ResourceVersion matches the cached one
   │     no  ──► delete the whole entry of the class, run full scheduling
-  │     yes ──► pop A from the cache
+  │     yes ──► hand out A, which stays in the cache until Reserve
   ▼
   [4] Does A pass Filter?
-  │     no  ──► fall back to full scheduling in the same cycle
+  │     no  ──► fall back to full scheduling in the same cycle;
+  │             A stays in the cache unless the full cycle records a new ranking
   │     yes
   ▼
   hit: the PreFilterResult narrows to {A}
        only one feasible node is left, so the upstream picks it and skips PreScore and Score
   │
   ▼
-  Reserve(A) → Permit → Bind
+  Reserve(A) takes A out of the cache → Permit → Bind
 ```
 
 #### After Scoring: Recording the Ranking
@@ -204,7 +205,7 @@ The upstream [KEP-5598 OpportunisticBatching](https://github.com/kubernetes/enha
 | Cache granularity | One per profile; pods with the same signature must be scheduled consecutively | Same as v1.35 | One per equivalence class; classes may be scheduled interleaved |
 | Taking a node on a hit | Drops the whole cache entry when the last chosen node can still host the pod | Rescores the last chosen node and puts it back into the candidate list when it can still host the pod | A cached node is removed once it is used, so the next pod takes the next node in the ranking |
 | Invalidation | Last cycle failed, signature differs, non-consecutive cycle, older than 500ms, last chosen node missing or still able to host the pod | Last cycle failed, pod has NominatedNodeName, signature differs, non-consecutive cycle, older than 500ms, last chosen or cached node missing, rescoring failed | Older than cacheTTL (500ms by default), head node deleted, node updated, or head node not in the PreFilterResult |
-| Validation on a hit | Runs Filter on the hinted node and falls back to full scheduling if it fails | Same as v1.35 | Same |
+| Validation on a hit | Runs Filter on the hinted node and falls back to full scheduling if it fails | Same as v1.35 | Same, except that a hinted node rejected by Filter stays in the cache, while upstream has already popped it. Unlike a signature, the template label does not guarantee the same Filter result for every pod of the class |
 
 The upstream feature cannot be used for sandboxes as it stands:
 

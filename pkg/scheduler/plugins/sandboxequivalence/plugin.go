@@ -145,8 +145,9 @@ func (p *Plugin) PreferNodesPlugin() frameworkext.PreferNodesPlugin {
 	return p
 }
 
-// PreferNodes hands out the best node left in the cache entry of the pod's equivalence class. A rejected
-// hint falls back to a full cycle, whose scores replace the cache entry.
+// PreferNodes hands out the best node left in the cache entry of the pod's equivalence class. The node stays
+// in the entry until Reserve takes it out, so a hint rejected by Filter is kept unless the fallback full
+// cycle replaces the entry.
 func (p *Plugin) PreferNodes(_ context.Context, cycleState fwktype.CycleState, pod *corev1.Pod, result *fwktype.PreFilterResult) ([]string, *fwktype.Status) {
 	// The scheduler tries the nominated node before any hint.
 	if pod.Status.NominatedNodeName != "" {
@@ -161,9 +162,7 @@ func (p *Plugin) PreferNodes(_ context.Context, cycleState fwktype.CycleState, p
 		delete(p.equivalenceCache, key)
 		return nil, fwktype.NewStatus(fwktype.Skip)
 	}
-	head := entry.nodes[0]
-	entry.nodes = entry.nodes[1:]
-	return []string{head.name}, nil
+	return []string{entry.nodes[0].name}, nil
 }
 
 // hintable reports whether the head of the cache entry can be handed out to the pod.
@@ -208,7 +207,7 @@ func (p *Plugin) RecordScoreResult(_ context.Context, cycleState fwktype.CycleSt
 	p.equivalenceCache[key] = &cacheEntry{nodes: nodes, storedAt: time.Now()}
 }
 
-// Reserve takes the chosen node out of the cache entry, so that each cached node is handed out once.
+// Reserve takes the chosen node out of the cache entry, so that a later pod of the class is not handed it again.
 func (p *Plugin) Reserve(_ context.Context, cycleState fwktype.CycleState, _ *corev1.Pod, nodeName string) *fwktype.Status {
 	if entry := p.equivalenceCache[getCacheKey(cycleState)]; entry != nil {
 		entry.nodes = slices.DeleteFunc(entry.nodes, func(n cachedNode) bool { return n.name == nodeName })
